@@ -1,226 +1,267 @@
 import { useState } from "react";
-import { Navigation } from "./Navigation";
 import { TopBar } from "./TopBar";
-import { GovernanceStatus } from "./GovernanceStatus";
-import { ReviewQueueSummary } from "./ReviewQueueSummary";
-import { PendingReviewsList } from "./PendingReviewsList";
-import { ReviewCategories } from "./ReviewCategories";
-import { AIDecisions } from "./AIDecisions";
-import { ReviewAnalytics } from "./ReviewAnalytics";
-import { List, Pencil, Video, Rocket, CheckCircle2, XCircle, Sparkles } from "lucide-react";
+import {
+  Button, StatusChip, Card, EmptyState, PageHeader, SectionHeader,
+  FilterPill, ConfidenceBar, type ChipVariant,
+} from "./ds";
+import {
+  Pencil, Video, Rocket, CheckCircle2, XCircle, Sparkles,
+  AlertTriangle, ChevronRight, Loader2, Package, Calendar,
+  LayoutList, Clock, Zap,
+} from "lucide-react";
 
 interface ReviewCenterProps {
   onNavigate?: (path: string) => void;
 }
 
+type Stage = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "scheduled" | "export_ready";
+
+interface ProductionItem {
+  id: string;
+  title: string;
+  account: string;
+  series?: string;
+  reviewType: "creative" | "production" | "publishing";
+  priority: "high" | "medium" | "low";
+  stage: Exclude<Stage, "all">;
+  aiConfidence: number;
+  timeWaiting: string;
+  format: string;
+}
+
+const stageToChip: Record<Exclude<Stage, "all">, ChipVariant> = {
+  drafting:     "drafting",
+  ready:        "ready",
+  needs_edit:   "needs-edit",
+  approved:     "approved",
+  scheduled:    "scheduled",
+  export_ready: "export-ready",
+};
+
+const stageLabels: Record<Exclude<Stage, "all">, string> = {
+  drafting:     "Drafting",
+  ready:        "Ready for Review",
+  needs_edit:   "Needs Edit",
+  approved:     "Approved",
+  scheduled:    "Scheduled",
+  export_ready: "Export Ready",
+};
+
+const stageIcons: Record<Exclude<Stage, "all">, React.ComponentType<{className?: string}>> = {
+  drafting:     Loader2,
+  ready:        Clock,
+  needs_edit:   AlertTriangle,
+  approved:     CheckCircle2,
+  scheduled:    Calendar,
+  export_ready: Package,
+};
+
+const stageSummaryStyles: Record<Exclude<Stage, "all">, string> = {
+  drafting:     "border-border bg-card",
+  ready:        "border-warning/30 bg-warning/5",
+  needs_edit:   "border-destructive/30 bg-destructive/5",
+  approved:     "border-success/25 bg-success/5",
+  scheduled:    "border-accent/35 bg-accent/10",
+  export_ready: "border-accent/25 bg-accent/5",
+};
+
+const items: ProductionItem[] = [
+  { id: "r1", title: "5 Viral Marketing Tactics That Actually Work in 2026", account: "YouTube", series: "Marketing Masterclass", reviewType: "creative", priority: "high", stage: "ready", aiConfidence: 94, timeWaiting: "2m", format: "Long-form + Clips" },
+  { id: "r2", title: "The Psychology Behind Viral Content", account: "TikTok", series: "Content Science", reviewType: "production", priority: "high", stage: "ready", aiConfidence: 88, timeWaiting: "15m", format: "Short-form 60s" },
+  { id: "r3", title: "How AI Creates Engaging Stories", account: "Instagram", reviewType: "creative", priority: "medium", stage: "needs_edit", aiConfidence: 76, timeWaiting: "1h", format: "Carousel + Reel" },
+  { id: "r4", title: "Building a Personal Brand in 2026", account: "LinkedIn", series: "Career Growth", reviewType: "publishing", priority: "low", stage: "approved", aiConfidence: 82, timeWaiting: "2h", format: "Article" },
+  { id: "r5", title: "Content Creation Workflow Optimization", account: "YouTube", reviewType: "production", priority: "medium", stage: "drafting", aiConfidence: 91, timeWaiting: "3h", format: "Tutorial 12min" },
+  { id: "r6", title: "Nigerian Creator Economy Deep Dive", account: "YouTube", reviewType: "creative", priority: "medium", stage: "drafting", aiConfidence: 85, timeWaiting: "1h", format: "Data story 8min" },
+  { id: "r7", title: "AI Editing Tools Comparison 2026", account: "YouTube", series: "Tool Reviews", reviewType: "creative", priority: "high", stage: "scheduled", aiConfidence: 96, timeWaiting: "4h", format: "Tutorial 14min" },
+  { id: "r8", title: "Free Tools Every Creator Needs", account: "TikTok", reviewType: "production", priority: "medium", stage: "export_ready", aiConfidence: 89, timeWaiting: "5h", format: "Short-form 45s" },
+];
+
+const aiDecisions = [
+  { id: "d1", outcome: "approved" as const, text: "Approved storyboard for 'AI Content Tips #47' — matches top-performing narrative patterns", confidence: 94, time: "5m ago" },
+  { id: "d2", outcome: "flagged" as const, text: "Flagged 'Tech News Recap' for human review — topic complexity requires strategic decision", confidence: 68, time: "12m ago" },
+  { id: "d3", outcome: "rejected" as const, text: "Rejected thumbnail variant B — visual contrast below brand guidelines threshold", confidence: 87, time: "25m ago" },
+  { id: "d4", outcome: "approved" as const, text: "Approved publishing schedule — peak engagement window confirmed for Thursday 2 PM", confidence: 92, time: "1h ago" },
+];
+
+const priorityColor = { high: "text-destructive", medium: "text-warning", low: "text-muted-foreground" };
+
+const outcomeConfig = {
+  approved: { icon: CheckCircle2, color: "text-success",     bg: "bg-success/10 border-success/20" },
+  flagged:  { icon: AlertTriangle, color: "text-warning",    bg: "bg-warning/10 border-warning/20" },
+  rejected: { icon: XCircle,       color: "text-destructive",bg: "bg-destructive/10 border-destructive/20" },
+};
+
+const stageTabs: { id: Stage; label: string; icon: React.ComponentType<{className?: string}> }[] = [
+  { id: "all",          label: "All",          icon: LayoutList },
+  { id: "drafting",     label: "Drafting",     icon: Loader2 },
+  { id: "ready",        label: "Ready",        icon: Clock },
+  { id: "needs_edit",   label: "Needs Edit",   icon: AlertTriangle },
+  { id: "approved",     label: "Approved",     icon: CheckCircle2 },
+  { id: "scheduled",    label: "Scheduled",    icon: Calendar },
+  { id: "export_ready", label: "Export Ready", icon: Package },
+];
+
+function EmptyStageState({ stage }: { stage: Stage }) {
+  const messages: Partial<Record<Stage, { title: string; desc: string }>> = {
+    drafting:     { title: "Nothing drafting right now",    desc: "Create a production from Viral Sparks — it will appear here while Spark generates." },
+    ready:        { title: "Queue is clear",                desc: "You're all caught up. Spark will notify you when something is ready for review." },
+    needs_edit:   { title: "No edits requested",            desc: "Everything reviewed has passed without revision requests." },
+    approved:     { title: "Nothing approved yet",          desc: "Items move here once you approve them in review." },
+    scheduled:    { title: "Nothing scheduled",             desc: "Approved productions can be scheduled from the Calendar." },
+    export_ready: { title: "No export packages ready",      desc: "Approved and finalised productions will appear here." },
+    all:          { title: "No productions yet",            desc: "Create your first production from Viral Sparks." },
+  };
+  const msg = messages[stage] ?? messages.all!;
+  return (
+    <EmptyState
+      icon={<Zap className="w-5 h-5 text-muted-foreground/40" />}
+      title={msg.title}
+      description={msg.desc}
+    />
+  );
+}
+
 export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
-  const [activeCategory, setActiveCategory] = useState<
-    "all" | "creative" | "production" | "publishing" | "ai_approved" | "completed" | "rejected"
-  >("all");
+  const [activeStage, setActiveStage] = useState<Stage>("all");
 
-  const reviewGates = [
-    { id: "gate1", name: "Creative Review", status: "required" as const },
-    { id: "gate2", name: "Production Review", status: "required" as const },
-    { id: "gate3", name: "Publishing Review", status: "optional" as const },
-  ];
+  const stageCounts = Object.fromEntries(
+    stageTabs.map(({ id }) => [id, id === "all" ? items.length : items.filter(i => i.stage === id).length])
+  ) as Record<Stage, number>;
 
-  const queueSummary = {
-    creative: 5,
-    production: 3,
-    publishing: 2,
-    needsAttention: 4,
-    aiApproved: 12,
-  };
-
-  const categories = [
-    { id: "all" as const, label: "All", icon: List, count: 22 },
-    { id: "creative" as const, label: "Creative", icon: Pencil, count: 5 },
-    { id: "production" as const, label: "Production", icon: Video, count: 3 },
-    { id: "publishing" as const, label: "Publishing", icon: Rocket, count: 2 },
-    { id: "ai_approved" as const, label: "AI Approved", icon: Sparkles, count: 12 },
-    { id: "completed" as const, label: "Completed", icon: CheckCircle2, count: 45 },
-    { id: "rejected" as const, label: "Rejected", icon: XCircle, count: 7 },
-  ];
-
-  const pendingReviews = [
-    {
-      id: "r1",
-      title: "5 Viral Marketing Tactics That Actually Work in 2026",
-      channel: "YouTube",
-      series: "Marketing Masterclass",
-      reviewType: "creative" as const,
-      priority: "high" as const,
-      status: "pending" as const,
-      aiConfidence: 94,
-      timeWaiting: "2m",
-    },
-    {
-      id: "r2",
-      title: "The Psychology Behind Viral Content",
-      channel: "TikTok",
-      series: "Content Science",
-      reviewType: "production" as const,
-      priority: "high" as const,
-      status: "ai_approved" as const,
-      aiConfidence: 88,
-      timeWaiting: "15m",
-    },
-    {
-      id: "r3",
-      title: "How AI Creates Engaging Stories",
-      channel: "Instagram",
-      reviewType: "creative" as const,
-      priority: "medium" as const,
-      status: "in_review" as const,
-      aiConfidence: 76,
-      timeWaiting: "1h",
-    },
-    {
-      id: "r4",
-      title: "Building a Personal Brand in 2026",
-      channel: "LinkedIn",
-      series: "Career Growth",
-      reviewType: "publishing" as const,
-      priority: "low" as const,
-      status: "ai_approved" as const,
-      aiConfidence: 82,
-      timeWaiting: "2h",
-    },
-    {
-      id: "r5",
-      title: "Content Creation Workflow Optimization",
-      channel: "YouTube",
-      reviewType: "production" as const,
-      priority: "medium" as const,
-      status: "pending" as const,
-      aiConfidence: 91,
-      timeWaiting: "3h",
-    },
-  ];
-
-  const aiDecisions = [
-    {
-      id: "d1",
-      decision: "Approved storyboard for 'AI Content Tips #47'",
-      reason: "Matches successful narrative patterns from previous top performers",
-      confidence: 94,
-      outcome: "approved" as const,
-      timestamp: "5m ago",
-    },
-    {
-      id: "d2",
-      decision: "Flagged 'Tech News Recap' for human review",
-      reason: "Topic complexity requires strategic decision on narrative angle",
-      confidence: 68,
-      outcome: "flagged" as const,
-      timestamp: "12m ago",
-    },
-    {
-      id: "d3",
-      decision: "Rejected thumbnail variant B",
-      reason: "Visual contrast below brand guidelines threshold",
-      confidence: 87,
-      outcome: "rejected" as const,
-      timestamp: "25m ago",
-    },
-    {
-      id: "d4",
-      decision: "Approved publishing schedule optimization",
-      reason: "Audience engagement patterns indicate optimal timing window",
-      confidence: 92,
-      outcome: "approved" as const,
-      timestamp: "1h ago",
-    },
-  ];
-
-  const analyticsMetrics = {
-    avgApprovalTime: "12m",
-    approvalRate: 87,
-    rejectionRate: 8,
-    automationRate: 65,
-  };
+  const filtered = activeStage === "all" ? items : items.filter(i => i.stage === activeStage);
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground antialiased">
-      <Navigation currentPath="/review" onNavigate={onNavigate} />
+    <>
+      <TopBar workspaceName="Review" />
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 
-      <div className="flex-1 flex flex-col">
-        <TopBar />
+          <PageHeader title="Review" subtitle="Control room — every production, every stage" />
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-[1600px] mx-auto p-8 space-y-8">
-            <div>
-              <h1 className="text-3xl font-medium">Review Center</h1>
-              <p className="text-muted-foreground mt-2">
-                Mission control for your AI media company
-              </p>
+          <section>
+            <SectionHeader label="Pipeline Overview" />
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+              {(Object.entries(stageLabels) as [Exclude<Stage, "all">, string][]).map(([key, label]) => {
+                const Icon = stageIcons[key];
+                const count = stageCounts[key] ?? 0;
+                const isActive = activeStage === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setActiveStage(key)}
+                    className={`rounded-xl border p-4 text-left transition-all duration-200 hover:shadow-xl hover:shadow-black/10 ${
+                      isActive ? stageSummaryStyles[key] : "bg-card border-border hover:border-accent/40"
+                    }`}
+                  >
+                    <div className="mb-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-current" : "text-muted-foreground"} ${key === "drafting" && count > 0 ? "animate-spin" : ""}`} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
+                    <p className="text-3xl font-medium tracking-tight">{count}</p>
+                  </button>
+                );
+              })}
             </div>
+          </section>
 
-            <section>
-              <h2 className="text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                Review Summary
-              </h2>
-              <ReviewQueueSummary
-                summary={queueSummary}
-                onCardClick={(type) => console.log("Queue click:", type)}
-              />
-            </section>
-
-            <section>
-              <h2 className="text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                Review Queue
-              </h2>
-              <div className="space-y-4">
-                <ReviewCategories
-                  categories={categories}
-                  activeCategory={activeCategory}
-                  onCategoryChange={setActiveCategory}
-                />
-                <PendingReviewsList
-                  reviews={pendingReviews}
-                  onReviewClick={(id) => {
-                    const review = pendingReviews.find((r) => r.id === id);
-                    if (review?.reviewType === "creative") {
-                      onNavigate?.("/review/creative");
-                    }
-                  }}
-                />
-              </div>
-            </section>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1">
-                <section>
-                  <h2 className="text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                    Governance Overview
-                  </h2>
-                  <GovernanceStatus
-                    automationMode="balanced"
-                    reviewGates={reviewGates}
-                    onGateClick={(gateId) => console.log("Gate click:", gateId)}
+          <section>
+            <SectionHeader label="Productions" />
+            <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+              {stageTabs.map((tab) => {
+                const Icon = tab.icon;
+                const count = stageCounts[tab.id];
+                return (
+                  <FilterPill
+                    key={tab.id}
+                    label={tab.label}
+                    count={count}
+                    active={activeStage === tab.id}
+                    onClick={() => setActiveStage(tab.id)}
+                    icon={<Icon className={`w-4 h-4 ${tab.id === "drafting" && count > 0 && activeStage !== tab.id ? "animate-spin" : ""}`} />}
                   />
-                </section>
-              </div>
-
-              <div className="lg:col-span-2">
-                <section>
-                  <h2 className="text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                    Review Performance
-                  </h2>
-                  <ReviewAnalytics metrics={analyticsMetrics} />
-                </section>
-              </div>
+                );
+              })}
             </div>
 
-            <section>
-              <h2 className="text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                AI Decisions
-              </h2>
-              <AIDecisions decisions={aiDecisions} />
-            </section>
-          </div>
-        </main>
-      </div>
-    </div>
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              {filtered.length === 0 ? (
+                <EmptyStageState stage={activeStage} />
+              ) : (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border/50 bg-background/50">
+                      {["Title", "Account", "Type", "Format", "Priority", "Stage", "AI Score", "Time", ""].map((h) => (
+                        <th key={h} className="text-left px-5 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((item) => {
+                      const isDrafting = item.stage === "drafting";
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`border-b border-border/50 transition-colors cursor-pointer group ${isDrafting ? "opacity-60" : "hover:bg-accent/5"}`}
+                          onClick={() => !isDrafting && item.reviewType === "creative" && onNavigate?.("/review/creative")}
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              {isDrafting && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />}
+                              <div>
+                                <p className="text-sm font-medium max-w-[220px] truncate">{item.title}</p>
+                                {item.series && <p className="text-xs text-muted-foreground mt-0.5">{item.series}</p>}
+                                {isDrafting && <p className="text-xs text-muted-foreground/60 mt-0.5">Spark is generating…</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4"><p className="text-sm text-muted-foreground">{item.account}</p></td>
+                          <td className="px-5 py-4"><p className="text-xs capitalize text-muted-foreground">{item.reviewType}</p></td>
+                          <td className="px-5 py-4"><p className="text-xs text-muted-foreground">{item.format}</p></td>
+                          <td className="px-5 py-4">
+                            <span className={`text-xs font-medium capitalize ${priorityColor[item.priority]}`}>{item.priority}</span>
+                          </td>
+                          <td className="px-5 py-4"><StatusChip variant={stageToChip[item.stage]} /></td>
+                          <td className="px-5 py-4"><ConfidenceBar value={item.aiConfidence} width="w-14" /></td>
+                          <td className="px-5 py-4"><p className="text-xs text-muted-foreground">{item.timeWaiting}</p></td>
+                          <td className="px-5 py-4">
+                            {!isDrafting && <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <SectionHeader label="AI Decisions" meta="Last 24h" />
+            <div className="grid grid-cols-2 gap-4">
+              {aiDecisions.map((d) => {
+                const cfg = outcomeConfig[d.outcome];
+                const Icon = cfg.icon;
+                return (
+                  <div key={d.id} className={`rounded-xl border p-5 ${cfg.bg}`}>
+                    <div className="flex items-start gap-3">
+                      <Icon className={`w-5 h-5 ${cfg.color} mt-0.5 flex-shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-relaxed">{d.text}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="text-xs text-muted-foreground">{d.confidence}% confidence</span>
+                          <span className="text-xs text-muted-foreground">·</span>
+                          <span className="text-xs text-muted-foreground">{d.time}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+        </div>
+      </main>
+    </>
   );
 }
