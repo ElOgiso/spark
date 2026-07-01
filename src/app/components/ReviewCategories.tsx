@@ -1,5 +1,3 @@
-import { Pencil, Video, Rocket, CheckCircle2, XCircle } from "lucide-react";
-
 type Category =
   | "all"
   | "creative"

@@ -4,8 +4,6 @@ import { TopBar } from "./TopBar";
 import {
   Sparkles,
   TrendingUp,
-  Heart,
-  Eye,
   Users,
   Palette,
   Mic,

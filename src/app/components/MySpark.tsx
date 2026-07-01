@@ -108,6 +108,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
     { type: "rule", text: "Avoid Western examples without local Nigerian context equivalent" },
   ];
 
+  const aMode = automationConfig[automationMode];
+  const pMode = productionConfig[productionMode];
+
   return (
     <>
       <TopBar workspaceName="My Spark" />
@@ -119,6 +122,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             <p className="text-muted-foreground mt-1">Your brand's intelligence profile — the brain behind every production</p>
           </div>
 
+          {/* Brand Identity */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Brand Identity</h2>
             <div className="rounded-xl border border-border bg-card p-8">
@@ -142,6 +146,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Content Pillars */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Content Pillars</h2>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -166,6 +171,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Character & Voice */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Character & Voice</h2>
             <div className="rounded-xl border border-border bg-card p-8">
@@ -180,7 +186,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     <p className="text-sm text-muted-foreground">{character.style}</p>
                     <div className="flex flex-wrap gap-2">
                       {character.traits.map((trait) => (
-                        <span key={trait} className="px-2.5 py-1 rounded-lg bg-accent/20 text-xs font-medium">{trait}</span>
+                        <span key={trait} className="px-2.5 py-1 rounded-lg bg-accent/20 text-xs font-medium">
+                          {trait}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -193,11 +201,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         <p className="text-sm font-medium font-mono">{character.voice.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{character.voice.language}</p>
                       </div>
-                      {character.voice.locked && (
-                        <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-success/20 text-success text-xs font-medium">
-                          <Lock className="w-2.5 h-2.5" /> Locked
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {character.voice.locked && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-success/20 text-success text-xs font-medium">
+                            <Lock className="w-2.5 h-2.5" /> Locked
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">{character.voice.tone}</p>
                     <button className="w-full py-2 rounded-lg bg-background/50 hover:bg-background text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-border/50">
@@ -210,6 +220,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Audience */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Audience Profile</h2>
             <div className="rounded-xl border border-border bg-card p-8">
@@ -244,6 +255,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Tone Matrix */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Tone & Style</h2>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -253,7 +265,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   <button
                     key={t.label}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      t.active ? "bg-foreground text-background" : "bg-background border border-border text-muted-foreground"
+                      t.active
+                        ? "bg-foreground text-background"
+                        : "bg-background border border-border text-muted-foreground hover:border-border"
                     }`}
                   >
                     {t.label}
@@ -263,11 +277,15 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Connected Accounts */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Connected Accounts</h2>
             <div className="rounded-xl border border-border bg-card overflow-hidden">
               {accounts.map((account, i) => (
-                <div key={account.platform} className={`flex items-center justify-between px-6 py-4 ${i < accounts.length - 1 ? "border-b border-border/50" : ""} hover:bg-accent/5 transition-colors`}>
+                <div
+                  key={account.platform}
+                  className={`flex items-center justify-between px-6 py-4 ${i < accounts.length - 1 ? "border-b border-border/50" : ""} hover:bg-accent/5 transition-colors`}
+                >
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${account.status === "connected" ? "bg-success" : "bg-muted-foreground/30"}`} />
                     <div>
@@ -288,6 +306,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Production Mode */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Production Mode</h2>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -297,8 +316,18 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   const cfg = productionConfig[mode];
                   const isActive = productionMode === mode;
                   return (
-                    <button key={mode} onClick={() => setProductionMode(mode)} className={`p-4 rounded-xl border text-left transition-all duration-200 ${isActive ? "bg-accent/20 border-accent/40" : "bg-background border-border hover:border-accent/30"}`}>
-                      <p className={`text-sm font-medium mb-1 ${isActive ? "text-foreground" : "text-muted-foreground"}`}>{cfg.label}</p>
+                    <button
+                      key={mode}
+                      onClick={() => setProductionMode(mode)}
+                      className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                        isActive
+                          ? "bg-accent/20 border-accent/40"
+                          : "bg-background border-border hover:border-accent/30"
+                      }`}
+                    >
+                      <p className={`text-sm font-medium mb-1 ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+                        {cfg.label}
+                      </p>
                       <p className="text-xs text-muted-foreground mb-2">{cfg.desc}</p>
                       <p className={`text-xs font-medium ${isActive ? "text-accent-foreground" : "text-muted-foreground"}`}>{cfg.time}</p>
                     </button>
@@ -308,6 +337,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Automation Mode */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Automation Mode</h2>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -317,7 +347,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   const cfg = automationConfig[mode];
                   const isActive = automationMode === mode;
                   return (
-                    <button key={mode} onClick={() => setAutomationMode(mode)} className={`p-4 rounded-xl border text-left transition-all duration-200 ${isActive ? `${cfg.bg} ${cfg.border}` : "bg-background border-border hover:border-accent/30"}`}>
+                    <button
+                      key={mode}
+                      onClick={() => setAutomationMode(mode)}
+                      className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                        isActive ? `${cfg.bg} ${cfg.border}` : "bg-background border-border hover:border-accent/30"
+                      }`}
+                    >
                       <p className={`text-sm font-medium mb-1 ${isActive ? cfg.color : "text-muted-foreground"}`}>{cfg.label}</p>
                       <p className="text-xs text-muted-foreground">{cfg.desc}</p>
                     </button>
@@ -327,6 +363,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
+          {/* Memory & Brand Rules */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Memory & Brand Rules</h2>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -339,14 +376,23 @@ export function MySpark({ onNavigate }: MySparkProps) {
               </div>
               <div className="space-y-2">
                 {memoryItems.map((item, i) => (
-                  <div key={i} className={`flex items-start gap-3 p-3.5 rounded-lg border ${item.type === "learned" ? "bg-accent/10 border-accent/20" : "bg-background border-border"}`}>
+                  <div
+                    key={i}
+                    className={`flex items-start gap-3 p-3.5 rounded-lg border ${
+                      item.type === "learned"
+                        ? "bg-accent/10 border-accent/20"
+                        : "bg-background border-border"
+                    }`}
+                  >
                     {item.type === "learned" ? (
                       <Sparkles className="w-3.5 h-3.5 text-accent-foreground mt-0.5 flex-shrink-0" />
                     ) : (
                       <Shield className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                     )}
                     <p className="text-sm flex-1">{item.text}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded ${item.type === "learned" ? "bg-accent/20 text-accent-foreground" : "bg-muted/40 text-muted-foreground"}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      item.type === "learned" ? "bg-accent/20 text-accent-foreground" : "bg-muted/40 text-muted-foreground"
+                    }`}>
                       {item.type === "learned" ? "Learned" : "Rule"}
                     </span>
                   </div>

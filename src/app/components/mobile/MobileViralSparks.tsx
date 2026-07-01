@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Flame, TrendingUp, Zap, Users, Clock, CheckCircle2, Loader2, X, Shield, Sparkles, ArrowRight } from "lucide-react";
-import { Button, StatusChip, ConfidenceBar } from "../ds";
 
 type FilterTab = "all" | "hot" | "rising" | "niche";
 type DrawerState = "idle" | "creating" | "created";
@@ -29,7 +28,11 @@ const sparks: MobileSpark[] = [
   { id: "s5", title: "Behind the Algorithm: How Naija Creators Get 1M Views", whyNow: "Consistent growth pattern identified across 12 accounts — teachable system", hookAngle: "'The strategy that works with zero followers'", suggestedHook: "\"These creators hit 1M views and none of their videos ever went viral.\"", platforms: ["YouTube"], audienceEmotion: "Aspiration", brandFitScore: 93, riskLevel: "Low", suggestedFormat: "Long-form deep-dive", productionTime: "24–48 hours", category: "rising", timeWindow: "14-day window" },
 ];
 
-const riskVariant = { Low: "low-risk", Medium: "medium-risk", High: "needs-attention" } as const;
+const riskStyle: Record<string, string> = {
+  Low: "bg-success/10 text-success",
+  Medium: "bg-warning/10 text-warning",
+  High: "bg-destructive/10 text-destructive",
+};
 
 export function MobileViralSparks() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
@@ -38,13 +41,18 @@ export function MobileViralSparks() {
   const [createdSparks, setCreatedSparks] = useState<Set<string>>(new Set());
 
   const filtered = activeFilter === "all" ? sparks : sparks.filter((s) => s.category === activeFilter);
+
   const filters = [
     { id: "all" as const, label: "All", count: sparks.length },
     { id: "hot" as const, label: "Hot", count: sparks.filter((s) => s.category === "hot").length },
     { id: "rising" as const, label: "Rising", count: sparks.filter((s) => s.category === "rising").length },
   ];
 
-  const handleCreate = (spark: MobileSpark) => { setSelectedSpark(spark); setDrawerState("idle"); };
+  const handleCreate = (spark: MobileSpark) => {
+    setSelectedSpark(spark);
+    setDrawerState("idle");
+  };
+
   const handleConfirm = () => {
     setDrawerState("creating");
     setTimeout(() => {
@@ -52,11 +60,16 @@ export function MobileViralSparks() {
       if (selectedSpark) setCreatedSparks((prev) => new Set([...prev, selectedSpark.id]));
     }, 2000);
   };
-  const closeDrawer = () => { setSelectedSpark(null); setDrawerState("idle"); };
+
+  const closeDrawer = () => {
+    setSelectedSpark(null);
+    setDrawerState("idle");
+  };
 
   return (
     <>
       <div className="pb-24 px-4 pt-6 space-y-5">
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-medium">Viral Sparks</h1>
@@ -68,87 +81,128 @@ export function MobileViralSparks() {
           </div>
         </div>
 
+        {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-border bg-card p-3 text-center">
+          <div className="rounded-xl border border-border bg-card p-3">
             <p className="text-xl font-medium">{sparks.length}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Ready</p>
           </div>
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-center">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
             <p className="text-xl font-medium text-destructive">{sparks.filter((s) => s.category === "hot").length}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Hot window</p>
           </div>
-          <div className="rounded-xl border border-success/20 bg-success/5 p-3 text-center">
+          <div className="rounded-xl border border-success/20 bg-success/5 p-3">
             <p className="text-xl font-medium text-success">{createdSparks.size}</p>
             <p className="text-xs text-muted-foreground mt-0.5">In production</p>
           </div>
         </div>
 
+        {/* Filters */}
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
           {filters.map((f) => (
             <button
               key={f.id}
               onClick={() => setActiveFilter(f.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium flex-shrink-0 transition-all ${
-                activeFilter === f.id ? "bg-accent text-foreground" : "bg-card border border-border text-muted-foreground"
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all ${
+                activeFilter === f.id
+                  ? "bg-accent text-foreground"
+                  : "bg-card border border-border text-muted-foreground"
               }`}
             >
               {f.id === "hot" && <Flame className="w-3.5 h-3.5 text-destructive" />}
               {f.id === "rising" && <TrendingUp className="w-3.5 h-3.5 text-warning" />}
               {f.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded ${activeFilter === f.id ? "bg-background/40" : "bg-muted/50"}`}>{f.count}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${activeFilter === f.id ? "bg-background/40" : "bg-muted/50"}`}>
+                {f.count}
+              </span>
             </button>
           ))}
         </div>
 
+        {/* Spark Cards */}
         <div className="space-y-4">
           {filtered.map((spark) => {
             const isCreated = createdSparks.has(spark.id);
             return (
-              <div key={spark.id} className={`rounded-xl border bg-card p-4 transition-all ${isCreated ? "border-success/30 bg-success/5" : "border-border"}`}>
+              <div
+                key={spark.id}
+                className={`rounded-xl border bg-card p-4 transition-all ${isCreated ? "border-success/30 bg-success/5" : "border-border"}`}
+              >
                 <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2">
-                    {spark.category === "hot" && <StatusChip variant="hot" label="Hot" />}
-                    {spark.category === "rising" && <StatusChip variant="rising" label="Rising" />}
-                    {isCreated && <StatusChip variant="in-production" label="Drafting" />}
+                    {spark.category === "hot" && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">
+                        <Flame className="w-3 h-3" /> Hot
+                      </span>
+                    )}
+                    {spark.category === "rising" && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded-full">
+                        <TrendingUp className="w-3 h-3" /> Rising
+                      </span>
+                    )}
+                    {isCreated && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 px-2 py-0.5 rounded-full">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Drafting
+                      </span>
+                    )}
                     {!isCreated && <span className="text-xs text-muted-foreground">{spark.timeWindow}</span>}
                   </div>
-                  <span className={`text-sm font-medium ${spark.brandFitScore >= 90 ? "text-success" : "text-warning"}`}>{spark.brandFitScore}%</span>
+                  <span className={`text-sm font-medium ${spark.brandFitScore >= 90 ? "text-success" : "text-warning"}`}>
+                    {spark.brandFitScore}%
+                  </span>
                 </div>
+
                 <h3 className="text-sm font-medium leading-snug mb-2.5">{spark.title}</h3>
                 <p className="text-xs text-muted-foreground mb-3 leading-relaxed line-clamp-2">{spark.whyNow}</p>
+
                 <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 mb-3">
                   <p className="text-xs text-muted-foreground mb-0.5">Hook angle</p>
                   <p className="text-xs font-medium">{spark.hookAngle}</p>
                 </div>
+
                 <div className="flex flex-wrap gap-1.5 mb-4">
                   {spark.platforms.map((p) => (
                     <span key={p} className="text-xs px-2 py-0.5 rounded bg-muted/40 text-muted-foreground">{p}</span>
                   ))}
                   <span className="text-xs px-2 py-0.5 rounded bg-muted/40 text-muted-foreground">{spark.suggestedFormat}</span>
-                  <StatusChip variant={riskVariant[spark.riskLevel]} label={`${spark.riskLevel} risk`} />
+                  <span className={`text-xs px-2 py-0.5 rounded ${riskStyle[spark.riskLevel]}`}>{spark.riskLevel}</span>
                 </div>
+
                 {isCreated ? (
-                  <Button variant="secondary" size="lg" fullWidth icon={<CheckCircle2 className="w-4 h-4" />} className="border border-success/30 bg-success/10 text-success hover:bg-success/15">
+                  <div className="w-full py-3 rounded-xl bg-success/10 border border-success/20 text-success text-sm font-medium flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
                     In Production
-                  </Button>
+                  </div>
                 ) : (
-                  <Button variant="primary" size="lg" fullWidth icon={<Zap className="w-4 h-4" />} onClick={() => handleCreate(spark)}>
+                  <button
+                    onClick={() => handleCreate(spark)}
+                    className="w-full py-3 rounded-xl bg-foreground text-background text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                  >
+                    <Zap className="w-4 h-4" />
                     Create Production
-                  </Button>
+                  </button>
                 )}
               </div>
             );
           })}
         </div>
+
       </div>
 
+      {/* Mobile Production Drawer — bottom sheet */}
       {selectedSpark && (
         <>
-          <div className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm" onClick={drawerState === "idle" ? closeDrawer : undefined} />
+          <div
+            className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm"
+            onClick={drawerState === "idle" ? closeDrawer : undefined}
+          />
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Handle */}
             <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
               <div className="w-10 h-1 rounded-full bg-border" />
             </div>
+
+            {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
               <div>
                 <h2 className="text-base font-medium">Create Production</h2>
@@ -158,6 +212,8 @@ export function MobileViralSparks() {
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>
+
+            {/* Content */}
             <div className="flex-1 overflow-y-auto">
               {drawerState === "created" ? (
                 <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -167,7 +223,12 @@ export function MobileViralSparks() {
                   <h3 className="text-lg font-medium mb-2">Production created</h3>
                   <p className="text-sm text-muted-foreground mb-1">Spark is drafting now. Ready in approximately <span className="text-foreground font-medium">{selectedSpark.productionTime}</span>.</p>
                   <p className="text-xs text-muted-foreground mb-8">You'll see it in Review when it's ready.</p>
-                  <Button variant="secondary" size="lg" fullWidth onClick={closeDrawer}>Back to Viral Sparks</Button>
+                  <button
+                    onClick={closeDrawer}
+                    className="w-full py-3.5 rounded-xl bg-foreground text-background text-sm font-medium"
+                  >
+                    Back to Viral Sparks
+                  </button>
                 </div>
               ) : drawerState === "creating" ? (
                 <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -179,6 +240,7 @@ export function MobileViralSparks() {
                 </div>
               ) : (
                 <div className="p-5 space-y-4">
+                  {/* Opportunity */}
                   <div className="p-3.5 rounded-xl bg-background border border-border">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs text-muted-foreground">{selectedSpark.timeWindow}</span>
@@ -186,10 +248,14 @@ export function MobileViralSparks() {
                     </div>
                     <p className="text-sm font-medium leading-snug">{selectedSpark.title}</p>
                   </div>
+
+                  {/* Hook */}
                   <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Suggested Hook</p>
                     <p className="text-sm leading-relaxed">{selectedSpark.suggestedHook}</p>
                   </div>
+
+                  {/* Format + Time */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="p-3 rounded-xl bg-background border border-border">
                       <p className="text-xs text-muted-foreground mb-1">Format</p>
@@ -200,11 +266,15 @@ export function MobileViralSparks() {
                       <p className="text-sm font-medium">{selectedSpark.productionTime}</p>
                     </div>
                   </div>
+
+                  {/* Platforms */}
                   <div className="flex flex-wrap gap-2">
                     {selectedSpark.platforms.map((p) => (
                       <span key={p} className="text-xs px-2.5 py-1 rounded-lg bg-accent/20 font-medium">{p}</span>
                     ))}
                   </div>
+
+                  {/* What Spark Prepares */}
                   <div className="rounded-xl bg-background border border-border p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">What Spark Will Prepare</p>
                     <div className="space-y-2">
@@ -216,7 +286,13 @@ export function MobileViralSparks() {
                       ))}
                     </div>
                   </div>
-                  <StatusChip variant={riskVariant[selectedSpark.riskLevel]} label={`${selectedSpark.riskLevel} Risk`} className="w-full justify-center py-2" />
+
+                  {/* Risk */}
+                  <div className={`flex items-center gap-2.5 p-3.5 rounded-xl border ${selectedSpark.riskLevel === "Low" ? "bg-success/5 border-success/20 text-success" : "bg-warning/5 border-warning/20 text-warning"}`}>
+                    <Shield className="w-4 h-4 flex-shrink-0" />
+                    <p className="text-xs">Risk Level: {selectedSpark.riskLevel}</p>
+                  </div>
+
                   <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-border bg-background">
                     <Sparkles className="w-4 h-4 text-accent-foreground mt-0.5 flex-shrink-0" />
                     <p className="text-xs text-muted-foreground">Creative review required before production begins — you'll approve the storyboard first</p>
@@ -224,11 +300,17 @@ export function MobileViralSparks() {
                 </div>
               )}
             </div>
+
+            {/* CTA */}
             {drawerState === "idle" && (
               <div className="p-4 border-t border-border flex-shrink-0">
-                <Button variant="primary" size="xl" fullWidth icon={<Zap className="w-4 h-4" />} onClick={handleConfirm}>
+                <button
+                  onClick={handleConfirm}
+                  className="w-full py-4 rounded-xl bg-foreground text-background text-sm font-medium flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
+                >
+                  <Zap className="w-4 h-4" />
                   Confirm & Start Production
-                </Button>
+                </button>
                 <p className="text-xs text-muted-foreground text-center mt-2">Spark will notify you when it's ready for review</p>
               </div>
             )}

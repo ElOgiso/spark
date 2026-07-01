@@ -11,7 +11,6 @@ import {
   Sparkles,
   ArrowRight,
 } from "lucide-react";
-import { StatusChip, ConfidenceBar, Button } from "../ds";
 
 export function MobileAnalytics() {
   const topPerformers = [
@@ -52,12 +51,13 @@ export function MobileAnalytics() {
   ];
 
   return (
-    <div className="pb-24 px-4 pt-6 space-y-5">
+    <div className="pb-24 px-4 pt-6 space-y-6">
       <div>
         <h1 className="text-2xl font-medium">Analytics</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">What worked, what failed, what's next</p>
+        <p className="text-sm text-muted-foreground mt-1">What worked, what failed, what's next</p>
       </div>
 
+      {/* Quick Metrics */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Views", value: "24.8M", icon: Eye, change: "+18%" },
@@ -76,14 +76,15 @@ export function MobileAnalytics() {
         })}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* What Worked */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-4 h-4 text-success" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What Worked</h2>
+          <h2 className="text-base font-medium">What Worked</h2>
         </div>
         <div className="space-y-3">
           {topPerformers.map((c) => (
-            <div key={c.id} className="p-3 rounded-xl bg-success/5 border border-success/15">
+            <div key={c.id} className="p-3 rounded-lg bg-success/5 border border-success/15">
               <p className="text-sm font-medium mb-1 line-clamp-2">{c.title}</p>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
                 <span>{c.platform}</span>
@@ -96,14 +97,15 @@ export function MobileAnalytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* What Failed */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <TrendingDown className="w-4 h-4 text-warning" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What Failed</h2>
+          <h2 className="text-base font-medium">What Failed</h2>
         </div>
         <div className="space-y-3">
           {failures.map((f) => (
-            <div key={f.id} className="p-3 rounded-xl bg-warning/5 border border-warning/15">
+            <div key={f.id} className="p-3 rounded-lg bg-warning/5 border border-warning/15">
               <p className="text-sm font-medium mb-1 line-clamp-2">{f.title}</p>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
                 <span>{f.platform}</span>
@@ -115,10 +117,11 @@ export function MobileAnalytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* Hook Patterns */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Target className="w-4 h-4 text-accent-foreground" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Best Hook Patterns</h2>
+          <h2 className="text-base font-medium">Best Hook Patterns</h2>
         </div>
         <div className="space-y-2">
           {hookPatterns.map((h, i) => (
@@ -131,14 +134,15 @@ export function MobileAnalytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* Audience Signals */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Heart className="w-4 h-4 text-accent-foreground" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Audience Signals</h2>
+          <h2 className="text-base font-medium">Audience Signals</h2>
         </div>
         <div className="space-y-2.5">
           {audienceSignals.map((s, i) => (
-            <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl border ${s.positive ? "bg-success/5 border-success/15" : "bg-warning/5 border-warning/15"}`}>
+            <div key={i} className={`flex items-start gap-2.5 p-3 rounded-lg ${s.positive ? "bg-success/5 border border-success/10" : "bg-warning/5 border border-warning/10"}`}>
               {s.positive
                 ? <CheckCircle2 className="w-3.5 h-3.5 text-success mt-0.5 flex-shrink-0" />
                 : <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 flex-shrink-0" />
@@ -149,14 +153,15 @@ export function MobileAnalytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* Next Productions */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Lightbulb className="w-4 h-4 text-accent-foreground" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Create Next</h2>
+          <h2 className="text-base font-medium">Create Next</h2>
         </div>
         <div className="space-y-3">
           {nextProductions.map((p, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20">
+            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-accent/10 border border-accent/20">
               <span className={`text-sm font-medium flex-shrink-0 ${p.score >= 90 ? "text-success" : "text-warning"}`}>{p.score}%</span>
               <p className="text-sm flex-1 line-clamp-2">{p.title}</p>
               <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -165,14 +170,15 @@ export function MobileAnalytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* Memory Updates */}
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Brain className="w-4 h-4 text-accent-foreground" />
-          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Memory Updated</h2>
+          <h2 className="text-base font-medium">Memory Updated</h2>
         </div>
         <div className="space-y-2">
           {memoryUpdates.map((m, i) => (
-            <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl border ${
+            <div key={i} className={`flex items-start gap-2.5 p-3 rounded-lg border ${
               m.type === "new" ? "bg-success/5 border-success/15" :
               m.type === "flagged" ? "bg-warning/5 border-warning/15" :
               "bg-background border-border"
@@ -190,6 +196,7 @@ export function MobileAnalytics() {
           ))}
         </div>
       </div>
+
     </div>
   );
 }

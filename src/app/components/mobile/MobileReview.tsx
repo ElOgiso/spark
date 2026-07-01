@@ -1,8 +1,8 @@
 import { useState } from "react";
 import {
-  Pencil, Video, Rocket, CheckCircle2, X, RotateCw,
+  Pencil, Video, Rocket, CheckCircle2, X, RotateCw, Check,
   Sparkles, Clock, ArrowLeft, Loader2, AlertTriangle, Brain,
-  ChevronRight, Calendar,
+  ChevronRight, Download, Calendar,
 } from "lucide-react";
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
@@ -77,8 +77,12 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-4 py-4 flex items-center gap-3">
-        <button onClick={onBack} className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0 active:bg-accent/40 transition-colors">
+        <button
+          onClick={onBack}
+          className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0 active:bg-accent/40 transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
@@ -88,11 +92,16 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
         <StatusChip variant={stageToChip[item.stage]} />
       </div>
 
+      {/* Content */}
       <div className="flex-1 overflow-y-auto pb-36 px-4 pt-5 space-y-4">
+
+        {/* Title + AI score */}
         <div>
           <h1 className="text-xl font-medium leading-snug mb-3">{item.title}</h1>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${item.aiConfidence >= 80 ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
+              item.aiConfidence >= 80 ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+            }`}>
               <Sparkles className="w-3.5 h-3.5" />
               {item.aiConfidence}% AI confidence
             </span>
@@ -102,6 +111,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
           </div>
         </div>
 
+        {/* Preview */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="aspect-video bg-muted/40 flex items-center justify-center">
             <div className="text-center">
@@ -111,6 +121,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
           </div>
         </div>
 
+        {/* Details */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Details</p>
           {[
@@ -126,6 +137,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
           ))}
         </div>
 
+        {/* AI assessment */}
         <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
           <div className="flex items-center gap-2 mb-3">
             <Brain className="w-4 h-4 text-accent-foreground" />
@@ -145,16 +157,30 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
             ))}
           </div>
         </div>
+
       </div>
 
+      {/* Fixed action bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
-        <Button variant="approve" size="xl" fullWidth icon={<CheckCircle2 className="w-5 h-5" />} onClick={() => setApproved(true)}>
+        <Button
+          variant="approve"
+          size="xl"
+          fullWidth
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          onClick={() => setApproved(true)}
+        >
           Approve
         </Button>
         <div className="grid grid-cols-3 gap-2">
-          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />}>Regenerate</Button>
-          <Button variant="schedule" size="md" icon={<Calendar className="w-4 h-4" />}>Schedule</Button>
-          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />}>Reject</Button>
+          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />}>
+            Regenerate
+          </Button>
+          <Button variant="schedule" size="md" icon={<Calendar className="w-4 h-4" />}>
+            Schedule
+          </Button>
+          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />}>
+            Reject
+          </Button>
         </div>
       </div>
     </div>
@@ -169,7 +195,10 @@ export function MobileReview() {
     return <ReviewDetail item={selectedReview} onBack={() => setSelectedReview(null)} />;
   }
 
-  const filtered = activeFilter === "all" ? reviews : reviews.filter((r) => r.stage === activeFilter);
+  const filtered = activeFilter === "all"
+    ? reviews
+    : reviews.filter((r) => r.stage === activeFilter);
+
   const counts = Object.fromEntries(
     stageTabs.map(({ id }) => [id, id === "all" ? reviews.length : reviews.filter(r => r.stage === id).length])
   ) as Record<StageFilter, number>;
@@ -177,6 +206,7 @@ export function MobileReview() {
   return (
     <div className="pb-24 px-4 pt-6 space-y-5">
 
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-medium">Review</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -184,7 +214,7 @@ export function MobileReview() {
         </p>
       </div>
 
-      {/* Stage summary strip */}
+      {/* Stage summary chips */}
       <div className="grid grid-cols-5 gap-2">
         {(["drafting", "ready", "needs_edit", "approved", "scheduled"] as const).map((stage) => {
           const count = reviews.filter(r => r.stage === stage).length;
@@ -193,7 +223,9 @@ export function MobileReview() {
             <button
               key={stage}
               onClick={() => setActiveFilter(stage)}
-              className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all ${activeFilter === stage ? "border-accent/60 bg-accent/10" : "border-border bg-card"}`}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all ${
+                activeFilter === stage ? "border-accent/60 bg-accent/10" : "border-border bg-card"
+              }`}
             >
               <p className={`text-lg font-medium ${activeFilter === stage ? "text-foreground" : "text-muted-foreground"}`}>{count}</p>
               <StatusChip variant={stageToChip[stage]} label={stage === "needs_edit" ? "Edit" : undefined} className="text-[10px] px-1.5 py-0.5" />
@@ -208,21 +240,29 @@ export function MobileReview() {
           <button
             key={tab.id}
             onClick={() => setActiveFilter(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all flex-shrink-0 ${activeFilter === tab.id ? "bg-accent text-foreground" : "bg-card border border-border text-muted-foreground"}`}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all flex-shrink-0 ${
+              activeFilter === tab.id
+                ? "bg-accent text-foreground"
+                : "bg-card border border-border text-muted-foreground"
+            }`}
           >
             {tab.label}
             {counts[tab.id] > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded ${activeFilter === tab.id ? "bg-background/40" : "bg-muted/50"}`}>{counts[tab.id]}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${activeFilter === tab.id ? "bg-background/40" : "bg-muted/50"}`}>
+                {counts[tab.id]}
+              </span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Cards */}
+      {/* Review cards */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <p className="text-sm font-medium text-muted-foreground mb-1">Nothing here</p>
-          <p className="text-xs text-muted-foreground/60">{activeFilter === "drafting" ? "Spark isn't generating anything right now." : "No items in this stage."}</p>
+          <p className="text-xs text-muted-foreground/60">
+            {activeFilter === "drafting" ? "Spark isn't generating anything right now." : "No items in this stage."}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -239,34 +279,48 @@ export function MobileReview() {
                 }`}
               >
                 <div className="flex items-start gap-3">
+                  {/* Type icon */}
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                     review.type === "creative" ? "bg-accent/30" :
-                    review.type === "production" ? "bg-warning/15" : "bg-muted/40"
+                    review.type === "production" ? "bg-warning/15" :
+                    "bg-muted/40"
                   }`}>
-                    {isDrafting ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                    {isDrafting
+                      ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
                       : review.type === "creative" ? <Pencil className="w-5 h-5 text-accent-foreground" />
                       : review.type === "production" ? <Video className="w-5 h-5 text-warning" />
                       : <Rocket className="w-5 h-5 text-muted-foreground" />
                     }
                   </div>
+
                   <div className="flex-1 min-w-0">
+                    {/* Title */}
                     <p className="text-sm font-medium leading-snug mb-1.5 line-clamp-2">{review.title}</p>
+
+                    {/* Account + type */}
                     <p className="text-xs text-muted-foreground mb-2.5">
-                      {review.account} · {typeLabel[review.type]}{isDrafting && " · Spark is generating…"}
+                      {review.account} · {typeLabel[review.type]}
+                      {isDrafting && " · Spark is generating…"}
                     </p>
+
+                    {/* Stage + confidence + time */}
                     <div className="flex items-center gap-3 flex-wrap">
                       <StatusChip variant={stageToChip[review.stage]} />
                       {!isDrafting && <ConfidenceBar value={review.aiConfidence} width="w-14" />}
                       <span className="text-xs text-muted-foreground">{review.timeWaiting}</span>
                     </div>
                   </div>
-                  {!isDrafting && <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />}
+
+                  {!isDrafting && (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
+                  )}
                 </div>
               </button>
             );
           })}
         </div>
       )}
+
     </div>
   );
 }

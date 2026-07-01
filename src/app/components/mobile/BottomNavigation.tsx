@@ -1,6 +1,6 @@
-import { Zap, CheckSquare, Workflow, BarChart3, MoreHorizontal } from "lucide-react";
+import { Zap, TrendingUp, CheckSquare, BarChart3, MoreHorizontal } from "lucide-react";
 
-type NavTab = "command" | "review" | "flow" | "insights" | "more";
+type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more";
 
 interface BottomNavigationProps {
   activeTab: NavTab;
@@ -9,10 +9,10 @@ interface BottomNavigationProps {
 }
 
 const navItems = [
-  { id: "command" as const, label: "Command", icon: Zap },
+  { id: "spark" as const, label: "Spark", icon: Zap },
+  { id: "viral-sparks" as const, label: "Viral", icon: TrendingUp },
   { id: "review" as const, label: "Review", icon: CheckSquare },
-  { id: "flow" as const, label: "Flow", icon: Workflow },
-  { id: "insights" as const, label: "Insights", icon: BarChart3 },
+  { id: "analytics" as const, label: "Analytics", icon: BarChart3 },
   { id: "more" as const, label: "More", icon: MoreHorizontal },
 ];
 

@@ -135,17 +135,17 @@ const chipConfig: Record<ChipVariant, ChipConfig> = {
   "needs-edit":     { label: "Needs Edit",        className: "bg-destructive/10 text-destructive border-destructive/25" },
   approved:         { label: "Approved",          className: "bg-success/10 text-success border-success/25",             icon: CheckCircle2 },
   scheduled:        { label: "Scheduled",         className: "bg-accent/20 text-accent-foreground border-accent/35",     icon: Calendar },
-  "export-ready":   { label: "Export Ready",      className: "bg-accent/15 text-accent-foreground border-accent/25",     icon: Package },
-  published:        { label: "Published",         className: "bg-success/10 text-success border-success/20",             icon: CheckCircle2 },
+  "export-ready":   { label: "Export Ready",      className: "bg-accent/15 text-accent-foreground border-accent/25",    icon: Package },
+  published:        { label: "Published",         className: "bg-success/10 text-success border-success/20",            icon: CheckCircle2 },
   failed:           { label: "Failed",            className: "bg-destructive/10 text-destructive border-destructive/20", icon: XCircle },
   "high-fit":       { label: "High Fit",          className: "bg-success/10 text-success border-success/20" },
   "medium-risk":    { label: "Medium Risk",       className: "bg-warning/10 text-warning border-warning/20" },
   "low-risk":       { label: "Low Risk",          className: "bg-success/10 text-success border-success/15" },
-  "brand-safe":     { label: "Brand Safe",        className: "bg-success/10 text-success border-success/15",             icon: CheckCircle2 },
-  "needs-attention":{ label: "Needs Attention",   className: "bg-warning/10 text-warning border-warning/20",             icon: AlertTriangle },
+  "brand-safe":     { label: "Brand Safe",        className: "bg-success/10 text-success border-success/15",            icon: CheckCircle2 },
+  "needs-attention":{ label: "Needs Attention",   className: "bg-warning/10 text-warning border-warning/20",            icon: AlertTriangle },
   hot:              { label: "Hot",               className: "bg-destructive/10 text-destructive border-destructive/20", icon: Flame },
-  rising:           { label: "Rising",            className: "bg-warning/10 text-warning border-warning/20",             icon: TrendingUp },
-  "in-production":  { label: "In Production",     className: "bg-success/10 text-success border-success/20",             icon: Zap },
+  rising:           { label: "Rising",            className: "bg-warning/10 text-warning border-warning/20",            icon: TrendingUp },
+  "in-production":  { label: "In Production",     className: "bg-success/10 text-success border-success/20",            icon: Zap },
 };
 
 interface StatusChipProps {

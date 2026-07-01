@@ -43,13 +43,20 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.path);
+
           return (
             <button
               key={item.name}
               onClick={() => onNavigate?.(item.path)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
-                active ? "bg-accent text-nav-active shadow-sm" : "text-nav-foreground hover:bg-nav-hover hover:text-foreground"
-              }`}
+              className={`
+                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                transition-all duration-200
+                ${
+                  active
+                    ? "bg-accent text-nav-active shadow-sm"
+                    : "text-nav-foreground hover:bg-nav-hover hover:text-foreground"
+                }
+              `}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
               <span className="text-sm font-medium">{item.name}</span>

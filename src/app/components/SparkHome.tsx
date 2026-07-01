@@ -1,5 +1,6 @@
 import { TopBar } from "./TopBar";
 import { ActivityFeed } from "./ActivityFeed";
+import { SectionHeader, MetricCard, Button, FilterPill } from "./ds";
 import {
   Eye, DollarSign, TrendingUp, Video, Tv, Clapperboard,
   ArrowRight, Zap, Brain, Flame, AlertCircle, CheckCircle2,
@@ -115,6 +116,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
           {/* ── Command Briefing ── */}
           <div className="rounded-xl border border-border bg-card overflow-hidden">
+            {/* Header row */}
             <div className="px-8 pt-7 pb-5 flex items-start justify-between">
               <div>
                 <h1 className="text-2xl font-medium">{greeting}, Alex</h1>
@@ -139,6 +141,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
               </div>
             </div>
 
+            {/* Priority items */}
             <div className="border-t border-border/60">
               {priorityItems.map((item, i) => {
                 const Icon = item.icon;
@@ -178,7 +181,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
             </div>
             <div className="rounded-xl border border-border bg-card px-6 py-4">
               <div className="flex items-center gap-0">
-                {pipeline.map((stage) => (
+                {pipeline.map((stage, i) => (
                   <button
                     key={stage.stage}
                     onClick={() => onNavigate(stage.path)}
@@ -276,27 +279,20 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
           {/* ── Performance Metrics ── */}
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Performance Overview</h2>
+            <SectionHeader label="Performance Overview" />
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {metrics.map((m) => {
                 const Icon = m.icon;
                 return (
-                  <div
+                  <MetricCard
                     key={m.title}
-                    className={`rounded-xl border p-5 transition-all duration-200 hover:shadow-xl hover:shadow-black/10 bg-card ${(m as any).success ? "border-success/20" : "border-border"}`}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide leading-tight">{m.title}</p>
-                      <div className="rounded-lg bg-accent/30 p-1.5">
-                        <Icon className="w-3.5 h-3.5 text-foreground/80" />
-                      </div>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <h3 className="text-2xl font-medium tracking-tight">{m.value}</h3>
-                      {m.trend && <span className="text-xs font-medium text-success">{m.trend}</span>}
-                    </div>
-                    <p className="mt-1.5 text-xs text-muted-foreground">{m.subtitle}</p>
-                  </div>
+                    title={m.title}
+                    value={m.value}
+                    subtitle={m.subtitle}
+                    trend={m.trend}
+                    highlight={(m as any).success}
+                    icon={<Icon className="w-3.5 h-3.5 text-foreground/80" />}
+                  />
                 );
               })}
             </div>
@@ -304,7 +300,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
           {/* ── Activity ── */}
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Recent Activity</h2>
+            <SectionHeader label="Recent Activity" />
             <div className="rounded-xl border border-border bg-card p-6">
               <ActivityFeed activities={activities} />
             </div>

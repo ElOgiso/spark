@@ -29,6 +29,7 @@ interface ProductionItem {
   format: string;
 }
 
+// Map internal stage → DS ChipVariant
 const stageToChip: Record<Exclude<Stage, "all">, ChipVariant> = {
   drafting:     "drafting",
   ready:        "ready",
@@ -83,7 +84,11 @@ const aiDecisions = [
   { id: "d4", outcome: "approved" as const, text: "Approved publishing schedule — peak engagement window confirmed for Thursday 2 PM", confidence: 92, time: "1h ago" },
 ];
 
-const priorityColor = { high: "text-destructive", medium: "text-warning", low: "text-muted-foreground" };
+const priorityColor = {
+  high: "text-destructive",
+  medium: "text-warning",
+  low: "text-muted-foreground",
+};
 
 const outcomeConfig = {
   approved: { icon: CheckCircle2, color: "text-success",     bg: "bg-success/10 border-success/20" },
@@ -92,13 +97,13 @@ const outcomeConfig = {
 };
 
 const stageTabs: { id: Stage; label: string; icon: React.ComponentType<{className?: string}> }[] = [
-  { id: "all",          label: "All",          icon: LayoutList },
-  { id: "drafting",     label: "Drafting",     icon: Loader2 },
-  { id: "ready",        label: "Ready",        icon: Clock },
-  { id: "needs_edit",   label: "Needs Edit",   icon: AlertTriangle },
-  { id: "approved",     label: "Approved",     icon: CheckCircle2 },
-  { id: "scheduled",    label: "Scheduled",    icon: Calendar },
-  { id: "export_ready", label: "Export Ready", icon: Package },
+  { id: "all",          label: "All",            icon: LayoutList },
+  { id: "drafting",     label: "Drafting",       icon: Loader2 },
+  { id: "ready",        label: "Ready",          icon: Clock },
+  { id: "needs_edit",   label: "Needs Edit",     icon: AlertTriangle },
+  { id: "approved",     label: "Approved",       icon: CheckCircle2 },
+  { id: "scheduled",    label: "Scheduled",      icon: Calendar },
+  { id: "export_ready", label: "Export Ready",   icon: Package },
 ];
 
 function EmptyStageState({ stage }: { stage: Stage }) {
@@ -136,8 +141,12 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 
-          <PageHeader title="Review" subtitle="Control room — every production, every stage" />
+          <PageHeader
+            title="Review"
+            subtitle="Control room — every production, every stage"
+          />
 
+          {/* Pipeline Overview */}
           <section>
             <SectionHeader label="Pipeline Overview" />
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
@@ -145,6 +154,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                 const Icon = stageIcons[key];
                 const count = stageCounts[key] ?? 0;
                 const isActive = activeStage === key;
+                const isDrafting = key === "drafting";
                 return (
                   <button
                     key={key}
@@ -154,18 +164,23 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                     }`}
                   >
                     <div className="mb-2.5">
-                      <Icon className={`w-4 h-4 ${isActive ? "text-current" : "text-muted-foreground"} ${key === "drafting" && count > 0 ? "animate-spin" : ""}`} />
+                      <Icon className={`w-4 h-4 ${isActive ? "text-current" : "text-muted-foreground"} ${isDrafting && count > 0 ? "animate-spin" : ""}`} />
                     </div>
                     <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
-                    <p className="text-3xl font-medium tracking-tight">{count}</p>
+                    <p className={`text-3xl font-medium tracking-tight ${isActive ? "text-foreground" : "text-foreground"}`}>
+                      {count}
+                    </p>
                   </button>
                 );
               })}
             </div>
           </section>
 
+          {/* Productions Table */}
           <section>
             <SectionHeader label="Productions" />
+
+            {/* Stage Filter Pills */}
             <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
               {stageTabs.map((tab) => {
                 const Icon = tab.icon;
@@ -191,7 +206,9 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                   <thead>
                     <tr className="border-b border-border/50 bg-background/50">
                       {["Title", "Account", "Type", "Format", "Priority", "Stage", "AI Score", "Time", ""].map((h) => (
-                        <th key={h} className="text-left px-5 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">{h}</th>
+                        <th key={h} className="text-left px-5 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -214,17 +231,33 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                               </div>
                             </div>
                           </td>
-                          <td className="px-5 py-4"><p className="text-sm text-muted-foreground">{item.account}</p></td>
-                          <td className="px-5 py-4"><p className="text-xs capitalize text-muted-foreground">{item.reviewType}</p></td>
-                          <td className="px-5 py-4"><p className="text-xs text-muted-foreground">{item.format}</p></td>
                           <td className="px-5 py-4">
-                            <span className={`text-xs font-medium capitalize ${priorityColor[item.priority]}`}>{item.priority}</span>
+                            <p className="text-sm text-muted-foreground">{item.account}</p>
                           </td>
-                          <td className="px-5 py-4"><StatusChip variant={stageToChip[item.stage]} /></td>
-                          <td className="px-5 py-4"><ConfidenceBar value={item.aiConfidence} width="w-14" /></td>
-                          <td className="px-5 py-4"><p className="text-xs text-muted-foreground">{item.timeWaiting}</p></td>
                           <td className="px-5 py-4">
-                            {!isDrafting && <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />}
+                            <p className="text-xs capitalize text-muted-foreground">{item.reviewType}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-xs text-muted-foreground">{item.format}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className={`text-xs font-medium capitalize ${priorityColor[item.priority]}`}>
+                              {item.priority}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            <StatusChip variant={stageToChip[item.stage]} />
+                          </td>
+                          <td className="px-5 py-4">
+                            <ConfidenceBar value={item.aiConfidence} width="w-14" />
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-xs text-muted-foreground">{item.timeWaiting}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            {!isDrafting && (
+                              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                            )}
                           </td>
                         </tr>
                       );
@@ -235,6 +268,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
             </div>
           </section>
 
+          {/* AI Decisions */}
           <section>
             <SectionHeader label="AI Decisions" meta="Last 24h" />
             <div className="grid grid-cols-2 gap-4">

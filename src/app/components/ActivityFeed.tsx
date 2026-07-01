@@ -4,7 +4,6 @@ import {
   Video,
   Rocket,
   BarChart3,
-  Circle,
 } from "lucide-react";
 
 interface Activity {

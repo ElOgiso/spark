@@ -1,30 +1,24 @@
 import { useState } from "react";
 import { BottomNavigation } from "./BottomNavigation";
 import { MobileHome } from "./MobileHome";
+import { MobileViralSparks } from "./MobileViralSparks";
 import { MobileReview } from "./MobileReview";
-import { MobilePipeline } from "./MobilePipeline";
-import { MobileInsights } from "./MobileInsights";
+import { MobileAnalytics } from "./MobileAnalytics";
 import { MobileMore } from "./MobileMore";
 
-type NavTab = "command" | "review" | "flow" | "insights" | "more";
+type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more";
 
 export function MobileApp() {
-  const [activeTab, setActiveTab] = useState<NavTab>("command");
+  const [activeTab, setActiveTab] = useState<NavTab>("spark");
 
   const renderContent = () => {
     switch (activeTab) {
-      case "command":
-        return <MobileHome />;
-      case "review":
-        return <MobileReview />;
-      case "flow":
-        return <MobilePipeline />;
-      case "insights":
-        return <MobileInsights />;
-      case "more":
-        return <MobileMore />;
-      default:
-        return <MobileHome />;
+      case "spark": return <MobileHome />;
+      case "viral-sparks": return <MobileViralSparks />;
+      case "review": return <MobileReview />;
+      case "analytics": return <MobileAnalytics />;
+      case "more": return <MobileMore />;
+      default: return <MobileHome />;
     }
   };
 
