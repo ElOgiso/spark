@@ -1,0 +1,6 @@
+{
+  "name": "SPARK Media OS",
+  "description": "An AI-native Media Operating System for managing Brands, discovering opportunities, creating productions, and learning from results.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
