@@ -1,352 +1,272 @@
 import { useState } from "react";
 import {
-  Pencil,
-  Video,
-  Rocket,
-  ArrowUpCircle,
-  Circle,
-  CheckCircle2,
-  X,
-  RotateCw,
-  Check,
-  Sparkles,
+  Pencil, Video, Rocket, CheckCircle2, X, RotateCw,
+  Sparkles, Clock, ArrowLeft, Loader2, AlertTriangle, Brain,
+  ChevronRight, Calendar,
 } from "lucide-react";
 import { MobileCreativeReview } from "./MobileCreativeReview";
+import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
 
-type ReviewType = "creative" | "production" | "publishing";
-type Priority = "high" | "medium" | "low";
+type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved";
 
 interface ReviewItem {
   id: string;
   title: string;
-  type: ReviewType;
-  priority: Priority;
+  type: "creative" | "production" | "publishing";
+  priority: "high" | "medium" | "low";
+  stage: "drafting" | "ready" | "needs_edit" | "approved" | "scheduled";
   aiConfidence: number;
   timeWaiting: string;
-  channel: string;
-  thumbnail?: string;
+  account: string;
+  format: string;
 }
 
-export function MobileReview() {
-  const [activeFilter, setActiveFilter] = useState<"all" | ReviewType | "ai_approved">("all");
-  const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
+const stageToChip: Record<ReviewItem["stage"], ChipVariant> = {
+  drafting:  "drafting",
+  ready:     "ready",
+  needs_edit:"needs-edit",
+  approved:  "approved",
+  scheduled: "scheduled",
+};
 
-  const reviews: ReviewItem[] = [
-    {
-      id: "r1",
-      title: "5 Viral Marketing Tactics That Actually Work in 2026",
-      type: "creative",
-      priority: "high",
-      aiConfidence: 94,
-      timeWaiting: "2m",
-      channel: "YouTube",
-    },
-    {
-      id: "r2",
-      title: "The Psychology Behind Viral Content",
-      type: "production",
-      priority: "high",
-      aiConfidence: 88,
-      timeWaiting: "15m",
-      channel: "TikTok",
-    },
-    {
-      id: "r3",
-      title: "How AI Creates Engaging Stories",
-      type: "creative",
-      priority: "medium",
-      aiConfidence: 76,
-      timeWaiting: "1h",
-      channel: "Instagram",
-    },
-    {
-      id: "r4",
-      title: "Building a Personal Brand in 2026",
-      type: "publishing",
-      priority: "low",
-      aiConfidence: 82,
-      timeWaiting: "2h",
-      channel: "LinkedIn",
-    },
-  ];
+const typeLabel: Record<ReviewItem["type"], string> = {
+  creative:   "Creative",
+  production: "Production",
+  publishing: "Publishing",
+};
 
-  const filters = [
-    { id: "all" as const, label: "All", count: reviews.length },
-    {
-      id: "creative" as const,
-      label: "Creative",
-      count: reviews.filter((r) => r.type === "creative").length,
-    },
-    {
-      id: "production" as const,
-      label: "Production",
-      count: reviews.filter((r) => r.type === "production").length,
-    },
-    {
-      id: "publishing" as const,
-      label: "Publishing",
-      count: reviews.filter((r) => r.type === "publishing").length,
-    },
-    {
-      id: "ai_approved" as const,
-      label: "AI Approved",
-      count: 12,
-    },
-  ];
+const reviews: ReviewItem[] = [
+  { id: "r1", title: "5 Viral Marketing Tactics That Actually Work in 2026", type: "creative", priority: "high", stage: "ready", aiConfidence: 94, timeWaiting: "2m", account: "YouTube", format: "Long-form + Clips" },
+  { id: "r2", title: "The Psychology Behind Viral Content", type: "production", priority: "high", stage: "ready", aiConfidence: 88, timeWaiting: "15m", account: "TikTok", format: "Short-form 60s" },
+  { id: "r3", title: "How AI Creates Engaging Stories", type: "creative", priority: "medium", stage: "needs_edit", aiConfidence: 76, timeWaiting: "1h", account: "Instagram", format: "Carousel + Reel" },
+  { id: "r4", title: "Building a Personal Brand in 2026", type: "publishing", priority: "low", stage: "approved", aiConfidence: 82, timeWaiting: "2h", account: "LinkedIn", format: "Article" },
+  { id: "r5", title: "Content Creation Workflow Optimization", type: "production", priority: "medium", stage: "drafting", aiConfidence: 91, timeWaiting: "3h", account: "YouTube", format: "Tutorial 12min" },
+];
 
-  const filteredReviews =
-    activeFilter === "all"
-      ? reviews
-      : activeFilter === "ai_approved"
-      ? reviews.filter((r) => r.aiConfidence >= 80)
-      : reviews.filter((r) => r.type === activeFilter);
+const stageTabs: { id: StageFilter; label: string }[] = [
+  { id: "all",       label: "All" },
+  { id: "ready",     label: "Ready" },
+  { id: "needs_edit",label: "Needs Edit" },
+  { id: "approved",  label: "Approved" },
+  { id: "drafting",  label: "Drafting" },
+];
 
-  const priorityConfig = {
-    high: { icon: ArrowUpCircle, color: "text-destructive", label: "High" },
-    medium: { icon: Circle, color: "text-warning", label: "Medium" },
-    low: { icon: Circle, color: "text-muted-foreground", label: "Low" },
-  };
+function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
+  const [approved, setApproved] = useState(false);
 
-  const typeConfig = {
-    creative: { icon: Pencil, label: "Creative Review" },
-    production: { icon: Video, label: "Production Review" },
-    publishing: { icon: Rocket, label: "Publishing Review" },
-  };
+  if (item.type === "creative") {
+    return <MobileCreativeReview onBack={onBack} />;
+  }
 
-  if (selectedReview) {
-    // Show creative review detail for creative reviews
-    if (selectedReview.type === "creative") {
-      return <MobileCreativeReview onBack={() => setSelectedReview(null)} />;
-    }
-
-    // Generic review detail for other types
-    const TypeIcon = typeConfig[selectedReview.type].icon;
-
+  if (approved) {
     return (
-      <div className="min-h-screen bg-background pb-24">
-        <div className="sticky top-0 z-10 border-b border-border p-4 flex items-center gap-3 bg-background">
-          <button
-            onClick={() => setSelectedReview(null)}
-            className="w-9 h-9 rounded-lg bg-accent/20 flex items-center justify-center"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <TypeIcon className="w-4 h-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                {typeConfig[selectedReview.type].label}
-              </p>
-            </div>
-          </div>
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center pb-24">
+        <div className="w-16 h-16 rounded-full bg-success/15 border border-success/30 flex items-center justify-center mb-5">
+          <CheckCircle2 className="w-8 h-8 text-success" />
         </div>
-
-        <div className="p-4 pb-32 space-y-6">
-          <div>
-            <h1 className="text-xl font-medium mb-2">{selectedReview.title}</h1>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground mb-3">
-              <span>{selectedReview.channel}</span>
-              <span>•</span>
-              <span>Waiting {selectedReview.timeWaiting}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
-                  selectedReview.aiConfidence >= 80
-                    ? "bg-success/20 text-success"
-                    : selectedReview.aiConfidence >= 60
-                    ? "bg-warning/20 text-warning"
-                    : "bg-destructive/20 text-destructive"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                {selectedReview.aiConfidence}% AI Confidence
-              </span>
-              <span
-                className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-                  priorityConfig[selectedReview.priority].color
-                } ${
-                  selectedReview.priority === "high"
-                    ? "bg-destructive/20"
-                    : selectedReview.priority === "medium"
-                    ? "bg-warning/20"
-                    : "bg-muted/30"
-                }`}
-              >
-                {priorityConfig[selectedReview.priority].label} Priority
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="text-sm font-medium mb-3">Preview</h3>
-            <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-              <span className="text-sm text-muted-foreground">
-                Content preview
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="text-sm font-medium mb-3">Details</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Expected Reach</span>
-                <span className="font-medium">2.4M - 3.8M</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Platform</span>
-                <span className="font-medium">{selectedReview.channel}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Priority</span>
-                <span
-                  className={`font-medium ${
-                    priorityConfig[selectedReview.priority].color
-                  }`}
-                >
-                  {priorityConfig[selectedReview.priority].label}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe space-y-3 shadow-2xl">
-          <button className="w-full py-5 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]">
-            <Check className="w-6 h-6" />
-            Approve
-          </button>
-          <div className="grid grid-cols-2 gap-3">
-            <button className="py-3.5 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl font-medium text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-              <RotateCw className="w-4 h-4" />
-              Regenerate
-            </button>
-            <button className="py-3.5 bg-muted hover:bg-muted/80 active:bg-muted/70 rounded-xl font-medium text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-              <X className="w-4 h-4" />
-              Reject
-            </button>
-          </div>
-        </div>
+        <h2 className="text-xl font-medium mb-2">Approved</h2>
+        <p className="text-sm text-muted-foreground mb-8">
+          "{item.title}" has been approved and is now scheduled.
+        </p>
+        <Button variant="secondary" size="lg" fullWidth onClick={onBack}>
+          Back to Review
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="pb-24 px-4 pt-6 space-y-6">
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="sticky top-0 z-10 bg-background border-b border-border px-4 py-4 flex items-center gap-3">
+        <button onClick={onBack} className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0 active:bg-accent/40 transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted-foreground">{typeLabel[item.type]} Review</p>
+          <p className="text-sm font-medium truncate">{item.account}</p>
+        </div>
+        <StatusChip variant={stageToChip[item.stage]} />
+      </div>
+
+      <div className="flex-1 overflow-y-auto pb-36 px-4 pt-5 space-y-4">
+        <div>
+          <h1 className="text-xl font-medium leading-snug mb-3">{item.title}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${item.aiConfidence >= 80 ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+              <Sparkles className="w-3.5 h-3.5" />
+              {item.aiConfidence}% AI confidence
+            </span>
+            <span className="text-xs text-muted-foreground">{item.format}</span>
+            <span className="text-xs text-muted-foreground">·</span>
+            <span className="text-xs text-muted-foreground">Waiting {item.timeWaiting}</span>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="aspect-video bg-muted/40 flex items-center justify-center">
+            <div className="text-center">
+              <Video className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-xs text-muted-foreground">Preview pending approval</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Details</p>
+          {[
+            { label: "Account", value: item.account },
+            { label: "Format", value: item.format },
+            { label: "Expected Reach", value: "2.4M – 3.8M views" },
+            { label: "Priority", value: item.priority, accent: item.priority === "high" ? "text-destructive" : item.priority === "medium" ? "text-warning" : "" },
+          ].map((row) => (
+            <div key={row.label} className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{row.label}</span>
+              <span className={`text-sm font-medium capitalize ${row.accent ?? ""}`}>{row.value}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="w-4 h-4 text-accent-foreground" />
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI Assessment</p>
+          </div>
+          <div className="space-y-2">
+            {[
+              { label: "Hook clarity", pass: true },
+              { label: "Brand consistency", pass: true },
+              { label: "Platform-fit", pass: true },
+              { label: "Caption reviewed", pass: item.type !== "publishing" },
+            ].map((check) => (
+              <div key={check.label} className="flex items-center gap-2.5">
+                <CheckCircle2 className={`w-3.5 h-3.5 flex-shrink-0 ${check.pass ? "text-success" : "text-muted-foreground/30"}`} />
+                <span className={`text-sm ${check.pass ? "" : "text-muted-foreground"}`}>{check.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
+        <Button variant="approve" size="xl" fullWidth icon={<CheckCircle2 className="w-5 h-5" />} onClick={() => setApproved(true)}>
+          Approve
+        </Button>
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />}>Regenerate</Button>
+          <Button variant="schedule" size="md" icon={<Calendar className="w-4 h-4" />}>Schedule</Button>
+          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />}>Reject</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MobileReview() {
+  const [activeFilter, setActiveFilter] = useState<StageFilter>("all");
+  const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
+
+  if (selectedReview) {
+    return <ReviewDetail item={selectedReview} onBack={() => setSelectedReview(null)} />;
+  }
+
+  const filtered = activeFilter === "all" ? reviews : reviews.filter((r) => r.stage === activeFilter);
+  const counts = Object.fromEntries(
+    stageTabs.map(({ id }) => [id, id === "all" ? reviews.length : reviews.filter(r => r.stage === id).length])
+  ) as Record<StageFilter, number>;
+
+  return (
+    <div className="pb-24 px-4 pt-6 space-y-5">
+
       <div>
-        <h1 className="text-2xl font-medium">Review Queue</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {filteredReviews.length} reviews pending
+        <h1 className="text-2xl font-medium">Review</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          {counts.ready > 0 ? `${counts.ready} ready for your review` : "All clear — queue empty"}
         </p>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
-        {filters.map((filter) => (
-          <button
-            key={filter.id}
-            onClick={() => setActiveFilter(filter.id)}
-            className={`
-              px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium
-              transition-all duration-200 flex items-center gap-2
-              ${
-                activeFilter === filter.id
-                  ? "bg-accent text-foreground"
-                  : "bg-background text-muted-foreground border border-border"
-              }
-            `}
-          >
-            {filter.label}
-            <span
-              className={`
-                px-2 py-0.5 rounded-full text-xs
-                ${
-                  activeFilter === filter.id
-                    ? "bg-background/50"
-                    : "bg-muted"
-                }
-              `}
-            >
-              {filter.count}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-3">
-        {filteredReviews.map((review) => {
-          const PriorityIcon = priorityConfig[review.priority].icon;
-          const TypeIcon = typeConfig[review.type].icon;
-
+      {/* Stage summary strip */}
+      <div className="grid grid-cols-5 gap-2">
+        {(["drafting", "ready", "needs_edit", "approved", "scheduled"] as const).map((stage) => {
+          const count = reviews.filter(r => r.stage === stage).length;
+          if (count === 0) return null;
           return (
             <button
-              key={review.id}
-              onClick={() => setSelectedReview(review)}
-              className={`
-                w-full rounded-xl border p-4 text-left
-                transition-all duration-200 active:scale-[0.98]
-                ${
-                  review.priority === "high"
-                    ? "border-destructive/30 bg-destructive/5"
-                    : "border-border bg-card"
-                }
-              `}
+              key={stage}
+              onClick={() => setActiveFilter(stage)}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all ${activeFilter === stage ? "border-accent/60 bg-accent/10" : "border-border bg-card"}`}
             >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-accent/30 flex items-center justify-center flex-shrink-0">
-                  <TypeIcon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-medium mb-1 line-clamp-2">
-                    {review.title}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                    <span>{review.channel}</span>
-                    <span>•</span>
-                    <span>{typeConfig[review.type].label}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <PriorityIcon
-                        className={`w-3.5 h-3.5 ${
-                          priorityConfig[review.priority].color
-                        }`}
-                      />
-                      <span
-                        className={`text-xs ${
-                          priorityConfig[review.priority].color
-                        }`}
-                      >
-                        {priorityConfig[review.priority].label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            review.aiConfidence >= 80
-                              ? "bg-success"
-                              : review.aiConfidence >= 60
-                              ? "bg-warning"
-                              : "bg-destructive"
-                          }`}
-                          style={{ width: `${review.aiConfidence}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {review.aiConfidence}%
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {review.timeWaiting}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <p className={`text-lg font-medium ${activeFilter === stage ? "text-foreground" : "text-muted-foreground"}`}>{count}</p>
+              <StatusChip variant={stageToChip[stage]} label={stage === "needs_edit" ? "Edit" : undefined} className="text-[10px] px-1.5 py-0.5" />
             </button>
           );
         })}
       </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+        {stageTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveFilter(tab.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all flex-shrink-0 ${activeFilter === tab.id ? "bg-accent text-foreground" : "bg-card border border-border text-muted-foreground"}`}
+          >
+            {tab.label}
+            {counts[tab.id] > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded ${activeFilter === tab.id ? "bg-background/40" : "bg-muted/50"}`}>{counts[tab.id]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Cards */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <p className="text-sm font-medium text-muted-foreground mb-1">Nothing here</p>
+          <p className="text-xs text-muted-foreground/60">{activeFilter === "drafting" ? "Spark isn't generating anything right now." : "No items in this stage."}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((review) => {
+            const isDrafting = review.stage === "drafting";
+            return (
+              <button
+                key={review.id}
+                onClick={() => !isDrafting && setSelectedReview(review)}
+                className={`w-full rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
+                  isDrafting ? "opacity-60 cursor-default" :
+                  review.priority === "high" ? "border-destructive/25 bg-destructive/5" :
+                  "border-border bg-card"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    review.type === "creative" ? "bg-accent/30" :
+                    review.type === "production" ? "bg-warning/15" : "bg-muted/40"
+                  }`}>
+                    {isDrafting ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                      : review.type === "creative" ? <Pencil className="w-5 h-5 text-accent-foreground" />
+                      : review.type === "production" ? <Video className="w-5 h-5 text-warning" />
+                      : <Rocket className="w-5 h-5 text-muted-foreground" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium leading-snug mb-1.5 line-clamp-2">{review.title}</p>
+                    <p className="text-xs text-muted-foreground mb-2.5">
+                      {review.account} · {typeLabel[review.type]}{isDrafting && " · Spark is generating…"}
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <StatusChip variant={stageToChip[review.stage]} />
+                      {!isDrafting && <ConfidenceBar value={review.aiConfidence} width="w-14" />}
+                      <span className="text-xs text-muted-foreground">{review.timeWaiting}</span>
+                    </div>
+                  </div>
+                  {!isDrafting && <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
