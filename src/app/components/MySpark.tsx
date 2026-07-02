@@ -39,6 +39,65 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
   const [newRuleText, setNewRuleText] = useState("");
   const [showAddRule, setShowAddRule] = useState(false);
+  const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
+
+  const getRuleMeta = (text: string) => {
+    const lower = text.toLowerCase();
+    if (lower.includes("nobody talks") || lower.includes("hook style")) {
+      return {
+        whyExists: "Derived from analyzing 34 top-performing TikTok tech clips where curiosity gaps drove the highest 3-second hook conversion.",
+        affects: "Short-form hooks, script templates, and caption copy.",
+        influences: "TikTok Reels and YouTube Shorts productions.",
+        behavior: "Overrides standard educational hook templates to favor 'Curiosity-first direct challenge' scripts."
+      };
+    }
+    if (lower.includes("peak engagement") || lower.includes("engagement window")) {
+      return {
+        whyExists: "Aggregated activity analytics show Nigerian creator segment peaks between 2:00 PM and 4:00 PM West Africa Time on weekdays.",
+        affects: "Publishing queue, automated calendar, and buffer timings.",
+        influences: "All active scheduled multi-channel distribution pipelines.",
+        behavior: "Automatically prioritizes and schedules posts within Tuesday–Thursday 2–4 PM GMT+1."
+      };
+    }
+    if (lower.includes("long-form youtube") || lower.includes("outperforms short-form")) {
+      return {
+        whyExists: "Viewer analysis indicates deep tutorials convert 2.4x more subscribers than short previews on educational channels.",
+        affects: "Format suggestions, storyboarding depth, and content sequencing.",
+        influences: "YouTube Masterclass Series and long tutorial runs.",
+        behavior: "Configures default template generation to favor 12–15 minute detailed guides."
+      };
+    }
+    if (lower.includes("call to action") || lower.includes("cta")) {
+      return {
+        whyExists: "Historical retention drops in final seconds; placing the CTA before the final 10 seconds increases subscriber conversion by 44%.",
+        affects: "Ending scripts, outro screens, and caption guidelines.",
+        influences: "All tutorial, narrative, and short-form video storyboards.",
+        behavior: "Hardlocks a mandatory Call To Action segment at scene-end, blocking generation if omitted."
+      };
+    }
+    if (lower.includes("thumbnail") || lower.includes("human face")) {
+      return {
+        whyExists: "Thumbnail CTR audits prove designs with prominent, high-emotion faces average 4.1% higher click-through-rates.",
+        affects: "Thumbnail composition drafts, generative image prompt triggers.",
+        influences: "YouTube, Instagram Reels, and tutorial preview assets.",
+        behavior: "Adds descriptive emotion parameters (e.g., 'surprised, high-intensity expression') to all asset drafts."
+      };
+    }
+    if (lower.includes("western") || lower.includes("nigerian context")) {
+      return {
+        whyExists: "Audience sentiment analysis indicates 84% higher connection and sharing when case studies reflect Nigerian economic reality.",
+        affects: "Script illustrations, comparative pricing tables, and cultural references.",
+        influences: "All active video productions, storyboards, and copy.",
+        behavior: "Scans script outputs and dynamically replaces dollar pricing (e.g. $10) with local naira values (₦15K) and Nigerian contexts."
+      };
+    }
+    return {
+      whyExists: "Added to align Spark behavior with custom brand values and creator guidelines.",
+      affects: "Storyboarding, tone of voice, and script generation filters.",
+      influences: "All subsequent active productions.",
+      behavior: "Guides AI synthesis constraints to strictly prioritize this rule."
+    };
+  };
 
   const automationConfig = {
     manual: { label: "Manual", desc: "All decisions require your approval", color: "text-warning", bg: "bg-warning/10", border: "border-warning/30" },
@@ -354,35 +413,73 @@ export function MySpark({ onNavigate }: MySparkProps) {
               )}
 
               <div className="space-y-2">
-                {memoryItems.map((item, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-3 p-3.5 rounded-lg border ${
-                      item.type === "learned"
-                        ? "bg-accent/10 border-accent/20"
-                        : "bg-background border-border"
-                    }`}
-                  >
-                    {item.type === "learned" ? (
-                      <Sparkles className="w-3.5 h-3.5 text-accent-foreground mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <Shield className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      {item.category && (
-                        <div className="inline-block px-1.5 py-0.5 mb-1 rounded text-[10px] font-mono uppercase tracking-wider bg-accent/20 text-accent-foreground font-semibold">
-                          {item.category}
+                {memoryItems.map((item, i) => {
+                  const isExpanded = expandedRuleIndex === i;
+                  const meta = getRuleMeta(item.text);
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => setExpandedRuleIndex(isExpanded ? null : i)}
+                      className={`flex flex-col gap-3 p-4 rounded-lg border cursor-pointer transition-all ${
+                        item.type === "learned"
+                          ? "bg-accent/10 hover:bg-accent/15 border-accent/20"
+                          : "bg-background hover:bg-accent/5 border-border"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 w-full">
+                        {item.type === "learned" ? (
+                          <Sparkles className="w-3.5 h-3.5 text-accent-foreground mt-0.5 flex-shrink-0" />
+                        ) : (
+                          <Shield className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        )}
+                        <div className="flex-1">
+                          {item.category && (
+                            <div className="inline-block px-1.5 py-0.5 mb-1 rounded text-[10px] font-mono uppercase tracking-wider bg-accent/20 text-accent-foreground font-semibold">
+                              {item.category}
+                            </div>
+                          )}
+                          <p className="text-sm text-foreground font-medium leading-relaxed">{item.text}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={`text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded ${
+                            item.type === "learned" ? "bg-accent/20 text-accent-foreground" : "bg-muted/40 text-muted-foreground"
+                          }`}>
+                            {item.type === "learned" ? "Learned" : "Rule"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expanded progressive disclosure explaining the rule */}
+                      {isExpanded && (
+                        <div className="mt-2 border-t border-border/50 pt-3 space-y-2 text-xs text-muted-foreground">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Why It Exists</p>
+                              <p className="mt-1 leading-relaxed">{meta.whyExists}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">What It Affects</p>
+                              <p className="mt-1 leading-relaxed">{meta.affects}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                              <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Influenced Productions</p>
+                              <p className="mt-1 leading-relaxed">{meta.influences}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Changes Spark Behavior</p>
+                              <p className="mt-1 leading-relaxed">{meta.behavior}</p>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-accent-foreground pt-1.5 border-t border-border/20 text-right">
+                            Click to collapse
+                          </p>
                         </div>
                       )}
-                      <p className="text-sm text-foreground leading-relaxed">{item.text}</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 self-start ${
-                      item.type === "learned" ? "bg-accent/20 text-accent-foreground" : "bg-muted/40 text-muted-foreground"
-                    }`}>
-                      {item.type === "learned" ? "Learned" : "Rule"}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </section>

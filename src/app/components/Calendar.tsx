@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
+import { WhySparkRecommends } from "./ds";
 import {
   CheckCircle2,
   Clock,
@@ -328,22 +329,22 @@ export function Calendar({ onNavigate }: CalendarProps) {
                                 onClick={() => onNavigate("/review")}
                                 className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-xs font-medium hover:bg-warning/30 transition-colors"
                               >
-                                Review Now
+                                Review Storyboard
                               </button>
                             )}
                             {item.status === "approved" && (
                               <button className="px-3 py-1.5 rounded-lg bg-success/10 text-success text-xs font-medium hover:bg-success/20 transition-colors">
-                                Confirm Publish
+                                Publish Production
                               </button>
                             )}
                             {item.status === "export_ready" && (
                               <button className="px-3 py-1.5 rounded-lg bg-accent/20 text-accent-foreground text-xs font-medium hover:bg-accent/30 transition-colors">
-                                Export Package
+                                Download Master
                               </button>
                             )}
                             {item.status === "failed" && (
                               <button className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors">
-                                Retry
+                                Resolve & Re-Run
                               </button>
                             )}
                             {(item.status === "published" || item.status === "scheduled") && (
@@ -414,21 +415,26 @@ export function Calendar({ onNavigate }: CalendarProps) {
                 </div>
               </div>
 
-              {/* Release Settings */}
-              <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20">
-                <p className="text-xs text-accent-foreground uppercase tracking-wide mb-1.5 font-medium">Release Settings</p>
-                <div className="space-y-1.5">
-                  <p className="text-xs">
-                    <span className="font-semibold text-foreground">Auto-Publish: </span>
-                    {selectedItem.status === "scheduled" || selectedItem.status === "published"
-                      ? "Enabled. Spark will auto-release this stream at the scheduled hour."
-                      : "Pending. Approve storyboard in Review queue to unlock automated scheduling."}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Target timezone: West Africa Standard Time (GMT+1)
-                  </p>
-                </div>
-              </div>
+              {/* Why Spark Recommends This Timing & Platform */}
+              <WhySparkRecommends
+                details={{
+                  reason: `Scheduled for ${selectedItem.time || "2:00 PM"} because historical activity peaks on ${selectedItem.platform} during West Africa Standard Time (GMT+1) afternoon windows.`,
+                  evidence: [
+                    `Publishing peak: 34% higher active reach for ${selectedItem.platform} ${selectedItem.format === "Long-form" ? "tutorials" : "vertical shorts"} in West Africa.`,
+                    `Sequence rule: Stream is sequenced to auto-distribute immediately after review is finalized.`,
+                    selectedItem.status === "review"
+                      ? "ALERT: Auto-publish is currently BLOCKED. You must approve the storyboard in Review first."
+                      : "Auto-publish is fully authorized and integrated with connected master channels."
+                  ],
+                  confidence: (selectedItem.status === "failed" ? "Medium" : "Very High") as any,
+                  confidencePercent: selectedItem.status === "failed" ? 74 : 95,
+                  expectedOutcome: `Peak reach within 4 hours of live release on ${selectedItem.platform}.`,
+                  risk: selectedItem.status === "failed" ? "Medium" : "Low",
+                  nextBestAction: selectedItem.status === "review" ? "Approve Storyboard" : "Monitor Performance Logs",
+                  brandRules: ["Publishing Rhythm Rule #1: Consistent Midweek Releases", "Timezone Optimization"]
+                }}
+                defaultExpanded={true}
+              />
             </div>
 
             {/* Footer */}

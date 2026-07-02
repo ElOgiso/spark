@@ -3,7 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import {
   Button, StatusChip, ScoreBadge, Card, EmptyState,
-  PageHeader, SectionHeader, FilterPill,
+  PageHeader, SectionHeader, FilterPill, WhySparkRecommends,
 } from "./ds";
 import {
   Flame, Zap, TrendingUp, Users, Clock, X, CheckCircle2,
@@ -284,6 +284,26 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
                 <h3 className="text-sm font-medium leading-snug">{spark.title}</h3>
               </div>
 
+              {/* Why Spark Recommends This */}
+              <WhySparkRecommends
+                details={{
+                  reason: spark.whyNow,
+                  evidence: [
+                    `Format fit: ${spark.suggestedFormat} targeting ${spark.platforms.join(" & ")}.`,
+                    `Audience alignment matches critical West African creator trigger: "${spark.audienceEmotion}".`,
+                    `High brand consistency verified against Tech Insights Nigeria rules (Fit: ${spark.brandFitScore}%).`,
+                    `Estimated turnaround is ${spark.productionTime} with zero active resource conflicts.`
+                  ],
+                  confidence: (spark.brandFitScore >= 90 ? "Very High" : spark.brandFitScore >= 80 ? "High" : "Medium") as any,
+                  confidencePercent: spark.brandFitScore,
+                  expectedOutcome: `Strategic positioning yields 2.4x engagement velocity with 70%+ audience completion.`,
+                  risk: spark.riskLevel,
+                  nextBestAction: "Compile Production Master",
+                  brandRules: ["Tech Insights Nigeria Rule #1: Actionable Insights", "Authority Rules"]
+                }}
+                defaultExpanded={false}
+              />
+
               {/* Spark's Plan */}
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">Spark's Plan</p>
@@ -524,30 +544,63 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
                   {/* Title */}
                   <h3 className="text-base font-medium leading-snug mb-4">{spark.title}</h3>
 
-                  {/* Intelligence */}
-                  <div className="space-y-2.5 mb-5">
-                    <div className="p-3 rounded-lg bg-background border border-border">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Why Now</p>
-                      <p className="text-sm leading-relaxed">{spark.whyNow}</p>
+                  {/* Executive Intelligence Grid */}
+                  <div className="space-y-3 mb-5">
+                    {/* Why Now & Why Audience */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3.5 rounded-xl bg-background border border-border">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-semibold">Why Now</p>
+                        <p className="text-xs leading-relaxed text-foreground/90">{spark.whyNow}</p>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-background border border-border">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-semibold">Why Audience</p>
+                        <p className="text-xs leading-relaxed text-foreground/90">
+                          Resonates with <span className="text-accent-foreground font-medium">{spark.audienceEmotion}</span> triggers targeting active West African creator demographics.
+                        </p>
+                      </div>
                     </div>
-                    <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Hook Angle</p>
-                      <p className="text-sm leading-relaxed">{spark.hookAngle}</p>
+
+                    {/* Why Brand & Expected Outcome */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3.5 rounded-xl bg-background border border-border">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-semibold">Why Brand</p>
+                        <p className="text-xs leading-relaxed text-foreground/90">
+                          Directly aligns with your <span className="font-medium text-foreground">Tech Insights Nigeria</span> core pillars, matching existing brand authority rules.
+                        </p>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20">
+                        <p className="text-[10px] text-accent-foreground uppercase tracking-wider mb-1 font-semibold">Expected Outcome</p>
+                        <p className="text-xs leading-relaxed font-medium text-foreground">
+                          Projected <span className="text-success">2.4x engagement velocity</span> and 70%+ audience completion rates across targeted channels.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Rationale Status Row */}
+                    <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-muted/20 border border-border/50 text-center">
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">Confidence</p>
+                        <p className="text-xs font-semibold text-foreground">{spark.brandFitScore}% Match</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">Risk Rating</p>
+                        <p className={`text-xs font-semibold ${spark.riskLevel === "Low" ? "text-success" : "text-warning"}`}>
+                          {spark.riskLevel} Risk
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">Format Fit</p>
+                        <p className="text-xs font-semibold text-foreground truncate">{spark.suggestedFormat.split(" ")[0]}</p>
+                      </div>
                     </div>
                   </div>
 
                   {/* Meta Tags */}
-                  <div className="flex flex-wrap gap-2 mb-5">
+                  <div className="flex flex-wrap gap-1.5 mb-5">
                     {spark.platforms.map((p) => (
-                      <span key={p} className="text-xs px-2.5 py-1 rounded-lg bg-muted/30 text-muted-foreground border border-border/50">{p}</span>
+                      <span key={p} className="text-[11px] px-2.5 py-1 rounded-lg bg-muted/30 text-muted-foreground border border-border/50 font-medium">{p}</span>
                     ))}
-                    <span className="text-xs px-2.5 py-1 rounded-lg bg-muted/30 text-muted-foreground border border-border/50">{spark.suggestedFormat}</span>
-                    <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-muted/30 text-muted-foreground border border-border/50">
-                      <Users className="w-3 h-3" /> {spark.audienceEmotion}
-                    </span>
-                    <span className={`text-xs px-2.5 py-1 rounded-lg border ${riskColor[spark.riskLevel]}`}>
-                      {spark.riskLevel} Risk
-                    </span>
+                    <span className="text-[11px] px-2.5 py-1 rounded-lg bg-muted/30 text-muted-foreground border border-border/50 font-medium">{spark.suggestedFormat}</span>
                   </div>
 
                   {/* Action */}

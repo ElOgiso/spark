@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
-import { Button } from "./ds";
+import { Button, WhySparkRecommends } from "./ds";
 import {
   ArrowLeft,
   TrendingUp,
@@ -288,21 +288,26 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
-          {/* Why This Works */}
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <SectionToggle id="why-this-works" title="Why This Works" />
-            {expandedSections.has("why-this-works") && (
-              <div className="px-6 pb-6">
-                <div className="space-y-2.5">
-                  {proposal.whyThisWorks.map((reason, i) => (
-                    <div key={i} className="flex items-start gap-3 p-3.5 rounded-xl bg-accent/10 border border-accent/20">
-                      <Brain className="w-4 h-4 text-accent-foreground mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">{reason}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Strategic Decision & Recommendations */}
+          <div className="space-y-3">
+            <WhySparkRecommends
+              details={{
+                reason: "This storyboard bridges the gap between raw data and audience aspiration. Numbered tactics keep watch-time high while cultural triggers spark high community engagement.",
+                evidence: [
+                  "Matches your brand rule 'Actionable value for tech founders'.",
+                  "Numbered tactics average 2.3x higher completion rates in your niche.",
+                  "Opening challenged pain point reduces immediate drop-off by 37%.",
+                  "Tactic #4 incorporates real historical data from Nigerian creators."
+                ],
+                confidence: "Very High",
+                confidencePercent: proposal.aiConfidence,
+                expectedOutcome: "High reach (2.4M – 3.8M views) with 60%+ average audience retention across connected channels.",
+                risk: "Low",
+                nextBestAction: "Approve and Publish Production",
+                brandRules: ["Brand Voice Pillar 2: Professional", "Creator Authority Rules"]
+              }}
+              defaultExpanded={true}
+            />
           </div>
 
           {/* Brand Consistency */}
@@ -476,7 +481,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={handleRequestEdit}
               disabled={regenerating || exporting}
             >
-              Needs Edit
+              Request Revision
             </Button>
             <Button
               variant="regenerate"
@@ -485,7 +490,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={handleRegenerate}
               disabled={regenerating || exporting}
             >
-              {regenerating ? "Regenerating..." : "Regenerate"}
+              {regenerating ? "Improving Format..." : "Improve Brand Format"}
             </Button>
             <Button
               variant="schedule"
@@ -494,7 +499,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={() => onNavigate?.("/calendar")}
               disabled={regenerating || exporting}
             >
-              Schedule
+              Publish Later
             </Button>
             <Button
               variant="schedule"
@@ -503,7 +508,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={handleExport}
               disabled={regenerating || exporting}
             >
-              {exporting ? "Exporting..." : "Export"}
+              {exporting ? "Compiling..." : "Export Assets"}
             </Button>
             <Button
               variant="ghost"

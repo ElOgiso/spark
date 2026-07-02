@@ -1,6 +1,6 @@
 import { TopBar } from "./TopBar";
 import { ActivityFeed } from "./ActivityFeed";
-import { SectionHeader, MetricCard, Button, FilterPill } from "./ds";
+import { SectionHeader, MetricCard, Button, FilterPill, WhySparkRecommends } from "./ds";
 import {
   Eye, DollarSign, TrendingUp, Video, Tv, Clapperboard,
   ArrowRight, Zap, Brain, Flame, AlertCircle, CheckCircle2,
@@ -108,6 +108,22 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
     { id: "a5", type: "analytics_updated" as const, title: "Intelligence Updated", metadata: "Weekly performance patterns refreshed · +42% growth signal", timestamp: "2h ago" },
   ];
 
+  const homeRecommendation = {
+    reason: "Nigerian tech audience interest is up 340%. Replicating the 'Nobody talks about this' hook style matches your active 'Tech Insights Nigeria' brand rules. The low-risk window closes in 48 hours.",
+    evidence: [
+      "Peak target audience activity is 34% higher today (Tue–Thu 2–4 PM peak window).",
+      "Topic aligns with Tech Insights Nigeria brand rule 'AI-driven business growth'.",
+      "'Nobody talks about this' hook style averages 3x higher retention than static introductions.",
+      "Competition for this niche is currently low, promising high engagement velocity."
+    ],
+    confidence: "Very High" as const,
+    confidencePercent: 97,
+    expectedOutcome: "Projected 2.4x engagement velocity with 70%+ audience completion.",
+    risk: "Low" as const,
+    nextBestAction: "Review Storyboard",
+    brandRules: ["Tech Insights Nigeria Rule #3: Real-world Value", "Creator Authority"]
+  };
+
   return (
     <>
       <TopBar pageName="Spark" />
@@ -120,12 +136,26 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
             <div className="px-8 pt-7 pb-5 flex items-start justify-between">
               <div>
                 <h1 className="text-2xl font-medium">{greeting}, Alex</h1>
-                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                <div className="flex items-center gap-x-4 gap-y-2 flex-wrap mt-3">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mr-1">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                    </span>
+                    Spark Active
                   </span>
-                  <span>Spark is active · 3 opportunities found · 5 items need your attention · 2 publishing today</span>
+                  <span className="text-xs text-foreground bg-accent/15 px-2.5 py-1 rounded-full border border-accent/20">
+                    💡 <span className="font-medium text-accent-foreground">Discovered:</span> 3 opportunities
+                  </span>
+                  <span className="text-xs text-foreground bg-warning/10 px-2.5 py-1 rounded-full border border-warning/20">
+                    ⚠️ <span className="font-medium text-warning">Attention:</span> 5 reviews waiting
+                  </span>
+                  <span className="text-xs text-foreground bg-destructive/5 px-2.5 py-1 rounded-full border border-destructive/15">
+                    🚫 <span className="font-medium text-destructive">Blocked:</span> 1 thumbnail missing
+                  </span>
+                  <span className="text-xs text-foreground bg-success/10 px-2.5 py-1 rounded-full border border-success/25">
+                    ✓ <span className="font-medium text-success">Ready:</span> 2 publishing today
+                  </span>
                 </div>
               </div>
               <div className="text-right">
@@ -167,6 +197,12 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
               })}
             </div>
           </div>
+
+          {/* ── Executive Strategic Briefing ── */}
+          <section className="space-y-3">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Executive Strategic Briefing</h2>
+            <WhySparkRecommends details={homeRecommendation} defaultExpanded={true} />
+          </section>
 
           {/* ── Production Status Strip ── */}
           <section>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
-import { PageHeader, SectionHeader, MetricCard, Button } from "./ds";
+import { PageHeader, SectionHeader, MetricCard, Button, WhySparkRecommends } from "./ds";
 import {
   TrendingUp,
   TrendingDown,
@@ -172,6 +172,32 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
                 );
               })}
             </div>
+          </section>
+
+          {/* Executive Strategic Summary */}
+          <section className="space-y-3 bg-card/45 border border-border rounded-xl p-5">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Executive Strategic Rationale</h2>
+            <p className="text-xs text-muted-foreground mb-1">
+              Data conclusions derived from 4 active connected channels over the past 30 days:
+            </p>
+            <WhySparkRecommends
+              details={{
+                reason: "Monthly views hit 24.8M with a record-high $142K revenue (+24.5%). Localizing tutorials with accessible Nigerian creator pricing model and West African cultural triggers reduced immediate video drop-offs by 37%.",
+                evidence: [
+                  "What Happened: Overall engagement increased to 7.2% (+2.3%), driven by 'How AI Creates Viral Content' tutorial format hitting an exceptional 8.2% engagement.",
+                  "Why It Happened: Introduction challenges delivered high curiosity value within the first 4s, and Yoruba subtitles tutorial exceeded average completion rates by 14%.",
+                  "What Spark Learned: High technical detail without cultural context underperforms on LinkedIn (58%) and news-based recaps drop off unless paired with high-recency signals.",
+                  "Next Best Action: Transition the high-performing horizontal video tutorials into multi-platform short-form video clip schedules targeting TikTok and Reels."
+                ],
+                confidence: "Very High",
+                confidencePercent: 96,
+                expectedOutcome: "Projected audience growth rate stabilization above 40% with a continued decline in production resource overhead.",
+                risk: "Low",
+                nextBestAction: "Distribute Video Clips",
+                brandRules: ["Audience Growth Pillar #1", "Pricing Realism Rule"]
+              }}
+              defaultExpanded={true}
+            />
           </section>
 
           {/* What Worked */}

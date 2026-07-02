@@ -23,11 +23,13 @@
  *  - Card grid gap mobile:    gap-3
  */
 
+import React, { useState } from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
   Loader2, CheckCircle2, AlertTriangle, Clock, Package,
   Calendar, XCircle, Zap, Flame, TrendingUp, Sparkles,
+  ChevronDown, ChevronUp, ShieldCheck, AlertCircle, Info,
 } from "lucide-react";
 
 export function cn(...inputs: ClassValue[]) {
@@ -497,5 +499,129 @@ export function FilterPill({ label, count, active, onClick, icon }: FilterPillPr
         </span>
       )}
     </button>
+  );
+}
+
+// ─── Why Spark Recommends This ───────────────────────────────────────────────
+
+export type ConfidenceLevel = "Low" | "Medium" | "High" | "Very High";
+export type RiskLevel = "Low" | "Medium" | "High";
+
+export interface RecommendationDetails {
+  reason: string;
+  evidence: string[];
+  confidence: ConfidenceLevel;
+  confidencePercent?: number;
+  expectedOutcome: string;
+  risk: RiskLevel;
+  nextBestAction?: string;
+  brandRules?: string[];
+}
+
+interface WhySparkRecommendsProps {
+  details: RecommendationDetails;
+  defaultExpanded?: boolean;
+}
+
+export function WhySparkRecommends({ details, defaultExpanded = false }: WhySparkRecommendsProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  const confidenceColors: Record<ConfidenceLevel, { text: string; bg: string; border: string }> = {
+    "Low": { text: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20" },
+    "Medium": { text: "text-warning", bg: "bg-warning/10", border: "border-warning/20" },
+    "High": { text: "text-success", bg: "bg-success/10", border: "border-success/20" },
+    "Very High": { text: "text-success font-semibold", bg: "bg-success/20", border: "border-success/30" },
+  };
+
+  const riskColors: Record<RiskLevel, { text: string; bg: string; border: string }> = {
+    "Low": { text: "text-success", bg: "bg-success/5", border: "border-success/15" },
+    "Medium": { text: "text-warning", bg: "bg-warning/5", border: "border-warning/15" },
+    "High": { text: "text-destructive", bg: "bg-destructive/5", border: "border-destructive/15" },
+  };
+
+  const confStyle = confidenceColors[details.confidence] || confidenceColors["High"];
+  const riskStyle = riskColors[details.risk] || riskColors["Low"];
+
+  return (
+    <div className="rounded-xl border border-border bg-card/60 overflow-hidden transition-all duration-300">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-accent/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-accent-foreground animate-pulse" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-foreground/90 uppercase tracking-wider">Why Spark Recommends This</span>
+            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-muted/30 text-muted-foreground border-border/40">
+              Confidence: <span className={confStyle.text}>{details.confidence} {details.confidencePercent ? `(${details.confidencePercent}%)` : ""}</span>
+            </span>
+          </div>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 border-t border-border/30 space-y-3 text-xs leading-relaxed">
+          {/* Main Strategic Reason */}
+          <div>
+            <p className="font-semibold text-foreground/90 mb-1">Strategic Rationale</p>
+            <p className="text-muted-foreground font-light">{details.reason}</p>
+          </div>
+
+          {/* Evidence Checklist */}
+          {details.evidence && details.evidence.length > 0 && (
+            <div>
+              <p className="font-semibold text-muted-foreground/80 uppercase tracking-wider text-[9px] mb-1.5">Evidence & Past Learning</p>
+              <ul className="space-y-1">
+                {details.evidence.map((item, index) => (
+                  <li key={index} className="flex items-start gap-1.5 text-foreground/85 font-light">
+                    <span className="text-success mt-0.5 font-bold">✓</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Brand rules influenced */}
+          {details.brandRules && details.brandRules.length > 0 && (
+            <div>
+              <p className="font-semibold text-muted-foreground/80 uppercase tracking-wider text-[9px] mb-1">Influenced Brand Authority Rules</p>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {details.brandRules.map((rule, idx) => (
+                  <span key={idx} className="text-[10px] px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent-foreground font-medium">
+                    🏷️ {rule}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Risk, Expected Outcome & Next Best Action Grid */}
+          <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-border/20">
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-semibold">Expected Outcome</p>
+              <p className="text-foreground/95 font-medium mt-0.5">{details.expectedOutcome}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-semibold">Risk Rating</p>
+              <span className={`inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded border text-[11px] font-semibold ${riskStyle.text} ${riskStyle.bg} ${riskStyle.border}`}>
+                {details.risk} Risk
+              </span>
+            </div>
+          </div>
+
+          {details.nextBestAction && (
+            <div className="pt-2.5 border-t border-border/10 flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Strategic Action:</span>
+              <span className="font-semibold text-accent-foreground bg-accent/10 px-2.5 py-1 rounded-lg text-[11px] border border-accent/20">
+                👉 {details.nextBestAction}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
