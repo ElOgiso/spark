@@ -30,7 +30,7 @@ import {
 type AutomationMode = "manual" | "balanced" | "autonomous";
 
 export function MobileMore() {
-  const { state, addMemoryItem, removeMemoryItem } = useSpark();
+  const { memoryItems, addMemoryItem, removeMemoryItem } = useSpark();
 
   const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
   const [profile, setProfile] = useState({
@@ -113,7 +113,7 @@ export function MobileMore() {
       title: "Brand",
       items: [
         { icon: Archive, label: "Assets", badge: `${assets.length} files` },
-        { icon: Brain, label: "Memory", badge: `${state.memoryItems.length} rules` },
+        { icon: Brain, label: "Memory", badge: `${memoryItems.length} rules` },
         { icon: LinkIcon, label: "Accounts", badge: `${accounts.filter(a => a.active).length} active` },
       ],
     },
@@ -308,7 +308,7 @@ export function MobileMore() {
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Active Memory Pools</h4>
                 <div className="rounded-xl border border-border bg-card divide-y divide-border/50">
-                  {state.memoryItems.map((item) => (
+                  {memoryItems.map((item) => (
                     <div key={item.id} className="p-3 flex items-start gap-2.5">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1">
