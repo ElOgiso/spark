@@ -125,6 +125,7 @@ export interface MemoryItem {
   type: "learned" | "rule";
   text: string;
   dateAdded: string;
+  category?: "Character" | "Voice" | "Brand" | "Niche" | "Audio" | "Winning hooks" | "Winning thumbnails" | "Audience preferences" | "Failures" | "Publishing behavior";
 }
 
 export interface Asset {

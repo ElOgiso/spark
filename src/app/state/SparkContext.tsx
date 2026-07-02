@@ -38,7 +38,7 @@ interface SparkContextType {
   createProductionFromSpark: (sparkId: string) => void;
   approveReviewItem: (reviewId: string) => void;
   rejectOrRequestEditReviewItem: (reviewId: string) => void;
-  addMemoryItem: (text: string, type: "learned" | "rule") => void;
+  addMemoryItem: (text: string, type: "learned" | "rule", category?: any) => void;
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
@@ -630,12 +630,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const addMemoryItem = (text: string, type: "learned" | "rule") => {
+  const addMemoryItem = (text: string, type: "learned" | "rule", category?: any) => {
     const newItem: MemoryItem = {
       id: `m-${Date.now()}`,
       type,
       text,
-      dateAdded: new Date().toISOString().split("T")[0]
+      dateAdded: new Date().toISOString().split("T")[0],
+      category
     };
     setState((prev: any) => ({
       ...prev,

@@ -1,34 +1,34 @@
 import { Search, Bell, ChevronDown, Radio } from "lucide-react";
 
 interface TopBarProps {
-  workspaceName?: string;
-  channelName?: string;
+  pageName?: string;
+  accountName?: string;
   notificationCount?: number;
   userName?: string;
   userRole?: string;
-  showChannelSwitcher?: boolean;
+  showAccountSwitcher?: boolean;
 }
 
 export function TopBar({
-  workspaceName = "Platform",
-  channelName,
+  pageName = "Platform",
+  accountName,
   notificationCount = 3,
   userName = "Alex Rivera",
   userRole = "Director",
-  showChannelSwitcher = false,
+  showAccountSwitcher = false,
 }: TopBarProps) {
   return (
     <div className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
       <div className="flex items-center gap-6">
-        {showChannelSwitcher ? (
+        {showAccountSwitcher ? (
           <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-accent/20 transition-colors">
             <Radio className="w-4 h-4 text-accent-foreground" />
-            <span className="text-sm font-medium">{channelName || "Select Channel"}</span>
+            <span className="text-sm font-medium">{accountName || "Select Account"}</span>
             <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </button>
         ) : (
           <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-accent/20 transition-colors">
-            <span className="text-sm font-medium">{workspaceName}</span>
+            <span className="text-sm font-medium">{pageName}</span>
             <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </button>
         )}

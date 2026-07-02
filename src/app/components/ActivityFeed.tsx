@@ -49,9 +49,21 @@ const activityConfig = {
 
 interface ActivityFeedProps {
   activities: Activity[];
+  onNavigate?: (path: string) => void;
 }
 
-export function ActivityFeed({ activities }: ActivityFeedProps) {
+export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
+  const getRouteForActivity = (type: Activity["type"]) => {
+    switch (type) {
+      case "opportunity_discovered": return "/viral-sparks";
+      case "storyboard_approved": return "/calendar";
+      case "production_completed": return "/review";
+      case "publishing_completed": return "/analytics";
+      case "analytics_updated": return "/analytics";
+      default: return "/";
+    }
+  };
+
   return (
     <div className="space-y-0.5">
       {activities.map((activity, index) => {
@@ -62,6 +74,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
         return (
           <div key={activity.id} className="relative">
             <div
+              onClick={() => onNavigate?.(getRouteForActivity(activity.type))}
               className="flex gap-4 p-3 hover:bg-accent/10 rounded-lg transition-all duration-200 cursor-pointer group"
             >
               <div className="relative flex flex-col items-center">

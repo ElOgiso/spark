@@ -116,7 +116,7 @@ Home
 
 Review
 
-Pipeline
+Production Status
 
 Insights
 
@@ -134,7 +134,7 @@ Display:
 
 * Monthly Views
 * Revenue
-* Active Channels
+* Connected Accounts
 * Videos Published Today
 * Reviews Pending
 * Opportunities Found
@@ -327,7 +327,7 @@ MORE SCREEN
 
 Contains:
 
-Workspace Settings
+Account Settings
 
 Automation Settings
 
@@ -381,7 +381,7 @@ Examples:
 
 "High Opportunity Topic Detected"
 
-"Channel Growth Alert"
+"Account Growth Alert"
 
 Notifications should drive users directly into decision workflows.
 

@@ -8,6 +8,7 @@ import { CreativeReview } from "./components/CreativeReview";
 import { Calendar } from "./components/Calendar";
 import { Analytics } from "./components/Analytics";
 import { MorePage } from "./components/MorePage";
+import { MoreSubPages, FullLegalPage } from "./components/MoreSubPages";
 import { MobileApp } from "./components/mobile/MobileApp";
 import { useDeviceType } from "./hooks/useDeviceType";
 import { SparkProvider } from "./state/SparkContext";
@@ -44,6 +45,21 @@ export default function App() {
           return <Analytics onNavigate={setCurrentPage} />;
         case "/more":
           return <MorePage onNavigate={setCurrentPage} />;
+        case "/more/assets":
+        case "/more/memory":
+        case "/more/accounts":
+        case "/more/billing":
+        case "/more/api":
+        case "/more/team":
+        case "/more/legal":
+        case "/more/support":
+        case "/more/notifications":
+        case "/more/privacy":
+          return <MoreSubPages onNavigate={setCurrentPage} subPath={currentPage} />;
+        case "/terms":
+          return <FullLegalPage onNavigate={setCurrentPage} type="terms" />;
+        case "/privacy":
+          return <FullLegalPage onNavigate={setCurrentPage} type="privacy" />;
         default:
           return <SparkHome onNavigate={setCurrentPage} />;
       }

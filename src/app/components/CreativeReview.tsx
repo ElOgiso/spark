@@ -47,6 +47,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const handleApprove = () => {
     approveReviewItem(reviewId);
@@ -62,6 +64,26 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     setTimeout(() => {
       onBack?.();
     }, 1500);
+  };
+
+  const handleRegenerate = () => {
+    setRegenerating(true);
+    setActionSuccess("Regenerating...");
+    setTimeout(() => {
+      setRegenerating(false);
+      setActionSuccess("Regenerated");
+      setTimeout(() => setActionSuccess(null), 3000);
+    }, 2000);
+  };
+
+  const handleExport = () => {
+    setExporting(true);
+    setActionSuccess("Exporting...");
+    setTimeout(() => {
+      setExporting(false);
+      setActionSuccess("Exported");
+      setTimeout(() => setActionSuccess(null), 3500);
+    }, 1800);
   };
 
   const proposal = {
@@ -155,7 +177,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
   return (
     <>
-      <TopBar workspaceName="Review" />
+      <TopBar pageName="Review" />
       <main className="flex-1 overflow-y-auto pb-28">
         <div className="max-w-5xl mx-auto p-8 space-y-6">
 
@@ -412,8 +434,28 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       <div className="fixed bottom-0 left-56 right-0 bg-card/95 backdrop-blur-sm border-t border-border p-5 shadow-2xl">
         <div className="max-w-5xl mx-auto flex flex-col gap-2">
           {actionSuccess && (
-            <div className={`p-2 rounded-lg text-xs font-medium text-center ${actionSuccess === "Approved" ? "bg-success/10 text-success border border-success/25" : "bg-warning/10 text-warning border border-warning/25"}`}>
-              {actionSuccess === "Approved" ? "Production approved! Publishing job & export packages created." : "Review flagged for Edit. Status updated."}
+            <div
+              className={`p-2 rounded-lg text-xs font-medium text-center border ${
+                actionSuccess === "Approved" || actionSuccess === "Regenerated" || actionSuccess === "Exported"
+                  ? "bg-success/10 text-success border-success/25"
+                  : actionSuccess.includes("...")
+                  ? "bg-accent/20 text-accent-foreground border-accent/30 animate-pulse"
+                  : "bg-warning/10 text-warning border-warning/25"
+              }`}
+            >
+              {actionSuccess === "Approved"
+                ? "Production approved! Publishing job & export packages created."
+                : actionSuccess === "Needs Edit"
+                ? "Review flagged for Edit. Status updated."
+                : actionSuccess === "Regenerating..."
+                ? "Spark Intelligence is drafting a fresh creative blueprint..."
+                : actionSuccess === "Regenerated"
+                ? "Storyboard regenerated with a fresh Nigerian cultural hook & alternative thumbnails!"
+                : actionSuccess === "Exporting..."
+                ? "Compiling production sequence, voice narrative, and subtitles to 4K Master Zip..."
+                : actionSuccess === "Exported"
+                ? "Success! Export package compiled and downloaded (45.0 MB Zip Archive)."
+                : actionSuccess}
             </div>
           )}
           <div className="flex items-center gap-3">
@@ -423,6 +465,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               className="flex-1"
               icon={<CheckCircle2 className="w-5 h-5" />}
               onClick={handleApprove}
+              disabled={regenerating || exporting}
             >
               Approve Production
             </Button>
@@ -431,13 +474,46 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               size="lg"
               icon={<Edit className="w-4 h-4" />}
               onClick={handleRequestEdit}
+              disabled={regenerating || exporting}
             >
               Needs Edit
             </Button>
-            <Button variant="regenerate" size="lg" icon={<RotateCw className="w-4 h-4" />}>Regenerate</Button>
-            <Button variant="schedule" size="lg" icon={<Calendar className="w-4 h-4" />} onClick={() => onNavigate?.("/calendar")}>Schedule</Button>
-            <Button variant="schedule" size="lg" icon={<Download className="w-4 h-4" />}>Export</Button>
-            <Button variant="ghost" size="lg" icon={<XCircle className="w-4 h-4" />} onClick={handleRequestEdit}>Reject</Button>
+            <Button
+              variant="regenerate"
+              size="lg"
+              icon={<RotateCw className={`w-4 h-4 ${regenerating ? "animate-spin" : ""}`} />}
+              onClick={handleRegenerate}
+              disabled={regenerating || exporting}
+            >
+              {regenerating ? "Regenerating..." : "Regenerate"}
+            </Button>
+            <Button
+              variant="schedule"
+              size="lg"
+              icon={<Calendar className="w-4 h-4" />}
+              onClick={() => onNavigate?.("/calendar")}
+              disabled={regenerating || exporting}
+            >
+              Schedule
+            </Button>
+            <Button
+              variant="schedule"
+              size="lg"
+              icon={<Download className={`w-4 h-4 ${exporting ? "animate-bounce" : ""}`} />}
+              onClick={handleExport}
+              disabled={regenerating || exporting}
+            >
+              {exporting ? "Exporting..." : "Export"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="lg"
+              icon={<XCircle className="w-4 h-4" />}
+              onClick={handleRequestEdit}
+              disabled={regenerating || exporting}
+            >
+              Reject
+            </Button>
           </div>
         </div>
       </div>

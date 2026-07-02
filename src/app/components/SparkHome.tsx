@@ -110,7 +110,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
   return (
     <>
-      <TopBar workspaceName="Spark" />
+      <TopBar pageName="Spark" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 
@@ -252,10 +252,10 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
             </div>
           </section>
 
-          {/* ── Today's Intelligence ── */}
+          {/* ── Spark Intelligence ── */}
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Today's Intelligence</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Spark Intelligence</h2>
               <p className="text-xs text-muted-foreground">Generated 6:00 AM · Refreshed 12m ago</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-6">
@@ -279,7 +279,17 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
           {/* ── Performance Metrics ── */}
           <section>
-            <SectionHeader label="Performance Overview" />
+            <SectionHeader
+              label="Performance Overview"
+              action={
+                <button
+                  onClick={() => onNavigate("/analytics")}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                >
+                  View Analytics <ArrowRight className="w-3 h-3" />
+                </button>
+              }
+            />
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {metrics.map((m) => {
                 const Icon = m.icon;
@@ -292,6 +302,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
                     trend={m.trend}
                     highlight={(m as any).success}
                     icon={<Icon className="w-3.5 h-3.5 text-foreground/80" />}
+                    onClick={() => onNavigate("/analytics")}
                   />
                 );
               })}
@@ -302,7 +313,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
           <section>
             <SectionHeader label="Recent Activity" />
             <div className="rounded-xl border border-border bg-card p-6">
-              <ActivityFeed activities={activities} />
+              <ActivityFeed activities={activities} onNavigate={onNavigate} />
             </div>
           </section>
 

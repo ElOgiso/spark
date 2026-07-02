@@ -14,6 +14,7 @@ import {
   Video,
   Instagram,
   Linkedin,
+  X,
 } from "lucide-react";
 
 interface CalendarProps {
@@ -41,6 +42,7 @@ interface CalendarDay {
 export function Calendar({ onNavigate }: CalendarProps) {
   const { publishJobs, reviewItems } = useSpark();
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
 
   const statusConfig: Record<ItemStatus, { label: string; icon: React.ComponentType<{className?: string}>; color: string; bg: string; border: string }> = {
     scheduled: { label: "Scheduled", icon: Clock, color: "text-muted-foreground", bg: "bg-muted/30", border: "border-border/50" },
@@ -169,7 +171,7 @@ export function Calendar({ onNavigate }: CalendarProps) {
 
   return (
     <>
-      <TopBar workspaceName="Calendar" />
+      <TopBar pageName="Calendar" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 
@@ -250,8 +252,8 @@ export function Calendar({ onNavigate }: CalendarProps) {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => item.status === "review" && onNavigate("/review")}
-                          className={`w-full text-left p-2.5 rounded-lg border transition-all hover:shadow-md ${cfg.bg} ${cfg.border} ${item.status === "review" ? "cursor-pointer hover:opacity-90" : ""}`}
+                          onClick={() => setSelectedItem(item)}
+                          className={`w-full text-left p-2.5 rounded-lg border transition-all hover:shadow-md ${cfg.bg} ${cfg.border} cursor-pointer`}
                         >
                           <div className="flex items-center gap-1.5 mb-1">
                             <PIcon className={`w-3 h-3 ${platformColor[item.platform] || "text-muted-foreground"}`} />
@@ -294,7 +296,11 @@ export function Calendar({ onNavigate }: CalendarProps) {
                       const Icon = cfg.icon;
                       const PIcon = platformIcon[item.platform] || Video;
                       return (
-                        <tr key={item.id} className="border-b border-border/50 hover:bg-accent/5 transition-colors">
+                        <tr
+                          key={item.id}
+                          onClick={() => setSelectedItem(item)}
+                          className="border-b border-border/50 hover:bg-accent/5 transition-colors cursor-pointer"
+                        >
                           <td className="px-5 py-4">
                             <p className="text-sm text-muted-foreground">{item.time}</p>
                           </td>
@@ -355,6 +361,99 @@ export function Calendar({ onNavigate }: CalendarProps) {
 
         </div>
       </main>
+
+      {/* Dynamic Detail Modal */}
+      {selectedItem && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-lg overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-border/50 bg-background/30">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Publication Detail</span>
+              <button
+                onClick={() => setSelectedItem(null)}
+                className="p-1 rounded-lg hover:bg-accent/20 transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full border font-medium ${statusConfig[selectedItem.status].bg} ${statusConfig[selectedItem.status].border} ${statusConfig[selectedItem.status].color}`}>
+                    {selectedItem.status === "review" ? "Awaiting Review" : selectedItem.status}
+                  </span>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground">{selectedItem.time || "No time set"}</span>
+                </div>
+                <h3 className="text-lg font-medium leading-snug">{selectedItem.title}</h3>
+              </div>
+
+              {/* Caption Section */}
+              <div className="p-3.5 rounded-xl bg-background border border-border">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5 font-medium">Caption & Copy</p>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {"🔥 " + selectedItem.title + "\n\nWhat are your thoughts on this? Let us know below! 👇\n\n#naijatech #creators #artificialintelligence #nigeria"}
+                </p>
+              </div>
+
+              {/* Video Format & Platform */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <p className="text-xs text-muted-foreground mb-1 font-medium">Video Format</p>
+                  <p className="text-xs font-semibold">
+                    {selectedItem.format === "Long-form" ? "16:9 Landscape (UHD 4K)" : "9:16 Vertical Video (1080p HD)"}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-background border border-border">
+                  <p className="text-xs text-muted-foreground mb-1 font-medium">Connected Platform</p>
+                  <p className="text-xs font-semibold">
+                    {selectedItem.platform === "YouTube" ? "@TechInsightsNG" : "techinsightsng"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Release Settings */}
+              <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20">
+                <p className="text-xs text-accent-foreground uppercase tracking-wide mb-1.5 font-medium">Release Settings</p>
+                <div className="space-y-1.5">
+                  <p className="text-xs">
+                    <span className="font-semibold text-foreground">Auto-Publish: </span>
+                    {selectedItem.status === "scheduled" || selectedItem.status === "published"
+                      ? "Enabled. Spark will auto-release this stream at the scheduled hour."
+                      : "Pending. Approve storyboard in Review queue to unlock automated scheduling."}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Target timezone: West Africa Standard Time (GMT+1)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-background/30 border-t border-border/50 flex justify-end gap-2">
+              <button
+                onClick={() => setSelectedItem(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg hover:bg-accent/20 transition-colors"
+              >
+                Close
+              </button>
+              {selectedItem.status === "review" && (
+                <button
+                  onClick={() => {
+                    setSelectedItem(null);
+                    onNavigate("/review");
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-background bg-foreground rounded-lg hover:bg-foreground/90 transition-all"
+                >
+                  Review Storyboard
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

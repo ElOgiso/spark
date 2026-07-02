@@ -165,7 +165,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
 
   return (
     <>
-      <TopBar workspaceName="Review" />
+      <TopBar pageName="Review" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 

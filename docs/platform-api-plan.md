@@ -1,6 +1,6 @@
-# Platform API Integration & Adapter Plan
+# Platform API Integration & Adapter Plan (Planned / Future)
 
-This document maps out the system architecture and authentication parameters for establishing direct publishing and analytics integrations with major social media APIs.
+This document maps out the system architecture and authentication parameters planned for a later phase to establish direct publishing and analytics integrations with major social media APIs.
 
 ---
 

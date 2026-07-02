@@ -147,9 +147,9 @@ export function MobileHome() {
         })}
       </div>
 
-      {/* Today's Intelligence */}
+      {/* Spark Intelligence */}
       <div className="rounded-xl border border-border bg-card p-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Today's Intelligence</p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Spark Intelligence</p>
         <div className="space-y-2.5">
           {[
             { text: "3 high-fit opportunities ready to create", type: "opportunity" as const },

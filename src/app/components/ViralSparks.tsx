@@ -423,7 +423,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
 
   return (
     <>
-      <TopBar workspaceName="Viral Sparks" />
+      <TopBar pageName="Viral Sparks" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1400px] mx-auto p-8 space-y-8">
 

@@ -347,16 +347,20 @@ interface MetricCardProps {
   trendPositive?: boolean;
   icon?: React.ReactNode;
   highlight?: boolean;
+  onClick?: () => void;
 }
 
 export function MetricCard({
-  title, value, subtitle, trend, trendPositive = true, icon, highlight,
+  title, value, subtitle, trend, trendPositive = true, icon, highlight, onClick,
 }: MetricCardProps) {
+  const Comp = onClick ? "button" : "div";
   return (
-    <div
+    <Comp
+      onClick={onClick}
       className={cn(
-        "rounded-xl border p-5 bg-card transition-all duration-200 hover:shadow-xl hover:shadow-black/10",
+        "rounded-xl border p-5 bg-card transition-all duration-200 hover:shadow-xl hover:shadow-black/10 text-left",
         highlight ? "border-success/20" : "border-border",
+        onClick && "cursor-pointer active:scale-[0.98] w-full"
       )}
     >
       <div className="flex items-start justify-between mb-4">
@@ -372,7 +376,7 @@ export function MetricCard({
         )}
       </div>
       {subtitle && <p className="mt-1.5 text-xs text-muted-foreground">{subtitle}</p>}
-    </div>
+    </Comp>
   );
 }
 

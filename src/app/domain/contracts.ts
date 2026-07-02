@@ -66,6 +66,6 @@ export interface IAnalyticsService {
 
 export interface IMemoryService {
   getMemoryItems(): Promise<MemoryItem[]>;
-  addMemoryItem(text: string, type: "learned" | "rule"): Promise<MemoryItem>;
+  addMemoryItem(text: string, type: "learned" | "rule", category?: string): Promise<MemoryItem>;
   removeMemoryItem(id: string): Promise<void>;
 }

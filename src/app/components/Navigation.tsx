@@ -23,7 +23,8 @@ interface NavigationProps {
 
 export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
   const isActive = (path: string) => {
-    if (path === "/review") return currentPath === "/review" || currentPath === "/review/creative";
+    if (path === "/review") return currentPath.startsWith("/review");
+    if (path === "/more") return currentPath.startsWith("/more") || currentPath === "/terms" || currentPath === "/privacy";
     return currentPath === path;
   };
 

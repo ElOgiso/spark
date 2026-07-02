@@ -66,7 +66,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
   return (
     <>
-      <TopBar workspaceName="My Spark" />
+      <TopBar pageName="My Spark" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-8 space-y-8">
 
@@ -368,8 +368,15 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     ) : (
                       <Shield className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                     )}
-                    <p className="text-sm flex-1">{item.text}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
+                    <div className="flex-1">
+                      {item.category && (
+                        <div className="inline-block px-1.5 py-0.5 mb-1 rounded text-[10px] font-mono uppercase tracking-wider bg-accent/20 text-accent-foreground font-semibold">
+                          {item.category}
+                        </div>
+                      )}
+                      <p className="text-sm text-foreground leading-relaxed">{item.text}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 self-start ${
                       item.type === "learned" ? "bg-accent/20 text-accent-foreground" : "bg-muted/40 text-muted-foreground"
                     }`}>
                       {item.type === "learned" ? "Learned" : "Rule"}

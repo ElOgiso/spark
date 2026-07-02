@@ -145,7 +145,7 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
 
   return (
     <>
-      <TopBar workspaceName="Analytics" />
+      <TopBar pageName="Analytics" />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1400px] mx-auto p-8 space-y-10">
 
