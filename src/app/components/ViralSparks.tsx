@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import {
   Button, StatusChip, ScoreBadge, Card, EmptyState,
@@ -375,10 +376,16 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export function ViralSparks({ onNavigate }: ViralSparksProps) {
+  const { createProductionFromSpark, productions } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<Spark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
-  const [createdSparks, setCreatedSparks] = useState<Set<string>>(new Set());
+
+  const createdSparks = new Set<string>(
+    productions
+      .map((p) => p.sparkId)
+      .filter((id): id is string => !!id)
+  );
 
   const filters = [
     { id: "all" as const, label: "All Sparks", count: sparks.length },
@@ -404,7 +411,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
     setTimeout(() => {
       setDrawerState("created");
       if (selectedSpark) {
-        setCreatedSparks((prev) => new Set([...prev, selectedSpark.id]));
+        createProductionFromSpark(selectedSpark.id);
       }
     }, 2000);
   };

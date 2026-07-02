@@ -36,7 +36,7 @@ export function MobileMore() {
       ],
     },
     {
-      title: "Workspace",
+      title: "Account & Team",
       items: [
         { icon: CreditCard, label: "Billing", badge: "Pro Plan" },
         { icon: Code, label: "API", badge: null },
@@ -90,7 +90,7 @@ export function MobileMore() {
 
       {/* Automation Mode */}
       <div>
-        <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3 px-1">Automation Mode</h3>
+        <h3 className="text-xs font-medium tracking-wide text-muted-foreground mb-3 px-1">Automation Mode</h3>
         <div className="rounded-xl border border-border bg-card p-4">
           <div className={`p-3 rounded-lg bg-accent/10 border border-accent/20`}>
             <div className="flex items-center justify-between mb-1">
@@ -120,7 +120,7 @@ export function MobileMore() {
       {/* Settings Sections */}
       {sections.map((section) => (
         <div key={section.title}>
-          <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3 px-1">
+          <h3 className="text-xs font-medium tracking-wide text-muted-foreground mb-3 px-1">
             {section.title}
           </h3>
           <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -146,7 +146,7 @@ export function MobileMore() {
       ))}
 
       <div className="text-center text-xs text-muted-foreground pb-4">
-        Spark v2.0.0 · AI Media OS
+        Spark · Media Operating System
       </div>
     </div>
   );

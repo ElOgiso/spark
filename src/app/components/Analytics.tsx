@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { PageHeader, SectionHeader, MetricCard, Button } from "./ds";
 import {
@@ -21,6 +23,14 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ onNavigate }: AnalyticsProps) {
+  const { addMemoryItem } = useSpark();
+  const [appliedIndices, setAppliedIndices] = useState<number[]>([]);
+
+  const handleApplyToMemory = (text: string, index: number) => {
+    addMemoryItem(text, "learned");
+    setAppliedIndices((prev) => [...prev, index]);
+  };
+
   const topPerformers = [
     {
       id: "c1",
@@ -369,13 +379,28 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
                     m.type === "updated" ? "text-accent-foreground" :
                     m.type === "flagged" ? "text-warning" : "text-muted-foreground"
                   }`} />
-                  <p className="text-sm">{m.text}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded ml-auto flex-shrink-0 capitalize ${
-                    m.type === "new" ? "bg-success/20 text-success" :
-                    m.type === "updated" ? "bg-accent/20 text-accent-foreground" :
-                    m.type === "flagged" ? "bg-warning/20 text-warning" :
-                    "bg-muted/40 text-muted-foreground"
-                  }`}>{m.type}</span>
+                  <p className="text-sm flex-1">{m.text}</p>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded capitalize ${
+                      m.type === "new" ? "bg-success/20 text-success" :
+                      m.type === "updated" ? "bg-accent/20 text-accent-foreground" :
+                      m.type === "flagged" ? "bg-warning/20 text-warning" :
+                      "bg-muted/40 text-muted-foreground"
+                    }`}>{m.type}</span>
+
+                    {appliedIndices.includes(i) ? (
+                      <span className="text-xs text-success font-medium flex items-center gap-1">
+                        ✓ Applied
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleApplyToMemory(m.text, i)}
+                        className="text-xs bg-accent/20 text-accent-foreground hover:bg-accent/40 px-2 py-1 rounded transition-colors"
+                      >
+                        Apply
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

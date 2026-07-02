@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import {
   Button, StatusChip, Card, EmptyState, PageHeader, SectionHeader,
@@ -127,7 +128,34 @@ function EmptyStageState({ stage }: { stage: Stage }) {
 }
 
 export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
+  const { productions, reviewItems } = useSpark();
   const [activeStage, setActiveStage] = useState<Stage>("all");
+
+  const items: ProductionItem[] = productions.map((p) => {
+    const rev = reviewItems.find((r) => r.productionId === p.id);
+    
+    let stage: Stage = "drafting";
+    if (p.status === "Ready for Review") stage = "ready";
+    else if (p.status === "Needs Edit") stage = "needs_edit";
+    else if (p.status === "Approved") {
+      if (p.id === "p7" || p.id.includes("scheduled")) stage = "scheduled";
+      else if (p.id === "p8" || p.id.includes("export")) stage = "export_ready";
+      else stage = "approved";
+    } else if (p.status === "Drafting") stage = "drafting";
+
+    return {
+      id: p.id,
+      title: p.title,
+      account: rev?.account || (p.aspectRatio === "16:9" ? "YouTube" : "TikTok"),
+      series: rev?.series || "Viral Series",
+      reviewType: (p.id === "p2" || p.id === "p5" ? "production" : "creative") as "creative" | "production" | "publishing",
+      priority: (p.id === "p1" || p.id === "p2" || p.id.includes("-")) ? "high" : "medium",
+      stage: stage as Exclude<Stage, "all">,
+      aiConfidence: p.id === "p1" ? 94 : p.id === "p2" ? 88 : 85,
+      timeWaiting: p.dateCreated === "2026-07-01" ? "2m" : "1h",
+      format: p.formats.join(" + "),
+    };
+  });
 
   const stageCounts = Object.fromEntries(
     stageTabs.map(({ id }) => [id, id === "all" ? items.length : items.filter(i => i.stage === id).length])
@@ -146,9 +174,9 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
             subtitle="Control room — every production, every stage"
           />
 
-          {/* Pipeline Overview */}
+          {/* Review Stages */}
           <section>
-            <SectionHeader label="Pipeline Overview" />
+            <SectionHeader label="Review Stages" />
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
               {(Object.entries(stageLabels) as [Exclude<Stage, "all">, string][]).map(([key, label]) => {
                 const Icon = stageIcons[key];

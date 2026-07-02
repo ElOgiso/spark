@@ -10,7 +10,7 @@ interface TopBarProps {
 }
 
 export function TopBar({
-  workspaceName = "Main Workspace",
+  workspaceName = "Platform",
   channelName,
   notificationCount = 3,
   userName = "Alex Rivera",

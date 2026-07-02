@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import {
@@ -29,6 +30,12 @@ interface CreativeReviewProps {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
+  const { reviewItems, approveReviewItem, rejectOrRequestEditReviewItem } = useSpark();
+  
+  // Find the first item that is pending review, or default to the first item
+  const activeReview = reviewItems.find(r => r.status === "Pending Review") || reviewItems[0];
+  const reviewId = activeReview?.id || "r1";
+
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["why-this-works"])
   );
@@ -39,21 +46,39 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     setExpandedSections(next);
   };
 
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const handleApprove = () => {
+    approveReviewItem(reviewId);
+    setActionSuccess("Approved");
+    setTimeout(() => {
+      onBack?.();
+    }, 1500);
+  };
+
+  const handleRequestEdit = () => {
+    rejectOrRequestEditReviewItem(reviewId);
+    setActionSuccess("Needs Edit");
+    setTimeout(() => {
+      onBack?.();
+    }, 1500);
+  };
+
   const proposal = {
-    title: "5 Viral Marketing Tactics That Actually Work in 2026",
+    title: activeReview?.title || "5 Viral Marketing Tactics That Actually Work in 2026",
     contentType: "Educational Tutorial",
-    series: "Marketing Masterclass",
-    account: "YouTube",
+    series: activeReview?.series || "Marketing Masterclass",
+    account: activeReview?.account || "YouTube",
     opportunityScore: 94,
     aiConfidence: 94,
-    concept: "Reveal proven marketing tactics that drive viral growth, backed by 2026 data and real examples from Nigerian creators",
+    concept: activeReview?.conceptText || "Reveal proven marketing tactics that drive viral growth, backed by 2026 data and real examples from Nigerian creators",
     targetAudience: "Entrepreneurs, marketers, content creators aged 25–45",
     expectedReach: "2.4M – 3.8M views",
     format: "Long-form (12–15 min) + Short clips",
     platforms: ["YouTube", "TikTok", "Instagram Reels", "YouTube Shorts"],
-    hook: "Stop wasting money on marketing that doesn't work",
+    hook: activeReview?.scriptSnippet || "Stop wasting money on marketing that doesn't work",
     hookType: "Pain-point direct challenge",
-    openingMoment: "Show failed marketing campaign burning money animation (0–3s)",
+    openingMoment: activeReview?.openingMoment || "Show failed marketing campaign burning money animation (0–3s)",
     captionDirection: "Lead with stat. Use em-dash rhythm. End with open loop question. No hashtag stuffing. 3-line max mobile preview.",
     thumbnails: [
       { id: "1", concept: "Split screen: Failed vs Successful campaign with contrast lighting", variant: "A" },
@@ -61,14 +86,14 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       { id: "3", concept: "Person pointing at glowing screen, text reads 'This Changed Everything'", variant: "C" },
     ],
     narrative: {
-      hook: "Failed marketing campaigns waste billions annually",
+      hook: activeReview?.scriptSnippet || "Failed marketing campaigns waste billions annually",
       buildUp: "But 5 specific tactics consistently drive viral growth across Nigerian market",
       conflict: "Most creators don't know these modern strategies exist",
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these and 10× your organic reach",
     },
     storyboard: [
-      { scene: 1, description: "Hook: Failed campaign montage with burning money graphic", duration: "0–8s" },
+      { scene: 1, description: `Hook: ${activeReview?.openingMoment || "Failed campaign montage with burning money graphic"}`, duration: "0–8s" },
       { scene: 2, description: "Credibility intro: Show real channel metrics and results", duration: "8–20s" },
       { scene: 3, description: "Tactic #1: Social proof cascade — how to build it fast", duration: "20–55s" },
       { scene: 4, description: "Tactic #2: Viral loop mechanism explained with example", duration: "55–90s" },
@@ -112,6 +137,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       { label: "Caption direction complete", pass: true },
     ],
   };
+
 
   const SectionToggle = ({ id, title }: { id: string; title: string }) => (
     <button
@@ -384,15 +410,35 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
       {/* Fixed Action Bar */}
       <div className="fixed bottom-0 left-56 right-0 bg-card/95 backdrop-blur-sm border-t border-border p-5 shadow-2xl">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <Button variant="approve" size="lg" className="flex-1" icon={<CheckCircle2 className="w-5 h-5" />}>
-            Approve Production
-          </Button>
-          <Button variant="secondary" size="lg" icon={<Edit className="w-4 h-4" />}>Edit</Button>
-          <Button variant="regenerate" size="lg" icon={<RotateCw className="w-4 h-4" />}>Regenerate</Button>
-          <Button variant="schedule" size="lg" icon={<Calendar className="w-4 h-4" />} onClick={() => onNavigate?.("/calendar")}>Schedule</Button>
-          <Button variant="schedule" size="lg" icon={<Download className="w-4 h-4" />}>Export</Button>
-          <Button variant="ghost" size="lg" icon={<XCircle className="w-4 h-4" />}>Reject</Button>
+        <div className="max-w-5xl mx-auto flex flex-col gap-2">
+          {actionSuccess && (
+            <div className={`p-2 rounded-lg text-xs font-medium text-center ${actionSuccess === "Approved" ? "bg-success/10 text-success border border-success/25" : "bg-warning/10 text-warning border border-warning/25"}`}>
+              {actionSuccess === "Approved" ? "Production approved! Publishing job & export packages created." : "Review flagged for Edit. Status updated."}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="approve"
+              size="lg"
+              className="flex-1"
+              icon={<CheckCircle2 className="w-5 h-5" />}
+              onClick={handleApprove}
+            >
+              Approve Production
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              icon={<Edit className="w-4 h-4" />}
+              onClick={handleRequestEdit}
+            >
+              Needs Edit
+            </Button>
+            <Button variant="regenerate" size="lg" icon={<RotateCw className="w-4 h-4" />}>Regenerate</Button>
+            <Button variant="schedule" size="lg" icon={<Calendar className="w-4 h-4" />} onClick={() => onNavigate?.("/calendar")}>Schedule</Button>
+            <Button variant="schedule" size="lg" icon={<Download className="w-4 h-4" />}>Export</Button>
+            <Button variant="ghost" size="lg" icon={<XCircle className="w-4 h-4" />} onClick={handleRequestEdit}>Reject</Button>
+          </div>
         </div>
       </div>
     </>

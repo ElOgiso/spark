@@ -80,7 +80,7 @@ export function PendingReviewsList({
                 Title
               </th>
               <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Channel
+                Account
               </th>
               <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Series

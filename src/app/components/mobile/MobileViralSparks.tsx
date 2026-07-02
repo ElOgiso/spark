@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../../state/SparkContext";
 import { Flame, TrendingUp, Zap, Users, Clock, CheckCircle2, Loader2, X, Shield, Sparkles, ArrowRight } from "lucide-react";
 
 type FilterTab = "all" | "hot" | "rising" | "niche";
@@ -35,10 +36,16 @@ const riskStyle: Record<string, string> = {
 };
 
 export function MobileViralSparks() {
+  const { createProductionFromSpark, productions } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<MobileSpark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
-  const [createdSparks, setCreatedSparks] = useState<Set<string>>(new Set());
+
+  const createdSparks = new Set<string>(
+    productions
+      .map((p) => p.sparkId)
+      .filter((id): id is string => !!id)
+  );
 
   const filtered = activeFilter === "all" ? sparks : sparks.filter((s) => s.category === activeFilter);
 
@@ -57,7 +64,9 @@ export function MobileViralSparks() {
     setDrawerState("creating");
     setTimeout(() => {
       setDrawerState("created");
-      if (selectedSpark) setCreatedSparks((prev) => new Set([...prev, selectedSpark.id]));
+      if (selectedSpark) {
+        createProductionFromSpark(selectedSpark.id);
+      }
     }, 2000);
   };
 

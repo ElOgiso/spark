@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import {
   CheckCircle2,
@@ -38,6 +39,7 @@ interface CalendarDay {
 }
 
 export function Calendar({ onNavigate }: CalendarProps) {
+  const { publishJobs, reviewItems } = useSpark();
   const [weekOffset, setWeekOffset] = useState(0);
 
   const statusConfig: Record<ItemStatus, { label: string; icon: React.ComponentType<{className?: string}>; color: string; bg: string; border: string }> = {
@@ -63,6 +65,56 @@ export function Calendar({ onNavigate }: CalendarProps) {
     LinkedIn: "text-accent-foreground",
   };
 
+  // Compute dynamic items for Wednesday (Jul 3)
+  const dynamicWedItems: CalendarItem[] = [];
+
+  // 1. Add any items from reviewItems that are Pending Review (Review Needed) or Needs Edit (Failed / Revise)
+  reviewItems.forEach((r) => {
+    if (r.status === "Pending Review") {
+      dynamicWedItems.push({
+        id: r.id,
+        title: r.title,
+        platform: r.account,
+        status: "review",
+        time: "2:00 PM",
+        format: r.title.includes("Tactics") ? "Long-form" : "Short"
+      });
+    } else if (r.status === "Needs Edit") {
+      dynamicWedItems.push({
+        id: r.id,
+        title: r.title,
+        platform: r.account,
+        status: "failed",
+        time: "7:00 PM",
+        format: r.title.includes("Tactics") ? "Long-form" : "Short"
+      });
+    }
+  });
+
+  // 2. Add any items from publishJobs that are Scheduled or Export Ready
+  publishJobs.forEach((pj) => {
+    const isPjAlreadyAdded = dynamicWedItems.some((item) => item.title === pj.title);
+    if (!isPjAlreadyAdded) {
+      dynamicWedItems.push({
+        id: pj.id,
+        title: pj.title,
+        platform: pj.platform,
+        status: pj.status === "Export Ready" ? "export_ready" : "scheduled",
+        time: pj.scheduledTime || "4:00 PM",
+        format: pj.title.includes("Tactics") ? "Long-form" : "Short"
+      });
+    }
+  });
+
+  // Fallback to defaults if list ends up empty
+  if (dynamicWedItems.length === 0) {
+    dynamicWedItems.push(
+      { id: "w1", title: "5 Viral Marketing Tactics", platform: "YouTube", status: "review", time: "2:00 PM", format: "Long-form" },
+      { id: "w2", title: "Psychology of Viral Content", platform: "TikTok", status: "approved", time: "6:00 PM", format: "Short" },
+      { id: "w3", title: "AI Content Creation", platform: "Instagram", status: "export_ready", time: "8:00 PM", format: "Reel" }
+    );
+  }
+
   const weekDays: CalendarDay[] = [
     {
       date: 1, day: "Mon", isToday: false,
@@ -80,11 +132,7 @@ export function Calendar({ onNavigate }: CalendarProps) {
     },
     {
       date: 3, day: "Wed", isToday: true,
-      items: [
-        { id: "w1", title: "5 Viral Marketing Tactics", platform: "YouTube", status: "review", time: "2:00 PM", format: "Long-form" },
-        { id: "w2", title: "Psychology of Viral Content", platform: "TikTok", status: "approved", time: "6:00 PM", format: "Short" },
-        { id: "w3", title: "AI Content Creation", platform: "Instagram", status: "export_ready", time: "8:00 PM", format: "Reel" },
-      ],
+      items: dynamicWedItems,
     },
     {
       date: 4, day: "Thu", isToday: false,

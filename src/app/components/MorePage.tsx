@@ -45,7 +45,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
       ],
     },
     {
-      title: "Workspace",
+      title: "Account & Team",
       items: [
         { icon: CreditCard, label: "Billing", description: "Plan, usage, and invoices", meta: "Pro Plan" },
         { icon: Code, label: "API", description: "API keys and developer access", meta: null },
@@ -115,7 +115,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
 
           {/* Automation Mode */}
           <div>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">Automation Mode</h2>
+            <h2 className="text-xs font-medium tracking-wide text-muted-foreground mb-3">Automation Mode</h2>
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="text-sm text-muted-foreground mb-4">Controls how independently Spark operates your media brand</p>
               <div className="grid grid-cols-3 gap-3">
@@ -144,7 +144,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
           {/* Settings Sections */}
           {sections.map((section) => (
             <div key={section.title}>
-              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">{section.title}</h2>
+              <h2 className="text-xs font-medium tracking-wide text-muted-foreground mb-3">{section.title}</h2>
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 {section.items.map((item, i) => {
                   const Icon = item.icon;
@@ -174,7 +174,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
           ))}
 
           <div className="text-center text-xs text-muted-foreground pb-4">
-            Spark v2.0.0 · AI Media OS
+            Spark · Media Operating System
           </div>
 
         </div>

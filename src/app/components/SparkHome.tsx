@@ -168,10 +168,10 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
             </div>
           </div>
 
-          {/* ── Production Pipeline Strip ── */}
+          {/* ── Production Status Strip ── */}
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Production Pipeline</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Production Status</h2>
               <button
                 onClick={() => onNavigate("/review")}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"

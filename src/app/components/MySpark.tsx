@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import {
   Brain,
@@ -21,71 +22,23 @@ interface MySparkProps {
   onNavigate: (path: string) => void;
 }
 
-type AutomationMode = "manual" | "balanced" | "autonomous";
-type ProductionMode = "express" | "standard" | "deep";
-
 export function MySpark({ onNavigate }: MySparkProps) {
-  const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
-  const [productionMode, setProductionMode] = useState<ProductionMode>("standard");
+  const {
+    brand,
+    character,
+    accounts,
+    automationMode,
+    productionMode,
+    memoryItems,
+    updateAutomationMode,
+    updateProductionMode,
+    addMemoryItem,
+    toggleContentPillar,
+    toggleTone
+  } = useSpark();
 
-  const brand = {
-    name: "Tech Insights Nigeria",
-    niche: "AI & Technology Education",
-    archetype: "The Expert Guide",
-    purpose: "Demystifying technology for African creators and entrepreneurs — making the complex accessible, practical, and profitable.",
-    contentPillars: [
-      { label: "AI & Automation", active: true },
-      { label: "Mobile Technology", active: true },
-      { label: "Digital Marketing", active: true },
-      { label: "Content Creation", active: true },
-      { label: "Tech Entrepreneurship", active: true },
-      { label: "African Tech Ecosystem", active: false },
-    ],
-    audience: {
-      primary: "Nigerian tech enthusiasts, entrepreneurs, and creators aged 18–35",
-      painPoints: [
-        "Tech feels inaccessible or too Western-focused",
-        "Don't know which tools to invest in",
-        "Want to build online income but don't know how",
-      ],
-      desires: [
-        "Feel ahead of the curve on technology",
-        "Build a profitable online presence",
-        "Connect with a community of similar minds",
-      ],
-    },
-    tone: [
-      { label: "Energetic", active: true },
-      { label: "Relatable", active: true },
-      { label: "Expert", active: true },
-      { label: "Humorous", active: true },
-      { label: "Inspiring", active: true },
-      { label: "Direct", active: false },
-      { label: "Academic", active: false },
-      { label: "Formal", active: false },
-    ],
-  };
-
-  const character = {
-    name: "Tunde",
-    role: "Primary Host",
-    style: "Young Nigerian male, tech-casual — glasses, branded tees, high energy",
-    traits: ["Energetic", "Relatable", "Knowledgeable", "Humorous"],
-    voice: {
-      name: "Spark_Nigeria_English",
-      language: "English (Nigerian accent)",
-      tone: "Energetic & Friendly",
-      locked: true,
-    },
-  };
-
-  const accounts = [
-    { platform: "YouTube", handle: "@TechInsightsNG", status: "connected", posts: 187 },
-    { platform: "TikTok", handle: "@techinsightsng", status: "connected", posts: 312 },
-    { platform: "Instagram", handle: "@techinsightsng", status: "connected", posts: 89 },
-    { platform: "LinkedIn", handle: "Tech Insights Nigeria", status: "connected", posts: 45 },
-    { platform: "Twitter/X", handle: "@TechInsightsNG", status: "disconnected", posts: 0 },
-  ];
+  const [newRuleText, setNewRuleText] = useState("");
+  const [showAddRule, setShowAddRule] = useState(false);
 
   const automationConfig = {
     manual: { label: "Manual", desc: "All decisions require your approval", color: "text-warning", bg: "bg-warning/10", border: "border-warning/30" },
@@ -99,17 +52,17 @@ export function MySpark({ onNavigate }: MySparkProps) {
     deep: { label: "Deep", desc: "Comprehensive — full series, all formats, all gates", time: "24–48 hours" },
   };
 
-  const memoryItems = [
-    { type: "learned", text: "Hook style: 'Nobody talks about this' achieves 3× retention on TikTok" },
-    { type: "learned", text: "Peak engagement window: Tue–Thu 2–4 PM across all accounts" },
-    { type: "learned", text: "Long-form YouTube content outperforms short-form by 2.4× for this audience" },
-    { type: "rule", text: "Never publish without a clear call to action in final 10 seconds" },
-    { type: "rule", text: "All thumbnails must include a human face with visible emotion" },
-    { type: "rule", text: "Avoid Western examples without local Nigerian context equivalent" },
-  ];
-
   const aMode = automationConfig[automationMode];
   const pMode = productionConfig[productionMode];
+
+  const handleAddRuleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRuleText.trim()) return;
+    addMemoryItem(newRuleText.trim(), "rule");
+    setNewRuleText("");
+    setShowAddRule(false);
+  };
+
 
   return (
     <>
@@ -158,6 +111,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                 {brand.contentPillars.map((pillar) => (
                   <button
                     key={pillar.label}
+                    onClick={() => toggleContentPillar(pillar.label)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       pillar.active
                         ? "bg-accent text-foreground border border-accent/60"
@@ -264,6 +218,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                 {brand.tone.map((t) => (
                   <button
                     key={t.label}
+                    onClick={() => toggleTone(t.label)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       t.active
                         ? "bg-foreground text-background"
@@ -312,13 +267,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
             <div className="rounded-xl border border-border bg-card p-6">
               <p className="text-sm text-muted-foreground mb-4">Controls the depth and time of each production run</p>
               <div className="grid grid-cols-3 gap-3">
-                {(["express", "standard", "deep"] as ProductionMode[]).map((mode) => {
+                {(["express", "standard", "deep"] as const).map((mode) => {
                   const cfg = productionConfig[mode];
                   const isActive = productionMode === mode;
                   return (
                     <button
                       key={mode}
-                      onClick={() => setProductionMode(mode)}
+                      onClick={() => updateProductionMode(mode)}
                       className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                         isActive
                           ? "bg-accent/20 border-accent/40"
@@ -343,13 +298,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
             <div className="rounded-xl border border-border bg-card p-6">
               <p className="text-sm text-muted-foreground mb-4">How much AI operates independently vs. awaiting your approval</p>
               <div className="grid grid-cols-3 gap-3">
-                {(["manual", "balanced", "autonomous"] as AutomationMode[]).map((mode) => {
+                {(["manual", "balanced", "autonomous"] as const).map((mode) => {
                   const cfg = automationConfig[mode];
                   const isActive = automationMode === mode;
                   return (
                     <button
                       key={mode}
-                      onClick={() => setAutomationMode(mode)}
+                      onClick={() => updateAutomationMode(mode)}
                       className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                         isActive ? `${cfg.bg} ${cfg.border}` : "bg-background border-border hover:border-accent/30"
                       }`}
@@ -372,8 +327,32 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   <Brain className="w-4 h-4 text-accent-foreground" />
                   <p className="text-sm font-medium">Learned patterns and hard rules applied to every production</p>
                 </div>
-                <button className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add rule</button>
+                <button
+                  onClick={() => setShowAddRule(!showAddRule)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showAddRule ? "Cancel" : "+ Add rule"}
+                </button>
               </div>
+
+              {showAddRule && (
+                <form onSubmit={handleAddRuleSubmit} className="mb-4 flex gap-2">
+                  <input
+                    type="text"
+                    value={newRuleText}
+                    onChange={(e) => setNewRuleText(e.target.value)}
+                    placeholder="Enter brand guideline or style rule..."
+                    className="flex-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent/50"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95"
+                  >
+                    Add
+                  </button>
+                </form>
+              )}
+
               <div className="space-y-2">
                 {memoryItems.map((item, i) => (
                   <div

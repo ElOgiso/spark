@@ -36,7 +36,7 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
             Spark
           </h1>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">AI Media OS</p>
+        <p className="text-xs text-muted-foreground mt-1">Spark · Media Operating System</p>
       </div>
 
       <div className="flex-1 px-3 py-4 space-y-0.5">
