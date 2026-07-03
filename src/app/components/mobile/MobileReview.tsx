@@ -7,7 +7,7 @@ import {
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
 
-type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved";
+type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "scheduled";
 
 interface ReviewItem {
   id: string;

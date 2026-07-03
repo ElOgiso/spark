@@ -41,8 +41,8 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   // Sub-pages states
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [apiKeyList, setApiKeyList] = useState([
-    { id: "1", name: "Production API Key", key: "sk_live_spark_7f15405a8b29", created: "2026-05-10" },
-    { id: "2", name: "Development Adapter", key: "sk_dev_spark_07f15405257f", created: "2026-06-01" }
+    { id: "1", name: "Production API Key", key: "spark_preview_live_7f15405a8b29", created: "2026-05-10" },
+    { id: "2", name: "Development Adapter", key: "spark_preview_dev_07f15405257f", created: "2026-06-01" }
   ]);
   const [newKeyName, setNewKeyName] = useState("");
   const [showAddKey, setShowAddKey] = useState(false);
@@ -116,7 +116,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     const newKey = {
       id: Date.now().toString(),
       name: newKeyName,
-      key: `sk_live_spark_${randomHex}`,
+      key: `spark_preview_live_${randomHex}`,
       created: new Date().toISOString().split("T")[0]
     };
     setApiKeyList([...apiKeyList, newKey]);

@@ -41,6 +41,8 @@ export function cn(...inputs: ClassValue[]) {
 export type ButtonVariant =
   | "primary"    // bg-foreground — main CTA
   | "secondary"  // bg-accent — supporting action
+  | "accent"     // legacy export alias for secondary
+  | "outline"    // bordered neutral action
   | "ghost"      // transparent — tertiary
   | "danger"     // destructive tint — delete/reject
   | "approve"    // bg-success — approve/publish
@@ -60,6 +62,8 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:    "bg-foreground text-background hover:bg-foreground/90 shadow-lg shadow-black/20 active:scale-[0.98]",
   secondary:  "bg-accent hover:bg-accent/80 text-foreground active:scale-[0.98]",
+  accent:     "bg-accent hover:bg-accent/80 text-foreground active:scale-[0.98]",
+  outline:    "border border-border bg-transparent text-foreground hover:bg-accent/20 active:scale-[0.98]",
   ghost:      "text-muted-foreground hover:text-foreground hover:bg-accent/20 active:scale-[0.98]",
   danger:     "bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15 active:scale-[0.98]",
   approve:    "bg-success hover:bg-success/90 text-white shadow-lg shadow-success/10 active:scale-[0.98]",
