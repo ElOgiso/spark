@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSpark } from "../../state/SparkContext";
+import { InteractiveVideoPlayer, ThumbnailVariantCard } from "../MediaPreviewHelper";
 import {
   ArrowLeft,
   TrendingUp,
@@ -13,10 +15,15 @@ import {
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
+  item?: any;
 }
 
-export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
+export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
+  const { approveReviewItem, rejectOrRequestEditReviewItem } = useSpark();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [approved, setApproved] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
 
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections);
@@ -26,6 +33,23 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
       newExpanded.add(section);
     }
     setExpandedSections(newExpanded);
+  };
+
+  const handleAction = (type: "changes" | "regenerate" | "reject") => {
+    if (item?.id) {
+      rejectOrRequestEditReviewItem(item.id);
+    }
+    if (type === "changes") {
+      setFeedback("Requesting storyboard adjustments...");
+    } else if (type === "regenerate") {
+      setFeedback("Regenerating new hooks and creative angles...");
+    } else if (type === "reject") {
+      setFeedback("Creative draft rejected and archived.");
+    }
+    setTimeout(() => {
+      setFeedback(null);
+      onBack?.();
+    }, 2000);
   };
 
   const proposal = {
@@ -63,6 +87,26 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
     },
   };
 
+  if (approved) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center pb-24">
+        <div className="w-16 h-16 rounded-full bg-success/15 border border-success/30 flex items-center justify-center mb-5">
+          <CheckCircle2 className="w-8 h-8 text-success animate-bounce" />
+        </div>
+        <h2 className="text-xl font-medium mb-2">Approved & Scheduled</h2>
+        <p className="text-sm text-muted-foreground mb-8">
+          "{proposal.title}" has been approved and moved to the publishing queue.
+        </p>
+        <button
+          onClick={onBack}
+          className="w-full py-3.5 bg-foreground text-background font-medium rounded-xl text-sm active:scale-95 transition-transform"
+        >
+          Back to Review Queue
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background pb-32">
       <div className="sticky top-0 z-10 bg-background border-b border-border p-4">
@@ -87,6 +131,22 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Playable Storyboard Draft Player */}
+        <div className="p-0.5 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border overflow-hidden">
+          <InteractiveVideoPlayer 
+            id={item?.id || "p1"} 
+            title={proposal.title} 
+            scenes={proposal.storyboard} 
+            durationText="3:20"
+            onApprove={() => {
+              if (item?.id) {
+                approveReviewItem(item.id);
+              }
+              setApproved(true);
+            }}
+          />
+        </div>
+
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-sm text-muted-foreground mb-2">Concept</p>
           <p className="text-base mb-4">{proposal.concept}</p>
@@ -104,22 +164,29 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h3 className="text-base font-medium mb-4">Thumbnails</h3>
-          <div className="grid grid-cols-3 gap-3">
+        {/* High impact cover selection */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-accent" />
+            <span>Proposed Thumbnails (Tap to select)</span>
+          </h3>
+          <div className="grid grid-cols-1 gap-3.5">
             {proposal.thumbnails.map((thumbnail) => (
-              <div key={thumbnail.id} className="space-y-2">
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center border border-border">
-                  <span className="text-xs text-muted-foreground">{thumbnail.variant}</span>
-                </div>
-              </div>
+              <ThumbnailVariantCard 
+                key={thumbnail.id}
+                id={item?.id || "p1"}
+                variant={thumbnail.variant as "A" | "B" | "C"}
+                concept={`Variant ${thumbnail.variant} design customized for High Click-Through Rates across all platforms.`}
+                isSelected={selectedVariant === thumbnail.variant}
+                onClick={() => setSelectedVariant(thumbnail.variant as "A" | "B" | "C")}
+              />
             ))}
           </div>
         </div>
 
         <button
           onClick={() => toggleSection("narrative")}
-          className="w-full rounded-xl border border-border bg-card p-4"
+          className="w-full text-left rounded-xl border border-border bg-card p-4"
         >
           <div className="flex items-center justify-between">
             <h3 className="text-base font-medium">Narrative</h3>
@@ -143,7 +210,7 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
 
         <button
           onClick={() => toggleSection("storyboard")}
-          className="w-full rounded-xl border border-border bg-card p-4"
+          className="w-full text-left rounded-xl border border-border bg-card p-4"
         >
           <div className="flex items-center justify-between">
             <h3 className="text-base font-medium">Storyboard</h3>
@@ -172,7 +239,7 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
 
         <button
           onClick={() => toggleSection("platform")}
-          className="w-full rounded-xl border border-border bg-card p-4"
+          className="w-full text-left rounded-xl border border-border bg-card p-4"
         >
           <div className="flex items-center justify-between">
             <h3 className="text-base font-medium">Platform Strategy</h3>
@@ -195,21 +262,44 @@ export function MobileCreativeReview({ onBack }: MobileCreativeReviewProps) {
         </button>
       </div>
 
+      {feedback && (
+        <div className="fixed bottom-36 left-4 right-4 bg-card border border-border px-4 py-3 rounded-xl flex items-center justify-between shadow-lg z-50 animate-pulse">
+          <span className="text-xs text-foreground font-medium">{feedback}</span>
+        </div>
+      )}
+
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl">
-        <button className="w-full py-5 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 mb-3 shadow-lg transition-all active:scale-[0.98]">
+        <button
+          onClick={() => {
+            if (item?.id) {
+              approveReviewItem(item.id);
+            }
+            setApproved(true);
+          }}
+          className="w-full py-5 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 mb-3 shadow-lg transition-all active:scale-[0.98]"
+        >
           <CheckCircle2 className="w-6 h-6" />
           Approve
         </button>
         <div className="grid grid-cols-3 gap-2">
-          <button className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5">
+          <button
+            onClick={() => handleAction("changes")}
+            className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          >
             <Edit className="w-3.5 h-3.5" />
             Changes
           </button>
-          <button className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5">
+          <button
+            onClick={() => handleAction("regenerate")}
+            className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          >
             <RotateCw className="w-3.5 h-3.5" />
             Regenerate
           </button>
-          <button className="py-3 bg-muted hover:bg-muted/80 active:bg-muted/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5">
+          <button
+            onClick={() => handleAction("reject")}
+            className="py-3 bg-muted hover:bg-muted/80 active:bg-muted/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          >
             <XCircle className="w-3.5 h-3.5" />
             Reject
           </button>

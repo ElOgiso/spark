@@ -1,0 +1,25 @@
+{
+  "name": "Spark — Media Operating System",
+  "short_name": "Spark",
+  "description": "Spark helps media brands discover opportunities, prepare productions, review releases, schedule publishing, and learn from performance.",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#0B0F19",
+  "theme_color": "#0B0F19",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

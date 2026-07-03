@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSpark } from "../../state/SparkContext";
+import { MiniMediaThumbnail } from "../MediaPreviewHelper";
 import {
   Pencil, Video, Rocket, CheckCircle2, X, RotateCw, Check,
   Sparkles, Clock, ArrowLeft, Loader2, AlertTriangle, Brain,
@@ -7,7 +9,7 @@ import {
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
 
-type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "scheduled";
+type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved";
 
 interface ReviewItem {
   id: string;
@@ -35,14 +37,6 @@ const typeLabel: Record<ReviewItem["type"], string> = {
   publishing: "Publishing",
 };
 
-const reviews: ReviewItem[] = [
-  { id: "r1", title: "5 Viral Marketing Tactics That Actually Work in 2026", type: "creative", priority: "high", stage: "ready", aiConfidence: 94, timeWaiting: "2m", account: "YouTube", format: "Long-form + Clips" },
-  { id: "r2", title: "The Psychology Behind Viral Content", type: "production", priority: "high", stage: "ready", aiConfidence: 88, timeWaiting: "15m", account: "TikTok", format: "Short-form 60s" },
-  { id: "r3", title: "How AI Creates Engaging Stories", type: "creative", priority: "medium", stage: "needs_edit", aiConfidence: 76, timeWaiting: "1h", account: "Instagram", format: "Carousel + Reel" },
-  { id: "r4", title: "Building a Personal Brand in 2026", type: "publishing", priority: "low", stage: "approved", aiConfidence: 82, timeWaiting: "2h", account: "LinkedIn", format: "Article" },
-  { id: "r5", title: "Content Creation Workflow Optimization", type: "production", priority: "medium", stage: "drafting", aiConfidence: 91, timeWaiting: "3h", account: "YouTube", format: "Tutorial 12min" },
-];
-
 const stageTabs: { id: StageFilter; label: string }[] = [
   { id: "all",       label: "All" },
   { id: "ready",     label: "Ready" },
@@ -52,10 +46,11 @@ const stageTabs: { id: StageFilter; label: string }[] = [
 ];
 
 function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
+  const { approveReviewItem, rejectOrRequestEditReviewItem } = useSpark();
   const [approved, setApproved] = useState(false);
 
   if (item.type === "creative") {
-    return <MobileCreativeReview onBack={onBack} />;
+    return <MobileCreativeReview onBack={onBack} item={item} />;
   }
 
   if (approved) {
@@ -167,18 +162,45 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
           size="xl"
           fullWidth
           icon={<CheckCircle2 className="w-5 h-5" />}
-          onClick={() => setApproved(true)}
+          onClick={() => {
+            approveReviewItem(item.id);
+            setApproved(true);
+          }}
         >
           Approve
         </Button>
         <div className="grid grid-cols-3 gap-2">
-          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />}>
+          <Button
+            variant="regenerate"
+            size="md"
+            icon={<RotateCw className="w-4 h-4" />}
+            onClick={() => {
+              rejectOrRequestEditReviewItem(item.id);
+              onBack();
+            }}
+          >
             Regenerate
           </Button>
-          <Button variant="schedule" size="md" icon={<Calendar className="w-4 h-4" />}>
+          <Button
+            variant="schedule"
+            size="md"
+            icon={<Calendar className="w-4 h-4" />}
+            onClick={() => {
+              approveReviewItem(item.id);
+              setApproved(true);
+            }}
+          >
             Schedule
           </Button>
-          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />}>
+          <Button
+            variant="danger"
+            size="md"
+            icon={<X className="w-4 h-4" />}
+            onClick={() => {
+              rejectOrRequestEditReviewItem(item.id);
+              onBack();
+            }}
+          >
             Reject
           </Button>
         </div>
@@ -187,12 +209,42 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
   );
 }
 
-export function MobileReview() {
+interface MobileReviewProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
+  const { productions, reviewItems } = useSpark();
   const [activeFilter, setActiveFilter] = useState<StageFilter>("all");
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
 
+  const reviews: ReviewItem[] = productions.map((p) => {
+    const rev = reviewItems.find((r) => r.productionId === p.id);
+    
+    let stage: "drafting" | "ready" | "needs_edit" | "approved" | "scheduled" = "drafting";
+    if (p.status === "Ready for Review") stage = "ready";
+    else if (p.status === "Needs Edit") stage = "needs_edit";
+    else if (p.status === "Approved") {
+      if (p.id === "p7" || p.id.includes("scheduled")) stage = "scheduled";
+      else stage = "approved";
+    } else if (p.status === "Drafting") stage = "drafting";
+
+    return {
+      id: rev?.id || `rev-${p.id}`,
+      title: p.title,
+      type: (p.id === "p2" || p.id === "p5" ? "production" : "creative") as "creative" | "production" | "publishing",
+      priority: (p.id === "p1" || p.id === "p2" || p.id.includes("-")) ? "high" : "medium" as "high" | "medium" | "low",
+      stage: stage,
+      aiConfidence: p.id === "p1" ? 94 : p.id === "p2" ? 88 : 85,
+      timeWaiting: p.dateCreated === "2026-07-01" ? "2m" : "1h",
+      account: rev?.account || (p.aspectRatio === "16:9" ? "YouTube" : "TikTok"),
+      format: p.formats.join(" + "),
+    };
+  });
+
   if (selectedReview) {
-    return <ReviewDetail item={selectedReview} onBack={() => setSelectedReview(null)} />;
+    const currentReview = reviews.find((r) => r.id === selectedReview.id) || selectedReview;
+    return <ReviewDetail item={currentReview} onBack={() => setSelectedReview(null)} />;
   }
 
   const filtered = activeFilter === "all"
@@ -258,11 +310,17 @@ export function MobileReview() {
 
       {/* Review cards */}
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <div className="rounded-xl border border-border bg-card p-8 text-center flex flex-col items-center">
           <p className="text-sm font-medium text-muted-foreground mb-1">Nothing here</p>
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground/60 mb-4">
             {activeFilter === "drafting" ? "Spark isn't generating anything right now." : "No items in this stage."}
           </p>
+          <button
+            onClick={() => onNavigate?.("/viral-sparks")}
+            className="px-4 py-2 bg-foreground text-background rounded-lg text-xs font-medium active:scale-95 transition-transform"
+          >
+            Find Viral Sparks to Draft →
+          </button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -279,18 +337,19 @@ export function MobileReview() {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  {/* Type icon */}
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    review.type === "creative" ? "bg-accent/30" :
-                    review.type === "production" ? "bg-warning/15" :
-                    "bg-muted/40"
-                  }`}>
-                    {isDrafting
-                      ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
-                      : review.type === "creative" ? <Pencil className="w-5 h-5 text-accent-foreground" />
-                      : review.type === "production" ? <Video className="w-5 h-5 text-warning" />
-                      : <Rocket className="w-5 h-5 text-muted-foreground" />
-                    }
+                  {/* Media Thumbnail */}
+                  <div className="relative flex-shrink-0">
+                    <MiniMediaThumbnail
+                      id={review.id}
+                      title={review.title}
+                      isVideo={review.stage === "approved" || review.stage === "scheduled"}
+                      className="shadow-md"
+                    />
+                    {isDrafting && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
+                        <Loader2 className="w-5 h-5 text-white animate-spin" />
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex-1 min-w-0">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSpark } from "../../state/SparkContext";
 import { BottomNavigation } from "./BottomNavigation";
 import { MobileHome } from "./MobileHome";
 import { MobileViralSparks } from "./MobileViralSparks";
@@ -10,15 +11,31 @@ type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more";
 
 export function MobileApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("spark");
+  const { productions } = useSpark();
+  const pendingReviewsCount = productions.filter((p) => p.status === "Ready for Review").length;
+
+  const handleMobileNavigate = (path: string) => {
+    if (path === "/review") {
+      setActiveTab("review");
+    } else if (path === "/viral-sparks") {
+      setActiveTab("viral-sparks");
+    } else if (path === "/analytics") {
+      setActiveTab("analytics");
+    } else if (path === "/more") {
+      setActiveTab("more");
+    } else {
+      setActiveTab("spark");
+    }
+  };
 
   const renderContent = () => {
     switch (activeTab) {
-      case "spark": return <MobileHome />;
-      case "viral-sparks": return <MobileViralSparks />;
-      case "review": return <MobileReview />;
-      case "analytics": return <MobileAnalytics />;
-      case "more": return <MobileMore />;
-      default: return <MobileHome />;
+      case "spark": return <MobileHome onNavigate={handleMobileNavigate} />;
+      case "viral-sparks": return <MobileViralSparks onNavigate={handleMobileNavigate} />;
+      case "review": return <MobileReview onNavigate={handleMobileNavigate} />;
+      case "analytics": return <MobileAnalytics onNavigate={handleMobileNavigate} />;
+      case "more": return <MobileMore onNavigate={handleMobileNavigate} />;
+      default: return <MobileHome onNavigate={handleMobileNavigate} />;
     }
   };
 
@@ -29,7 +46,7 @@ export function MobileApp() {
         <BottomNavigation
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          pendingReviews={5}
+          pendingReviews={pendingReviewsCount}
         />
       </div>
     </div>

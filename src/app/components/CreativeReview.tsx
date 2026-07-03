@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
+import { NotificationService } from "../notifications/notificationService";
 import { Button, WhySparkRecommends } from "./ds";
+import { InteractiveVideoPlayer, ThumbnailVariantCard } from "./MediaPreviewHelper";
 import {
   ArrowLeft,
   TrendingUp,
@@ -49,10 +51,19 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
 
   const handleApprove = () => {
     approveReviewItem(reviewId);
     setActionSuccess("Approved");
+    NotificationService.addNotification({
+      title: "Production Approved",
+      description: `"${proposal.title}" has been approved and moved to the calendar.`,
+      type: "publishing_complete",
+      priority: "medium",
+      actionLabel: "View Calendar",
+      relatedRoute: "/calendar"
+    });
     setTimeout(() => {
       onBack?.();
     }, 1500);
@@ -61,6 +72,14 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const handleRequestEdit = () => {
     rejectOrRequestEditReviewItem(reviewId);
     setActionSuccess("Needs Edit");
+    NotificationService.addNotification({
+      title: "Revision Requested",
+      description: `"${proposal.title}" moved back to drafting with requested revisions.`,
+      type: "brand_rule_conflict",
+      priority: "high",
+      actionLabel: "View Review Center",
+      relatedRoute: "/review"
+    });
     setTimeout(() => {
       onBack?.();
     }, 1500);
@@ -178,7 +197,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   return (
     <>
       <TopBar pageName="Review" />
-      <main className="flex-1 overflow-y-auto pb-28">
+      <main className="flex-1 overflow-y-auto scrollbar-none pb-28">
         <div className="max-w-5xl mx-auto p-8 space-y-6">
 
           <button
@@ -221,23 +240,35 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
-          {/* Preview Area */}
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <div className="aspect-video bg-muted/40 flex items-center justify-center border-b border-border/50">
-              <div className="text-center">
-                <Video className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Storyboard preview — production pending approval</p>
-              </div>
+          {/* Interactive Media Preview Section */}
+          <div className="space-y-6">
+            <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">
+              <InteractiveVideoPlayer 
+                id={activeReview?.id || "p1"} 
+                title={proposal.title} 
+                scenes={proposal.storyboard} 
+                durationText="3:20"
+                onApprove={handleApprove}
+              />
             </div>
-            <div className="p-6 grid grid-cols-3 gap-4">
-              {proposal.thumbnails.map((t) => (
-                <div key={t.id}>
-                  <div className="aspect-video bg-muted/50 rounded-lg flex items-center justify-center border border-border mb-2">
-                    <span className="text-xs text-muted-foreground">Variant {t.variant}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-snug">{t.concept}</p>
-                </div>
-              ))}
+            
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-accent" />
+                <span>Proposed Thumbnail Variants</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {proposal.thumbnails.map((t) => (
+                  <ThumbnailVariantCard 
+                    key={t.id}
+                    id={activeReview?.id || "p1"}
+                    variant={t.variant as "A" | "B" | "C"}
+                    concept={t.concept}
+                    isSelected={selectedVariant === t.variant}
+                    onClick={() => setSelectedVariant(t.variant as "A" | "B" | "C")}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 

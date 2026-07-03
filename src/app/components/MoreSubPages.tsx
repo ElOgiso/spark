@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { useSpark } from "../state/SparkContext";
+import { NotificationService } from "../notifications/notificationService";
 import {
   ArrowLeft,
   FileText,
@@ -41,8 +42,8 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   // Sub-pages states
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [apiKeyList, setApiKeyList] = useState([
-    { id: "1", name: "Production API Key", key: "spark_preview_live_7f15405a8b29", created: "2026-05-10" },
-    { id: "2", name: "Development Adapter", key: "spark_preview_dev_07f15405257f", created: "2026-06-01" }
+    { id: "1", name: "Production API Key", key: "sk_live_spark_7f15405a8b29", created: "2026-05-10" },
+    { id: "2", name: "Development Adapter", key: "sk_dev_spark_07f15405257f", created: "2026-06-01" }
   ]);
   const [newKeyName, setNewKeyName] = useState("");
   const [showAddKey, setShowAddKey] = useState(false);
@@ -86,14 +87,49 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const [memoryType, setMemoryType] = useState<"learned" | "rule">("learned");
   const [memoryCategory, setMemoryCategory] = useState("Character");
 
-  // Notifications preferences
-  const [notifSettings, setNotifSettings] = useState({
-    emailDailyBrief: true,
-    pushReviewAlerts: true,
-    emailWeeklyGrowth: true,
-    pushPublishConfirm: false,
-    slackIntegration: true
+  // Notifications preferences with local persistence
+  const [notifSettings, setNotifSettings] = useState(() => {
+    const saved = localStorage.getItem("spark-notif-settings");
+    return saved ? JSON.parse(saved) : {
+      emailDailyBrief: true,
+      pushReviewAlerts: true,
+      emailWeeklyGrowth: true,
+      pushPublishConfirm: false,
+      slackIntegration: true,
+      quietHoursStart: "22:00",
+      quietHoursEnd: "08:00",
+      quietHoursEnabled: true,
+    };
   });
+
+  useEffect(() => {
+    localStorage.setItem("spark-notif-settings", JSON.stringify(notifSettings));
+  }, [notifSettings]);
+
+  const [pushStatus, setPushStatus] = useState<NotificationPermission>("default");
+  useEffect(() => {
+    if ("Notification" in window) {
+      setPushStatus(Notification.permission);
+    }
+  }, []);
+
+  const handleRequestPushPermission = async () => {
+    if (!("Notification" in window)) {
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setPushStatus(permission);
+    if (permission === "granted") {
+      NotificationService.addNotification({
+        title: "Push Notifications Activated",
+        description: "Spark OS has successfully registered native push notification permissions.",
+        type: "system_update",
+        priority: "high",
+        actionLabel: "View Preferences",
+        relatedRoute: "/more/notifications"
+      });
+    }
+  };
 
   // Privacy preferences
   const [privacySettings, setPrivacySettings] = useState({
@@ -116,7 +152,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     const newKey = {
       id: Date.now().toString(),
       name: newKeyName,
-      key: `spark_preview_live_${randomHex}`,
+      key: `sk_live_spark_${randomHex}`,
       created: new Date().toISOString().split("T")[0]
     };
     setApiKeyList([...apiKeyList, newKey]);
@@ -243,8 +279,31 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   {assets.map((asset) => (
                     <div key={asset.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-accent/5 transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded bg-muted flex items-center justify-center text-xs font-mono text-muted-foreground">
-                          {asset.type[0]}
+                        {/* Dynamic Asset Media Preview instead of just a generic letter icon */}
+                        <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-border/50 bg-background flex items-center justify-center select-none shadow-sm">
+                          {asset.name.includes("logo") ? (
+                            <div className="absolute inset-0 bg-gradient-to-tr from-violet-600 via-indigo-600 to-purple-600 flex items-center justify-center">
+                              <span className="text-[8px] font-black tracking-tight text-white uppercase">LOGO</span>
+                            </div>
+                          ) : asset.name.includes("synth") ? (
+                            <div className="absolute inset-0 bg-gradient-to-tr from-amber-500 via-rose-500 to-red-500 flex flex-col justify-end p-1 pb-1.5">
+                              <div className="flex items-end gap-[1px] h-4 justify-center">
+                                {[3, 5, 2, 6, 4, 3, 5].map((h, i) => (
+                                  <span key={i} className="w-[1px] bg-white rounded-full" style={{ height: `${h * 15}%` }} />
+                                ))}
+                              </div>
+                            </div>
+                          ) : asset.name.includes("overlay") ? (
+                            <div className="absolute inset-0 bg-gradient-to-tr from-teal-400 via-cyan-600 to-blue-600 flex items-center justify-center">
+                              <div className="w-5 h-5 rounded-full bg-white/95 flex items-center justify-center shadow-md">
+                                <Play className="w-2.5 h-2.5 text-cyan-600 fill-current translate-x-[0.5px]" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="absolute inset-0 bg-gradient-to-tr from-red-500 to-orange-500 flex items-center justify-center">
+                              <span className="text-[8px] font-black text-white uppercase font-mono tracking-wider">PDF</span>
+                            </div>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{asset.name}</p>
@@ -880,6 +939,34 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
           description: "Manage how and when you receive critical alerts, creative briefings, and status reports.",
           content: (
             <div className="space-y-6">
+              {/* Native Push Request Card */}
+              <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold">Native Push Alerts</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Enable native browser push notifications to get real-time alerts even when Spark is closed.
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-muted-foreground">Status:</span>
+                    <span className={`text-[10px] font-bold uppercase ${
+                      pushStatus === "granted" ? "text-success" : pushStatus === "denied" ? "text-destructive" : "text-warning"
+                    }`}>
+                      {pushStatus === "granted" ? "Granted" : pushStatus === "denied" ? "Denied" : "Not Requested"}
+                    </span>
+                  </div>
+                </div>
+                {pushStatus !== "granted" && (
+                  <Button
+                    variant="accent"
+                    size="sm"
+                    onClick={handleRequestPushPermission}
+                  >
+                    Enable Push
+                  </Button>
+                )}
+              </div>
+
+              {/* Alert Subscriptions */}
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Alert Subscriptions</h3>
@@ -910,6 +997,46 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Quiet Hours */}
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-border/50 bg-muted/20 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quiet Hours</h3>
+                  <button
+                    onClick={() => setNotifSettings({ ...notifSettings, quietHoursEnabled: !notifSettings.quietHoursEnabled })}
+                    className={`w-9 h-5 rounded-full p-0.5 transition-colors focus:outline-none ${
+                      notifSettings.quietHoursEnabled ? "bg-accent" : "bg-muted"
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${notifSettings.quietHoursEnabled ? "translate-x-4" : ""}`} />
+                  </button>
+                </div>
+                <div className={`p-5 space-y-4 transition-opacity duration-200 ${notifSettings.quietHoursEnabled ? "opacity-100" : "opacity-45 pointer-events-none"}`}>
+                  <p className="text-xs text-muted-foreground">
+                    When active, Spark will queue notifications and delay non-urgent alerts until quiet hours conclude.
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">Start Time</label>
+                      <input
+                        type="time"
+                        value={notifSettings.quietHoursStart}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, quietHoursStart: e.target.value })}
+                        className="text-xs bg-background border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-accent w-full"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">End Time</label>
+                      <input
+                        type="time"
+                        value={notifSettings.quietHoursEnd}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, quietHoursEnd: e.target.value })}
+                        className="text-xs bg-background border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-accent w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -990,7 +1117,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
   return (
     <>
-      <TopBar pageName={`More / ${page.title}`} />
+      <TopBar pageName={`More / ${page.title}`} onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-8 space-y-6">
           <button
@@ -1026,7 +1153,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 export function FullLegalPage({ onNavigate, type }: SubPageProps & { type: "terms" | "privacy" }) {
   return (
     <>
-      <TopBar pageName={type === "terms" ? "Terms of Service" : "Privacy Policy"} />
+      <TopBar pageName={type === "terms" ? "Terms of Service" : "Privacy Policy"} onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto p-8 space-y-6">
           <button

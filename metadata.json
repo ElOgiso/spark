@@ -1,6 +1,6 @@
 {
   "name": "Spark Media OS",
-  "description": "Spark is an AI-native Media Operating System for the Brand, My Spark, Viral Sparks, Review, Publish, Analytics, and Learn loop.",
+  "description": "An elegant, full-featured workspace to manage your AI-driven media production, branding, and publishing across desktop and mobile formats.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

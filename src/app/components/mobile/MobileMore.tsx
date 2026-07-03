@@ -29,7 +29,11 @@ import {
 
 type AutomationMode = "manual" | "balanced" | "autonomous";
 
-export function MobileMore() {
+interface MobileMoreProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const { memoryItems, addMemoryItem, removeMemoryItem } = useSpark();
 
   const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
@@ -48,8 +52,8 @@ export function MobileMore() {
 
   // Mock states for mobile detail interactions
   const [apiKeyList, setApiKeyList] = useState([
-    { id: "1", name: "Production API Key", key: "spark_preview_live_7f15405a8b29", created: "2026-05-10" },
-    { id: "2", name: "Development Adapter", key: "spark_preview_dev_07f15405257f", created: "2026-06-01" }
+    { id: "1", name: "Production API Key", key: "sk_live_spark_7f15405a8b29", created: "2026-05-10" },
+    { id: "2", name: "Development Adapter", key: "sk_dev_spark_07f15405257f", created: "2026-06-01" }
   ]);
   const [newKeyName, setNewKeyName] = useState("");
   const [showAddKey, setShowAddKey] = useState(false);
@@ -399,7 +403,7 @@ export function MobileMore() {
               <div className="rounded-xl border border-border bg-card p-4">
                 <p className="text-xs text-muted-foreground leading-relaxed flex items-start gap-1.5">
                   <Terminal className="w-4 h-4 text-accent-foreground flex-shrink-0" />
-                  <span>Use backend-issued keys to connect custom pipeline triggers with external webhooks securely.</span>
+                  <span>Utilize bear keys to connect custom pipeline triggers with external webhooks securely.</span>
                 </p>
               </div>
 
@@ -408,7 +412,7 @@ export function MobileMore() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (!newKeyName.trim()) return;
-                    setApiKeyList([...apiKeyList, { id: Date.now().toString(), name: newKeyName, key: "spark_preview_live_new", created: "Today" }]);
+                    setApiKeyList([...apiKeyList, { id: Date.now().toString(), name: newKeyName, key: "sk_live_spark_new", created: "Today" }]);
                     setNewKeyName("");
                     setShowAddKey(false);
                   }}

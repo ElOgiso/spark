@@ -6,14 +6,7 @@ interface StatusItem {
   details?: string;
 }
 
-const stageConfig: Record<StatusItem["stage"], {
-  label: string;
-  icon: typeof Clock;
-  color: string;
-  bg: string;
-  border: string;
-  animate?: boolean;
-}> = {
+const stageConfig = {
   scheduled: {
     label: "Scheduled",
     icon: Clock,

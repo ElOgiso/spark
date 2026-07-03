@@ -172,7 +172,7 @@ export function Calendar({ onNavigate }: CalendarProps) {
 
   return (
     <>
-      <TopBar pageName="Calendar" />
+      <TopBar pageName="Calendar" onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 

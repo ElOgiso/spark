@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
+import { MiniMediaThumbnail } from "./MediaPreviewHelper";
 import {
   Button, StatusChip, Card, EmptyState, PageHeader, SectionHeader,
   FilterPill, ConfidenceBar, type ChipVariant,
@@ -165,8 +166,8 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
 
   return (
     <>
-      <TopBar pageName="Review" />
-      <main className="flex-1 overflow-y-auto">
+      <TopBar pageName="Review" onNavigate={onNavigate} />
+      <main className="flex-1 overflow-y-auto scrollbar-none">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 
           <PageHeader
@@ -209,7 +210,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
             <SectionHeader label="Productions" />
 
             {/* Stage Filter Pills */}
-            <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+            <div className="flex items-center gap-2 mb-4 overflow-x-auto scrollbar-none pb-1">
               {stageTabs.map((tab) => {
                 const Icon = tab.icon;
                 const count = stageCounts[tab.id];
@@ -250,10 +251,17 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                           onClick={() => !isDrafting && item.reviewType === "creative" && onNavigate?.("/review/creative")}
                         >
                           <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              {isDrafting && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />}
-                              <div>
-                                <p className="text-sm font-medium max-w-[220px] truncate">{item.title}</p>
+                            <div className="flex items-center gap-3">
+                              <MiniMediaThumbnail 
+                                id={item.id} 
+                                title={item.title} 
+                                isVideo={item.stage === "approved" || item.stage === "scheduled" || item.stage === "export_ready"} 
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  {isDrafting && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />}
+                                  <p className="text-sm font-medium max-w-[220px] truncate">{item.title}</p>
+                                </div>
                                 {item.series && <p className="text-xs text-muted-foreground mt-0.5">{item.series}</p>}
                                 {isDrafting && <p className="text-xs text-muted-foreground/60 mt-0.5">Spark is generating…</p>}
                               </div>

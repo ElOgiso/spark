@@ -126,7 +126,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
   return (
     <>
-      <TopBar pageName="Spark" />
+      <TopBar pageName="Spark" onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto p-8 space-y-8">
 

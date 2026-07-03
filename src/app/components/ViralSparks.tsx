@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
+import { NotificationService } from "../notifications/notificationService";
 import {
   Button, StatusChip, ScoreBadge, Card, EmptyState,
   PageHeader, SectionHeader, FilterPill, WhySparkRecommends,
@@ -432,6 +433,14 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
       setDrawerState("created");
       if (selectedSpark) {
         createProductionFromSpark(selectedSpark.id);
+        NotificationService.addNotification({
+          title: "Production Draft Started",
+          description: `Spark is drafting storyboard and resources for "${selectedSpark.title}".`,
+          type: "new_viral_opportunity",
+          priority: "high",
+          actionLabel: "Review Draft",
+          relatedRoute: "/review"
+        });
       }
     }, 2000);
   };
@@ -443,7 +452,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
 
   return (
     <>
-      <TopBar pageName="Viral Sparks" />
+      <TopBar pageName="Viral Sparks" onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1400px] mx-auto p-8 space-y-8">
 

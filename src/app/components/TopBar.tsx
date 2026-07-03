@@ -1,22 +1,31 @@
-import { Search, Bell, ChevronDown, Radio } from "lucide-react";
+import { Search, ChevronDown, Radio } from "lucide-react";
+import { NotificationCenter } from "./NotificationCenter";
 
 interface TopBarProps {
   pageName?: string;
   accountName?: string;
-  notificationCount?: number;
   userName?: string;
   userRole?: string;
   showAccountSwitcher?: boolean;
+  onNavigate?: (path: string) => void;
 }
 
 export function TopBar({
   pageName = "Platform",
   accountName,
-  notificationCount = 3,
   userName = "Alex Rivera",
   userRole = "Director",
   showAccountSwitcher = false,
+  onNavigate,
 }: TopBarProps) {
+  const handleNavigate = (path: string) => {
+    if (onNavigate) {
+      onNavigate(path);
+    } else {
+      console.warn("onNavigate not provided to TopBar, cannot navigate to:", path);
+    }
+  };
+
   return (
     <div className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
       <div className="flex items-center gap-6">
@@ -44,12 +53,7 @@ export function TopBar({
       </div>
 
       <div className="flex items-center gap-4">
-        <button className="relative p-2 rounded-lg hover:bg-accent/20 transition-colors">
-          <Bell className="w-5 h-5" />
-          {notificationCount > 0 && (
-            <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
-          )}
-        </button>
+        <NotificationCenter onNavigate={handleNavigate} />
 
         <button className="flex items-center gap-3 pl-3 pr-2 py-1.5 rounded-lg hover:bg-accent/20 transition-colors">
           <div className="text-right">

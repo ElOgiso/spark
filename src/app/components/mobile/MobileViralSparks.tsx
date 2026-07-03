@@ -35,7 +35,11 @@ const riskStyle: Record<string, string> = {
   High: "bg-destructive/10 text-destructive",
 };
 
-export function MobileViralSparks() {
+interface MobileViralSparksProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
   const { createProductionFromSpark, productions } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<MobileSpark | null>(null);
@@ -92,18 +96,27 @@ export function MobileViralSparks() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-border bg-card p-3">
+          <button
+            onClick={() => setActiveFilter("all")}
+            className="rounded-xl border border-border bg-card p-3 text-left active:scale-[0.98] transition-transform duration-100"
+          >
             <p className="text-xl font-medium">{sparks.length}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Ready</p>
-          </div>
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+          </button>
+          <button
+            onClick={() => setActiveFilter("hot")}
+            className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-left active:scale-[0.98] transition-transform duration-100"
+          >
             <p className="text-xl font-medium text-destructive">{sparks.filter((s) => s.category === "hot").length}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Hot window</p>
-          </div>
-          <div className="rounded-xl border border-success/20 bg-success/5 p-3">
+          </button>
+          <button
+            onClick={() => onNavigate?.("/review")}
+            className="rounded-xl border border-success/20 bg-success/5 p-3 text-left active:scale-[0.98] transition-transform duration-100"
+          >
             <p className="text-xl font-medium text-success">{createdSparks.size}</p>
             <p className="text-xs text-muted-foreground mt-0.5">In production</p>
-          </div>
+          </button>
         </div>
 
         {/* Filters */}

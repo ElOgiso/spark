@@ -1,12 +1,11 @@
 {
-  "name": "spark-media-os",
+  "name": "@figma/my-make-file",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -40,7 +39,6 @@
     "@radix-ui/react-toggle": "1.1.2",
     "@radix-ui/react-toggle-group": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.8",
-    "@supabase/supabase-js": "2.53.0",
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -67,12 +65,11 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
-    "@types/react": "18.3.18",
-    "@types/react-dom": "18.3.5",
+    "lightningcss-linux-x64-gnu": "^1.32.0",
     "tailwindcss": "4.1.12",
-    "typescript": "~5.8.2",
     "vite": "6.3.5"
   },
   "peerDependencies": {

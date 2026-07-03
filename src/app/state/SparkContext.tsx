@@ -39,25 +39,9 @@ interface SparkContextType {
   approveReviewItem: (reviewId: string) => void;
   rejectOrRequestEditReviewItem: (reviewId: string) => void;
   addMemoryItem: (text: string, type: "learned" | "rule", category?: any) => void;
-  removeMemoryItem: (id: string) => void;
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
-  state: {
-    brand: Brand;
-    character: Character;
-    accounts: Account[];
-    automationMode: AutomationMode;
-    productionMode: ProductionMode;
-    memoryItems: MemoryItem[];
-    viralSparks: ViralSpark[];
-    productions: Production[];
-    reviewItems: ReviewItem[];
-    publishJobs: PublishJob[];
-    exportPackages: ExportPackage[];
-    analyticsInsights: AnalyticsInsight[];
-    assets: Asset[];
-  };
 }
 
 const SparkContext = createContext<SparkContextType | undefined>(undefined);
@@ -660,13 +644,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   };
 
-  const removeMemoryItem = (id: string) => {
-    setState((prev: any) => ({
-      ...prev,
-      memoryItems: prev.memoryItems.filter((item: MemoryItem) => item.id !== id)
-    }));
-  };
-
   const addAsset = (name: string, type: "video" | "audio" | "image" | "document", size: string) => {
     const newAsset: Asset = {
       id: `as-${Date.now()}`,
@@ -691,11 +668,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         approveReviewItem,
         rejectOrRequestEditReviewItem,
         addMemoryItem,
-        removeMemoryItem,
         addAsset,
         toggleContentPillar,
-        toggleTone,
-        state
+        toggleTone
       }}
     >
       {children}

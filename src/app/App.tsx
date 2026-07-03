@@ -12,6 +12,7 @@ import { MoreSubPages, FullLegalPage } from "./components/MoreSubPages";
 import { MobileApp } from "./components/mobile/MobileApp";
 import { useDeviceType } from "./hooks/useDeviceType";
 import { SparkProvider } from "./state/SparkContext";
+import { InstallPrompt } from "./components/InstallPrompt";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("/");
@@ -78,6 +79,7 @@ export default function App() {
   return (
     <SparkProvider>
       {renderContent()}
+      <InstallPrompt />
     </SparkProvider>
   );
 }

@@ -12,7 +12,11 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-export function MobileAnalytics() {
+interface MobileAnalyticsProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function MobileAnalytics({ onNavigate }: MobileAnalyticsProps = {}) {
   const topPerformers = [
     { id: "c1", title: "How AI Creates Viral Content", views: "2.4M", engagement: "8.2%", platform: "YouTube", why: "Hook addressed pain point in 4s. Numbered list reduced drop-off." },
     { id: "c2", title: "Behind the Scenes: AI Production", views: "1.8M", engagement: "6.5%", platform: "TikTok", why: "Raw format triggered authenticity signal. 'Nobody shows you this' hook." },
@@ -66,12 +70,15 @@ export function MobileAnalytics() {
         ].map((m) => {
           const Icon = m.icon;
           return (
-            <div key={m.label} className="rounded-xl border border-border bg-card p-3">
+            <button
+              key={m.label}
+              className="rounded-xl border border-border bg-card p-3 text-left active:scale-[0.98] transition-transform duration-100"
+            >
               <Icon className="w-4 h-4 text-muted-foreground mb-2" />
               <p className="text-base font-medium">{m.value}</p>
               <p className="text-[11px] text-muted-foreground">{m.label}</p>
               <p className="text-[11px] text-success font-medium">{m.change}</p>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -161,11 +168,15 @@ export function MobileAnalytics() {
         </div>
         <div className="space-y-3">
           {nextProductions.map((p, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-accent/10 border border-accent/20">
+            <button
+              key={i}
+              onClick={() => onNavigate?.("/viral-sparks")}
+              className="w-full flex items-center gap-3 p-3 rounded-lg bg-accent/10 border border-accent/20 text-left active:scale-[0.98] transition-all duration-100"
+            >
               <span className={`text-sm font-medium flex-shrink-0 ${p.score >= 90 ? "text-success" : "text-warning"}`}>{p.score}%</span>
-              <p className="text-sm flex-1 line-clamp-2">{p.title}</p>
+              <p className="text-sm flex-1 line-clamp-2 font-medium">{p.title}</p>
               <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            </div>
+            </button>
           ))}
         </div>
       </div>
