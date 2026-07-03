@@ -79,26 +79,47 @@ export class NotificationService {
   }
 
   public static addNotification(
-    type: NotificationType,
-    title: string,
-    description: string,
-    priority: NotificationPriority,
-    relatedRoute: string,
+    typeOrInput:
+      | NotificationType
+      | {
+          type: NotificationType;
+          title: string;
+          description: string;
+          priority: NotificationPriority;
+          relatedRoute: string;
+          actionLabel?: string;
+          metadata?: any;
+        },
+    title?: string,
+    description?: string,
+    priority?: NotificationPriority,
+    relatedRoute?: string,
     actionLabel?: string,
     metadata?: any
   ): AppNotification {
+    const input = typeof typeOrInput === "object"
+      ? typeOrInput
+      : {
+          type: typeOrInput,
+          title: title ?? "Spark notification",
+          description: description ?? "",
+          priority: priority ?? "medium",
+          relatedRoute: relatedRoute ?? "/",
+          actionLabel,
+          metadata,
+        };
     const notifications = this.getNotifications();
     const newNotif: AppNotification = {
       id: "notif_" + Date.now(),
-      type,
-      title,
-      description,
+      type: input.type,
+      title: input.title,
+      description: input.description,
       timestamp: "Just now",
-      priority,
+      priority: input.priority,
       read: false,
-      relatedRoute,
-      actionLabel,
-      metadata
+      relatedRoute: input.relatedRoute,
+      actionLabel: input.actionLabel,
+      metadata: input.metadata
     };
     
     const updated = [newNotif, ...notifications];

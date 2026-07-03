@@ -144,3 +144,18 @@ Phase 8 should connect backend sync deliberately after a dedicated Supabase proj
 - Mount auth intentionally without blocking the current app prematurely.
 - Map local Spark state into backend records.
 - Keep OAuth, publishing APIs, payments, and AI generation for later phases.
+
+## Phase 8 Status
+
+Phase 8 adds the activation path and auth session foundation, but it still does not apply migrations remotely.
+
+- Added `VITE_REQUIRE_AUTH=false` as the default auth-gate flag.
+- Added CLI-optional Supabase type generation through `npm run supabase:types`.
+- Added `AuthContext` and `sessionService` for session restore, sign-in, sign-up, sign-out, loading state, and sanitized auth errors.
+- Added profile bootstrap through `profileRepository`.
+- Added idempotent default brand bootstrap through `brandRepository`.
+- Extended `syncService` with backend status, authenticated bootstrap, brand, memory, and notification load hooks.
+- Mounted auth safely in More/Profile areas without forcing login by default.
+- Documented project activation and RLS validation steps.
+
+No Spark Supabase project has been linked yet, and no remote migration has been applied yet.

@@ -13,6 +13,10 @@ import { MobileApp } from "./components/mobile/MobileApp";
 import { useDeviceType } from "./hooks/useDeviceType";
 import { SparkProvider } from "./state/SparkContext";
 import { InstallPrompt } from "./components/InstallPrompt";
+import { AuthProvider } from "./state/AuthContext";
+import { AuthGate } from "./components/auth/AuthGate";
+
+const requireAuth = import.meta.env.VITE_REQUIRE_AUTH === "true";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("/");
@@ -77,10 +81,14 @@ export default function App() {
   };
 
   return (
-    <SparkProvider>
-      {renderContent()}
-      <InstallPrompt />
-    </SparkProvider>
+    <AuthProvider>
+      <SparkProvider>
+        <AuthGate requireAuth={requireAuth}>
+          {renderContent()}
+          <InstallPrompt />
+        </AuthGate>
+      </SparkProvider>
+    </AuthProvider>
   );
 }
 

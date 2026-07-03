@@ -98,7 +98,6 @@ export class PushNotificationService {
           icon: "/icons/icon.svg",
           badge: "/icons/icon.svg",
           tag: "spark-notification-tag",
-          renotify: true,
           data: { relatedRoute }
         };
 

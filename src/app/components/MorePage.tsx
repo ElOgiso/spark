@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
+import { AuthPanel } from "./auth/AuthPanel";
+import { useAuth } from "../state/AuthContext";
 import {
   Zap,
   Archive,
@@ -17,9 +19,9 @@ import {
   CheckCircle2,
   AlertCircle,
   LogOut,
+  LogIn,
   X,
-  User,
-  Mail
+  User
 } from "lucide-react";
 
 interface MorePageProps {
@@ -29,6 +31,7 @@ interface MorePageProps {
 type AutomationMode = "manual" | "balanced" | "autonomous";
 
 export function MorePage({ onNavigate }: MorePageProps) {
+  const auth = useAuth();
   const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
   const [profile, setProfile] = useState({
     name: "Alex Rivera",
@@ -39,6 +42,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
   // Modals state
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [showSignIn, setShowSignIn] = useState(false);
 
   // Edit Profile form state
   const [editName, setEditName] = useState(profile.name);
@@ -62,6 +66,10 @@ export function MorePage({ onNavigate }: MorePageProps) {
   };
 
   const cfg = automationConfig[automationMode];
+  const profileName = auth.profile?.display_name ?? profile.name;
+  const profileEmail = auth.currentUser?.email ?? profile.email;
+  const profileRole = auth.profile?.role ?? profile.role;
+  const authStatus = auth.isAuthenticated ? "Authenticated" : auth.isConfigured ? "Demo mode" : "Local demo mode";
 
   const sections = [
     {
@@ -116,10 +124,10 @@ export function MorePage({ onNavigate }: MorePageProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center text-xl font-medium text-accent-foreground">
-                  {profile.name.split(" ").map(n => n[0]).join("")}
+                  {profileName.split(" ").map(n => n[0]).join("")}
                 </div>
                 <div>
-                  <p className="text-lg font-medium">{profile.name}</p>
+                  <p className="text-lg font-medium">{profileName}</p>
                   <p className="text-sm text-muted-foreground">{profile.role} · {profile.email}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
@@ -147,6 +155,37 @@ export function MorePage({ onNavigate }: MorePageProps) {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Auth Status */}
+          <div className="rounded-xl border border-border bg-card p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Spark Account</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {auth.isAuthenticated
+                  ? `Signed in as ${profileEmail}`
+                  : auth.isConfigured
+                    ? "Demo/local mode. Sign in when you are ready to use backend data."
+                    : "Local demo mode. Supabase is not configured yet."}
+              </p>
+            </div>
+            {auth.isAuthenticated ? (
+              <button
+                onClick={() => setShowSignOut(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowSignIn(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/10 rounded-lg transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </button>
+            )}
           </div>
 
           {/* Automation Mode */}
@@ -211,13 +250,23 @@ export function MorePage({ onNavigate }: MorePageProps) {
 
           {/* Sign Out Trigger */}
           <div className="pt-4 border-t border-border/50 flex flex-col items-center gap-4">
-            <button
-              onClick={() => setShowSignOut(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign Out
-            </button>
+            {auth.isAuthenticated ? (
+              <button
+                onClick={() => setShowSignOut(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowSignIn(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/10 rounded-lg transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </button>
+            )}
             <div className="text-center text-[10px] text-muted-foreground pb-4 uppercase tracking-wider font-mono">
               Spark · Media Operating System · v4.12
             </div>
@@ -284,6 +333,21 @@ export function MorePage({ onNavigate }: MorePageProps) {
         </div>
       )}
 
+      {/* Sign In Modal */}
+      {showSignIn && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-lg relative">
+            <button
+              onClick={() => setShowSignIn(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <AuthPanel />
+          </div>
+        </div>
+      )}
+
       {/* Sign Out Modal */}
       {showSignOut && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -302,8 +366,17 @@ export function MorePage({ onNavigate }: MorePageProps) {
               Sign out will be connected when authentication is enabled.
             </p>
             <div className="flex justify-center">
-              <Button onClick={() => setShowSignOut(false)} variant="accent" className="w-full">
-                Dismiss
+              <Button
+                onClick={async () => {
+                  if (auth.isAuthenticated) {
+                    await auth.signOut();
+                  }
+                  setShowSignOut(false);
+                }}
+                variant="accent"
+                className="w-full"
+              >
+                {auth.isAuthenticated ? "Sign Out" : "Dismiss"}
               </Button>
             </div>
           </div>

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
+import { useAuth } from "../../state/AuthContext";
 import { Button } from "../ds";
+import { AuthPanel } from "../auth/AuthPanel";
 import {
   Zap,
   Archive,
@@ -22,6 +24,7 @@ import {
   Download,
   Terminal,
   LogOut,
+  LogIn,
   X,
   Mail,
   User
@@ -35,6 +38,7 @@ interface MobileMoreProps {
 
 export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const { memoryItems, addMemoryItem, removeMemoryItem } = useSpark();
+  const auth = useAuth();
 
   const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
   const [profile, setProfile] = useState({
@@ -49,6 +53,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   // Modals inside details
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [showSignIn, setShowSignIn] = useState(false);
 
   // Mock states for mobile detail interactions
   const [apiKeyList, setApiKeyList] = useState([
@@ -146,6 +151,9 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   ];
 
   const currentMode = modeConfig[automationMode];
+  const profileEmail = auth.currentUser?.email ?? profile.email;
+  const profileName = auth.profile?.display_name ?? profile.name;
+  const profileRole = auth.profile?.role ?? profile.role;
 
   const handleCopy = (key: string) => {
     navigator.clipboard.writeText(key);
@@ -671,28 +679,53 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-start gap-4 mb-4">
           <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center text-xl font-medium text-accent-foreground">
-            {profile.name.split(" ").map(n => n[0]).join("")}
+            {profileName.split(" ").map(n => n[0]).join("")}
           </div>
           <div className="flex-1">
-            <h2 className="text-base font-medium">{profile.name}</h2>
-            <p className="text-sm text-muted-foreground">{profile.role}</p>
+            <h2 className="text-base font-medium">{profileName}</h2>
+            <p className="text-sm text-muted-foreground">{profileRole}</p>
             <div className="flex items-center gap-1.5 mt-1">
               <CheckCircle2 className="w-3 h-3 text-success" />
-              <span className="text-xs text-success">Pro Plan</span>
+              <span className="text-xs text-success">{auth.isAuthenticated ? "Authenticated" : "Demo mode"}</span>
             </div>
           </div>
         </div>
         <button
           onClick={() => {
-            setEditName(profile.name);
-            setEditEmail(profile.email);
-            setEditRole(profile.role);
+            setEditName(profileName);
+            setEditEmail(profileEmail);
+            setEditRole(profileRole);
             setActiveDetail("Edit Profile");
           }}
           className="w-full py-2.5 px-4 rounded-lg border border-border hover:bg-accent/10 transition-colors text-sm font-medium"
         >
           Edit Profile
         </button>
+      </div>
+
+      {/* Auth Status */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium">Spark Account</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {auth.isAuthenticated
+              ? `Signed in as ${profileEmail}`
+              : auth.isConfigured
+                ? "Demo/local mode. Sign in when backend data is needed."
+                : "Local demo mode. Supabase is not configured yet."}
+          </p>
+        </div>
+        {auth.isAuthenticated ? (
+          <Button onClick={() => setShowSignOut(true)} variant="outline" className="w-full text-xs">
+            <LogOut className="w-4 h-4 mr-1" />
+            Sign Out
+          </Button>
+        ) : (
+          <Button onClick={() => setShowSignIn(true)} variant="outline" className="w-full text-xs">
+            <LogIn className="w-4 h-4 mr-1" />
+            Sign In
+          </Button>
+        )}
       </div>
 
       {/* Automation Mode */}
@@ -755,13 +788,23 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
       {/* Sign Out Trigger */}
       <div className="pt-4 border-t border-border/50 flex flex-col items-center gap-3">
-        <button
-          onClick={() => setShowSignOut(true)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </button>
+        {auth.isAuthenticated ? (
+          <button
+            onClick={() => setShowSignOut(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowSignIn(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/10 rounded-lg transition-colors"
+          >
+            <LogIn className="w-4 h-4" />
+            Sign In
+          </button>
+        )}
         <div className="text-center text-[10px] text-muted-foreground pb-4 uppercase tracking-wider font-mono">
           Spark · Media Operating System · v4.12
         </div>
@@ -769,6 +812,21 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
       {/* Detail Panel overlay */}
       {renderDetailPanel()}
+
+      {/* Sign In Modal */}
+      {showSignIn && (
+        <div className="fixed inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-card border border-border rounded-xl p-5 max-w-sm w-full shadow-lg relative">
+            <button
+              onClick={() => setShowSignIn(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <AuthPanel />
+          </div>
+        </div>
+      )}
 
       {/* Sign Out Modal */}
       {showSignOut && (
@@ -788,8 +846,17 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
               Sign out will be connected when authentication is enabled.
             </p>
             <div className="flex justify-center">
-              <Button onClick={() => setShowSignOut(false)} variant="accent" className="w-full">
-                Dismiss
+              <Button
+                onClick={async () => {
+                  if (auth.isAuthenticated) {
+                    await auth.signOut();
+                  }
+                  setShowSignOut(false);
+                }}
+                variant="accent"
+                className="w-full"
+              >
+                {auth.isAuthenticated ? "Sign Out" : "Dismiss"}
               </Button>
             </div>
           </div>

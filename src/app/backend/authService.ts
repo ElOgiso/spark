@@ -10,11 +10,17 @@ function unavailable<T>(): AuthResult<T> {
   return { data: null, error: "Supabase is not configured." };
 }
 
-function safeError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
+export function sanitizeAuthError(error: unknown): string {
+  if (!error) return "Authentication is unavailable right now.";
   return "Authentication is unavailable right now.";
+}
+
+export async function getCurrentSession(): Promise<AuthResult<Session>> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return unavailable<Session>();
+
+  const { data, error } = await supabase.auth.getSession();
+  return { data: data.session, error: error ? sanitizeAuthError(error) : null };
 }
 
 export async function getCurrentUser(): Promise<AuthResult<User>> {
@@ -22,7 +28,7 @@ export async function getCurrentUser(): Promise<AuthResult<User>> {
   if (!supabase) return unavailable<User>();
 
   const { data, error } = await supabase.auth.getUser();
-  return { data: data.user, error: error ? safeError(error) : null };
+  return { data: data.user, error: error ? sanitizeAuthError(error) : null };
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthResult<User>> {
@@ -30,7 +36,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
   if (!supabase) return unavailable<User>();
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  return { data: data.user, error: error ? safeError(error) : null };
+  return { data: data.user, error: error ? sanitizeAuthError(error) : null };
 }
 
 export async function signUpWithEmail(email: string, password: string): Promise<AuthResult<User>> {
@@ -38,7 +44,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   if (!supabase) return unavailable<User>();
 
   const { data, error } = await supabase.auth.signUp({ email, password });
-  return { data: data.user, error: error ? safeError(error) : null };
+  return { data: data.user, error: error ? sanitizeAuthError(error) : null };
 }
 
 export async function signOut(): Promise<AuthResult<true>> {
@@ -46,7 +52,7 @@ export async function signOut(): Promise<AuthResult<true>> {
   if (!supabase) return unavailable<true>();
 
   const { error } = await supabase.auth.signOut();
-  return { data: error ? null : true, error: error ? safeError(error) : null };
+  return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }
 
 export function onAuthStateChange(

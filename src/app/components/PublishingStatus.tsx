@@ -1,4 +1,4 @@
-import { Clock, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Clock, Loader2, CheckCircle2, XCircle, type LucideIcon } from "lucide-react";
 
 interface StatusItem {
   stage: "scheduled" | "publishing" | "published" | "failed";
@@ -6,7 +6,14 @@ interface StatusItem {
   details?: string;
 }
 
-const stageConfig = {
+const stageConfig: Record<StatusItem["stage"], {
+  label: string;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+  border: string;
+  animate?: boolean;
+}> = {
   scheduled: {
     label: "Scheduled",
     icon: Clock,

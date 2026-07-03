@@ -1,40 +1,35 @@
 import { useState } from "react";
-import {
-  getCurrentUser,
-  signInWithEmail,
-  signOut,
-  signUpWithEmail,
-} from "../../backend/authService";
-import { isSupabaseConfigured } from "../../backend/supabaseClient";
+import { Button } from "../ds";
+import { useAuth } from "../../state/AuthContext";
 
 type AuthMode = "sign-in" | "sign-up";
 
 export function AuthPanel() {
+  const auth = useAuth();
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
-  const configured = isSupabaseConfigured();
-
   const submit = async () => {
     setMessage(null);
-    const result =
-      mode === "sign-in"
-        ? await signInWithEmail(email, password)
-        : await signUpWithEmail(email, password);
+    if (mode === "sign-in") {
+      await auth.signIn(email, password);
+    } else {
+      await auth.signUp(email, password);
+    }
 
-    setMessage(result.error ?? "Authentication request completed.");
+    setMessage(auth.error ?? "Authentication request completed.");
   };
 
   const checkSession = async () => {
-    const result = await getCurrentUser();
-    setMessage(result.data ? "Session restored." : result.error ?? "No active session.");
+    await auth.refreshSession();
+    setMessage(auth.isAuthenticated ? "Session restored." : "No active session.");
   };
 
   const endSession = async () => {
-    const result = await signOut();
-    setMessage(result.error ?? "Signed out.");
+    await auth.signOut();
+    setMessage("Signed out.");
   };
 
   return (
@@ -42,7 +37,9 @@ export function AuthPanel() {
       <div>
         <p className="text-sm font-medium">Spark Account</p>
         <p className="text-xs text-muted-foreground">
-          Auth is prepared for a later phase and does not block the app.
+          {auth.isAuthenticated
+            ? `Signed in as ${auth.currentUser?.email ?? "Spark user"}.`
+            : "Auth is available when a Spark Supabase project is configured."}
         </p>
       </div>
 
@@ -65,7 +62,7 @@ export function AuthPanel() {
 
       <input
         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-        disabled={!configured}
+        disabled={!auth.isConfigured}
         onChange={(event) => setEmail(event.target.value)}
         placeholder="Email"
         type="email"
@@ -73,7 +70,7 @@ export function AuthPanel() {
       />
       <input
         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-        disabled={!configured}
+        disabled={!auth.isConfigured}
         onChange={(event) => setPassword(event.target.value)}
         placeholder="Password"
         type="password"
@@ -81,14 +78,14 @@ export function AuthPanel() {
       />
 
       <div className="flex flex-wrap gap-2">
-        <button
+        <Button
           type="button"
-          className="rounded-lg bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
-          disabled={!configured}
+          className="text-xs"
+          disabled={!auth.isConfigured || auth.loading}
           onClick={submit}
         >
           {mode === "sign-in" ? "Sign in" : "Create account"}
-        </button>
+        </Button>
         <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs" onClick={checkSession}>
           Restore session
         </button>
@@ -97,12 +94,12 @@ export function AuthPanel() {
         </button>
       </div>
 
-      {!configured && (
+      {!auth.isConfigured && (
         <p className="text-xs text-muted-foreground">
           Add Supabase env variables and set VITE_USE_SUPABASE=true to enable auth.
         </p>
       )}
-      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+      {(message || auth.error) && <p className="text-xs text-muted-foreground">{message ?? auth.error}</p>}
     </div>
   );
 }

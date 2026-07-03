@@ -46,6 +46,7 @@ export interface Account {
 export interface ViralSpark {
   id: string;
   title: string;
+  platforms: string;
   hook: string;
   views: string;
   velocity: string;

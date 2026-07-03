@@ -3,6 +3,7 @@ import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { useSpark } from "../state/SparkContext";
 import { NotificationService } from "../notifications/notificationService";
+import type { MemoryItem } from "../domain/types";
 import {
   ArrowLeft,
   FileText,
@@ -404,7 +405,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                 </div>
 
                 <div className="rounded-xl border border-border bg-card divide-y divide-border/50">
-                  {state.memoryItems.map((item) => (
+                  {state.memoryItems.map((item: MemoryItem) => (
                     <div key={item.id} className="p-4 flex items-start gap-3 hover:bg-accent/5 transition-colors">
                       <div className={`p-1.5 rounded-lg mt-0.5 ${item.type === "learned" ? "bg-accent/10" : "bg-muted/60"}`}>
                         <Brain className={`w-4 h-4 ${item.type === "learned" ? "text-accent-foreground" : "text-muted-foreground"}`} />
