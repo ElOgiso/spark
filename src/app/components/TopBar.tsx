@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, ChevronDown, Radio, Check, CreditCard, Settings, Key, LogOut, ShieldCheck, Zap, Brain, TrendingUp, CheckSquare, Calendar as CalendarIcon, BarChart3, MoreHorizontal } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
+import { useSpark } from "../state/SparkContext";
 
 interface TopBarProps {
   pageName?: string;
@@ -31,37 +32,29 @@ const searchItems: SearchItem[] = [
   { name: "Developer API & Webhooks", path: "/more/api", category: "Settings" },
 ];
 
-const pages = [
-  { name: "Spark", path: "/", icon: Zap },
-  { name: "My Spark", path: "/my-spark", icon: Brain },
-  { name: "Viral Sparks", path: "/viral-sparks", icon: TrendingUp },
-  { name: "Review", path: "/review", icon: CheckSquare },
-  { name: "Calendar", path: "/calendar", icon: CalendarIcon },
-  { name: "Analytics", path: "/analytics", icon: BarChart3 },
-  { name: "More", path: "/more", icon: MoreHorizontal },
-];
-
 export function TopBar({
   pageName = "Spark",
   userName = "Alex Rivera",
   userRole = "Director",
   onNavigate,
 }: TopBarProps) {
-  const [isPageSelectorOpen, setIsPageSelectorOpen] = useState(false);
+  const { accounts } = useSpark() as any;
+  const [selectedWorkspace, setSelectedWorkspace] = useState("@TechInsightsNG");
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const pageSelectorRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (pageSelectorRef.current && !pageSelectorRef.current.contains(event.target as Node)) {
-        setIsPageSelectorOpen(false);
+      if (workspaceRef.current && !workspaceRef.current.contains(event.target as Node)) {
+        setIsWorkspaceOpen(false);
       }
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
@@ -79,7 +72,7 @@ export function TopBar({
       onNavigate(path);
     }
     setIsProfileOpen(false);
-    setIsPageSelectorOpen(false);
+    setIsWorkspaceOpen(false);
     setIsSearchFocused(false);
     setSearchQuery("");
   };
@@ -89,44 +82,44 @@ export function TopBar({
     item.path.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Resolve active page icon
-  const currentPageObj = pages.find(p => p.name.toLowerCase() === pageName.toLowerCase()) || pages[0];
-  const PageIcon = currentPageObj.icon;
-
   return (
     <div className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6 select-none relative z-40">
       <div className="flex items-center gap-6">
         
-        {/* Page Switcher Dropdown (Spark Dropdown next to search) */}
-        <div ref={pageSelectorRef} className="relative">
+        {/* Workspace Switcher Dropdown (next to search) */}
+        <div ref={workspaceRef} className="relative">
           <button
-            onClick={() => setIsPageSelectorOpen(!isPageSelectorOpen)}
+            onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/5 hover:bg-accent/15 border border-border/40 hover:border-border transition-all active:scale-[0.98] cursor-pointer"
           >
-            <PageIcon className="w-4 h-4 text-accent-foreground" />
-            <span className="text-sm font-medium">{pageName}</span>
-            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isPageSelectorOpen ? "rotate-180" : ""}`} />
+            <Radio className="w-4 h-4 text-accent-foreground animate-pulse" />
+            <span className="text-sm font-medium">{selectedWorkspace}</span>
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isWorkspaceOpen ? "rotate-180" : ""}`} />
           </button>
 
-          {isPageSelectorOpen && (
-            <div className="absolute left-0 mt-2 w-56 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2.5 pb-2 border-b border-border/40 mb-2">Switch Workspace Page</p>
+          {isWorkspaceOpen && (
+            <div className="absolute left-0 mt-2 w-64 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2.5 pb-2 border-b border-border/40 mb-2">Switch Workspace Account</p>
               <div className="space-y-1">
-                {pages.map((p) => {
-                  const Icon = p.icon;
-                  const isActive = p.name.toLowerCase() === pageName.toLowerCase();
-                  return (
-                    <button
-                      key={p.name}
-                      onClick={() => handleNavigate(p.path)}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm transition-all hover:bg-accent/15 cursor-pointer ${isActive ? "bg-accent/10 text-foreground" : "text-muted-foreground"}`}
-                    >
-                      <Icon className="w-4 h-4 text-accent-foreground" />
-                      <span className="font-medium text-xs flex-1">{p.name}</span>
-                      {isActive && <Check className="w-3.5 h-3.5 text-accent-foreground animate-in zoom-in-75" />}
-                    </button>
-                  );
-                })}
+                {accounts.map((acc: any) => (
+                  <button
+                    key={acc.handle}
+                    onClick={() => {
+                      setSelectedWorkspace(acc.handle || acc.name);
+                      setIsWorkspaceOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-left text-sm transition-all hover:bg-accent/15 cursor-pointer ${selectedWorkspace === (acc.handle || acc.name) ? "bg-accent/10 text-foreground" : "text-muted-foreground"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full ${acc.status === "connected" ? "bg-success" : "bg-muted-foreground/45"}`} />
+                      <div>
+                        <p className="font-medium text-xs leading-none">{acc.platform}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{acc.handle || acc.name}</p>
+                      </div>
+                    </div>
+                    {selectedWorkspace === (acc.handle || acc.name) && <Check className="w-3.5 h-3.5 text-accent-foreground animate-in zoom-in-75" />}
+                  </button>
+                ))}
               </div>
             </div>
           )}

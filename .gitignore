@@ -9,3 +9,5 @@ coverage/
 push_repo.js
 sync_repo.js
 .git_corrupt/
+
+.vercel
