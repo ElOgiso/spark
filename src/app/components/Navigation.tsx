@@ -1,4 +1,4 @@
-import { Zap, Brain, TrendingUp, CheckSquare, Calendar, BarChart3, MoreHorizontal } from "lucide-react";
+import { Zap, Brain, TrendingUp, CheckSquare, Calendar, BarChart3, MoreHorizontal, Crown } from "lucide-react";
 
 interface NavItem {
   name: string;
@@ -66,16 +66,38 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
         })}
       </div>
 
-      <div className="p-4 border-t border-border/50">
-        <div className="flex items-center gap-3 px-2 py-2">
-          <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-medium">AR</span>
+      <div className="p-3 border-t border-border/50">
+        <button
+          onClick={() => onNavigate?.("/more/billing")}
+          className="group relative w-full flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 backdrop-blur-sm p-2.5 text-left select-none overflow-hidden cursor-pointer active:scale-98 transition-all duration-200"
+        >
+          {/* Reflective shine effect */}
+          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shine" />
+
+          {/* 3D Iridescent Soap Bubble Overlay */}
+          <div className="absolute inset-0 pointer-events-none rounded-lg overflow-hidden">
+            {/* Soft moving rainbow oil/soap film - highly subtle for legibility */}
+            <div className="absolute inset-0 opacity-[0.06] bg-gradient-to-r from-red-500 via-yellow-400 via-green-400 via-blue-500 via-indigo-500 to-purple-500 bg-[length:200%_auto] animate-iridescent" />
+            
+            {/* Bubble reflection top curved highlight */}
+            <div className="absolute top-[0.5px] inset-x-1.5 h-[30%] rounded-t-lg bg-gradient-to-b from-white/20 to-transparent" />
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium truncate">Alex Rivera</p>
-            <p className="text-xs text-muted-foreground">Director</p>
+
+          {/* Left Icon */}
+          <div className="relative flex items-center justify-center w-7 h-7 rounded bg-accent/20 border border-accent/25 text-accent-foreground shrink-0 z-20">
+            <span className="absolute inset-0 rounded bg-accent/20 blur-xs animate-pulse" />
+            <Crown className="w-3.5 h-3.5 relative" />
           </div>
-        </div>
+
+          {/* Text Content */}
+          <div className="flex-1 min-w-0 z-20">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-xs font-semibold text-foreground leading-none truncate">Pro Plan</span>
+              <span className="text-[8px] font-bold text-accent-foreground bg-accent/20 border border-accent/30 px-1 py-0.2 rounded-sm uppercase tracking-wider shrink-0">PRO</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-none mt-1 truncate">Enterprise billing · Aug 1</p>
+          </div>
+        </button>
       </div>
     </nav>
   );

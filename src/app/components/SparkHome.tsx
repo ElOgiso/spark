@@ -1,6 +1,9 @@
 import { TopBar } from "./TopBar";
 import { ActivityFeed } from "./ActivityFeed";
 import { SectionHeader, MetricCard, Button, FilterPill, WhySparkRecommends } from "./ds";
+import { AIChatPill } from "./AIChatPill";
+import { AIChatModal } from "./AIChatModal";
+import { useState } from "react";
 import {
   Eye, DollarSign, TrendingUp, Video, Tv, Clapperboard,
   ArrowRight, Zap, Brain, Flame, AlertCircle, CheckCircle2,
@@ -12,6 +15,7 @@ interface SparkHomeProps {
 }
 
 export function SparkHome({ onNavigate }: SparkHomeProps) {
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const today = new Date().toLocaleDateString("en-US", {
@@ -135,7 +139,10 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
             {/* Header row */}
             <div className="px-8 pt-7 pb-5 flex items-start justify-between">
               <div>
-                <h1 className="text-2xl font-medium">{greeting}, Alex</h1>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <h1 className="text-2xl font-medium">{greeting}, Alex</h1>
+                  <AIChatPill onClick={() => setIsChatOpen(true)} />
+                </div>
                 <div className="flex items-center gap-x-4 gap-y-2 flex-wrap mt-3">
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mr-1">
                     <span className="relative flex h-2 w-2">
@@ -355,6 +362,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
         </div>
       </main>
+      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </>
   );
 }

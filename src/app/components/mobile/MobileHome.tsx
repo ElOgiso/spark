@@ -4,6 +4,9 @@ import {
   ArrowRight, Loader2, Clock, Package,
 } from "lucide-react";
 import { useSpark } from "../../state/SparkContext";
+import { AIChatPill } from "../AIChatPill";
+import { AIChatModal } from "../AIChatModal";
+import { useState } from "react";
 
 interface ActivityItem {
   id: string;
@@ -17,6 +20,7 @@ interface MobileHomeProps {
 }
 
 export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const { productions } = useSpark();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -99,8 +103,9 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
       {/* Command Header */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-5 pt-5 pb-4">
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
             <h1 className="text-xl font-medium">{greeting}, Alex</h1>
+            <AIChatPill onClick={() => setIsChatOpen(true)} isMobile={true} />
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="relative flex h-1.5 w-1.5">
@@ -237,6 +242,7 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
         </div>
       </div>
 
+      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   );
 }

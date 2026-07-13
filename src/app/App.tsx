@@ -71,7 +71,7 @@ export default function App() {
     };
 
     return (
-      <div className="min-h-screen flex bg-background text-foreground antialiased">
+      <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
         <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {renderPage()}
