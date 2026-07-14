@@ -1,5 +1,6 @@
 import { ISparkService } from "../domain/contracts";
 import { Brand, Character, Account, AutomationMode, ProductionMode } from "../domain/types";
+import { ExecutivePolicyEngine } from "./executivePolicyEngine";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 
 const defaultBrand: Brand = {
@@ -156,8 +157,8 @@ export class SparkService implements ISparkService {
     const brand = await this.getBrand();
     await this.updateBrand({
       automation_mode: mode,
-      autonomous_publishing_enabled: mode === "autonomous",
-      publish_requires_approval: mode !== "autonomous"
+      autonomous_publishing_enabled: ExecutivePolicyEngine.shouldPublish(mode),
+      publish_requires_approval: ExecutivePolicyEngine.requiresApproval("publishing", mode)
     });
     return mode;
   }

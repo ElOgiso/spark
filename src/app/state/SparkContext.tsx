@@ -16,6 +16,9 @@ import {
   Asset,
   QualityCheck
 } from "../domain/types";
+import { ExecutiveDecisionEngine } from "../services/executiveDecisionEngine";
+import { ExecutivePolicyEngine } from "../services/executivePolicyEngine";
+import { PipelineEngine } from "../services/pipelineEngine";
 
 interface SparkContextType {
   brand: Brand;
@@ -509,10 +512,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
-
-    // Determine initial status based on automation mode
-    // If Autonomous: goes to review ready or automatically drafts to "Ready for Review"
-    const status = state.automationMode === "autonomous" ? "Ready for Review" : "Drafting";
+    const decision = ExecutiveDecisionEngine.generatePlan(spark.title, state.automationMode);
+    const canProceed = ExecutivePolicyEngine.canProceed("production", state.automationMode);
+    const status = canProceed ? "Ready for Review" : "Drafting";
 
     const newProduction: Production = {
       id: prodId,
@@ -573,6 +575,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         p.id === review.productionId ? { ...p, status: "Approved" } : p
       );
 
+      // Determine next step using PipelineEngine
+      const nextStep = PipelineEngine.getNextStep("default", "review"); // next step is "publishing"
+      
+      // Determine if publishing is allowed / auto-publish is active via Policy Engine
+      const autoPublish = ExecutivePolicyEngine.shouldPublish(state.automationMode);
+
       // Create PublishJob
       const jobExists = prev.publishJobs.some((j: any) => j.productionId === review.productionId);
       const newPublishJobs = jobExists ? prev.publishJobs : [
@@ -583,7 +591,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           title: review.title,
           platform: review.account,
           scheduledTime: "Thu 4:00 PM", // Default scheduling block
-          status: "Scheduled"
+          status: autoPublish ? "Published" : "Scheduled"
         }
       ];
 
