@@ -81,7 +81,9 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
 
   return (
     <>
-      <div className="pb-24 px-4 pt-6 space-y-5">
+      <div className="h-[calc(100vh-76px)] flex flex-col overflow-hidden">
+        {/* Fixed Top Block */}
+        <div className="p-4 pb-0 space-y-4 flex-shrink-0 bg-background z-10">
 
         <div className="flex items-center justify-between">
           <div>
@@ -140,9 +142,10 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
             </button>
           ))}
         </div>
+      </div>
 
-        {/* Spark Cards */}
-        <div className="space-y-4">
+      {/* Scrollable Content Block */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 scrollbar-none pb-24">
           {filtered.map((spark) => {
             const isCreated = createdSparks.has(spark.id);
             return (
@@ -208,7 +211,6 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
             );
           })}
         </div>
-
       </div>
 
       {/* Mobile Production Drawer — bottom sheet */}

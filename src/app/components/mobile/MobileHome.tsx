@@ -98,147 +98,152 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
   };
 
   return (
-    <div className="pb-24 px-4 pt-6 space-y-5">
-
-      {/* Command Header */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 pt-5 pb-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-            <h1 className="text-xl font-medium">{greeting}, Alex</h1>
-            <AIChatPill onClick={() => setIsChatOpen(true)} isMobile={true} />
+    <div className="h-[calc(100vh-76px)] flex flex-col overflow-hidden">
+      {/* Fixed Header & Pipeline Block */}
+      <div className="p-4 pb-0 space-y-4 flex-shrink-0 bg-background z-10">
+        {/* Command Header */}
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="px-5 pt-4 pb-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-1.5">
+              <h1 className="text-xl font-medium">{greeting}, Alex</h1>
+              <AIChatPill onClick={() => setIsChatOpen(true)} isMobile={true} />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
+              </span>
+              Spark is active · 3 opportunities · {readyCount} need review
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
-            </span>
-            Spark is active · 3 opportunities · {readyCount} need review
+          <div className="border-t border-border/50">
+            {priorityItems.map((item, i) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={i}
+                  onClick={() => onNavigate?.(item.path)}
+                  className={`w-full flex items-center gap-3 px-5 py-2.5 border-l-2 text-left transition-all duration-200 active:bg-accent/10 ${item.borderColor} ${item.bg} ${i < priorityItems.length - 1 ? "border-b border-border/40" : ""}`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${item.iconColor} flex-shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-medium ${item.iconColor}`}>{item.label}</p>
+                    <p className="text-xs text-muted-foreground truncate">{item.desc}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground flex-shrink-0">{item.action} →</span>
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="border-t border-border/50">
-          {priorityItems.map((item, i) => {
-            const Icon = item.icon;
+
+        {/* Pipeline Strip */}
+        <div className="rounded-xl border border-border bg-card px-4 py-2.5">
+          <div className="flex items-center gap-0">
+            {pipeline.map((stage, i) => (
+              <button
+                key={stage.label}
+                onClick={() => onNavigate?.(stage.path)}
+                className="flex-1 text-center group active:scale-95 transition-transform"
+              >
+                <p className={`text-lg font-medium ${stage.color}`}>{stage.count}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{stage.label}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable Metrics and Activity Feed */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-none pb-28">
+        {/* Metrics Grid */}
+        <div className="grid grid-cols-2 gap-3">
+          {metrics.map((metric) => {
+            const Icon = metric.icon;
             return (
               <button
-                key={i}
-                onClick={() => onNavigate?.(item.path)}
-                className={`w-full flex items-center gap-3 px-5 py-3.5 border-l-2 text-left transition-all duration-200 active:bg-accent/10 ${item.borderColor} ${item.bg} ${i < priorityItems.length - 1 ? "border-b border-border/40" : ""}`}
+                key={metric.label}
+                onClick={() => onNavigate?.(metric.path)}
+                className="rounded-xl border border-border bg-card p-4 text-left active:scale-[0.98] transition-transform duration-150 flex flex-col justify-between"
               >
-                <Icon className={`w-3.5 h-3.5 ${item.iconColor} flex-shrink-0`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-medium ${item.iconColor}`}>{item.label}</p>
-                  <p className="text-xs text-muted-foreground truncate">{item.desc}</p>
+                <div className="w-full flex items-start justify-between mb-3">
+                  <Icon className="w-4 h-4 text-muted-foreground" />
+                  {metric.trend && (
+                    <span className={`text-xs font-medium ${metric.trend === "new" ? "text-accent-foreground" : "text-success"}`}>
+                      {metric.trend}
+                    </span>
+                  )}
                 </div>
-                <span className="text-xs text-muted-foreground flex-shrink-0">{item.action} →</span>
+                <div>
+                  <p className="text-2xl font-medium">{metric.value}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{metric.label}</p>
+                </div>
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* Pipeline Strip */}
-      <div className="rounded-xl border border-border bg-card px-4 py-3.5">
-        <div className="flex items-center gap-0">
-          {pipeline.map((stage, i) => (
+        {/* Spark Intelligence */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Spark Intelligence</p>
+          <div className="space-y-2.5">
+            {[
+              { text: "3 high-fit opportunities ready to create", type: "opportunity" as const, path: "/viral-sparks" },
+              { text: `${readyCount} productions awaiting review approval`, type: "alert" as const, path: "/review" },
+              { text: "YouTube growing rapidly (+42%) — momentum window open", type: "success" as const, path: "/analytics" },
+            ].map((item, i) => {
+              const config = {
+                opportunity: { icon: TrendingUp, color: "text-success", bg: "bg-success/10" },
+                alert: { icon: AlertCircle, color: "text-warning", bg: "bg-warning/10" },
+                success: { icon: CheckCircle2, color: "text-success", bg: "bg-success/10" },
+              };
+              const Icon = config[item.type].icon;
+              return (
+                <button
+                  key={i}
+                  onClick={() => onNavigate?.(item.path)}
+                  className={`w-full flex items-start gap-3 p-3 rounded-lg text-left active:scale-[0.98] transition-all duration-150 ${config[item.type].bg}`}
+                >
+                  <Icon className={`w-3.5 h-3.5 mt-0.5 ${config[item.type].color} flex-shrink-0`} />
+                  <p className="text-sm">{item.text}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recent Activity</p>
             <button
-              key={stage.label}
-              onClick={() => onNavigate?.(stage.path)}
-              className="flex-1 text-center group active:scale-95 transition-transform"
+              onClick={() => onNavigate?.("/review")}
+              className="text-xs text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-95"
             >
-              <p className={`text-lg font-medium ${stage.color}`}>{stage.count}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">{stage.label}</p>
+              View all
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3">
-        {metrics.map((metric) => {
-          const Icon = metric.icon;
-          return (
-            <button
-              key={metric.label}
-              onClick={() => onNavigate?.(metric.path)}
-              className="rounded-xl border border-border bg-card p-4 text-left active:scale-[0.98] transition-transform duration-150 flex flex-col justify-between"
-            >
-              <div className="w-full flex items-start justify-between mb-3">
-                <Icon className="w-4 h-4 text-muted-foreground" />
-                {metric.trend && (
-                  <span className={`text-xs font-medium ${metric.trend === "new" ? "text-accent-foreground" : "text-success"}`}>
-                    {metric.trend}
-                  </span>
-                )}
-              </div>
-              <div>
-                <p className="text-2xl font-medium">{metric.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{metric.label}</p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Spark Intelligence */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Spark Intelligence</p>
-        <div className="space-y-2.5">
-          {[
-            { text: "3 high-fit opportunities ready to create", type: "opportunity" as const, path: "/viral-sparks" },
-            { text: `${readyCount} productions awaiting review approval`, type: "alert" as const, path: "/review" },
-            { text: "YouTube growing rapidly (+42%) — momentum window open", type: "success" as const, path: "/analytics" },
-          ].map((item, i) => {
-            const config = {
-              opportunity: { icon: TrendingUp, color: "text-success", bg: "bg-success/10" },
-              alert: { icon: AlertCircle, color: "text-warning", bg: "bg-warning/10" },
-              success: { icon: CheckCircle2, color: "text-success", bg: "bg-success/10" },
-            };
-            const Icon = config[item.type].icon;
-            return (
-              <button
-                key={i}
-                onClick={() => onNavigate?.(item.path)}
-                className={`w-full flex items-start gap-3 p-3 rounded-lg text-left active:scale-[0.98] transition-all duration-150 ${config[item.type].bg}`}
-              >
-                <Icon className={`w-3.5 h-3.5 mt-0.5 ${config[item.type].color} flex-shrink-0`} />
-                <p className="text-sm">{item.text}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recent Activity</p>
-          <button
-            onClick={() => onNavigate?.("/review")}
-            className="text-xs text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-95"
-          >
-            View all
-          </button>
-        </div>
-        <div className="space-y-3">
-          {activities.map((activity) => {
-            const config = activityIcons[activity.type];
-            const Icon = config.icon;
-            return (
-              <button
-                key={activity.id}
-                onClick={() => onNavigate?.(config.path)}
-                className="w-full flex items-start gap-3 text-left transition-colors duration-150 active:bg-accent/5 p-1 -m-1 rounded-lg"
-              >
-                <div className="w-7 h-7 rounded-lg bg-accent/30 flex items-center justify-center flex-shrink-0">
-                  <Icon className={`w-3.5 h-3.5 ${config.color}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm leading-snug">{activity.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
-                </div>
-              </button>
-            );
-          })}
+          </div>
+          <div className="space-y-3">
+            {activities.map((activity) => {
+              const config = activityIcons[activity.type];
+              const Icon = config.icon;
+              return (
+                <button
+                  key={activity.id}
+                  onClick={() => onNavigate?.(config.path)}
+                  className="w-full flex items-start gap-3 text-left transition-colors duration-150 active:bg-accent/5 p-1 -m-1 rounded-lg"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-accent/30 flex items-center justify-center flex-shrink-0">
+                    <Icon className={`w-3.5 h-3.5 ${config.color}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm leading-snug">{activity.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

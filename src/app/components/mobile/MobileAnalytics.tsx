@@ -55,7 +55,9 @@ export function MobileAnalytics({ onNavigate }: MobileAnalyticsProps = {}) {
   ];
 
   return (
-    <div className="pb-24 px-4 pt-6 space-y-6">
+    <div className="h-[calc(100vh-76px)] flex flex-col overflow-hidden">
+      {/* Fixed Top Block */}
+      <div className="p-4 pb-0 space-y-4 flex-shrink-0 bg-background z-10">
       <div>
         <h1 className="text-2xl font-medium">Analytics</h1>
         <p className="text-sm text-muted-foreground mt-1">What worked, what failed, what's next</p>
@@ -82,8 +84,10 @@ export function MobileAnalytics({ onNavigate }: MobileAnalyticsProps = {}) {
           );
         })}
       </div>
+      </div>
 
-      {/* What Worked */}
+      {/* Scrollable Content Block */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-6 scrollbar-none pb-24">
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-4 h-4 text-success" />
@@ -207,7 +211,7 @@ export function MobileAnalytics({ onNavigate }: MobileAnalyticsProps = {}) {
           ))}
         </div>
       </div>
-
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ChevronDown, Radio, Check, CreditCard, Settings, Key, LogOut, ShieldCheck, Zap, Brain, TrendingUp, CheckSquare, Calendar as CalendarIcon, BarChart3, MoreHorizontal } from "lucide-react";
+import { Search, ChevronDown, Radio, Check, Plus, CreditCard, Settings, Key, LogOut, ShieldCheck, Zap, Brain, TrendingUp, CheckSquare, Calendar as CalendarIcon, BarChart3, MoreHorizontal } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
 import { useSpark } from "../state/SparkContext";
 
@@ -39,7 +39,13 @@ export function TopBar({
   onNavigate,
 }: TopBarProps) {
   const { accounts } = useSpark() as any;
-  const [selectedWorkspace, setSelectedWorkspace] = useState("@TechInsightsNG");
+  const [workspaces, setWorkspaces] = useState<string[]>([
+    "Tech Insights Nigeria",
+    "Creative Studio",
+    "Personal Brand"
+  ]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState("Tech Insights Nigeria");
+  const [selectedAccount, setSelectedAccount] = useState("@TechInsightsNG");
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   
@@ -90,36 +96,77 @@ export function TopBar({
         <div ref={workspaceRef} className="relative">
           <button
             onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/5 hover:bg-accent/15 border border-border/40 hover:border-border transition-all active:scale-[0.98] cursor-pointer"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/5 hover:bg-accent/15 border border-border/40 hover:border-border transition-all active:scale-[0.98] cursor-pointer animate-in fade-in"
           >
             <Radio className="w-4 h-4 text-accent-foreground animate-pulse" />
-            <span className="text-sm font-medium">{selectedWorkspace}</span>
+            <span className="text-sm font-medium">{selectedWorkspace} · {selectedAccount}</span>
             <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isWorkspaceOpen ? "rotate-180" : ""}`} />
           </button>
 
           {isWorkspaceOpen && (
-            <div className="absolute left-0 mt-2 w-64 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2.5 pb-2 border-b border-border/40 mb-2">Switch Workspace Account</p>
+            <div className="absolute left-0 mt-2 w-72 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150 max-h-[480px] overflow-y-auto">
+              {/* Workspaces Section */}
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2.5 pb-2 border-b border-border/40 mb-2">Switch Workspace</p>
+              <div className="space-y-1 mb-3">
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws}
+                    onClick={() => {
+                      setSelectedWorkspace(ws);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all hover:bg-accent/15 cursor-pointer ${selectedWorkspace === ws ? "bg-accent/10 text-foreground" : "text-muted-foreground"}`}
+                  >
+                    <span className="font-medium">{ws}</span>
+                    {selectedWorkspace === ws && <Check className="w-3.5 h-3.5 text-accent-foreground" />}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const name = prompt("Enter new workspace name:");
+                    if (name && name.trim()) {
+                      setWorkspaces([...workspaces, name.trim()]);
+                      setSelectedWorkspace(name.trim());
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-accent-foreground hover:bg-accent/15 cursor-pointer font-medium"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create Fresh Workspace</span>
+                </button>
+              </div>
+
+              {/* Accounts Section */}
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2.5 pb-2 border-b border-border/40 mb-2 mt-4">Switch Social Account</p>
               <div className="space-y-1">
                 {accounts.map((acc: any) => (
                   <button
                     key={acc.handle}
                     onClick={() => {
-                      setSelectedWorkspace(acc.handle || acc.name);
+                      setSelectedAccount(acc.handle || acc.name);
                       setIsWorkspaceOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-left text-sm transition-all hover:bg-accent/15 cursor-pointer ${selectedWorkspace === (acc.handle || acc.name) ? "bg-accent/10 text-foreground" : "text-muted-foreground"}`}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all hover:bg-accent/15 cursor-pointer ${selectedAccount === (acc.handle || acc.name) ? "bg-accent/10 text-foreground" : "text-muted-foreground"}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className={`w-1.5 h-1.5 rounded-full ${acc.status === "connected" ? "bg-success" : "bg-muted-foreground/45"}`} />
                       <div>
-                        <p className="font-medium text-xs leading-none">{acc.platform}</p>
+                        <p className="font-medium text-[11px] leading-none">{acc.platform}</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5">{acc.handle || acc.name}</p>
                       </div>
                     </div>
-                    {selectedWorkspace === (acc.handle || acc.name) && <Check className="w-3.5 h-3.5 text-accent-foreground animate-in zoom-in-75" />}
+                    {selectedAccount === (acc.handle || acc.name) && <Check className="w-3.5 h-3.5 text-accent-foreground animate-in zoom-in-75" />}
                   </button>
                 ))}
+                <button
+                  onClick={() => {
+                    setIsWorkspaceOpen(false);
+                    handleNavigate("/more/accounts");
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs text-accent-foreground hover:bg-accent/15 cursor-pointer font-medium"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Connect New Account</span>
+                </button>
               </div>
             </div>
           )}
