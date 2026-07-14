@@ -23,6 +23,7 @@ import { ExecutionTask } from "../domain/runtime/ExecutionTask";
 import { CapabilityAnalyzer } from "../services/capabilityAnalyzer";
 import { AgentRegistry } from "../services/agentRegistry";
 import { AgentDispatcher } from "../services/agentDispatcher";
+import { ModelRouter } from "../services/modelRouter";
 
 interface SparkContextType {
   brand: Brand;
@@ -545,6 +546,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (selectedAgent) {
       console.log(`[Runtime Orchestrator] Task successfully dispatched to agent: ${selectedAgent.name} (${selectedAgent.id})`);
+      
+      const selection = ModelRouter.route(executionTask, requirements, selectedAgent);
+      console.log(`[Runtime Model Router] Selected Provider: ${selection.provider}, Model: ${selection.model} (Confidence: ${selection.confidence})`);
+      console.log(`[Runtime Model Router] Routing rationale: ${selection.reasoning.join(", ")}`);
     }
 
     const canProceed = ExecutivePolicyEngine.canProceed("production", state.automationMode);

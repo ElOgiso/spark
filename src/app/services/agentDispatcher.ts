@@ -42,9 +42,9 @@ export class AgentDispatcher {
       return null;
     }
 
-    // 4. Return the agent with the highest performance score
+    // 4. Return the agent with the highest performance quality score
     return matchingCandidates.reduce((best, current) =>
-      current.performanceScore > best.performanceScore ? current : best
+      current.performanceMetrics.qualityScore > best.performanceMetrics.qualityScore ? current : best
     );
   }
 }
