@@ -19,6 +19,10 @@ import {
 import { ExecutiveDecisionEngine } from "../services/executiveDecisionEngine";
 import { ExecutivePolicyEngine } from "../services/executivePolicyEngine";
 import { PipelineEngine } from "../services/pipelineEngine";
+import { ExecutionTask } from "../domain/runtime/ExecutionTask";
+import { CapabilityAnalyzer } from "../services/capabilityAnalyzer";
+import { AgentRegistry } from "../services/agentRegistry";
+import { AgentDispatcher } from "../services/agentDispatcher";
 
 interface SparkContextType {
   brand: Brand;
@@ -513,6 +517,36 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
     const decision = ExecutiveDecisionEngine.generatePlan(spark.title, state.automationMode);
+
+    // Create standard ExecutionTask payload
+    const executionTask: ExecutionTask = {
+      id: `task-${Date.now()}`,
+      objective: decision.objective,
+      department: decision.department,
+      priority: decision.priority,
+      capabilities: decision.requiredCapabilities,
+      automationMode: state.automationMode,
+      workspaceId: "default",
+      brandId: "default",
+      createdAt: new Date().toISOString(),
+      status: "pending"
+    };
+
+    // Analyze constraints via CapabilityAnalyzer
+    const requirements = CapabilityAnalyzer.analyze(executionTask);
+
+    // Locate and dispatch matching agent from AgentRegistry
+    const registry = AgentRegistry.getInstance();
+    const selectedAgent = AgentDispatcher.selectAgent(
+      registry.getAllAgents(),
+      requirements.requiredCapabilities,
+      executionTask.department
+    );
+
+    if (selectedAgent) {
+      console.log(`[Runtime Orchestrator] Task successfully dispatched to agent: ${selectedAgent.name} (${selectedAgent.id})`);
+    }
+
     const canProceed = ExecutivePolicyEngine.canProceed("production", state.automationMode);
     const status = canProceed ? "Ready for Review" : "Drafting";
 
