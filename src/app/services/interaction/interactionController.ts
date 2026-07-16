@@ -1,6 +1,8 @@
-import { IntentRouter } from "./intentRouter";
+import { IntentRouter, ExecutionRequest } from "./intentRouter";
 import { ConversationController } from "./conversationController";
 import { AutomationMode } from "../../domain/types";
+
+export type { ExecutionRequest };
 
 export class InteractionController {
   private static instance: InteractionController;
@@ -8,7 +10,7 @@ export class InteractionController {
     isExecuting?: boolean;
     pendingTaskPrompt?: string | null;
   }) => void;
-  private onTriggerWorkspace?: (prompt: string) => Promise<string>;
+  private onTriggerWorkspace?: (request: ExecutionRequest) => Promise<string>;
 
   public static getInstance(): InteractionController {
     if (!InteractionController.instance) {
@@ -19,7 +21,7 @@ export class InteractionController {
 
   public registerCallbacks(callbacks: {
     onStateUpdate: (updates: { isExecuting?: boolean; pendingTaskPrompt?: string | null }) => void;
-    onTriggerWorkspace: (prompt: string) => Promise<string>;
+    onTriggerWorkspace: (request: ExecutionRequest) => Promise<string>;
   }) {
     this.onStateUpdate = callbacks.onStateUpdate;
     this.onTriggerWorkspace = callbacks.onTriggerWorkspace;
@@ -65,10 +67,15 @@ export class InteractionController {
       return routeResult.output;
     }
 
-    // Trigger workspace layer execution
+    // Trigger workspace layer execution using the standard contract
     if (routeResult.intent === "workspace_execution") {
       if (this.onTriggerWorkspace) {
-        return this.onTriggerWorkspace(routeResult.output);
+        const request: ExecutionRequest = {
+          prompt: routeResult.output,
+          isWorkspaceTask: true,
+          timestamp: new Date().toISOString()
+        };
+        return this.onTriggerWorkspace(request);
       }
     }
 

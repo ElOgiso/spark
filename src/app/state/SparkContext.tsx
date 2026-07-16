@@ -29,7 +29,7 @@ import { TaskScheduler } from "../services/taskScheduler";
 import { ExecutionManager } from "../services/executionManager";
 import { IDepartmentAgent } from "../domain/runtime/IDepartmentAgent";
 import { RuntimeOrchestrator } from "../services/runtime/runtimeOrchestrator";
-import { InteractionController } from "../services/interaction/interactionController";
+import { InteractionController, ExecutionRequest } from "../services/interaction/interactionController";
 
 interface SparkContextType {
   brand: Brand;
@@ -761,7 +761,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   };
 
-  const triggerWorkspace = async (targetPrompt: string): Promise<string> => {
+  const triggerWorkspace = async (request: ExecutionRequest): Promise<string> => {
+    if (!request.isWorkspaceTask) {
+      throw new Error("[Runtime Layer] Rejected non-workspace execution request.");
+    }
+    const targetPrompt = request.prompt;
+
     // Actually run pipeline
     setIsExecuting(true);
     setStreamingOutput("");
