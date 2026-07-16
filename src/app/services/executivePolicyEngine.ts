@@ -7,15 +7,23 @@ export class ExecutivePolicyEngine {
   public static requiresApproval(step: string, mode: AutomationMode): boolean {
     const normalized = step.toLowerCase();
     
-    // In manual mode, everything requires approval.
     if (mode === "manual") return true;
 
-    // In balanced mode, content creation, production, and publishing require approval.
-    if (mode === "balanced") {
-      return ["creative", "production", "review", "publishing"].includes(normalized);
+    const criticalActions = [
+      "publishing",
+      "publish",
+      "post_social",
+      "delete",
+      "send_email",
+      "spend_credits",
+      "wallet_transaction",
+      "account_connection"
+    ];
+
+    if (criticalActions.includes(normalized)) {
+      return true;
     }
 
-    // In autonomous mode, only final publishing or critical overrides might require approval.
     return false;
   }
 

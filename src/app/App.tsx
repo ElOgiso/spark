@@ -55,6 +55,7 @@ export default function App() {
         case "/more/accounts":
         case "/more/billing":
         case "/more/api":
+        case "/more/integrations":
         case "/more/team":
         case "/more/legal":
         case "/more/support":

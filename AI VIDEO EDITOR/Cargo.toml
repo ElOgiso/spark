@@ -1,0 +1,43 @@
+[workspace]
+members = [
+    "crates/cutlass-core",
+    "crates/cutlass-decoder",
+    "crates/cutlass-compositor",
+    "crates/cutlass-text",
+    "crates/cutlass-shapes",
+    "crates/cutlass-models",
+    "crates/cutlass-commands",
+    "crates/cutlass-ai",
+    "crates/cutlass-render",
+    "crates/cutlass-encoder",
+    "crates/cutlass-engine",
+    "crates/cutlass-cli",
+    "crates/cutlass-mobile",
+    "crates/cutlass-settings",
+    "apps/cutlass-desktop",
+]
+# cutlass-py is a PyO3 cdylib shipped to PyPI on its own (maturin). Kept out of
+# the default workspace build so `cargo build --workspace` and the mobile
+# cross-compiles never pull Python/pyo3. Build it from its own directory.
+exclude = ["crates/cutlass-py"]
+resolver = "3"
+
+[workspace.package]
+version = "0.5.3-alpha.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/1mrnewton/cutlass"
+
+[workspace.dependencies]
+thiserror = "2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+rustc-hash = "2"
+tracing = "0.1"
+# GPU compositor. wgpu 28 matches Slint 1.16's `unstable-wgpu-28` so the future
+# desktop UI can hand the compositor its own device/queue and share textures
+# (zero-copy present) instead of round-tripping pixels through the CPU.
+wgpu = "28"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"

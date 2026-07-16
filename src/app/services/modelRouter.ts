@@ -5,14 +5,14 @@ import { PerformanceHistory, ProviderMetrics } from "./performanceHistory";
 import { ExecutionRequirements } from "./capabilityAnalyzer";
 
 export interface ProviderSelection {
-  provider: "openai" | "anthropic" | "google";
+  provider: string;
   model: string;
   confidence: number;
   reasoning: string[];
 }
 
 interface ModelProfile {
-  provider: "openai" | "anthropic" | "google";
+  provider: string;
   model: string;
   maxContextWindow: number;
   reasoningQuality: number;
@@ -53,7 +53,7 @@ export class ModelRouter {
     },
     {
       provider: "anthropic",
-      model: "claude-3-5-sonnet",
+      model: "claude-sonnet-4",
       maxContextWindow: 200000,
       reasoningQuality: 96,
       supportedCapabilities: [
@@ -67,7 +67,7 @@ export class ModelRouter {
     },
     {
       provider: "google",
-      model: "gemini-1.5-pro",
+      model: "gemini-2.5-pro",
       maxContextWindow: 1000000,
       reasoningQuality: 94,
       supportedCapabilities: [
@@ -86,7 +86,7 @@ export class ModelRouter {
     },
     {
       provider: "google",
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       maxContextWindow: 1000000,
       reasoningQuality: 75,
       supportedCapabilities: [
@@ -176,8 +176,22 @@ export class ModelRouter {
         reasons.push("Penalized due to degraded health status");
       }
 
-      // 8. Exploration Entropy (weight: 5%)
-      // Introduce minor variance to prevent strict locking onto single models
+      // 8. Specific routing preferences boost
+      if (profile.provider === "google") {
+        score += 40; // Default Google Gemini priority boost
+        reasons.push("Default provider boost (Google Gemini)");
+      } else if (task.department === "research" && profile.provider === "google") {
+        score += 25;
+        reasons.push("Preferred provider boost for Research (Google Gemini)");
+      } else if (task.department === "creative" && profile.provider === "openai") {
+        score += 25;
+        reasons.push("Preferred provider boost for Writing (OpenAI GPT)");
+      } else if (requirements.requiredCapabilities.includes(Capability.STRATEGIC_REASONING) && profile.provider === "anthropic") {
+        score += 25;
+        reasons.push("Preferred provider boost for Strategic Reasoning (Claude)");
+      }
+
+      // 9. Exploration Entropy (weight: 5%)
       const entropy = Math.random() * 5;
       score += entropy;
 
@@ -190,7 +204,7 @@ export class ModelRouter {
 
     // Default fallback
     if (!bestProfile) {
-      bestProfile = this.MODEL_PROFILES[3]; // gemini-1.5-pro
+      bestProfile = this.MODEL_PROFILES[3]; // gemini-2.5-pro fallback
       selectReasoning = ["Default fallback profile selected"];
     }
 
@@ -203,5 +217,58 @@ export class ModelRouter {
       confidence: parseFloat(confidence.toFixed(2)),
       reasoning: selectReasoning.slice(0, 3)
     };
+  }
+
+  /**
+   * Routes an image generation request to the optimal provider based on requested output style.
+   */
+  public static routeImage(task: ExecutionTask, outputStyle?: string): string {
+    const query = (outputStyle || task.objective || "").toLowerCase();
+    
+    if (query.includes("anime") || query.includes("illustration") || query.includes("art")) {
+      return "ideogram";
+    }
+    if (query.includes("product") || query.includes("commercial") || query.includes("branding") || query.includes("logo") || query.includes("icon")) {
+      return "recraft";
+    }
+    if (query.includes("cinematic") || query.includes("human") || query.includes("realistic") || query.includes("photorealistic")) {
+      return "flux";
+    }
+    if (query.includes("dall") || query.includes("openai") || query.includes("storyboard")) {
+      return "openai_images";
+    }
+    
+    return "flux";
+  }
+
+  /**
+   * Routes a video generation request to the optimal provider based on requested output style.
+   */
+  public static routeVideo(task: ExecutionTask, outputStyle?: string): string {
+    const query = (outputStyle || task.objective || "").toLowerCase();
+    
+    if (query.includes("cinematic") || query.includes("human") || query.includes("realistic")) {
+      return "runway";
+    }
+    if (query.includes("veo") || query.includes("google") || query.includes("high quality")) {
+      return "veo";
+    }
+    if (query.includes("anime") || query.includes("cartoon") || query.includes("artistic") || query.includes("stylized")) {
+      return "higgsfield";
+    }
+    if (query.includes("product") || query.includes("commercial") || query.includes("physical")) {
+      return "luma";
+    }
+    if (query.includes("social") || query.includes("clip") || query.includes("short") || query.includes("tiktok")) {
+      return "pika";
+    }
+    if (query.includes("fast") || query.includes("speed") || query.includes("wan")) {
+      return "wan";
+    }
+    if (query.includes("seedance") || query.includes("dance") || query.includes("character")) {
+      return "seedance";
+    }
+    
+    return "kling";
   }
 }

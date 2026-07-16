@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: build / test / clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # No media libraries: decode/encode is platform-native (none on Linux
+      # yet). fontconfig/alsa feed Slint text and cpal audio output; Vulkan
+      # gives wgpu a headless adapter for compositor tests.
+      - name: Install system development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libfontconfig1-dev libasound2-dev \
+            mesa-vulkan-drivers libvulkan1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Test
+        run: cargo test --workspace
+
+  # Compile the release binary on the platforms that break most often (and that the
+  # Linux job above never exercises), so Windows/macOS-specific breakage surfaces on
+  # the PR in minutes instead of ~40 min into a tagged Release. Compile-only keeps it
+  # lean; packaging is still validated by the Release workflow on tag.
+  build-macos:
+    name: release build / macos arm64
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build cutlass-desktop (release)
+        run: cargo build --release -p cutlass-desktop
+
+  build-windows:
+    name: release build / windows x86_64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build cutlass-desktop (release)
+        run: cargo build --release -p cutlass-desktop
+
+      # Exercise the full Windows packaging path on PRs too: it's broken releases
+      # before (e.g. the -Arch splatting bug) while compile-only CI stayed green.
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Package zip + installer
+        shell: pwsh
+        run: ./scripts/package-windows-installer.ps1 -Arch x86_64

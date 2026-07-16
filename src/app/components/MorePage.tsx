@@ -85,6 +85,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
       items: [
         { icon: CreditCard, label: "Billing", description: "Plan, usage, and invoices", meta: "Pro Plan", action: () => onNavigate("/more/billing") },
         { icon: Code, label: "API", description: "API keys and developer access", meta: "2 keys", action: () => onNavigate("/more/api") },
+        { icon: Brain, label: "Integrations", description: "Connected AI, MCP, and local services", meta: "Connected", action: () => onNavigate("/more/integrations") },
         { icon: Users, label: "Team", description: "Members, roles, and permissions", meta: "2 members", action: () => onNavigate("/more/team") },
       ],
     },

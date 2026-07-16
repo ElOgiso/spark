@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Mic, Volume2, VolumeX, Send, Sparkles, User, AudioLines, Crown, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSpark } from "../state/SparkContext";
+import { useXaiRealtime } from "../hooks/useXaiRealtime";
 
 interface AIChatModalProps {
   isOpen: boolean;
@@ -19,10 +20,12 @@ interface MessageMedia {
 }
 
 interface Message {
+  id?: string;
   sender: "user" | "spark";
   text: string;
   timestamp: Date;
   media?: MessageMedia;
+  isStreaming?: boolean;
 }
 
 export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
@@ -36,7 +39,11 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     rejectOrRequestEditReviewItem,
     createProductionFromSpark,
     updateAutomationMode,
-    addMemoryItem
+    addMemoryItem,
+    isExecuting,
+    executionTimeline,
+    streamingMetrics,
+    runRealTask
   } = useSpark() as any;
 
   const [messages, setMessages] = useState<Message[]>([
@@ -52,85 +59,62 @@ How can I help you operate your workspace today?`,
   ]);
   const [inputText, setInputText] = useState("");
   const [isMuted, setIsMuted] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
 
+  const { isRecording, connect, disconnect, transcript: voiceTranscript } = useXaiRealtime();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
 
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Speech Recognition (STT) setup
+  // Sync realtime transcript to input text box and auto-submit on complete
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-US";
+    if (voiceTranscript.length > 0) {
+      const lastMsg = voiceTranscript[voiceTranscript.length - 1];
+      if (lastMsg.role === "user") {
+        setInputText(lastMsg.text);
+        if (lastMsg.isFinal) {
+          setInputText("");
+          setMessages((prev) => [...prev, { sender: "user", text: lastMsg.text, timestamp: new Date() }]);
+          
+          const sparkMessageId = `spark-msg-${Date.now()}`;
+          setMessages((prev) => [...prev, {
+            id: sparkMessageId,
+            sender: "spark",
+            text: "Initializing runtime orchestrator...",
+            timestamp: new Date(),
+            isStreaming: true
+          }]);
 
-      rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputText(transcript);
-        setIsRecording(false);
-      };
-
-      rec.onerror = (e: any) => {
-        console.error("Speech Recognition Error", e);
-        setIsRecording(false);
-      };
-
-      rec.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognitionRef.current = rec;
-    }
-  }, []);
-
-  // Text to Speech (TTS) handler
-  const speakText = (text: string) => {
-    if (isMuted) return;
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.lang.includes("en-NG") || v.lang.includes("en-GB") || v.lang.includes("en-US"));
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
+          runRealTask(lastMsg.text, (chunk: string) => {
+            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
+          }).then((finalText: string) => {
+            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
+          }).catch((err: any) => {
+            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: `Error: ${err.message || err}`, isStreaming: false } : m));
+          });
+        }
       }
-      utterance.rate = 1.05;
-      window.speechSynthesis.speak(utterance);
     }
-  };
+  }, [voiceTranscript]);
 
-  // Cancel speech on close
+  // Cancel recording on close
   useEffect(() => {
     if (!isOpen) {
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      if (isRecording && recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (isRecording) {
+        disconnect();
       }
     }
   }, [isOpen]);
 
   const toggleRecording = () => {
-    if (!recognitionRef.current) {
-      alert("Speech recognition is not supported in this browser.");
-      return;
-    }
-
     if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
+      disconnect();
     } else {
-      setIsRecording(true);
-      recognitionRef.current.start();
+      connect();
     }
   };
 
@@ -153,7 +137,6 @@ How can I help you operate your workspace today?`,
       ...prev,
       { sender: "spark", text: feedbackText, timestamp: new Date() }
     ]);
-    speakText(feedbackText);
   };
 
   const handleActionRequestEdit = (reviewId: string, msgIndex: number) => {
@@ -174,7 +157,6 @@ How can I help you operate your workspace today?`,
       ...prev,
       { sender: "spark", text: feedbackText, timestamp: new Date() }
     ]);
-    speakText(feedbackText);
   };
 
   const handleActionRegenerate = (reviewId: string, msgIndex: number) => {
@@ -204,7 +186,6 @@ How can I help you operate your workspace today?`,
         ...prev,
         { sender: "spark", text: feedbackText, timestamp: new Date() }
       ]);
-      speakText(feedbackText);
     }, 1500);
   };
 
@@ -217,7 +198,6 @@ How can I help you operate your workspace today?`,
       ...prev,
       { sender: "spark", text: feedbackText, timestamp: new Date() }
     ]);
-    speakText(feedbackText);
   };
 
   const getSystemOverview = () => {
@@ -227,109 +207,6 @@ How can I help you operate your workspace today?`,
   };
 
   // Main natural language action router
-  const processResponse = (query: string) => {
-    const q = query.toLowerCase();
-    let text = "";
-    let media: MessageMedia | undefined = undefined;
-
-    // A. APPROVE action via text command
-    if (q.includes("approve") && (q.includes("tactics") || q.includes("r1") || q.includes("marketing"))) {
-      approveReviewItem("r1");
-      text = `I have successfully approved "5 Viral Marketing Tactics That Actually Work in 2026" on your behalf. The publishing queue has updated!`;
-      speakText(text);
-      setMessages((prev) => [...prev, { sender: "spark", text, timestamp: new Date() }]);
-      return;
-    }
-    if (q.includes("approve") && (q.includes("psychology") || q.includes("r2"))) {
-      approveReviewItem("r2");
-      text = `I have successfully approved "The Psychology Behind Viral Content" on your behalf. The publishing queue has updated!`;
-      speakText(text);
-      setMessages((prev) => [...prev, { sender: "spark", text, timestamp: new Date() }]);
-      return;
-    }
-
-    // B. CREATE production action via text command
-    if (q.includes("create") || q.includes("initialize") || q.includes("start")) {
-      if (q.includes("empires") || q.includes("nigerian creators") || q.includes("s1")) {
-        createProductionFromSpark("s1");
-        text = `Initialized new storyboard and production draft for "How Nigerian Creators Are Using AI to Build Media Empires". Check your drafting board!`;
-        speakText(text);
-        setMessages((prev) => [...prev, { sender: "spark", text, timestamp: new Date() }]);
-        return;
-      }
-    }
-
-    // C. FETCH VIDEO / MEDIA REQUESTS
-    if (q.includes("video") || q.includes("preview") || q.includes("storyboard") || q.includes("play") || q.includes("watch")) {
-      if (q.includes("marketing") || q.includes("tactics") || q.includes("r1")) {
-        const item = reviewItems.find((r: any) => r.id === "r1") || { title: "5 Viral Marketing Tactics That Actually Work in 2026", status: "Pending Review", conceptText: "Unpack 5 unconventional growth models used by the top 1% of creators." };
-        text = `Here is the current draft and review status for: **5 Viral Marketing Tactics That Actually Work in 2026**. Watch the video preview below and trigger pipeline actions directly:`;
-        media = {
-          type: "video",
-          id: "r1",
-          title: item.title,
-          status: item.status,
-          videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-matrix-style-computer-code-running-9114-large.mp4",
-          concept: item.conceptText || item.openingMoment,
-          meta: "Channel: YouTube | Aspect: 16:9 | Length: 2m 15s"
-        };
-      } else if (q.includes("psychology") || q.includes("viral content") || q.includes("r2")) {
-        const item = reviewItems.find((r: any) => r.id === "r2") || { title: "The Psychology Behind Viral Content", status: "Pending Review", conceptText: "Explain cognitive loopholes and curiosity gaps." };
-        text = `Here is the preview and details for: **The Psychology Behind Viral Content**. Play the clip directly in the bubble and approve it to schedule:`;
-        media = {
-          type: "video",
-          id: "r2",
-          title: item.title,
-          status: item.status,
-          videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-smartphone-over-a-keyboard-41315-large.mp4",
-          concept: item.conceptText || item.openingMoment,
-          meta: "Channel: TikTok | Aspect: 9:16 | Length: 58s"
-        };
-      } else if (q.includes("free tools") || q.includes("r3") || q.includes("creator needs")) {
-        text = `Here is the vertical edit for: **Free Tools Every Creator Needs**. Ready for final distribution approval:`;
-        media = {
-          type: "video",
-          id: "r3",
-          title: "Free Tools Every Creator Needs",
-          status: "Pending Review",
-          videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-slow-movement-of-waves-on-the-shore-43405-large.mp4",
-          concept: "Show ₦500K → ₦0 software comparison values on screen.",
-          meta: "Channel: TikTok | Aspect: 9:16 | Length: 45s"
-        };
-      } else {
-        // Fallback list of reviews
-        text = `I couldn't find a specific video match. Here is the active opportunity from your signal feeds. Would you like to initialize its storyboard?`;
-        media = {
-          type: "opportunity",
-          id: "s1",
-          title: "How Nigerian Creators Are Using AI to Build Media Empires",
-          status: "Hot Opportunity",
-          concept: "\"I replaced my entire production team with one AI tool — and tripled output.\"",
-          meta: "Velocity: +182% | Brand Fit: 97% | Category: Hot"
-        };
-      }
-      speakText(text);
-      setMessages((prev) => [...prev, { sender: "spark", text, media, timestamp: new Date() }]);
-      return;
-    }
-
-    // D. REVENUE & STATS
-    if (q.includes("revenue") || q.includes("money") || q.includes("earnings")) {
-      text = `We tracked $142K in revenue this month, which is up 24.5% compared to last month. All channel monetization streams are performing optimally.`;
-    } else if (q.includes("views") || q.includes("traffic") || q.includes("analytics")) {
-      text = `Across all accounts, we have hit 24.8M views this month (up by 18.2%). The top performer was the "How AI Creates Viral Content" video.`;
-    } else if (q.includes("brand") || q.includes("niche") || q.includes("audience")) {
-      text = `Your active brand workspace is "${brand?.name}" targeting "${brand?.audience?.primary}". Our main focus is "${brand?.niche}" using an "${brand?.archetype}" voice style.`;
-    } else if (q.includes("hello") || q.includes("hi") || q.includes("hey")) {
-      text = `Hello! I'm Spark, your brand's AI Media Assistant. ${getSystemOverview()} Ask me to show a video, approve drafts, or initialize new opportunities.`;
-    } else {
-      text = `I am analyzing your request. I can pull video files, approve/edit drafts, or check view statistics. Try saying: "Show me the video for marketing tactics" or "What should I do today?".`;
-    }
-
-    speakText(text);
-    setMessages((prev) => [...prev, { sender: "spark", text, timestamp: new Date() }]);
-  };
-
   const handleSendMessage = () => {
     if (!inputText.trim()) return;
 
@@ -342,9 +219,22 @@ How can I help you operate your workspace today?`,
     setMessages((prev) => [...prev, userMessage]);
     setInputText("");
 
-    setTimeout(() => {
-      processResponse(userMessage.text);
-    }, 600);
+    const sparkMessageId = `spark-msg-${Date.now()}`;
+    setMessages((prev) => [...prev, {
+      id: sparkMessageId,
+      sender: "spark",
+      text: "Thinking...",
+      timestamp: new Date(),
+      isStreaming: true
+    }]);
+
+    runRealTask(userMessage.text, (chunk: string) => {
+      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
+    }).then((finalText: string) => {
+      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
+    }).catch((err: any) => {
+      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: `Error: ${err.message || err}`, isStreaming: false } : m));
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -385,11 +275,7 @@ How can I help you operate your workspace today?`,
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                const newMute = !isMuted;
-                setIsMuted(newMute);
-                if (newMute && "speechSynthesis" in window) {
-                  window.speechSynthesis.cancel();
-                }
+                setIsMuted(!isMuted);
               }}
               className={`p-2.5 rounded-xl border border-border/80 bg-accent/5 transition-all duration-200 hover:bg-accent/10 active:scale-95 text-muted-foreground hover:text-foreground ${!isMuted ? "text-accent-foreground bg-accent/10 border-accent/20" : ""}`}
               title={isMuted ? "Unmute Voice" : "Mute Voice"}
@@ -532,7 +418,83 @@ How can I help you operate your workspace today?`,
                 </motion.div>
               );
             })}
-            <div ref={messagesEndRef} />
+
+            {isExecuting && (
+              <div className="max-w-3xl w-full mx-auto pl-12 pr-6 py-4 my-3 bg-card/25 border border-border/40 rounded-2xl backdrop-blur-md shadow-lg shadow-black/5">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90 mb-3">
+                  <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
+                  <span>Spark Media OS Pipeline Execution</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {executionTimeline.map((step: any) => {
+                    const isIdle = step.status === 'idle';
+                    const isRunning = step.status === 'running';
+                    const isCompleted = step.status === 'completed';
+                    const isFailed = step.status === 'failed';
+
+                    return (
+                      <div
+                        key={step.name}
+                        className={`flex flex-col justify-between p-2 rounded-xl border text-[11px] transition-all duration-300 min-h-[64px] ${
+                          isRunning ? 'bg-accent/15 border-accent/50 shadow-sm shadow-accent/10 animate-pulse' :
+                          isCompleted ? 'bg-emerald-500/10 border-emerald-500/35' :
+                          isFailed ? 'bg-destructive/15 border-destructive/35' :
+                          'bg-muted/10 border-border/30 opacity-55'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-semibold text-foreground/90 truncate">{step.name}</span>
+                          <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${
+                            isRunning ? 'bg-accent' :
+                            isCompleted ? 'bg-emerald-500' :
+                            isFailed ? 'bg-destructive' :
+                            'bg-muted-foreground/40'
+                          }`} />
+                        </div>
+                        {isCompleted && step.duration && (
+                          <div className="text-[9px] text-muted-foreground/80 leading-relaxed mt-1 border-t border-border/20 pt-1">
+                            <div className="flex justify-between gap-1">
+                              <span className="capitalize font-medium text-foreground/75">{step.provider}</span>
+                              <span>{(step.duration / 1000).toFixed(1)}s</span>
+                            </div>
+                            <div className="flex justify-between gap-1 mt-0.5">
+                              <span>${step.cost?.toFixed(3)}</span>
+                              <span className="text-emerald-500 font-bold">{step.confidence}%</span>
+                            </div>
+                          </div>
+                        )}
+                        {isRunning && (
+                          <span className="text-[9px] text-accent font-semibold animate-pulse">Running...</span>
+                        )}
+                        {isIdle && (
+                          <span className="text-[9px] text-muted-foreground/60">Queued</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {executionTimeline.find((s: any) => s.name === "Creative Decision")?.status === "completed" && (
+                  <div className="mt-3.5 p-3.5 rounded-xl bg-accent/5 border border-accent/20 text-[11px] leading-relaxed text-muted-foreground animate-fadeIn duration-500">
+                    <div className="font-semibold text-foreground/90 mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                        Creative Director Rationale
+                      </span>
+                      <span className="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded-md">Confidence: 94%</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2.5 text-foreground/75 border-b border-border/20 pb-2.5">
+                      <div><strong className="text-muted-foreground/80 font-normal">Platform:</strong> TikTok / Vertical</div>
+                      <div><strong className="text-muted-foreground/80 font-normal">Goal:</strong> Maximize Engagement</div>
+                      <div><strong className="text-muted-foreground/80 font-normal">Audience:</strong> Software Developers</div>
+                      <div><strong className="text-muted-foreground/80 font-normal">Workflow:</strong> UGC Campaign</div>
+                    </div>
+                    <div className="text-foreground/90 font-medium italic">
+                      "TikTok formats perform best with horizontal-safe vertical alignment, under 30s, and high action pacing. Recommendation: 18-second UGC vertical cut."
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </main>
 

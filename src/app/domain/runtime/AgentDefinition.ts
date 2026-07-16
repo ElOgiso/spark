@@ -10,7 +10,7 @@ export interface AgentPerformanceMetrics {
 export interface AgentDefinition {
   id: string;
   name: string;
-  department: "research" | "creative" | "production" | "review" | "publishing" | "analytics" | "learning";
+  department: "research" | "creative" | "production" | "review" | "publishing" | "analytics" | "learning" | "editor" | "storyboard";
   capabilities: Capability[];
   status: "healthy" | "unhealthy";
   version: string;

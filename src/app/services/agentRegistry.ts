@@ -75,6 +75,16 @@ export class AgentRegistry {
       version: "1.3.0",
       performanceMetrics: { avgLatencyMs: 4200, avgCostUsd: 0.03, successRate: 0.95, qualityScore: 90 }
     });
+
+    this.register({
+      id: 'agent-editor',
+      name: 'EditorAgent',
+      department: 'editor',
+      capabilities: [Capability.VIDEO_GENERATION, Capability.IMAGE_GENERATION],
+      status: 'healthy',
+      version: '1.0.0',
+      performanceMetrics: { avgLatencyMs: 12000, avgCostUsd: 0.08, successRate: 0.92, qualityScore: 91 }
+    });
   }
 
   public static getInstance(): AgentRegistry {

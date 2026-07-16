@@ -1,18 +1,51 @@
 import { AgentDefinition } from "../domain/runtime/AgentDefinition";
 import { Capability } from "../domain/runtime/Capability";
+import { IDepartmentAgent } from "../domain/runtime/IDepartmentAgent";
+import { ResearchAgent } from "./agents/ResearchAgent";
+import { CreativeAgent } from "./agents/CreativeAgent";
+import { ProductionAgent } from "./agents/ProductionAgent";
+import { PublishingAgent } from "./agents/PublishingAgent";
+import { AnalyticsAgent } from "./agents/AnalyticsAgent";
+import { LearningAgent } from "./agents/LearningAgent";
+import { ReviewAgent } from "./agents/ReviewAgent";
+import { EditorAgent } from "./agents/EditorAgent";
 
 export class AgentDispatcher {
   /**
-   * Selects the single best compatible agent based on requirements.
-   * - Filters out unhealthy agents.
-   * - Filters by target department and matching capabilities.
-   * - Picks the match with the highest performanceScore.
+   * Instantiates the matching executable agent instance from the metadata definition.
+   */
+  public static instantiateAgent(definition: AgentDefinition): IDepartmentAgent {
+    switch (definition.id) {
+      case "agent-research":
+        return new ResearchAgent();
+      case "agent-creative":
+        return new CreativeAgent();
+      case "agent-production":
+        return new ProductionAgent();
+      case "agent-publishing":
+        return new PublishingAgent();
+      case "agent-analytics":
+        return new AnalyticsAgent();
+      case "agent-learning":
+        return new LearningAgent();
+      case "agent-review":
+        return new ReviewAgent();
+      case "agent-editor":
+        return new EditorAgent();
+      default:
+        // Fallback
+        return new ResearchAgent();
+    }
+  }
+
+  /**
+   * Filters candidate definitions and returns the concrete instantiated IDepartmentAgent wrapper.
    */
   public static selectAgent(
     agents: AgentDefinition[],
     requiredCapabilities: Capability[],
     targetDepartment?: string
-  ): AgentDefinition | null {
+  ): IDepartmentAgent | null {
     // 1. Filter healthy agents
     let candidates = agents.filter((agent) => agent.status === "healthy");
 
@@ -21,19 +54,17 @@ export class AgentDispatcher {
       candidates = candidates.filter((agent) => agent.department === targetDepartment.toLowerCase());
     }
 
-    // 3. Filter by capabilities (must support all required capabilities if possible)
+    // 3. Filter by capabilities
     let matchingCandidates = candidates.filter((agent) =>
       requiredCapabilities.every((cap) => agent.capabilities.includes(cap))
     );
 
-    // Fallback: match any capability if no complete matches exist
     if (matchingCandidates.length === 0) {
       matchingCandidates = candidates.filter((agent) =>
         requiredCapabilities.some((cap) => agent.capabilities.includes(cap))
       );
     }
 
-    // Fallback: use all department candidates if still no capability overlap
     if (matchingCandidates.length === 0) {
       matchingCandidates = candidates;
     }
@@ -43,8 +74,10 @@ export class AgentDispatcher {
     }
 
     // 4. Return the agent with the highest performance quality score
-    return matchingCandidates.reduce((best, current) =>
+    const bestDef = matchingCandidates.reduce((best, current) =>
       current.performanceMetrics.qualityScore > best.performanceMetrics.qualityScore ? current : best
     );
+
+    return this.instantiateAgent(bestDef);
   }
 }

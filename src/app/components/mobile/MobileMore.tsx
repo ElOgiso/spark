@@ -131,6 +131,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       items: [
         { icon: CreditCard, label: "Billing", badge: "Pro Plan" },
         { icon: Code, label: "API", badge: `${apiKeyList.length} keys` },
+        { icon: Brain, label: "Integrations", badge: "Connected" },
         { icon: Users, label: "Team", badge: `${team.length} members` },
       ],
     },
