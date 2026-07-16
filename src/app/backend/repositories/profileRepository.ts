@@ -29,21 +29,21 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
   const supabase = getSupabaseClient();
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
+  const payload: Partial<ProfileRow> & { id: string } = {
+    id: user.id,
+    display_name: displayNameFromUser(user),
+    role: "Director",
+    avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
+    email: user.email ?? null,
+  };
+
   const { data, error } = await supabase
     .from("profiles")
-    .upsert(
-      {
-        id: user.id,
-        display_name: displayNameFromUser(user),
-        role: "Director",
-        avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
-      },
-      { onConflict: "id" },
-    )
+    .upsert(payload, { onConflict: "id" })
     .select("*")
     .single();
 
-  if (error) return repositoryError<ProfileRow>();
+  if (error) return repositoryError<ProfileRow>(error.message);
   return { data, error: null, source: "supabase" };
 }
 

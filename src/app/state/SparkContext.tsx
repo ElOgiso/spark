@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { loadPersistedState, savePersistedState } from "./persistence";
 import {
   Brand,
@@ -30,6 +30,10 @@ import { ExecutionManager } from "../services/executionManager";
 import { IDepartmentAgent } from "../domain/runtime/IDepartmentAgent";
 import { RuntimeOrchestrator } from "../services/runtime/runtimeOrchestrator";
 import { InteractionController, ExecutionRequest } from "../services/interaction/interactionController";
+import { useAuth } from "./AuthContext";
+import { brandRowToDomain, domainBrandToRowPatch } from "../backend/mappers/brandMapper";
+import { updateBrand } from "../backend/repositories/brandRepository";
+import { isSupabaseConfigured } from "../backend/supabaseClient";
 
 interface SparkContextType {
   brand: Brand;
@@ -45,6 +49,10 @@ interface SparkContextType {
   exportPackages: ExportPackage[];
   analyticsInsights: AnalyticsInsight[];
   assets: Asset[];
+  /** Supabase brands.id when authenticated + backend connected */
+  backendBrandId: string | null;
+  backendSyncError: string | null;
+  backendConnected: boolean;
   
   // Execution states
   isExecuting: boolean;
@@ -464,6 +472,11 @@ const defaultAssets: Asset[] = [
 ];
 
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const auth = useAuth();
+  const hydratedBrandIdRef = useRef<string | null>(null);
+  const [backendBrandId, setBackendBrandId] = useState<string | null>(null);
+  const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
+
   // Try to load initial state from abstracted persistence helper
   const [state, setState] = useState(() => {
     const local = loadPersistedState<any>();
@@ -487,10 +500,54 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   });
 
-  // Sync to abstracted persistence helper
+  // Local cache always (offline resilience). Supabase is source of truth when authenticated.
   useEffect(() => {
     savePersistedState(state);
   }, [state]);
+
+  // Hydrate brand from Supabase when auth bootstrap provides BrandRow
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !auth.isAuthenticated || !auth.brand) {
+      if (!auth.isAuthenticated) {
+        setBackendBrandId(null);
+        hydratedBrandIdRef.current = null;
+      }
+      return;
+    }
+
+    if (hydratedBrandIdRef.current === auth.brand.id) return;
+    hydratedBrandIdRef.current = auth.brand.id;
+    setBackendBrandId(auth.brand.id);
+    setBackendSyncError(auth.error);
+    const domain = brandRowToDomain(auth.brand);
+    setState((prev: any) => ({
+      ...prev,
+      brand: domain,
+      automationMode: auth.brand!.automation_mode,
+    }));
+  }, [auth.isAuthenticated, auth.brand, auth.error]);
+
+  // Persist brand edits to Supabase (debounced) — production brand CRUD path
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !auth.isAuthenticated || !backendBrandId) return;
+    if (hydratedBrandIdRef.current !== backendBrandId) return;
+
+    const timer = window.setTimeout(() => {
+      void updateBrand(
+        backendBrandId,
+        domainBrandToRowPatch(state.brand, state.automationMode),
+      ).then((result) => {
+        setBackendSyncError(result.error);
+      });
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    auth.isAuthenticated,
+    backendBrandId,
+    state.brand,
+    state.automationMode,
+  ]);
 
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionTimeline, setExecutionTimeline] = useState<Array<{ name: string; status: "idle" | "running" | "completed" | "failed"; duration?: number; provider?: string; cost?: number; confidence?: number }>>([
@@ -931,6 +988,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <SparkContext.Provider
       value={{
         ...state,
+        backendBrandId,
+        backendSyncError,
+        backendConnected: isSupabaseConfigured() && auth.isAuthenticated && Boolean(backendBrandId),
         isExecuting,
         executionTimeline,
         streamingOutput,

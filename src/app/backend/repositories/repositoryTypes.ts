@@ -14,10 +14,10 @@ export function unconfiguredResult<T>(): RepositoryResult<T> {
   };
 }
 
-export function repositoryError<T>(): RepositoryResult<T> {
+export function repositoryError<T>(message?: string | null): RepositoryResult<T> {
   return {
     data: null,
-    error: "Backend data is unavailable. Spark is using local state.",
+    error: message?.trim() || "Backend data is unavailable. Spark is using local state.",
     source: "supabase",
   };
 }

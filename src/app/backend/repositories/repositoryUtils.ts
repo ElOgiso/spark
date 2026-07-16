@@ -22,7 +22,7 @@ export async function listByBrand<T extends TableName>(
     .eq("brand_id", brandId)
     .order("created_at", { ascending: false });
 
-  if (error) return repositoryError<Row<T>[]>();
+  if (error) return repositoryError<Row<T>[]>(error.message);
   return { data: (data ?? []) as Row<T>[], error: null, source: "supabase" };
 }
 
@@ -35,7 +35,7 @@ export async function insertRow<T extends TableName>(
   if (!supabase) return unconfiguredResult<Row<T>>();
 
   const { data, error } = await supabase.from(table).insert(values).select("*").single();
-  if (error) return repositoryError<Row<T>>();
+  if (error) return repositoryError<Row<T>>(error.message);
   return { data: data as Row<T>, error: null, source: "supabase" };
 }
 
@@ -49,7 +49,7 @@ export async function updateRow<T extends TableName>(
   if (!supabase) return unconfiguredResult<Row<T>>();
 
   const { data, error } = await supabase.from(table).update(values).eq("id", id).select("*").single();
-  if (error) return repositoryError<Row<T>>();
+  if (error) return repositoryError<Row<T>>(error.message);
   return { data: data as Row<T>, error: null, source: "supabase" };
 }
 
@@ -62,6 +62,6 @@ export async function deleteRow<T extends TableName>(
   if (!supabase) return unconfiguredResult<true>();
 
   const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) return repositoryError<true>();
+  if (error) return repositoryError<true>(error.message);
   return { data: true, error: null, source: "supabase" };
 }

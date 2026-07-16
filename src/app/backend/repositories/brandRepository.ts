@@ -11,7 +11,7 @@ export async function listBrands(): Promise<RepositoryResult<BrandRow[]>> {
   if (!supabase) return unconfiguredResult<BrandRow[]>();
 
   const { data, error } = await supabase.from("brands").select("*").order("created_at", { ascending: false });
-  if (error) return repositoryError<BrandRow[]>();
+  if (error) return repositoryError<BrandRow[]>(error.message);
   return { data: data ?? [], error: null, source: "supabase" };
 }
 
@@ -34,7 +34,7 @@ export async function ensureDefaultBrand(
     .order("created_at", { ascending: true })
     .limit(1);
 
-  if (listError) return repositoryError<BrandRow>();
+  if (listError) return repositoryError<BrandRow>(listError.message);
   if (existing?.[0]) return { data: existing[0], error: null, source: "supabase" };
 
   const { data, error } = await supabase
@@ -45,9 +45,9 @@ export async function ensureDefaultBrand(
       niche: localBrand?.niche || "AI & Technology Education",
       archetype: localBrand?.archetype ?? null,
       purpose: localBrand?.purpose ?? null,
-      audience: localBrand?.audience ?? {},
-      tone: localBrand?.tone ?? [],
-      content_pillars: localBrand?.contentPillars ?? [],
+      audience: (localBrand?.audience as object) ?? {},
+      tone: (localBrand?.tone as object[]) ?? [],
+      content_pillars: (localBrand?.contentPillars as object[]) ?? [],
       automation_mode: localBrand?.automation_mode ?? "balanced",
       review_required: localBrand?.review_required ?? true,
       publish_requires_approval: localBrand?.publish_requires_approval ?? true,
@@ -56,7 +56,7 @@ export async function ensureDefaultBrand(
     .select("*")
     .single();
 
-  if (error) return repositoryError<BrandRow>();
+  if (error) return repositoryError<BrandRow>(error.message);
   return { data, error: null, source: "supabase" };
 }
 

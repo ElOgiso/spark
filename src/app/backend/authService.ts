@@ -12,6 +12,14 @@ function unavailable<T>(): AuthResult<T> {
 
 export function sanitizeAuthError(error: unknown): string {
   if (!error) return "Authentication is unavailable right now.";
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (typeof error === "object" && error !== null) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      // Surface real Auth errors so production smoke tests can be verified
+      return message.trim();
+    }
+  }
   return "Authentication is unavailable right now.";
 }
 
