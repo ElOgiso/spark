@@ -15,7 +15,9 @@ export class VideoGenerationSkill implements ISkillModule {
     };
     const result = await ExecutionAdapter.execute(subtask, selection, onChunk);
     return {
-      videoUrl: `/assets/generated_clip_${Date.now()}.mp4`,
+      videoUrl: null,
+      demo: true,
+      note: "Video generation requires a live media provider key. No real clip was produced.",
       rawOutput: result.output
     };
   }

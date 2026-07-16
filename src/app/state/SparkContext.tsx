@@ -772,7 +772,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStreamingOutput("");
     setStreamingMetrics(null);
     setExecutionTimeline([
-      { name: "Research", status: "running", duration: 2400, provider: "google", cost: 0.015, confidence: 95 },
+      { name: "Research", status: "idle" },
       { name: "Creative Decision", status: "idle" },
       { name: "Planning", status: "idle" },
       { name: "Storyboard", status: "idle" },
@@ -841,30 +841,46 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
 
       const result = await orchestrator.orchestrateTask(task, onChunk);
+      const isSimulated =
+        Boolean(result.structuredData?.simulated) ||
+        (result.warnings || []).some((w) => w.toLowerCase().includes("simulat")) ||
+        (result.output || "").includes("[DEMO MODE");
 
-      setExecutionTimeline([
-        { name: "Research", status: "completed", duration: 2400, provider: "google", cost: 0.015, confidence: 95 },
-        { name: "Creative Decision", status: "completed", duration: 150, provider: "google", cost: 0.0, confidence: 94 },
-        { name: "Planning", status: "completed", duration: 1800, provider: "openai", cost: 0.008, confidence: 92 },
-        { name: "Storyboard", status: "completed", duration: 1200, provider: "google", cost: 0.005, confidence: 90 },
-        { name: "Generation", status: "completed", duration: 8500, provider: "flux", cost: 0.05, confidence: 89 },
-        { name: "Analysis", status: "completed", duration: 200, provider: "google", cost: 0.0, confidence: 94 },
-        { name: "Editing Decision", status: "completed", duration: 100, provider: "google", cost: 0.0, confidence: 96 },
-        { name: "Editing", status: "completed", duration: 12000, provider: "google", cost: 0.08, confidence: 91 },
-        { name: "Review", status: "completed", duration: 1200, provider: "openai", cost: 0.005, confidence: 98 },
-        { name: "Publishing", status: "completed", duration: 900, provider: "openai", cost: 0.001, confidence: 99 },
-        { name: "Learning", status: "completed", duration: 4200, provider: "openai", cost: 0.03, confidence: 90 }
-      ]);
+      // Only mark stages that already ran; do not invent full fake cost telemetry
+      setExecutionTimeline((prev) =>
+        prev.map((item) => {
+          if (item.status === "running") {
+            return {
+              ...item,
+              status: result.status === "failure" ? "failed" : "completed",
+              duration: item.duration || result.metrics?.latencyMs || 0,
+              provider: isSimulated ? `${item.provider || result.provider || "demo"}(sim)` : item.provider || result.provider,
+              cost: isSimulated ? 0 : item.cost,
+              confidence: isSimulated ? 40 : item.confidence
+            };
+          }
+          if (item.status === "idle") {
+            return { ...item, status: "completed", duration: 0, cost: 0, confidence: isSimulated ? 40 : 80 };
+          }
+          return item;
+        })
+      );
 
       setStreamingMetrics({
-        provider: result.provider || "openai",
-        model: result.model || "gpt-4o",
+        provider: result.provider || "unknown",
+        model: result.model || "unknown",
         latencyMs: result.metrics.latencyMs,
-        costUsd: result.metrics.costUsd,
+        costUsd: isSimulated ? 0 : result.metrics.costUsd,
         tokens: result.metrics.inputTokens + result.metrics.outputTokens,
         retryCount: 0,
-        failovers: 0
+        failovers: 0,
+        simulated: isSimulated,
+        warnings: result.warnings || []
       });
+
+      const sceneText = isSimulated
+        ? `[DEMO / LOCAL OS] ${result.output}`
+        : result.output;
 
       const prodId = `p-${Date.now()}`;
       const newProd: Production = {
@@ -875,7 +891,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         dateCreated: new Date().toISOString().split("T")[0],
         aspectRatio: "9:16",
         formats: ["Short-form 45s"],
-        scenes: [{ scene: 1, description: result.output, duration: "0-45s" }]
+        scenes: [{ scene: 1, description: sceneText, duration: "0-45s" }]
       };
 
       setState((prev: any) => ({

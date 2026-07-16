@@ -97,17 +97,21 @@ export class IntentRouter {
     }
 
     // 3. Handle Workspace Intent
+    // Notion automation model:
+    // - manual: review before production/publish
+    // - balanced (approval required): drafts OK, execution needs approval
+    // - autonomous: create/run within rules without per-prompt approval
     if (intent === "workspace_execution") {
-      // Respect operating modes: Manual vs Balanced vs Autonomous
-      if (mode === "balanced" && !pendingTaskPrompt) {
+      if ((mode === "manual" || mode === "balanced") && !pendingTaskPrompt) {
+        const modeLabel = mode === "manual" ? "Manual Review Required" : "Approval Required";
         return {
           intent: "pending_approval",
-          output: `I have formulated a campaign blueprint for: "${prompt}".\n\nWould you like me to initialize the runtime pipeline? Please say "Approve" or click Proceed to start.`,
+          output: `Mode is ${modeLabel}.\n\nI prepared a production request for: "${prompt}".\n\nSay "Approve" or click Proceed to start the runtime pipeline. Say "Cancel" to abort.`,
           pendingTaskPrompt: prompt
         };
       }
-      
-      // Autonomous and Manual modes run directly on explicit workspace commands
+
+      // Autonomous mode runs on explicit workspace commands
       return {
         intent: "workspace_execution",
         output: prompt,

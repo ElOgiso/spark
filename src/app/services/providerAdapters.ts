@@ -12,6 +12,12 @@ function roughTokenCount(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+const allowProviderSimulation = () => import.meta.env.VITE_ALLOW_PROVIDER_SIMULATION !== "false";
+
+function demoOutput(provider: string, body: string) {
+  return `[DEMO MODE — ${provider} live key missing or gateway failed] ${body}`;
+}
+
 async function simulateStream(text: string, onChunk: (chunk: string) => void): Promise<void> {
   const words = text.split(" ");
   let accumulated = "";
@@ -72,13 +78,17 @@ export class OpenAIAdapter implements IProviderAdapter {
       const latency = Date.now() - start;
 
       if (!res.ok) {
-        console.warn(`[OpenAI Adapter] Gateway keys missing or invalid – running simulation`);
+        console.warn(`[OpenAI Adapter] Gateway failed (${res.status})`);
+        if (!allowProviderSimulation()) {
+          throw new Error(`OpenAI gateway failed with status ${res.status}. Configure OPEN_AI_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+        }
         data = this.getSimulatedResponse();
       } else {
         data = await res.json();
       }
-      this.healthState = { status: "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
+      this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
+      if (!allowProviderSimulation()) throw err;
       data = this.getSimulatedResponse();
     }
 
@@ -93,11 +103,13 @@ export class OpenAIAdapter implements IProviderAdapter {
   private getSimulatedResponse(): any {
     return {
       id: `chatcmpl-sim-${Date.now()}`,
+      sparkSimulated: true,
       choices: [{
         message: {
           content: JSON.stringify({
-            output: "OpenAI generated production blueprint. Storyboard: Scene 1: Tech Trends, Scene 2: Interactive Demos.",
-            confidence: 0.95,
+            output: demoOutput("OpenAI", "Production blueprint draft only. Storyboard: Scene 1 hook, Scene 2 proof, Scene 3 CTA. Not a live model response."),
+            confidence: 0.4,
+            simulated: true,
             citations: []
           }),
           tool_calls: []
@@ -139,7 +151,7 @@ export class OpenAIAdapter implements IProviderAdapter {
       provider: "openai", model: raw.model || "gpt-4o",
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       confidence: structuredData?.confidence,
-      warnings: [],
+      warnings: (raw?.sparkSimulated || structuredData?.simulated) ? ["Simulated provider response — live API key missing or gateway failed"] : [],
       status: "success"
     };
   }
@@ -220,13 +232,17 @@ export class AnthropicAdapter implements IProviderAdapter {
       const latency = Date.now() - start;
 
       if (!res.ok) {
-        console.warn(`[Anthropic Adapter] Gateway keys missing or invalid – running simulation`);
+        console.warn(`[Anthropic Adapter] Gateway failed (${res.status})`);
+        if (!allowProviderSimulation()) {
+          throw new Error(`Anthropic gateway failed with status ${res.status}. Configure ANTHROPIC_API_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+        }
         data = this.getSimulatedResponse();
       } else {
         data = await res.json();
       }
-      this.healthState = { status: "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
+      this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
+      if (!allowProviderSimulation()) throw err;
       data = this.getSimulatedResponse();
     }
 
@@ -242,11 +258,13 @@ export class AnthropicAdapter implements IProviderAdapter {
   private getSimulatedResponse(): any {
     return {
       id: `msg-sim-${Date.now()}`,
+      sparkSimulated: true,
       content: [{
         type: "text",
         text: JSON.stringify({
-          output: "Anthropic Claude generated high-fidelity text copy. Pitch: Learn how to scale AI.",
-          confidence: 0.96,
+          output: demoOutput("Anthropic", "High-fidelity copy draft only. Not a live model response."),
+          confidence: 0.4,
+          simulated: true,
           citations: []
         })
       }],
@@ -288,7 +306,7 @@ export class AnthropicAdapter implements IProviderAdapter {
       provider: "anthropic", model: raw.model || "claude-sonnet-4",
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       confidence: structuredData?.confidence,
-      warnings: [],
+      warnings: (raw?.sparkSimulated || structuredData?.simulated) ? ["Simulated provider response — live API key missing or gateway failed"] : [],
       status: "success"
     };
   }
@@ -378,13 +396,17 @@ export class GoogleAdapter implements IProviderAdapter {
       const latency = Date.now() - start;
 
       if (!res.ok) {
-        console.warn(`[Google Adapter] Gateway keys missing or invalid – running simulation`);
+        console.warn(`[Google Adapter] Gateway failed (${res.status})`);
+        if (!allowProviderSimulation()) {
+          throw new Error(`Google gateway failed with status ${res.status}. Configure GOOGLE_AI_API_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+        }
         data = this.getSimulatedResponse();
       } else {
         data = await res.json();
       }
-      this.healthState = { status: "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
+      this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
+      if (!allowProviderSimulation()) throw err;
       data = this.getSimulatedResponse();
     }
 
@@ -398,13 +420,15 @@ export class GoogleAdapter implements IProviderAdapter {
 
   private getSimulatedResponse(): any {
     return {
+      sparkSimulated: true,
       candidates: [{
         content: {
           parts: [{
             text: JSON.stringify({
-              output: "Google Gemini compiled active research: 73% mobile internet penetration in Lagos.",
-              confidence: 0.94,
-              citations: ["https://spark-os.ai/lagos-creators"]
+              output: demoOutput("Google", "Research summary draft only. Not a live model response."),
+              confidence: 0.4,
+              simulated: true,
+              citations: []
             })
           }]
         },
@@ -447,7 +471,7 @@ export class GoogleAdapter implements IProviderAdapter {
       provider: "google", model: raw.modelVersion || "gemini-2.5-pro",
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       confidence: structuredData?.confidence,
-      warnings: [],
+      warnings: (raw?.sparkSimulated || structuredData?.simulated) ? ["Simulated provider response — live API key missing or gateway failed"] : [],
       status: "success"
     };
   }

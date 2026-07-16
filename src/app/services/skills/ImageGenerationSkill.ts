@@ -15,7 +15,9 @@ export class ImageGenerationSkill implements ISkillModule {
     };
     const result = await ExecutionAdapter.execute(subtask, selection, onChunk);
     return {
-      imageUrl: `/assets/generated_scene_${Date.now()}.png`,
+      imageUrl: null,
+      demo: true,
+      note: "Image generation requires a live media provider key. No real image was produced.",
       rawOutput: result.output
     };
   }

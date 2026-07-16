@@ -4,11 +4,18 @@
  * making it easy to swap this local storage layer with a database client (like Supabase) in the future.
  */
 
-const STORAGE_KEY = "spark_state_v1";
+const STORAGE_KEY = "spark_state_v2";
+const LEGACY_STORAGE_KEYS = ["spark_state_v1"];
 
 export function loadPersistedState<T>(): T | null {
   try {
     if (typeof window !== "undefined") {
+      // Drop pre-empty-state mock snapshots so production empty states work as designed
+      for (const legacy of LEGACY_STORAGE_KEYS) {
+        if (localStorage.getItem(legacy)) {
+          localStorage.removeItem(legacy);
+        }
+      }
       const serialized = localStorage.getItem(STORAGE_KEY);
       if (serialized) {
         return JSON.parse(serialized) as T;

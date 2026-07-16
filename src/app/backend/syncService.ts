@@ -18,7 +18,7 @@ export function getSyncStatus(): SyncStatus {
     return {
       enabled: false,
       source: "local",
-      message: "Supabase is not configured. Spark is using local mock persistence.",
+      message: "Supabase is not configured. Spark is running local OS mode (browser persistence only).",
     };
   }
 
