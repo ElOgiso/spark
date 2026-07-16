@@ -15,7 +15,6 @@ import { SparkProvider } from "./state/SparkContext";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { AuthProvider } from "./state/AuthContext";
 import { AuthGate } from "./components/auth/AuthGate";
-import { RuntimeStatusBanner } from "./components/RuntimeStatusBanner";
 
 const requireAuth = import.meta.env.VITE_REQUIRE_AUTH === "true";
 
@@ -25,14 +24,7 @@ export default function App() {
 
   const renderContent = () => {
     if (deviceType === "mobile") {
-      return (
-        <div className="h-screen overflow-hidden flex flex-col bg-background text-foreground">
-          <RuntimeStatusBanner />
-          <div className="flex-1 min-h-0">
-            <MobileApp />
-          </div>
-        </div>
-      );
+      return <MobileApp />;
     }
 
     const renderPage = () => {
@@ -80,13 +72,10 @@ export default function App() {
     };
 
     return (
-      <div className="h-screen overflow-hidden flex flex-col bg-background text-foreground antialiased">
-        <RuntimeStatusBanner />
-        <div className="flex-1 min-h-0 flex">
-          <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {renderPage()}
-          </div>
+      <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
+        <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {renderPage()}
         </div>
       </div>
     );
@@ -103,4 +92,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-

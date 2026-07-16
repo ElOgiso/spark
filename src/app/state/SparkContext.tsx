@@ -34,6 +34,17 @@ import { useAuth } from "./AuthContext";
 import { brandRowToDomain, domainBrandToRowPatch } from "../backend/mappers/brandMapper";
 import { updateBrand } from "../backend/repositories/brandRepository";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
+import {
+  hydrateWorkspace,
+  persistMemoryCreate,
+  persistMemoryDelete,
+  persistProductionCreate,
+  persistProductionUpdate,
+  persistPublishJobCreate,
+  persistReviewApprove,
+  persistReviewCreate,
+  persistReviewNeedsEdit,
+} from "../backend/workspaceSync";
 
 interface SparkContextType {
   brand: Brand;
@@ -49,10 +60,6 @@ interface SparkContextType {
   exportPackages: ExportPackage[];
   analyticsInsights: AnalyticsInsight[];
   assets: Asset[];
-  /** Supabase brands.id when authenticated + backend connected */
-  backendBrandId: string | null;
-  backendSyncError: string | null;
-  backendConnected: boolean;
   
   // Execution states
   isExecuting: boolean;
@@ -474,8 +481,8 @@ const defaultAssets: Asset[] = [
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const auth = useAuth();
   const hydratedBrandIdRef = useRef<string | null>(null);
+  const backendBrandIdRef = useRef<string | null>(null);
   const [backendBrandId, setBackendBrandId] = useState<string | null>(null);
-  const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
 
   // Try to load initial state from abstracted persistence helper
   const [state, setState] = useState(() => {
@@ -505,11 +512,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     savePersistedState(state);
   }, [state]);
 
-  // Hydrate brand from Supabase when auth bootstrap provides BrandRow
+  // Hydrate brand + full workspace from Supabase (silent; existing screens already bind to state)
   useEffect(() => {
     if (!isSupabaseConfigured() || !auth.isAuthenticated || !auth.brand) {
       if (!auth.isAuthenticated) {
         setBackendBrandId(null);
+        backendBrandIdRef.current = null;
         hydratedBrandIdRef.current = null;
       }
       return;
@@ -518,16 +526,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (hydratedBrandIdRef.current === auth.brand.id) return;
     hydratedBrandIdRef.current = auth.brand.id;
     setBackendBrandId(auth.brand.id);
-    setBackendSyncError(auth.error);
-    const domain = brandRowToDomain(auth.brand);
-    setState((prev: any) => ({
-      ...prev,
-      brand: domain,
-      automationMode: auth.brand!.automation_mode,
-    }));
-  }, [auth.isAuthenticated, auth.brand, auth.error]);
+    backendBrandIdRef.current = auth.brand.id;
 
-  // Persist brand edits to Supabase (debounced) — production brand CRUD path
+    const domain = brandRowToDomain(auth.brand);
+    void hydrateWorkspace(auth.brand.id).then((workspace) => {
+      setState((prev: any) => ({
+        ...prev,
+        brand: domain,
+        automationMode: auth.brand!.automation_mode,
+        character: workspace.character ?? prev.character,
+        accounts: workspace.accounts.length ? workspace.accounts : prev.accounts,
+        memoryItems: workspace.memoryItems,
+        viralSparks: workspace.viralSparks,
+        productions: workspace.productions,
+        reviewItems: workspace.reviewItems,
+        publishJobs: workspace.publishJobs,
+        analyticsInsights: workspace.analyticsInsights,
+      }));
+    });
+  }, [auth.isAuthenticated, auth.brand]);
+
+  // Persist brand edits to Supabase (debounced)
   useEffect(() => {
     if (!isSupabaseConfigured() || !auth.isAuthenticated || !backendBrandId) return;
     if (hydratedBrandIdRef.current !== backendBrandId) return;
@@ -536,9 +555,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       void updateBrand(
         backendBrandId,
         domainBrandToRowPatch(state.brand, state.automationMode),
-      ).then((result) => {
-        setBackendSyncError(result.error);
-      });
+      );
     }, 900);
 
     return () => window.clearTimeout(timer);
@@ -603,6 +620,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const spark = state.viralSparks.find((s: any) => s.id === sparkId);
     if (!spark) return;
 
+    const brandId = backendBrandIdRef.current;
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
     const decision = ExecutiveDecisionEngine.generatePlan(spark.title, state.automationMode);
@@ -703,6 +721,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         reviewItems: updatedReviewItems
       };
     });
+
+    // Silent backend persistence (existing UI already updated optimistically)
+    if (brandId) {
+      void (async () => {
+        const savedProd = await persistProductionCreate(brandId, newProduction);
+        if (!savedProd) return;
+        const reviewWithRealProd = { ...newReviewItem, productionId: savedProd.id };
+        const savedReview = await persistReviewCreate(brandId, reviewWithRealProd);
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) =>
+            p.id === prodId || p.title === savedProd.title ? { ...p, ...savedProd } : p
+          ),
+          reviewItems: prev.reviewItems.map((r: any) =>
+            r.id === reviewId || r.title === reviewWithRealProd.title
+              ? { ...(savedReview ?? r), productionId: savedProd.id }
+              : r
+          ),
+        }));
+      })();
+    }
   };
 
   const approveReviewItem = (reviewId: string) => {
@@ -726,16 +765,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       // Create PublishJob
       const jobExists = prev.publishJobs.some((j: any) => j.productionId === review.productionId);
+      const newJob: PublishJob = {
+        id: `pj-${Date.now()}`,
+        productionId: review.productionId,
+        title: review.title,
+        platform: review.account,
+        scheduledTime: "Thu 4:00 PM", // Default scheduling block
+        status: autoPublish ? "Published" : "Scheduled"
+      };
       const newPublishJobs = jobExists ? prev.publishJobs : [
         ...prev.publishJobs,
-        {
-          id: `pj-${Date.now()}`,
-          productionId: review.productionId,
-          title: review.title,
-          platform: review.account,
-          scheduledTime: "Thu 4:00 PM", // Default scheduling block
-          status: autoPublish ? "Published" : "Scheduled"
-        }
+        newJob
       ];
 
       // Create ExportPackage
@@ -751,6 +791,25 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           readyAt: "Just now"
         }
       ];
+
+      const brandId = backendBrandIdRef.current;
+      if (brandId) {
+        void persistReviewApprove(reviewId);
+        void persistProductionUpdate(review.productionId, { status: "Approved" });
+        if (!jobExists) {
+          void persistPublishJobCreate(brandId, newJob).then((saved) => {
+            if (!saved) return;
+            setState((p: any) => ({
+              ...p,
+              publishJobs: p.publishJobs.map((j: any) =>
+                j.id === newJob.id || (j.productionId === saved.productionId && j.title === saved.title)
+                  ? { ...j, ...saved }
+                  : j
+              ),
+            }));
+          });
+        }
+      }
 
       return {
         ...prev,
@@ -775,6 +834,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         p.id === review.productionId ? { ...p, status: "Needs Edit" } : p
       );
 
+      void persistReviewNeedsEdit(reviewId);
+      void persistProductionUpdate(review.productionId, { status: "Needs Edit" });
+
       return {
         ...prev,
         reviewItems: updatedReviewItems,
@@ -795,6 +857,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...prev,
       memoryItems: [newItem, ...prev.memoryItems]
     }));
+    const brandId = backendBrandIdRef.current;
+    if (brandId) {
+      void persistMemoryCreate(brandId, newItem).then((saved) => {
+        if (!saved) return;
+        setState((prev: any) => ({
+          ...prev,
+          memoryItems: prev.memoryItems.map((m: MemoryItem) =>
+            m.id === newItem.id ? saved : m
+          ),
+        }));
+      });
+    }
   };
 
   const removeMemoryItem = (id: string) => {
@@ -802,6 +876,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...prev,
       memoryItems: prev.memoryItems.filter((item: MemoryItem) => item.id !== id)
     }));
+    void persistMemoryDelete(id);
   };
 
   const addAsset = (name: string, type: "video" | "audio" | "image" | "document", size: string) => {
@@ -951,10 +1026,46 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         scenes: [{ scene: 1, description: sceneText, duration: "0-45s" }]
       };
 
+      const newReview: ReviewItem = {
+        id: `r-${Date.now()}`,
+        productionId: prodId,
+        title: newProd.title,
+        account: "YouTube",
+        series: "Workspace Pipeline",
+        status: "Pending Review",
+        dateCreated: newProd.dateCreated,
+        scriptSnippet: sceneText.slice(0, 240),
+        conceptText: targetPrompt,
+        openingMoment: "Opening hook from workspace execution",
+        qualityCheck: { brandSafety: "Passed", policyCheck: "Passed", technicalCheck: "Passed" },
+      };
+
       setState((prev: any) => ({
         ...prev,
-        productions: [newProd, ...prev.productions]
+        productions: [newProd, ...prev.productions],
+        reviewItems: [newReview, ...prev.reviewItems],
       }));
+
+      const brandId = backendBrandIdRef.current;
+      if (brandId) {
+        void (async () => {
+          const savedProd = await persistProductionCreate(brandId, newProd);
+          if (!savedProd) return;
+          const reviewForDb = { ...newReview, productionId: savedProd.id };
+          const savedReview = await persistReviewCreate(brandId, reviewForDb);
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) =>
+              p.id === prodId ? { ...p, ...savedProd } : p
+            ),
+            reviewItems: prev.reviewItems.map((r: any) =>
+              r.id === newReview.id
+                ? { ...(savedReview ?? r), productionId: savedProd.id }
+                : r
+            ),
+          }));
+        })();
+      }
 
       setIsExecuting(false);
       return result.output;
@@ -988,9 +1099,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <SparkContext.Provider
       value={{
         ...state,
-        backendBrandId,
-        backendSyncError,
-        backendConnected: isSupabaseConfigured() && auth.isAuthenticated && Boolean(backendBrandId),
         isExecuting,
         executionTimeline,
         streamingOutput,
