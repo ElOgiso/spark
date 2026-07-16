@@ -23,7 +23,7 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ onNavigate }: AnalyticsProps) {
-  const { addMemoryItem } = useSpark();
+  const { addMemoryItem, productions } = useSpark();
   const [appliedIndices, setAppliedIndices] = useState<number[]>([]);
 
   const handleApplyToMemory = (text: string, index: number) => {
@@ -155,6 +155,14 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
           </div>
 
           {/* Overall Metrics */}
+          {productions.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-card/25 p-12 text-center text-muted-foreground">
+              <Zap className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3 animate-pulse" />
+              <p className="text-sm font-medium">No analytics available yet</p>
+              <p className="text-xs text-muted-foreground/75 mt-1">Analytics will appear after your first publish.</p>
+            </div>
+          ) : (
+            <>
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">This Month</h2>
             <div className="grid grid-cols-4 gap-4">
@@ -431,7 +439,8 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
               ))}
             </div>
           </section>
-
+          </>
+          )}
         </div>
       </main>
     </>

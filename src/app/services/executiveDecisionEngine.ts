@@ -42,16 +42,17 @@ export class ExecutiveDecisionEngine {
       return 'conversation';
     }
 
-    // Questions / Explanations
-    const questions = ["what is", "how do i", "explain", "tell me about", "why did", "what can you"];
-    if (questions.some(q => lower.startsWith(q))) {
-      return 'question';
+    // Workspace Execution verbs & nouns (Checked BEFORE questions to capture conversational work requests)
+    const executionVerbs = ["create", "generate", "build", "analyze", "make", "produce", "run", "start", "initialize", "new project", "edit", "publish"];
+    const executionNouns = ["tiktok", "video", "campaign", "storyboard", "carousel", "reel", "documentary", "shorts", "script"];
+    if (executionVerbs.some(verb => lower.includes(verb)) || executionNouns.some(noun => lower.includes(noun))) {
+      return 'workspace_execution';
     }
 
-    // Workspace Execution verbs
-    const executionVerbs = ["create", "generate", "build", "analyze", "make", "produce", "run", "start", "initialize", "new project"];
-    if (executionVerbs.some(verb => lower.includes(verb)) || lower.includes("tiktok") || lower.includes("video") || lower.includes("campaign") || lower.includes("storyboard")) {
-      return 'workspace_execution';
+    // Questions / Explanations
+    const questions = ["what is", "how do i", "explain", "tell me about", "why did", "what can you", "who are you", "who is", "what does", "how can"];
+    if (questions.some(q => lower.startsWith(q) || lower.includes(q)) || lower.endsWith("?")) {
+      return 'question';
     }
 
     // Fallback to conversation

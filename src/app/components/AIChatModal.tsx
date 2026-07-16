@@ -43,7 +43,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     isExecuting,
     executionTimeline,
     streamingMetrics,
-    runRealTask
+    sendMessage
   } = useSpark() as any;
 
   const [messages, setMessages] = useState<Message[]>([
@@ -89,7 +89,7 @@ How can I help you operate your workspace today?`,
             isStreaming: true
           }]);
 
-          runRealTask(lastMsg.text, (chunk: string) => {
+          sendMessage(lastMsg.text, (chunk: string) => {
             setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
           }).then((finalText: string) => {
             setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
@@ -229,7 +229,7 @@ How can I help you operate your workspace today?`,
       isStreaming: true
     }]);
 
-    runRealTask(userMessage.text, (chunk: string) => {
+    sendMessage(userMessage.text, (chunk: string) => {
       setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
     }).then((finalText: string) => {
       setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));

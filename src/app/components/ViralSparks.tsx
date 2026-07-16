@@ -34,128 +34,7 @@ interface Spark {
   timeWindow: string;
 }
 
-const sparks: Spark[] = [
-  {
-    id: "s1",
-    title: "How Nigerian Creators Are Using AI to Build Media Empires",
-    whyNow: "AI content tools just crossed mainstream adoption threshold in West Africa — 48-hour window before oversaturation",
-    platforms: ["YouTube", "TikTok"],
-    hookAngle: "Personal transformation: 'I replaced a 5-person team with one tool'",
-    suggestedHook: "\"I replaced my entire production team with one AI tool — and tripled output.\"",
-    audienceEmotion: "Aspiration + FOMO",
-    brandFitScore: 97,
-    riskLevel: "Low",
-    suggestedFormat: "Long-form (12–15 min) + 3 short clips",
-    productionTime: "6–12 hours (Standard mode)",
-    category: "hot",
-    timeWindow: "48h window",
-  },
-  {
-    id: "s2",
-    title: "The 60-Second Edit That Tripled My Watch Time",
-    whyNow: "YouTube Shorts algorithm heavily rewarding hook-first editing — pattern identified in 3 top Nigerian channels",
-    platforms: ["TikTok", "YouTube Shorts", "Reels"],
-    hookAngle: "Show the before/after in the first 3 seconds without explanation",
-    suggestedHook: "\"Watch time tripled after I changed just ONE thing about my edits.\"",
-    audienceEmotion: "Curiosity + Urgency",
-    brandFitScore: 91,
-    riskLevel: "Low",
-    suggestedFormat: "Short-form (45–60 sec)",
-    productionTime: "2–4 hours (Express mode)",
-    category: "hot",
-    timeWindow: "24h window",
-  },
-  {
-    id: "s3",
-    title: "Why Smart Creators Are Quietly Leaving Manual Editing",
-    whyNow: "Industry shift signal — 3 creator tools just dropped major AI features; narrative gap in Nigerian market",
-    platforms: ["YouTube"],
-    hookAngle: "Insider revelation: 'I found out at a conference and nobody was talking about it'",
-    suggestedHook: "\"At a creator conference, I found out something nobody was talking about publicly.\"",
-    audienceEmotion: "FOMO + Curiosity",
-    brandFitScore: 88,
-    riskLevel: "Medium",
-    suggestedFormat: "Long-form (8–12 min)",
-    productionTime: "6–12 hours (Standard mode)",
-    category: "rising",
-    timeWindow: "72h window",
-  },
-  {
-    id: "s4",
-    title: "Free AI Tools Replacing ₦500K Worth of Software for Nigerian Creators",
-    whyNow: "Local purchasing power pressure making this highly relevant — audience routinely asks about affordable alternatives",
-    platforms: ["YouTube", "TikTok", "Reels"],
-    hookAngle: "Price shock: Show ₦500K → ₦0 on screen instantly",
-    suggestedHook: "\"I was spending ₦500K a year on software. Now I spend ₦0.\"",
-    audienceEmotion: "Relief + Excitement",
-    brandFitScore: 95,
-    riskLevel: "Low",
-    suggestedFormat: "Tutorial (10–12 min) + Summary reel",
-    productionTime: "6–12 hours (Standard mode)",
-    category: "hot",
-    timeWindow: "7-day window",
-  },
-  {
-    id: "s5",
-    title: "The Creator Economy in Nigeria Is Growing 4× Faster Than Global Average",
-    whyNow: "New industry report dropped 48 hours ago — first-mover advantage for this data story",
-    platforms: ["LinkedIn", "YouTube"],
-    hookAngle: "Data reveal: Show the chart before saying a word",
-    suggestedHook: "\"This chart changed how I think about content creation in Nigeria.\"",
-    audienceEmotion: "Pride + Opportunity",
-    brandFitScore: 82,
-    riskLevel: "Low",
-    suggestedFormat: "Data story (6–8 min)",
-    productionTime: "6–12 hours (Standard mode)",
-    category: "rising",
-    timeWindow: "5-day window",
-  },
-  {
-    id: "s6",
-    title: "Behind the Algorithm: How Naija Creators Get 1M Views Without Going Viral",
-    whyNow: "Consistent growth pattern identified across 12 successful accounts — systemizable and teachable",
-    platforms: ["YouTube"],
-    hookAngle: "Mystery reveal: 'The strategy that works with zero followers'",
-    suggestedHook: "\"These creators hit 1M views and none of their videos ever went viral.\"",
-    audienceEmotion: "Aspiration + Disbelief",
-    brandFitScore: 93,
-    riskLevel: "Low",
-    suggestedFormat: "Long-form deep-dive (14–18 min)",
-    productionTime: "24–48 hours (Deep mode)",
-    category: "rising",
-    timeWindow: "14-day window",
-  },
-  {
-    id: "s7",
-    title: "How I Learned to Edit Videos in Yoruba Without Subtitles",
-    whyNow: "Language-native content is underserved and has 3× completion rates — unique positioning opportunity",
-    platforms: ["TikTok", "YouTube Shorts"],
-    hookAngle: "Language identity hook — start video entirely in Yoruba",
-    suggestedHook: "\"Mo fẹ sọ ohun ti ko si ẹnikan ti ó n sọ\" (I want to say what nobody is saying)",
-    audienceEmotion: "Cultural pride + Surprise",
-    brandFitScore: 79,
-    riskLevel: "Medium",
-    suggestedFormat: "Short-form (30–45 sec)",
-    productionTime: "2–4 hours (Express mode)",
-    category: "niche",
-    timeWindow: "Open window",
-  },
-  {
-    id: "s8",
-    title: "Lagos Tech Scene vs Silicon Valley: What Nobody Shows You",
-    whyNow: "Global vs local comparison format trending across African creator space — strong identity resonance",
-    platforms: ["YouTube", "TikTok"],
-    hookAngle: "Challenge assumption: 'Lagos has something Silicon Valley doesn't'",
-    suggestedHook: "\"Silicon Valley has billions in funding. Lagos has something they can't buy.\"",
-    audienceEmotion: "National pride + Curiosity",
-    brandFitScore: 85,
-    riskLevel: "Low",
-    suggestedFormat: "Documentary-style (15–20 min)",
-    productionTime: "24–48 hours (Deep mode)",
-    category: "niche",
-    timeWindow: "Open window",
-  },
-];
+// Sparks are loaded dynamically from the SparkContext registry
 
 const riskColor = {
   Low: "text-success bg-success/10 border-success/20",
@@ -397,10 +276,26 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export function ViralSparks({ onNavigate }: ViralSparksProps) {
-  const { createProductionFromSpark, productions } = useSpark();
+  const { createProductionFromSpark, productions, viralSparks } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<Spark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
+
+  const sparks: Spark[] = (viralSparks || []).map((v) => ({
+    id: v.id,
+    title: v.title,
+    whyNow: v.whyNow,
+    platforms: (v.platforms || "").split(",").map((p) => p.trim()),
+    hookAngle: v.angle,
+    suggestedHook: v.hook,
+    audienceEmotion: "Aspiration + Curiosity",
+    brandFitScore: v.brandFitScore,
+    riskLevel: "Low",
+    suggestedFormat: (v.platforms || "").includes("YouTube") ? "Long-form + 3 clips" : "Short-form (45–60 sec)",
+    productionTime: v.productionTime,
+    category: v.category,
+    timeWindow: v.timeWindow,
+  }));
 
   const createdSparks = new Set<string>(
     productions
@@ -474,7 +369,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
             {[
               { label: "Ready to Create", value: String(sparks.length), color: "text-foreground", bg: "bg-card border-border" },
               { label: "Hot Window", value: String(sparks.filter(s => s.category === "hot").length), color: "text-destructive", bg: "bg-destructive/5 border-destructive/20" },
-              { label: "Avg Brand Fit", value: `${Math.round(sparks.reduce((a, s) => a + s.brandFitScore, 0) / sparks.length)}%`, color: "text-success", bg: "bg-success/5 border-success/20" },
+              { label: "Avg Brand Fit", value: sparks.length === 0 ? "0%" : `${Math.round(sparks.reduce((a, s) => a + s.brandFitScore, 0) / sparks.length)}%`, color: "text-success", bg: "bg-success/5 border-success/20" },
               { label: "In Production", value: String(createdSparks.size), color: "text-accent-foreground", bg: "bg-accent/10 border-accent/30" },
             ].map((stat) => (
               <div key={stat.label} className={`rounded-xl border p-5 ${stat.bg}`}>
@@ -507,9 +402,16 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
           </div>
 
           {/* Spark Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {filtered.map((spark) => {
-              const isCreated = createdSparks.has(spark.id);
+          {filtered.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-card/25 p-12 text-center text-muted-foreground">
+              <Zap className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-medium">No opportunities discovered yet</p>
+              <p className="text-xs text-muted-foreground/75 mt-1">Spark will index trending topics, keywords, and viral formats once your social integrations are active.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {filtered.map((spark) => {
+                const isCreated = createdSparks.has(spark.id);
               return (
                 <div
                   key={spark.id}
@@ -636,6 +538,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
               );
             })}
           </div>
+          )}
 
         </div>
       </main>

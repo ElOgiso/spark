@@ -307,27 +307,33 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
           {/* AI Decisions */}
           <section>
             <SectionHeader label="AI Decisions" meta="Last 24h" />
-            <div className="grid grid-cols-2 gap-4">
-              {aiDecisions.map((d) => {
-                const cfg = outcomeConfig[d.outcome];
-                const Icon = cfg.icon;
-                return (
-                  <div key={d.id} className={`rounded-xl border p-5 ${cfg.bg}`}>
-                    <div className="flex items-start gap-3">
-                      <Icon className={`w-5 h-5 ${cfg.color} mt-0.5 flex-shrink-0`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm leading-relaxed">{d.text}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className="text-xs text-muted-foreground">{d.confidence}% confidence</span>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <span className="text-xs text-muted-foreground">{d.time}</span>
+            {productions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card/25 p-8 text-center text-muted-foreground text-sm">
+                Decisions will be logged here as Spark evaluates script hooks, storyboards, and rendering confidence metrics.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {aiDecisions.map((d) => {
+                  const cfg = outcomeConfig[d.outcome];
+                  const Icon = cfg.icon;
+                  return (
+                    <div key={d.id} className={`rounded-xl border p-5 ${cfg.bg}`}>
+                      <div className="flex items-start gap-3">
+                        <Icon className={`w-5 h-5 ${cfg.color} mt-0.5 flex-shrink-0`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm leading-relaxed">{d.text}</p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-xs text-muted-foreground">{d.confidence}% confidence</span>
+                            <span className="text-xs text-muted-foreground">·</span>
+                            <span className="text-xs text-muted-foreground">{d.time}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
         </div>

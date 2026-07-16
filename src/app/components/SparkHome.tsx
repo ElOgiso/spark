@@ -1,3 +1,4 @@
+import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { ActivityFeed } from "./ActivityFeed";
 import { SectionHeader, MetricCard, Button, FilterPill, WhySparkRecommends } from "./ds";
@@ -15,6 +16,8 @@ interface SparkHomeProps {
 }
 
 export function SparkHome({ onNavigate }: SparkHomeProps) {
+  const { productions, reviewItems, viralSparks } = useSpark();
+  const isEmpty = productions.length === 0;
   const [isChatOpen, setIsChatOpen] = useState(false);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -22,14 +25,14 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
     weekday: "long", month: "short", day: "numeric", year: "numeric",
   });
 
-  const priorityItems = [
+  const priorityItems = isEmpty ? [] : [
     {
       id: "p1",
       icon: AlertCircle,
       iconColor: "text-warning",
       borderColor: "border-l-warning",
       bg: "bg-warning/5",
-      label: "5 creative reviews waiting",
+      label: `${reviewItems.filter(r => r.status === "Pending Review").length} creative reviews waiting`,
       description: "\"5 Viral Marketing Tactics\" · Storyboard ready · 94% brand fit · Oldest: 2 min",
       action: "Review Now",
       path: "/review",
@@ -59,14 +62,14 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   ];
 
   const pipeline = [
-    { stage: "Drafting", count: 2, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
-    { stage: "Ready", count: 5, color: "text-warning", indicator: "bg-warning", path: "/review" },
-    { stage: "Approved", count: 3, color: "text-success", indicator: "bg-success", path: "/review" },
-    { stage: "Scheduled", count: 12, color: "text-accent-foreground", indicator: "bg-accent", path: "/calendar" },
-    { stage: "Published", count: 8, color: "text-muted-foreground", indicator: "bg-muted-foreground/40", path: "/analytics" },
+    { stage: "Drafting", count: isEmpty ? 0 : productions.filter(p => p.status === "Drafting").length, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
+    { stage: "Ready", count: isEmpty ? 0 : productions.filter(p => p.status === "Ready for Review").length, color: "text-warning", indicator: "bg-warning", path: "/review" },
+    { stage: "Approved", count: isEmpty ? 0 : productions.filter(p => p.status === "Approved").length, color: "text-success", indicator: "bg-success", path: "/review" },
+    { stage: "Scheduled", count: isEmpty ? 0 : 12, color: "text-accent-foreground", indicator: "bg-accent", path: "/calendar" },
+    { stage: "Published", count: isEmpty ? 0 : 8, color: "text-muted-foreground", indicator: "bg-muted-foreground/40", path: "/analytics" },
   ];
 
-  const hotSparks = [
+  const hotSparks = isEmpty ? [] : [
     { id: "v1", title: "How Nigerian Creators Are Using AI to Build Media Empires", score: 97, format: "Long-form + Clips", window: "48h", risk: "Low" },
     { id: "v2", title: "Free AI Tools Replacing ₦500K Worth of Software", score: 95, format: "Tutorial + Reel", window: "7-day", risk: "Low" },
     { id: "v3", title: "The 60-Second Edit That Tripled Watch Time", score: 91, format: "Short-form", window: "24h", risk: "Low" },
@@ -75,36 +78,36 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   const intelligence = [
     {
       type: "opportunity", label: "Top Opportunities",
-      items: ["AI content creation trending +340% — strong match for your niche", "Viral storytelling formats gaining velocity across short-form", "3 audience-confirmed topics awaiting production"],
+      items: isEmpty ? ["No opportunities yet. Connect your integrations to retrieve market signals."] : ["AI content creation trending +340% — strong match for your niche", "Viral storytelling formats gaining velocity across short-form", "3 audience-confirmed topics awaiting production"],
       color: "text-success", bg: "bg-success/10", border: "border-success/20",
     },
     {
       type: "signal", label: "Audience Signal",
-      items: ["\"How AI Creates Viral Content\" hitting 8.2% engagement — replicate format", "Peak window: Tue–Thu 2–4 PM showing 34% higher reach", "Hook style 'Nobody talks about this' averaging 3× retention"],
+      items: isEmpty ? ["Signals will index here after publishing content."] : ["\"How AI Creates Viral Content\" hitting 8.2% engagement — replicate format", "Peak window: Tue–Thu 2–4 PM showing 34% higher reach", "Hook style 'Nobody talks about this' averaging 3× retention"],
       color: "text-accent-foreground", bg: "bg-accent/10", border: "border-accent/30",
     },
     {
       type: "warning", label: "Needs Attention",
-      items: ["Tutorial series engagement down 35% — format needs refresh", "Instagram Reels retention dropping below threshold", "2 scheduled posts missing caption review"],
+      items: isEmpty ? ["No action items pending."] : ["Tutorial series engagement down 35% — format needs refresh", "Instagram Reels retention dropping below threshold", "2 scheduled posts missing caption review"],
       color: "text-warning", bg: "bg-warning/10", border: "border-warning/20",
     },
     {
       type: "action", label: "Recommended Actions",
-      items: ["Create production from top opportunity: AI editing workflow", "Expand successful format to TikTok and YouTube Shorts", "Review 5 pending creative approvals — oldest is 2h"],
+      items: isEmpty ? ["Start by generating a campaign storyboard."] : ["Create production from top opportunity: AI editing workflow", "Expand successful format to TikTok and YouTube Shorts", "Review 5 pending creative approvals — oldest is 2h"],
       color: "text-foreground", bg: "bg-muted/20", border: "border-border/50",
     },
   ];
 
   const metrics = [
-    { title: "Monthly Views", value: "24.8M", icon: Eye, trend: "+18.2%", subtitle: "Across all accounts" },
-    { title: "Revenue", value: "$142K", icon: DollarSign, trend: "+24.5%", subtitle: "This month", success: true },
-    { title: "Growth Rate", value: "+42%", icon: TrendingUp, trend: "+8.2%", subtitle: "Month over month" },
-    { title: "Published", value: "187", icon: Video, subtitle: "This month" },
-    { title: "Accounts", value: "8", icon: Tv, subtitle: "Connected" },
-    { title: "Productions", value: "21", icon: Clapperboard, subtitle: "Active" },
+    { title: "Monthly Views", value: isEmpty ? "0" : "24.8M", icon: Eye, trend: isEmpty ? "0%" : "+18.2%", subtitle: "Across all accounts" },
+    { title: "Revenue", value: isEmpty ? "$0" : "$142K", icon: DollarSign, trend: isEmpty ? "0%" : "+24.5%", subtitle: "This month", success: !isEmpty },
+    { title: "Growth Rate", value: isEmpty ? "0%" : "+42%", icon: TrendingUp, trend: isEmpty ? "0%" : "+8.2%", subtitle: "Month over month" },
+    { title: "Published", value: isEmpty ? "0" : "187", icon: Video, subtitle: "This month" },
+    { title: "Accounts", value: isEmpty ? "0" : "8", icon: Tv, subtitle: "Connected" },
+    { title: "Productions", value: String(productions.length), icon: Clapperboard, subtitle: "Active" },
   ];
 
-  const activities = [
+  const activities = isEmpty ? [] : [
     { id: "a1", type: "opportunity_discovered" as const, title: "Opportunity Discovered", metadata: "AI-powered video editing trends · 97% confidence", timestamp: "5m ago" },
     { id: "a2", type: "storyboard_approved" as const, title: "Storyboard Approved", metadata: "\"5 Viral Marketing Tactics\" · Sent to production", timestamp: "12m ago" },
     { id: "a3", type: "production_completed" as const, title: "Production Completed", metadata: "\"Psychology of Viral Content\" · Awaiting review", timestamp: "45m ago" },
@@ -113,19 +116,19 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   ];
 
   const homeRecommendation = {
-    reason: "Nigerian tech audience interest is up 340%. Replicating the 'Nobody talks about this' hook style matches your active 'Tech Insights Nigeria' brand rules. The low-risk window closes in 48 hours.",
-    evidence: [
+    reason: isEmpty ? "Strategy recommendations will appear once your social channels are synced and the first opportunity index completes." : "Nigerian tech audience interest is up 340%. Replicating the 'Nobody talks about this' hook style matches your active 'Tech Insights Nigeria' brand rules. The low-risk window closes in 48 hours.",
+    evidence: isEmpty ? [] : [
       "Peak target audience activity is 34% higher today (Tue–Thu 2–4 PM peak window).",
       "Topic aligns with Tech Insights Nigeria brand rule 'AI-driven business growth'.",
       "'Nobody talks about this' hook style averages 3x higher retention than static introductions.",
       "Competition for this niche is currently low, promising high engagement velocity."
     ],
-    confidence: "Very High" as const,
-    confidencePercent: 97,
-    expectedOutcome: "Projected 2.4x engagement velocity with 70%+ audience completion.",
-    risk: "Low" as const,
-    nextBestAction: "Review Storyboard",
-    brandRules: ["Tech Insights Nigeria Rule #3: Real-world Value", "Creator Authority"]
+    confidence: isEmpty ? "Low" as const : "Very High" as const,
+    confidencePercent: isEmpty ? 0 : 97,
+    expectedOutcome: isEmpty ? "-" : "Projected 2.4x engagement velocity with 70%+ audience completion.",
+    risk: isEmpty ? "Low" as const : "Low" as const,
+    nextBestAction: isEmpty ? "Connect Integrations" : "Review Storyboard",
+    brandRules: isEmpty ? [] : ["Tech Insights Nigeria Rule #3: Real-world Value", "Creator Authority"]
   };
 
   return (
@@ -152,16 +155,16 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
                     Spark Active
                   </span>
                   <span className="text-xs text-foreground bg-accent/15 px-2.5 py-1 rounded-full border border-accent/20">
-                    💡 <span className="font-medium text-accent-foreground">Discovered:</span> 3 opportunities
+                    💡 <span className="font-medium text-accent-foreground">Discovered:</span> {viralSparks.length} opportunities
                   </span>
                   <span className="text-xs text-foreground bg-warning/10 px-2.5 py-1 rounded-full border border-warning/20">
-                    ⚠️ <span className="font-medium text-warning">Attention:</span> 5 reviews waiting
+                    ⚠️ <span className="font-medium text-warning">Attention:</span> {reviewItems.filter(r => r.status === "Pending Review" || r.status === "Needs Edit").length} reviews waiting
                   </span>
                   <span className="text-xs text-foreground bg-destructive/5 px-2.5 py-1 rounded-full border border-destructive/15">
-                    🚫 <span className="font-medium text-destructive">Blocked:</span> 1 thumbnail missing
+                    🚫 <span className="font-medium text-destructive">Blocked:</span> {isEmpty ? 0 : 1} thumbnail missing
                   </span>
                   <span className="text-xs text-foreground bg-success/10 px-2.5 py-1 rounded-full border border-success/25">
-                    ✓ <span className="font-medium text-success">Ready:</span> 2 publishing today
+                    ✓ <span className="font-medium text-success">Ready:</span> {reviewItems.filter(r => r.status === "Approved").length} ready
                   </span>
                 </div>
               </div>
@@ -180,28 +183,34 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
             {/* Priority items */}
             <div className="border-t border-border/60">
-              {priorityItems.map((item, i) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center gap-5 px-8 py-4 border-l-[3px] ${item.borderColor} ${item.bg} transition-all hover:brightness-[1.04] ${i < priorityItems.length - 1 ? "border-b border-border/40" : ""}`}
-                  >
-                    <Icon className={`w-4 h-4 ${item.iconColor} flex-shrink-0`} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-medium ${item.iconColor} mb-0.5`}>{item.label}</p>
-                      <p className="text-sm text-muted-foreground truncate">{item.description}</p>
-                    </div>
-                    <button
-                      onClick={() => onNavigate(item.path)}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-background/60 hover:bg-background border border-border/60 text-sm font-medium transition-all"
+              {isEmpty ? (
+                <div className="px-8 py-6 text-center text-xs text-muted-foreground">
+                  All caught up! Start a workspace campaign to populate action items.
+                </div>
+              ) : (
+                priorityItems.map((item, i) => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-5 px-8 py-4 border-l-[3px] ${item.borderColor} ${item.bg} transition-all hover:brightness-[1.04] ${i < priorityItems.length - 1 ? "border-b border-border/40" : ""}`}
                     >
-                      {item.action}
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
+                      <Icon className={`w-4 h-4 ${item.iconColor} flex-shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-medium ${item.iconColor} mb-0.5`}>{item.label}</p>
+                        <p className="text-sm text-muted-foreground truncate">{item.description}</p>
+                      </div>
+                      <button
+                        onClick={() => onNavigate(item.path)}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-background/60 hover:bg-background border border-border/60 text-sm font-medium transition-all"
+                      >
+                        {item.action}
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -260,38 +269,44 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
               </button>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {hotSparks.map((spark) => (
-                <div
-                  key={spark.id}
-                  className="rounded-xl border border-border bg-card p-5 hover:border-accent/40 hover:shadow-xl hover:shadow-black/10 transition-all duration-200 group flex flex-col"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Flame className="w-3.5 h-3.5 text-warning" />
-                      <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded-full">
-                        {spark.window} window
+              {isEmpty ? (
+                <div className="col-span-3 rounded-xl border border-dashed border-border bg-card/25 p-8 text-center text-xs text-muted-foreground">
+                  No opportunities discovered yet. Spark will index trending niches once connected to social channels.
+                </div>
+              ) : (
+                hotSparks.map((spark) => (
+                  <div
+                    key={spark.id}
+                    className="rounded-xl border border-border bg-card p-5 hover:border-accent/40 hover:shadow-xl hover:shadow-black/10 transition-all duration-200 group flex flex-col"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Flame className="w-3.5 h-3.5 text-warning" />
+                        <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded-full">
+                          {spark.window} window
+                        </span>
+                      </div>
+                      <span className={`text-sm font-medium ${spark.score >= 92 ? "text-success" : "text-warning"}`}>
+                        {spark.score}%
                       </span>
                     </div>
-                    <span className={`text-sm font-medium ${spark.score >= 92 ? "text-success" : "text-warning"}`}>
-                      {spark.score}%
-                    </span>
+                    <h3 className="text-sm font-medium leading-snug mb-3 flex-1">{spark.title}</h3>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xs px-2 py-0.5 rounded-lg bg-muted/40 text-muted-foreground">{spark.format}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-lg ${spark.risk === "Low" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+                        {spark.risk} risk
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => onNavigate("/viral-sparks")}
+                      className="w-full py-2.5 rounded-lg bg-accent/30 hover:bg-accent/50 text-sm font-medium transition-all flex items-center justify-center gap-2 group-hover:bg-foreground group-hover:text-background"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      Create Production
+                    </button>
                   </div>
-                  <h3 className="text-sm font-medium leading-snug mb-3 flex-1">{spark.title}</h3>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-xs px-2 py-0.5 rounded-lg bg-muted/40 text-muted-foreground">{spark.format}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-lg ${spark.risk === "Low" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
-                      {spark.risk} risk
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => onNavigate("/viral-sparks")}
-                    className="w-full py-2.5 rounded-lg bg-accent/30 hover:bg-accent/50 text-sm font-medium transition-all flex items-center justify-center gap-2 group-hover:bg-foreground group-hover:text-background"
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    Create Production
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
 
@@ -356,7 +371,13 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
           <section>
             <SectionHeader label="Recent Activity" />
             <div className="rounded-xl border border-border bg-card p-6">
-              <ActivityFeed activities={activities} onNavigate={onNavigate} />
+              {isEmpty ? (
+                <div className="text-center py-4 text-xs text-muted-foreground">
+                  No activity recorded yet.
+                </div>
+              ) : (
+                <ActivityFeed activities={activities} onNavigate={onNavigate} />
+              )}
             </div>
           </section>
 

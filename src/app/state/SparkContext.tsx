@@ -29,6 +29,7 @@ import { TaskScheduler } from "../services/taskScheduler";
 import { ExecutionManager } from "../services/executionManager";
 import { IDepartmentAgent } from "../domain/runtime/IDepartmentAgent";
 import { RuntimeOrchestrator } from "../services/runtime/runtimeOrchestrator";
+import { InteractionController } from "../services/interaction/interactionController";
 
 interface SparkContextType {
   brand: Brand;
@@ -62,7 +63,7 @@ interface SparkContextType {
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
-  runRealTask: (prompt: string, onUpdate?: (text: string) => void) => Promise<string>;
+  sendMessage: (prompt: string, onUpdate?: (text: string) => void) => Promise<string>;
   state: any;
 }
 
@@ -469,7 +470,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (local) {
       return local;
     }
-    const isDev = import.meta.env.DEV || (typeof window !== 'undefined' && localStorage.getItem('spark_dev_mode') === 'true');
     return {
       brand: defaultBrand,
       character: defaultCharacter,
@@ -477,13 +477,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       automationMode: "balanced" as AutomationMode,
       productionMode: "standard" as ProductionMode,
       memoryItems: defaultMemoryItems,
-      viralSparks: isDev ? defaultViralSparks : [],
-      productions: isDev ? defaultProductions : [],
-      reviewItems: isDev ? defaultReviewItems : [],
-      publishJobs: isDev ? defaultPublishJobs : [],
-      exportPackages: isDev ? defaultExportPackages : [],
-      analyticsInsights: isDev ? defaultAnalyticsInsights : [],
-      assets: isDev ? defaultAssets : []
+      viralSparks: [],
+      productions: [],
+      reviewItems: [],
+      publishJobs: [],
+      exportPackages: [],
+      analyticsInsights: [],
+      assets: []
     };
   });
 
@@ -761,42 +761,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   };
 
-  const runRealTask = async (prompt: string, onUpdate?: (text: string) => void): Promise<string> => {
-    const intent = ExecutiveDecisionEngine.classifyIntent(prompt);
-
-    if (state.automationMode === "balanced" && intent === "workspace_execution" && !pendingTaskPrompt) {
-      setPendingTaskPrompt(prompt);
-      setIsExecuting(false);
-      return `I have formulated a campaign blueprint for: "${prompt}".\n\nWould you like me to initialize the runtime pipeline? Please say "Approve" or click Proceed to start.`;
-    }
-
-    let targetPrompt = prompt;
-    if (intent === "approval" && pendingTaskPrompt) {
-      targetPrompt = pendingTaskPrompt;
-      setPendingTaskPrompt(null);
-    } else if (intent === "cancellation" && pendingTaskPrompt) {
-      setPendingTaskPrompt(null);
-      setIsExecuting(false);
-      return "Workspace task aborted successfully.";
-    } else if (intent !== "workspace_execution" && !pendingTaskPrompt) {
-      // Conversational responses - no timeline rendering
-      setIsExecuting(false);
-      const lower = prompt.toLowerCase();
-      if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) {
-        return "Hello! I am Spark, your Media Operating System. How can I help you today?";
-      }
-      if (lower.includes("thanks") || lower.includes("thank you")) {
-        return "You're welcome! Let me know if you need to generate any scripts, storyboards, or videos.";
-      }
-      if (lower.includes("mcp")) {
-        return "MCP (Model Context Protocol) is an open standard that enables AI models to connect to external databases, APIs, and tools securely.";
-      }
-      if (lower.includes("veo")) {
-        return "Veo is Google's state-of-the-art generative video model, capable of producing high-quality 1080p videos in a variety of cinematic styles.";
-      }
-      return "I can help you build campaigns, write storyboards, or coordinate visual edits. Let me know what you would like to create!";
-    }
-
+  const triggerWorkspace = async (targetPrompt: string): Promise<string> => {
     // Actually run pipeline
     setIsExecuting(true);
     setStreamingOutput("");
@@ -835,7 +800,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       const onChunk = (text: string, department: string) => {
         setStreamingOutput(text);
-        if (onUpdate) onUpdate(text);
 
         setExecutionTimeline(prev => {
           return prev.map(item => {
@@ -923,6 +887,25 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  useEffect(() => {
+    InteractionController.getInstance().registerCallbacks({
+      onStateUpdate: (updates) => {
+        if (updates.isExecuting !== undefined) setIsExecuting(updates.isExecuting);
+        if (updates.pendingTaskPrompt !== undefined) setPendingTaskPrompt(updates.pendingTaskPrompt);
+      },
+      onTriggerWorkspace: triggerWorkspace
+    });
+  }, [state.automationMode, pendingTaskPrompt]);
+
+  const sendMessage = async (prompt: string, onUpdate?: (text: string) => void): Promise<string> => {
+    return InteractionController.getInstance().sendMessage(
+      prompt,
+      state.automationMode,
+      pendingTaskPrompt,
+      onUpdate
+    );
+  };
+
   return (
     <SparkContext.Provider
       value={{
@@ -941,7 +924,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addAsset,
         toggleContentPillar,
         toggleTone,
-        runRealTask,
+        sendMessage,
         state
       }}
     >
