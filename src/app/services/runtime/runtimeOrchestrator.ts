@@ -162,6 +162,20 @@ export class RuntimeOrchestrator {
       if (executable.length === 0) break;
 
       const promises = executable.map(async (task) => {
+        // Verify prerequisites
+        const deps = this.taskGraph.getDependencies(task.id);
+        const allDepsSucceeded = deps.every(depId => {
+          const depNode = this.taskGraph.getNode(depId);
+          return depNode && depNode.status === "completed";
+        });
+
+        if (!allDepsSucceeded) {
+          this.taskGraph.markNodeStatus(task.id, "failed");
+          console.error(`[RuntimeOrchestrator] Prerequisites missing for task ${task.id} (${task.department}). Aborting.`);
+          RuntimeEvents.getInstance().emit("TaskFailed", { taskId: task.id, error: "Prerequisites failed" });
+          return;
+        }
+
         this.taskGraph.markNodeStatus(task.id, "running");
         RuntimeEvents.getInstance().emit("TaskStarted", { taskId: task.id });
 

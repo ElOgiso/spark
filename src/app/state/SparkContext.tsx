@@ -469,6 +469,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (local) {
       return local;
     }
+    const isDev = import.meta.env.DEV || (typeof window !== 'undefined' && localStorage.getItem('spark_dev_mode') === 'true');
     return {
       brand: defaultBrand,
       character: defaultCharacter,
@@ -476,13 +477,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       automationMode: "balanced" as AutomationMode,
       productionMode: "standard" as ProductionMode,
       memoryItems: defaultMemoryItems,
-      viralSparks: defaultViralSparks,
-      productions: defaultProductions,
-      reviewItems: defaultReviewItems,
-      publishJobs: defaultPublishJobs,
-      exportPackages: defaultExportPackages,
-      analyticsInsights: defaultAnalyticsInsights,
-      assets: defaultAssets
+      viralSparks: isDev ? defaultViralSparks : [],
+      productions: isDev ? defaultProductions : [],
+      reviewItems: isDev ? defaultReviewItems : [],
+      publishJobs: isDev ? defaultPublishJobs : [],
+      exportPackages: isDev ? defaultExportPackages : [],
+      analyticsInsights: isDev ? defaultAnalyticsInsights : [],
+      assets: isDev ? defaultAssets : []
     };
   });
 
@@ -507,6 +508,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ]);
   const [streamingOutput, setStreamingOutput] = useState("");
   const [streamingMetrics, setStreamingMetrics] = useState<any>(null);
+  const [pendingTaskPrompt, setPendingTaskPrompt] = useState<string | null>(null);
 
   const updateAutomationMode = (mode: AutomationMode) => {
     setState((prev: any) => ({ ...prev, automationMode: mode }));
@@ -760,6 +762,42 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const runRealTask = async (prompt: string, onUpdate?: (text: string) => void): Promise<string> => {
+    const intent = ExecutiveDecisionEngine.classifyIntent(prompt);
+
+    if (state.automationMode === "balanced" && intent === "workspace_execution" && !pendingTaskPrompt) {
+      setPendingTaskPrompt(prompt);
+      setIsExecuting(false);
+      return `I have formulated a campaign blueprint for: "${prompt}".\n\nWould you like me to initialize the runtime pipeline? Please say "Approve" or click Proceed to start.`;
+    }
+
+    let targetPrompt = prompt;
+    if (intent === "approval" && pendingTaskPrompt) {
+      targetPrompt = pendingTaskPrompt;
+      setPendingTaskPrompt(null);
+    } else if (intent === "cancellation" && pendingTaskPrompt) {
+      setPendingTaskPrompt(null);
+      setIsExecuting(false);
+      return "Workspace task aborted successfully.";
+    } else if (intent !== "workspace_execution" && !pendingTaskPrompt) {
+      // Conversational responses - no timeline rendering
+      setIsExecuting(false);
+      const lower = prompt.toLowerCase();
+      if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) {
+        return "Hello! I am Spark, your Media Operating System. How can I help you today?";
+      }
+      if (lower.includes("thanks") || lower.includes("thank you")) {
+        return "You're welcome! Let me know if you need to generate any scripts, storyboards, or videos.";
+      }
+      if (lower.includes("mcp")) {
+        return "MCP (Model Context Protocol) is an open standard that enables AI models to connect to external databases, APIs, and tools securely.";
+      }
+      if (lower.includes("veo")) {
+        return "Veo is Google's state-of-the-art generative video model, capable of producing high-quality 1080p videos in a variety of cinematic styles.";
+      }
+      return "I can help you build campaigns, write storyboards, or coordinate visual edits. Let me know what you would like to create!";
+    }
+
+    // Actually run pipeline
     setIsExecuting(true);
     setStreamingOutput("");
     setStreamingMetrics(null);
@@ -777,7 +815,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       { name: "Learning", status: "idle" }
     ]);
 
-    const decision = ExecutiveDecisionEngine.generatePlan(prompt, state.automationMode);
+    const decision = ExecutiveDecisionEngine.generatePlan(targetPrompt, state.automationMode);
     
     const task: ExecutionTask = {
       id: `task-${Date.now()}`,
@@ -862,7 +900,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const prodId = `p-${Date.now()}`;
       const newProd: Production = {
         id: prodId,
-        title: prompt.length > 35 ? prompt.substring(0, 35) + "..." : prompt,
+        title: targetPrompt.length > 35 ? targetPrompt.substring(0, 35) + "..." : targetPrompt,
         status: "Ready for Review",
         mode: state.productionMode,
         dateCreated: new Date().toISOString().split("T")[0],

@@ -9,11 +9,54 @@ export interface DecisionPlan {
   automationMode: AutomationMode;
 }
 
+export type MessageIntent =
+  | 'conversation'
+  | 'question'
+  | 'workspace_execution'
+  | 'approval'
+  | 'cancellation'
+  | 'configuration';
+
 export class ExecutiveDecisionEngine {
-  /**
-   * TODO: Lightweight keyword matching for Sprint 1.
-   * This logic will later be replaced by the Capability Analyzer in Sprint 2.
-   */
+  public static classifyIntent(prompt: string): MessageIntent {
+    const lower = prompt.toLowerCase().trim();
+
+    // Configuration intents
+    if (lower.startsWith("set mode") || lower.startsWith("configure") || lower.includes("change settings") || lower.includes("automation mode")) {
+      return 'configuration';
+    }
+
+    // Cancellation intents
+    if (lower === "cancel" || lower === "stop" || lower === "abort" || lower === "exit") {
+      return 'cancellation';
+    }
+
+    // Approval intents
+    if (lower === "approve" || lower === "yes" || lower === "proceed" || lower === "yep" || lower === "go ahead") {
+      return 'approval';
+    }
+
+    // Greetings / Conversation
+    const greetings = ["hello", "hi", "hey", "thanks", "thank you", "good morning", "good afternoon", "good evening", "how are you"];
+    if (greetings.some(g => lower === g || lower.startsWith(g + " ") || lower.startsWith("hey "))) {
+      return 'conversation';
+    }
+
+    // Questions / Explanations
+    const questions = ["what is", "how do i", "explain", "tell me about", "why did", "what can you"];
+    if (questions.some(q => lower.startsWith(q))) {
+      return 'question';
+    }
+
+    // Workspace Execution verbs
+    const executionVerbs = ["create", "generate", "build", "analyze", "make", "produce", "run", "start", "initialize", "new project"];
+    if (executionVerbs.some(verb => lower.includes(verb)) || lower.includes("tiktok") || lower.includes("video") || lower.includes("campaign") || lower.includes("storyboard")) {
+      return 'workspace_execution';
+    }
+
+    // Fallback to conversation
+    return 'conversation';
+  }
   public static generatePlan(intent: string, mode: AutomationMode): DecisionPlan {
     const lower = intent.toLowerCase();
     

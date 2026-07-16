@@ -94,7 +94,8 @@ How can I help you operate your workspace today?`,
           }).then((finalText: string) => {
             setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
           }).catch((err: any) => {
-            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: `Error: ${err.message || err}`, isStreaming: false } : m));
+            console.error("[AIChatModal] Internal runtime error:", err);
+            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", isStreaming: false } : m));
           });
         }
       }
@@ -233,7 +234,8 @@ How can I help you operate your workspace today?`,
     }).then((finalText: string) => {
       setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
     }).catch((err: any) => {
-      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: `Error: ${err.message || err}`, isStreaming: false } : m));
+      console.error("[AIChatModal] Internal runtime error:", err);
+      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", isStreaming: false } : m));
     });
   };
 

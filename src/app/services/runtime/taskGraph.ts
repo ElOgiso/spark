@@ -45,7 +45,23 @@ export class TaskGraph {
     }
   }
 
+  public getNode(taskId: string): TaskNode | undefined {
+    return this.nodes.get(taskId);
+  }
+
+  public getDependencies(taskId: string): string[] {
+    return this.nodes.get(taskId)?.dependencies || [];
+  }
+
   public isComplete(): boolean {
+    if (this.hasErrors()) {
+      // Abort execution safely: mark all pending nodes as failed
+      this.nodes.forEach(node => {
+        if (node.status === "pending" || node.status === "running") {
+          node.status = "failed";
+        }
+      });
+    }
     return Array.from(this.nodes.values()).every(node => node.status === "completed" || node.status === "failed");
   }
 
