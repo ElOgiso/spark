@@ -62,8 +62,8 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   ];
 
   const pipeline = [
-    { stage: "Drafting", count: isEmpty ? 0 : productions.filter(p => p.status === "Drafting").length, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
-    { stage: "Ready", count: isEmpty ? 0 : productions.filter(p => p.status === "Ready for Review").length, color: "text-warning", indicator: "bg-warning", path: "/review" },
+    { stage: "Drafting", count: isEmpty ? 0 : productions.filter(p => ["Drafting", "Draft", "Researching", "Research Complete", "Planning", "Planning Complete", "Storyboarding", "Storyboard Complete", "Generating", "Editing"].includes(p.status)).length, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
+    { stage: "Ready", count: isEmpty ? 0 : productions.filter(p => ["Ready for Review", "Awaiting Review"].includes(p.status)).length, color: "text-warning", indicator: "bg-warning", path: "/review" },
     { stage: "Approved", count: isEmpty ? 0 : productions.filter(p => p.status === "Approved").length, color: "text-success", indicator: "bg-success", path: "/review" },
     { stage: "Scheduled", count: isEmpty ? 0 : 12, color: "text-accent-foreground", indicator: "bg-accent", path: "/calendar" },
     { stage: "Published", count: isEmpty ? 0 : 8, color: "text-muted-foreground", indicator: "bg-muted-foreground/40", path: "/analytics" },

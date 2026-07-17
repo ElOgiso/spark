@@ -172,12 +172,72 @@ export class RuntimeOrchestrator {
         if (!allDepsSucceeded) {
           this.taskGraph.markNodeStatus(task.id, "failed");
           console.error(`[RuntimeOrchestrator] Prerequisites missing for task ${task.id} (${task.department}). Aborting.`);
-          RuntimeEvents.getInstance().emit("TaskFailed", { taskId: task.id, error: "Prerequisites failed" });
+          RuntimeEvents.getInstance().emit("TaskFailed", { taskId: task.id, department: task.department, productionId: task.productionId, error: "Prerequisites failed" });
+          return;
+        }
+
+        // Check if this task can be skipped from existing reasoning (Resume support)
+        const existingReasoning = (parentTask as any).existingReasoning;
+        let isAlreadyCompleted = false;
+        let outputForContext = "";
+        let rawResponseForContext: any = null;
+
+        if (existingReasoning) {
+          if (task.department === "research" && existingReasoning.research) {
+            isAlreadyCompleted = true;
+            outputForContext = existingReasoning.research.notes || "";
+          } else if ((task.department as string) === "creative-decision" && existingReasoning.planning) {
+            isAlreadyCompleted = true;
+            outputForContext = "Creative Decision formulated (Loaded from cache)";
+          } else if (task.department === "creative" && existingReasoning.planning) {
+            isAlreadyCompleted = true;
+            outputForContext = existingReasoning.planning.outline || "";
+          } else if (task.objective.includes("storyboard") && existingReasoning.storyboard) {
+            isAlreadyCompleted = true;
+            outputForContext = `Loaded storyboard: ${existingReasoning.storyboard.scenes?.length || 0} scenes`;
+            rawResponseForContext = existingReasoning.storyboard;
+          } else if (task.objective.includes("Produce") && existingReasoning.generation && existingReasoning.generation.assets?.length > 0) {
+            isAlreadyCompleted = true;
+            outputForContext = `Loaded generated assets:\n` +
+              existingReasoning.generation.assets.map((url: string, i: number) => `  ${i + 1}. ${url}`).join('\n');
+            rawResponseForContext = {
+              allVideoUrls: existingReasoning.generation.assets,
+              videoCost: existingReasoning.generation.metadata?.costUsd || 0
+            };
+          } else if ((task.department as string) === "media-intelligence" && existingReasoning.editing) {
+            isAlreadyCompleted = true;
+            outputForContext = "Media Intelligence passed (Loaded from cache)";
+          } else if ((task.department as string) === "editing-decision" && existingReasoning.editing) {
+            isAlreadyCompleted = true;
+            outputForContext = "Editing Decision passed (Loaded from cache)";
+          } else if (task.department === "editor" && existingReasoning.editing) {
+            isAlreadyCompleted = true;
+            outputForContext = "Editing render succeeded (Loaded from cache)";
+            rawResponseForContext = existingReasoning.editing.timeline;
+          }
+        }
+
+        if (isAlreadyCompleted) {
+          console.log(`[RuntimeOrchestrator] Skipping already completed stage: ${task.department} (${task.objective})`);
+          sharedContext.set(task.department, outputForContext);
+          if (rawResponseForContext) {
+            if (task.objective.includes("storyboard")) {
+              sharedContext.set("storyboard", rawResponseForContext);
+            }
+          }
+          this.taskGraph.markNodeStatus(task.id, "completed");
+          RuntimeEvents.getInstance().emit("TaskCompleted", {
+            taskId: task.id,
+            department: task.department,
+            productionId: task.productionId,
+            output: outputForContext,
+            rawResponse: rawResponseForContext
+          });
           return;
         }
 
         this.taskGraph.markNodeStatus(task.id, "running");
-        RuntimeEvents.getInstance().emit("TaskStarted", { taskId: task.id });
+        RuntimeEvents.getInstance().emit("TaskStarted", { taskId: task.id, department: task.department, productionId: task.productionId });
 
         // Update Project State Engine
         if (task.department === "research") stateEngine.updateProjectState(parentTask.id, "Researching");
@@ -301,12 +361,23 @@ export class RuntimeOrchestrator {
 
           sharedContext.set(task.department, result.output);
           this.taskGraph.markNodeStatus(task.id, "completed");
-          RuntimeEvents.getInstance().emit("TaskCompleted", { taskId: task.id });
+          RuntimeEvents.getInstance().emit("TaskCompleted", {
+            taskId: task.id,
+            department: task.department,
+            productionId: task.productionId,
+            output: result.output,
+            rawResponse: result.rawResponse
+          });
 
           lastResult = result;
         } catch (err: any) {
           this.taskGraph.markNodeStatus(task.id, "failed");
-          RuntimeEvents.getInstance().emit("TaskFailed", { taskId: task.id, error: err.message });
+          RuntimeEvents.getInstance().emit("TaskFailed", {
+            taskId: task.id,
+            department: task.department,
+            productionId: task.productionId,
+            error: err.message
+          });
           throw err;
         }
       });

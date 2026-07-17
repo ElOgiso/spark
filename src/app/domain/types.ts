@@ -63,12 +63,72 @@ export interface Production {
   id: string;
   title: string;
   sparkId?: string;
-  status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed";
+  status:
+    | "Drafting"
+    | "Ready for Review"
+    | "Approved"
+    | "Needs Edit"
+    | "Published"
+    | "Failed"
+    | "Draft"
+    | "Researching"
+    | "Research Complete"
+    | "Planning"
+    | "Planning Complete"
+    | "Storyboarding"
+    | "Storyboard Complete"
+    | "Generating"
+    | "Generation Failed"
+    | "Editing"
+    | "Editing Failed"
+    | "Awaiting Review"
+    | "Cancelled";
   mode: ProductionMode;
   dateCreated: string;
   aspectRatio: string;
   formats: string[];
   scenes: { scene: number; description: string; duration: string }[];
+  reasoning?: {
+    research?: {
+      notes?: string;
+      audience?: string;
+      trends?: string[];
+      sources?: string[];
+      strategy?: string;
+    };
+    planning?: {
+      outline?: string;
+      hooks?: string[];
+      contentPlan?: string;
+    };
+    storyboard?: {
+      scenes?: any[];
+      narration?: string;
+      prompts?: string[];
+      timing?: string;
+    };
+    generation?: {
+      assets?: string[];
+      metadata?: any;
+      failures?: string[];
+    };
+    editing?: {
+      timeline?: any;
+      clips?: any[];
+      transitions?: any[];
+      renderStatus?: string;
+    };
+    review?: {
+      approvalState?: string;
+      comments?: string;
+      confidence?: number;
+    };
+    publishing?: {
+      publishJob?: any;
+      schedule?: string;
+      platformIds?: string[];
+    };
+  };
 }
 
 export interface QualityCheck {

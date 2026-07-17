@@ -169,6 +169,7 @@ export function productionRowToDomain(row: ProductionRow): Production {
     aspectRatio: String(brief.aspectRatio ?? "9:16"),
     formats,
     scenes,
+    reasoning: (row.reasoning && typeof row.reasoning === "object" && !Array.isArray(row.reasoning)) ? (row.reasoning as any) : {},
   };
 }
 
@@ -183,7 +184,7 @@ export function domainProductionToInsert(
   brandId: string,
   production: Production,
 ): Partial<ProductionRow> {
-  const statusMap: Record<Production["status"], string> = {
+  const statusMap: Record<string, string> = {
     Drafting: "drafting",
     "Ready for Review": "ready_for_review",
     Approved: "approved",
@@ -196,7 +197,7 @@ export function domainProductionToInsert(
     viral_spark_id: isUuid(production.sparkId) ? production.sparkId! : null,
     title: production.title,
     production_mode: uiProductionModeToDb(production.mode),
-    status: statusMap[production.status] || "drafting",
+    status: statusMap[production.status] || production.status,
     brief: {
       aspectRatio: production.aspectRatio,
       formats: production.formats,
@@ -204,7 +205,7 @@ export function domainProductionToInsert(
       sparkId: production.sparkId,
     } as Json,
     assets: [],
-    reasoning: {},
+    reasoning: (production.reasoning || {}) as Json,
   };
 }
 

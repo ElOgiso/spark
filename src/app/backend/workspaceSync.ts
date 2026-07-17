@@ -178,6 +178,17 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     patch.status = statusMap[production.status] || production.status;
   }
   if (production.title) patch.title = production.title;
+  if (production.scenes || production.aspectRatio || production.formats) {
+    patch.brief = {
+      aspectRatio: production.aspectRatio,
+      formats: production.formats,
+      scenes: production.scenes,
+      sparkId: production.sparkId,
+    };
+  }
+  if (production.reasoning) {
+    patch.reasoning = production.reasoning;
+  }
   await updateProduction(id, patch);
 }
 

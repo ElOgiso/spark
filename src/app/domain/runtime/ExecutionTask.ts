@@ -18,4 +18,8 @@ export interface ExecutionTask {
   dependencies?: string[];
   scheduledTime?: string;
   delayMs?: number;
+
+  // Link to Production
+  productionId?: string;
+  existingReasoning?: any;
 }

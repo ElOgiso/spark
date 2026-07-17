@@ -136,13 +136,14 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
     const rev = reviewItems.find((r) => r.productionId === p.id);
     
     let stage: Stage = "drafting";
-    if (p.status === "Ready for Review") stage = "ready";
-    else if (p.status === "Needs Edit") stage = "needs_edit";
+    if (["Ready for Review", "Awaiting Review", "Research Complete", "Planning Complete", "Storyboard Complete"].includes(p.status)) stage = "ready";
+    else if (["Needs Edit", "Failed", "Generation Failed", "Editing Failed"].includes(p.status)) stage = "needs_edit";
     else if (p.status === "Approved") {
       if (p.id === "p7" || p.id.includes("scheduled")) stage = "scheduled";
       else if (p.id === "p8" || p.id.includes("export")) stage = "export_ready";
       else stage = "approved";
-    } else if (p.status === "Drafting") stage = "drafting";
+    } else if (p.status === "Published") stage = "scheduled";
+    else stage = "drafting";
 
     return {
       id: p.id,

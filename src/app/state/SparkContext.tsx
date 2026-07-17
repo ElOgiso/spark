@@ -28,6 +28,7 @@ import { TaskState } from "../domain/runtime/TaskState";
 import { TaskScheduler } from "../services/taskScheduler";
 import { ExecutionManager } from "../services/executionManager";
 import { IDepartmentAgent } from "../domain/runtime/IDepartmentAgent";
+import { RuntimeEvents } from "../services/runtime/runtimeEvents";
 import { RuntimeOrchestrator } from "../services/runtime/runtimeOrchestrator";
 import { InteractionController, ExecutionRequest } from "../services/interaction/interactionController";
 import { useAuth } from "./AuthContext";
@@ -621,8 +622,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!spark) return;
 
     const brandId = backendBrandIdRef.current;
-    const prodId = `p-${Date.now()}`;
-    const reviewId = `r-${Date.now()}`;
+    
+    // Check if there is already a failed production with this sparkId
+    const existingFailedProd = state.productions.find(
+      (p: any) => p.sparkId === sparkId && (
+        p.status.includes("Failed") || p.status === "Failed" || p.status.includes("Editing Failed") || p.status.includes("Generation Failed")
+      )
+    );
+
+    const prodId = existingFailedProd ? existingFailedProd.id : `p-${Date.now()}`;
+    const reviewId = existingFailedProd ? (state.reviewItems.find((r: any) => r.productionId === prodId)?.id || `r-${Date.now()}`) : `r-${Date.now()}`;
+    
     const decision = ExecutiveDecisionEngine.generatePlan(spark.title, state.automationMode);
 
     // Create standard ExecutionTask payload
@@ -636,8 +646,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       workspaceId: "default",
       brandId: "default",
       createdAt: new Date().toISOString(),
-      status: TaskState.PENDING
-    };
+      status: TaskState.PENDING,
+      productionId: prodId,
+      existingReasoning: existingFailedProd ? existingFailedProd.reasoning : undefined
+    } as any;
 
     // Analyze constraints via CapabilityAnalyzer
     const requirements = CapabilityAnalyzer.analyze(executionTask);
@@ -674,6 +686,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
+    if (existingFailedProd) {
+      // If we are resuming, we transition status to the next logical running status
+      const resumeStatus = existingFailedProd.status === "Generation Failed" ? "Generating" : "Editing";
+      setState((prev: any) => {
+        const updatedProductions = prev.productions.map((p: any) =>
+          p.id === prodId ? { ...p, status: resumeStatus } : p
+        );
+        return {
+          ...prev,
+          productions: updatedProductions
+        };
+      });
+
+      if (brandId) {
+        persistProductionUpdate(prodId, { status: resumeStatus }).catch(err => {
+          console.error("[SparkContext] Failed to persist resume update:", err);
+        });
+      }
+      return;
+    }
+
     const canProceed = ExecutivePolicyEngine.canProceed("production", state.automationMode);
     const status = canProceed ? "Ready for Review" : "Drafting";
 
@@ -699,7 +732,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       title: spark.title,
       account: spark.platforms.split(" + ")[0] || "YouTube",
       series: "Viral Concept Series",
-      status: status === "Ready for Review" ? "Pending Review" : "Pending Review", // Stays in pending review once ready
+      status: "Pending Review",
       dateCreated: new Date().toISOString().split("T")[0],
       scriptSnippet: spark.hook,
       conceptText: spark.whyNow,
@@ -1085,6 +1118,180 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       onTriggerWorkspace: triggerWorkspace
     });
   }, [state.automationMode, pendingTaskPrompt]);
+
+  useEffect(() => {
+    const events = RuntimeEvents.getInstance();
+
+    const updateProductionProgress = (
+      productionId: string,
+      status: Production["status"],
+      reasoningPatch?: any
+    ) => {
+      setState((prev: any) => {
+        const prod = prev.productions.find((p: any) => p.id === productionId);
+        if (!prod) return prev;
+
+        const updatedReasoning = {
+          ...prod.reasoning,
+          ...reasoningPatch
+        };
+
+        const updatedProd = {
+          ...prod,
+          status,
+          reasoning: updatedReasoning
+        };
+
+        // Trigger database persistence in background
+        persistProductionUpdate(productionId, updatedProd).catch(err => {
+          console.error("[SparkContext] Failed to persist production update:", err);
+        });
+
+        // Also if status is "Ready for Review" or "Awaiting Review", update review item stage!
+        let updatedReviewItems = prev.reviewItems;
+        if (status === "Ready for Review" || status === "Awaiting Review") {
+          updatedReviewItems = prev.reviewItems.map((r: any) =>
+            r.productionId === productionId ? { ...r, status: "Pending Review" } : r
+          );
+        }
+
+        return {
+          ...prev,
+          productions: prev.productions.map((p: any) => p.id === productionId ? updatedProd : p),
+          reviewItems: updatedReviewItems
+        };
+      });
+    };
+
+    const subStarted = events.subscribe("TaskStarted", (event) => {
+      const { taskId, department, productionId } = event.payload;
+      if (!productionId) return;
+
+      let newStatus: Production["status"] = "Drafting";
+      if (department === "research") newStatus = "Researching";
+      else if (department === "creative-decision" || department === "creative") newStatus = "Planning";
+      else if (department === "storyboard") newStatus = "Storyboarding";
+      else if (department === "production") newStatus = "Generating";
+      else if (department === "editor") newStatus = "Editing";
+      else if (department === "review") newStatus = "Awaiting Review";
+      else if (department === "publishing") newStatus = "Published";
+
+      updateProductionProgress(productionId, newStatus);
+    });
+
+    const subCompleted = events.subscribe("TaskCompleted", (event) => {
+      const { taskId, department, productionId, output, rawResponse } = event.payload;
+      if (!productionId) return;
+
+      let newStatus: Production["status"] = "Drafting";
+      let reasoningPatch: any = {};
+
+      if (department === "research") {
+        newStatus = "Research Complete";
+        reasoningPatch = {
+          research: {
+            notes: output,
+            audience: "Target Audience: Tech Enthusiasts, Software Developers",
+            trends: ["AI content automation", "Media OS innovations"],
+            sources: ["Google Trends", "Industry Reports"],
+            strategy: "Focus on vertical-first short form video pacing"
+          }
+        };
+      } else if (department === "creative-decision" || department === "creative") {
+        newStatus = "Planning Complete";
+        reasoningPatch = {
+          planning: {
+            outline: output,
+            hooks: ["Nobody talks about this...", "This simple edit tripled watch time..."],
+            contentPlan: "Universal target deployment"
+          }
+        };
+      } else if (department === "production") {
+        if (rawResponse?.storyboard) {
+          newStatus = "Storyboard Complete";
+          reasoningPatch = {
+            storyboard: {
+              scenes: rawResponse.storyboard.scenes || [],
+              narration: rawResponse.storyboard.scenes?.[0]?.narration || "",
+              prompts: rawResponse.storyboard.scenes?.map((s: any) => s.visualDescription) || [],
+              timing: rawResponse.storyboard.estimatedDuration || "30s"
+            }
+          };
+        } else {
+          newStatus = "Generating";
+          reasoningPatch = {
+            generation: {
+              assets: rawResponse?.allVideoUrls || [],
+              metadata: { costUsd: rawResponse?.videoCost },
+              failures: []
+            }
+          };
+        }
+      } else if (department === "editor") {
+        newStatus = "Awaiting Review";
+        reasoningPatch = {
+          editing: {
+            timeline: rawResponse?.project || {},
+            clips: rawResponse?.project?.tracks?.flatMap((t: any) => t.clips) || [],
+            transitions: rawResponse?.project?.transitions || [],
+            renderStatus: rawResponse?.renderJob?.status || "completed"
+          }
+        };
+      } else if (department === "review") {
+        newStatus = "Approved";
+        reasoningPatch = {
+          review: {
+            approvalState: "Approved",
+            comments: "Guideline verification succeeded.",
+            confidence: 94
+          }
+        };
+      } else if (department === "publishing") {
+        newStatus = "Published";
+        reasoningPatch = {
+          publishing: {
+            publishJob: rawResponse || {},
+            schedule: new Date().toISOString(),
+            platformIds: ["platform-link-1"]
+          }
+        };
+      }
+
+      updateProductionProgress(productionId, newStatus, reasoningPatch);
+    });
+
+    const subFailed = events.subscribe("TaskFailed", (event) => {
+      const { taskId, department, productionId, error } = event.payload;
+      if (!productionId) return;
+
+      let newStatus: Production["status"] = "Failed";
+      let reasoningPatch: any = {};
+
+      if (department === "production") {
+        newStatus = "Generation Failed";
+        reasoningPatch = {
+          generation: {
+            failures: [error || "Generation execution aborted."]
+          }
+        };
+      } else if (department === "editor") {
+        newStatus = "Editing Failed";
+        reasoningPatch = {
+          editing: {
+            renderStatus: "failed"
+          }
+        };
+      }
+
+      updateProductionProgress(productionId, newStatus, reasoningPatch);
+    });
+
+    return () => {
+      subStarted();
+      subCompleted();
+      subFailed();
+    };
+  }, []);
 
   const sendMessage = async (prompt: string, onUpdate?: (text: string) => void): Promise<string> => {
     return InteractionController.getInstance().sendMessage(

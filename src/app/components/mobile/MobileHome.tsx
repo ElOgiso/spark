@@ -27,8 +27,8 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   // Pipeline counts
-  const draftingCount = productions.filter(p => p.status === "Drafting").length;
-  const readyCount = productions.filter(p => p.status === "Ready for Review").length;
+  const draftingCount = productions.filter(p => ["Drafting", "Draft", "Researching", "Research Complete", "Planning", "Planning Complete", "Storyboarding", "Storyboard Complete", "Generating", "Editing"].includes(p.status)).length;
+  const readyCount = productions.filter(p => ["Ready for Review", "Awaiting Review"].includes(p.status)).length;
   const approvedCount = productions.filter(p => p.status === "Approved" && p.id !== "p7" && !p.id.includes("scheduled") && p.id !== "p8" && !p.id.includes("export")).length;
   const scheduledCount = productions.filter(p => p.status === "Approved" && (p.id === "p7" || p.id.includes("scheduled"))).length;
   const publishedCount = isEmpty ? 0 : 8; // standard baseline or dynamic equivalent
