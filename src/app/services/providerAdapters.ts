@@ -12,7 +12,12 @@ function roughTokenCount(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-const allowProviderSimulation = () => import.meta.env.VITE_ALLOW_PROVIDER_SIMULATION !== "false";
+const allowProviderSimulation = () => {
+  if (import.meta.env.PROD) {
+    return import.meta.env.VITE_ALLOW_PROVIDER_SIMULATION === "true";
+  }
+  return import.meta.env.VITE_ALLOW_PROVIDER_SIMULATION !== "false";
+};
 
 function demoOutput(provider: string, body: string) {
   return `[DEMO MODE — ${provider} live key missing or gateway failed] ${body}`;
@@ -80,7 +85,7 @@ export class OpenAIAdapter implements IProviderAdapter {
       if (!res.ok) {
         console.warn(`[OpenAI Adapter] Gateway failed (${res.status})`);
         if (!allowProviderSimulation()) {
-          throw new Error(`OpenAI gateway failed with status ${res.status}. Configure OPEN_AI_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+          throw new Error("No AI provider is configured.");
         }
         data = this.getSimulatedResponse();
       } else {
@@ -88,7 +93,7 @@ export class OpenAIAdapter implements IProviderAdapter {
       }
       this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
-      if (!allowProviderSimulation()) throw err;
+      if (!allowProviderSimulation()) throw new Error("No AI provider is configured.");
       data = this.getSimulatedResponse();
     }
 
@@ -234,7 +239,7 @@ export class AnthropicAdapter implements IProviderAdapter {
       if (!res.ok) {
         console.warn(`[Anthropic Adapter] Gateway failed (${res.status})`);
         if (!allowProviderSimulation()) {
-          throw new Error(`Anthropic gateway failed with status ${res.status}. Configure ANTHROPIC_API_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+          throw new Error("No AI provider is configured.");
         }
         data = this.getSimulatedResponse();
       } else {
@@ -242,7 +247,7 @@ export class AnthropicAdapter implements IProviderAdapter {
       }
       this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
-      if (!allowProviderSimulation()) throw err;
+      if (!allowProviderSimulation()) throw new Error("No AI provider is configured.");
       data = this.getSimulatedResponse();
     }
 
@@ -398,7 +403,7 @@ export class GoogleAdapter implements IProviderAdapter {
       if (!res.ok) {
         console.warn(`[Google Adapter] Gateway failed (${res.status})`);
         if (!allowProviderSimulation()) {
-          throw new Error(`Google gateway failed with status ${res.status}. Configure GOOGLE_AI_API_KEY or set VITE_ALLOW_PROVIDER_SIMULATION=true for demo mode.`);
+          throw new Error("No AI provider is configured.");
         }
         data = this.getSimulatedResponse();
       } else {
@@ -406,7 +411,7 @@ export class GoogleAdapter implements IProviderAdapter {
       }
       this.healthState = { status: data?.sparkSimulated ? "degraded" : "healthy", latencyMs: latency, errorRate: Math.max(0, this.healthState.errorRate - 0.05), lastChecked: new Date().toISOString() };
     } catch (err) {
-      if (!allowProviderSimulation()) throw err;
+      if (!allowProviderSimulation()) throw new Error("No AI provider is configured.");
       data = this.getSimulatedResponse();
     }
 
