@@ -61,7 +61,7 @@ How can I help you operate your workspace today?`,
   const [isMuted, setIsMuted] = useState(false);
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
 
-  const { isRecording, connect, disconnect, transcript: voiceTranscript } = useXaiRealtime();
+  const { isRecording, status, connect, disconnect, transcript: voiceTranscript } = useXaiRealtime();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -509,7 +509,7 @@ How can I help you operate your workspace today?`,
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isRecording ? "Listening to your voice..." : "Ask Spark to play a video, approve drafts, or initialize options..."}
+                placeholder={status === "error" ? "Voice unavailable." : isRecording ? "Listening to your voice..." : "Ask Spark to play a video, approve drafts, or initialize options..."}
                 disabled={isRecording}
                 className="w-full bg-transparent px-5 py-4 text-sm outline-none border-none placeholder:text-muted-foreground/60 disabled:opacity-50"
               />
