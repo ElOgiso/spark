@@ -371,6 +371,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
                 onClick={async () => {
                   if (auth.isAuthenticated) {
                     await auth.signOut();
+                    onNavigate("/");
                   }
                   setShowSignOut(false);
                 }}

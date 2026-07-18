@@ -851,6 +851,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                 onClick={async () => {
                   if (auth.isAuthenticated) {
                     await auth.signOut();
+                    onNavigate?.("/");
                   }
                   setShowSignOut(false);
                 }}
