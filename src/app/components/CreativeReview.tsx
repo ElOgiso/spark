@@ -32,11 +32,14 @@ interface CreativeReviewProps {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
-  const { reviewItems, approveReviewItem, rejectOrRequestEditReviewItem } = useSpark();
+  const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem } = useSpark() as any;
   
   // Find the first item that is pending review, or default to the first item
-  const activeReview = reviewItems.find(r => r.status === "Pending Review") || reviewItems[0];
+  const activeReview = reviewItems.find((r: any) => r.status === "Pending Review") || reviewItems[0];
   const reviewId = activeReview?.id || "r1";
+
+  // Fetch active production linked to activeReview
+  const activeProd = productions.find((p: any) => p.id === activeReview?.productionId);
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["why-this-works"])
@@ -106,20 +109,20 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const proposal = {
-    title: activeReview?.title || "5 Viral Marketing Tactics That Actually Work in 2026",
+    title: activeProd?.title || activeReview?.title || "5 Viral Marketing Tactics That Actually Work in 2026",
     contentType: "Educational Tutorial",
     series: activeReview?.series || "Marketing Masterclass",
     account: activeReview?.account || "YouTube",
     opportunityScore: 94,
     aiConfidence: 94,
-    concept: activeReview?.conceptText || "Reveal proven marketing tactics that drive viral growth, backed by 2026 data and real examples from Nigerian creators",
-    targetAudience: "Entrepreneurs, marketers, content creators aged 25–45",
+    concept: activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText || "Reveal proven marketing tactics that drive viral growth, backed by 2026 data and real examples from Nigerian creators",
+    targetAudience: activeProd?.reasoning?.research?.audience || "Entrepreneurs, marketers, content creators aged 25–45",
     expectedReach: "2.4M – 3.8M views",
     format: "Long-form (12–15 min) + Short clips",
     platforms: ["YouTube", "TikTok", "Instagram Reels", "YouTube Shorts"],
     hook: activeReview?.scriptSnippet || "Stop wasting money on marketing that doesn't work",
     hookType: "Pain-point direct challenge",
-    openingMoment: activeReview?.openingMoment || "Show failed marketing campaign burning money animation (0–3s)",
+    openingMoment: activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment || "Show failed marketing campaign burning money animation (0–3s)",
     captionDirection: "Lead with stat. Use em-dash rhythm. End with open loop question. No hashtag stuffing. 3-line max mobile preview.",
     thumbnails: [
       { id: "1", concept: "Split screen: Failed vs Successful campaign with contrast lighting", variant: "A" },
@@ -133,7 +136,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these and 10× your organic reach",
     },
-    storyboard: [
+    storyboard: activeProd?.reasoning?.storyboard?.scenes?.length ? activeProd.reasoning.storyboard.scenes.map((s: any, idx: number) => ({
+      scene: idx + 1,
+      description: s.visualDescription || s.description || s,
+      duration: s.duration || "0–10s"
+    })) : [
       { scene: 1, description: `Hook: ${activeReview?.openingMoment || "Failed campaign montage with burning money graphic"}`, duration: "0–8s" },
       { scene: 2, description: "Credibility intro: Show real channel metrics and results", duration: "8–20s" },
       { scene: 3, description: "Tactic #1: Social proof cascade — how to build it fast", duration: "20–55s" },
@@ -299,6 +306,46 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
+          {/* Dynamic Production Workspace - Live Checkpoints */}
+          {activeProd && (
+            <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm">
+              <h2 className="text-base font-semibold mb-2 flex items-center gap-1.5">
+                <Brain className="w-4 h-4 text-accent" />
+                <span>Live Workspace Sync</span>
+                <span className="text-[10px] text-accent font-bold bg-accent/10 px-1.5 py-0.5 rounded-md ml-auto animate-pulse">
+                  Status: {activeProd.status}
+                </span>
+              </h2>
+
+              {activeProd.reasoning?.research?.notes && (
+                <div className="p-4 rounded-xl bg-accent/5 border border-accent/20 animate-fadeIn">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-accent mb-2 flex items-center gap-1">
+                    <Target className="w-3.5 h-3.5" />
+                    Research & Trend Analysis
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <strong>Audience:</strong> {activeProd.reasoning.research.audience || "Tech professionals"}
+                  </p>
+                  <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                    {activeProd.reasoning.research.notes}
+                  </p>
+                </div>
+              )}
+
+              {activeProd.reasoning?.planning?.outline && (
+                <div className="p-4 rounded-xl bg-success/5 border border-success/20 animate-fadeIn">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-success mb-2 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Concept Planning Outline
+                  </h3>
+                  <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                    {activeProd.reasoning.planning.outline}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Hook Preview */}
           <div className="rounded-xl border border-border bg-card p-6">
             <h2 className="text-base font-medium mb-4">Hook & Opening</h2>
@@ -427,7 +474,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="storyboard" title="Storyboard Preview" />
             {expandedSections.has("storyboard") && (
               <div className="px-6 pb-6 grid grid-cols-2 gap-3">
-                {proposal.storyboard.map((scene) => (
+                {proposal.storyboard.map((scene: any) => (
                   <div key={scene.scene} className="p-4 rounded-xl bg-background border border-border">
                     <div className="flex items-center gap-2 mb-2.5">
                       <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">Scene {scene.scene}</span>
