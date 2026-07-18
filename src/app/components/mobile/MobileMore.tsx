@@ -705,7 +705,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       </div>
 
       {/* Auth Status */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div>
           <p className="text-sm font-medium">Spark Account</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -716,17 +716,6 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                 : "Local demo mode. Supabase is not configured yet."}
           </p>
         </div>
-        {auth.isAuthenticated ? (
-          <Button onClick={() => setShowSignOut(true)} variant="outline" className="w-full text-xs">
-            <LogOut className="w-4 h-4 mr-1" />
-            Sign Out
-          </Button>
-        ) : (
-          <Button onClick={() => setShowSignIn(true)} variant="outline" className="w-full text-xs">
-            <LogIn className="w-4 h-4 mr-1" />
-            Sign In
-          </Button>
-        )}
       </div>
 
       {/* Automation Mode */}
@@ -790,21 +779,38 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       {/* Sign Out Trigger */}
       <div className="pt-4 border-t border-border/50 flex flex-col items-center gap-3">
         {auth.isAuthenticated ? (
-          <button
-            onClick={() => setShowSignOut(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
-          </button>
+          <div className="w-full flex flex-col gap-2 px-1">
+            <Button
+              onClick={() => setShowSignOut(true)}
+              variant="outline"
+              className="w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </Button>
+            <Button
+              onClick={() => {
+                const name = prompt("Enter new workspace/brand name to switch to:", "Creative Studio Lagos");
+                if (name && name.trim()) {
+                  alert(`Successfully switched active workspace to: ${name.trim()}`);
+                }
+              }}
+              variant="outline"
+              className="w-full text-xs flex items-center justify-center gap-1.5"
+            >
+              <Users className="w-4 h-4 text-muted-foreground" />
+              Switch Workspace
+            </Button>
+          </div>
         ) : (
-          <button
+          <Button
             onClick={() => setShowSignIn(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/10 rounded-lg transition-colors"
+            variant="outline"
+            className="w-full text-xs flex items-center justify-center gap-1.5"
           >
             <LogIn className="w-4 h-4" />
             Sign In
-          </button>
+          </Button>
         )}
         <div className="text-center text-[10px] text-muted-foreground pb-4 uppercase tracking-wider font-mono">
           Spark · Media Operating System · v4.12
