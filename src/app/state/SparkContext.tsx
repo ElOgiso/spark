@@ -64,7 +64,7 @@ interface SparkContextType {
   
   // Execution states
   isExecuting: boolean;
-  executionTimeline: Array<{ name: string; status: "idle" | "running" | "completed" | "failed"; duration?: number; provider?: string; cost?: number; confidence?: number }>;
+  executionTimeline: Array<{ name: string; status: "idle" | "running" | "completed" | "failed"; duration?: number; provider?: string; cost?: number; confidence?: number; error?: string }>;
   streamingOutput: string;
   streamingMetrics: any;
 
@@ -568,7 +568,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ]);
 
   const [isExecuting, setIsExecuting] = useState(false);
-  const [executionTimeline, setExecutionTimeline] = useState<Array<{ name: string; status: "idle" | "running" | "completed" | "failed"; duration?: number; provider?: string; cost?: number; confidence?: number }>>([
+  const [executionTimeline, setExecutionTimeline] = useState<Array<{ name: string; status: "idle" | "running" | "completed" | "failed"; duration?: number; provider?: string; cost?: number; confidence?: number; error?: string }>>([
     { name: "Research", status: "idle" },
     { name: "Creative Decision", status: "idle" },
     { name: "Planning", status: "idle" },
@@ -635,6 +635,38 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     const decision = ExecutiveDecisionEngine.generatePlan(spark.title, state.automationMode);
 
+    setIsExecuting(true);
+    setStreamingOutput("");
+    setStreamingMetrics(null);
+
+    const initialTimeline = [
+      { name: "Research", status: "idle" },
+      { name: "Creative Decision", status: "idle" },
+      { name: "Planning", status: "idle" },
+      { name: "Storyboard", status: "idle" },
+      { name: "Generation", status: "idle" },
+      { name: "Analysis", status: "idle" },
+      { name: "Editing Decision", status: "idle" },
+      { name: "Editing", status: "idle" },
+      { name: "Review", status: "idle" },
+      { name: "Publishing", status: "idle" },
+      { name: "Learning", status: "idle" }
+    ].map(item => {
+      if (existingFailedProd && existingFailedProd.reasoning) {
+        const reasoning = existingFailedProd.reasoning;
+        if (item.name === "Research" && reasoning.research) return { ...item, status: "completed", duration: 1500, provider: "openai" };
+        if (item.name === "Creative Decision" && reasoning.planning) return { ...item, status: "completed", duration: 1500, provider: "openai" };
+        if (item.name === "Planning" && reasoning.planning) return { ...item, status: "completed", duration: 1500, provider: "openai" };
+        if (item.name === "Storyboard" && reasoning.storyboard) return { ...item, status: "completed", duration: 1500, provider: "openai" };
+        if (item.name === "Generation" && reasoning.generation && (!reasoning.generation.failures || reasoning.generation.failures.length === 0)) {
+          return { ...item, status: "completed", duration: 1500, provider: "openai" };
+        }
+      }
+      return item;
+    });
+
+    setExecutionTimeline(initialTimeline as any);
+
     // Create standard ExecutionTask payload
     const executionTask: ExecutionTask = {
       id: `task-${Date.now()}`,
@@ -681,8 +713,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const orchestrator = RuntimeOrchestrator.getInstance();
       orchestrator.orchestrateTask(nextTask).then((result) => {
         console.log(`[Runtime Orchestrator] Collaborative execution finished. Output: "${result.output}"`);
+        setIsExecuting(false);
       }).catch((err) => {
         console.error(`[Runtime Orchestrator] Multi-agent orchestration failed:`, err);
+        setIsExecuting(false);
       });
     }
 
@@ -1168,15 +1202,43 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!productionId) return;
 
       let newStatus: Production["status"] = "Drafting";
-      if (department === "research") newStatus = "Researching";
-      else if (department === "creative-decision" || department === "creative") newStatus = "Planning";
-      else if (department === "storyboard") newStatus = "Storyboarding";
-      else if (department === "production") newStatus = "Generating";
-      else if (department === "editor") newStatus = "Editing";
-      else if (department === "review") newStatus = "Awaiting Review";
-      else if (department === "publishing") newStatus = "Published";
+      let stepName = "";
+
+      if (department === "research") {
+        newStatus = "Researching";
+        stepName = "Research";
+      } else if (department === "creative-decision") {
+        newStatus = "Planning";
+        stepName = "Creative Decision";
+      } else if (department === "creative") {
+        newStatus = "Planning";
+        stepName = "Planning";
+      } else if (department === "storyboard") {
+        newStatus = "Storyboarding";
+        stepName = "Storyboard";
+      } else if (department === "production") {
+        newStatus = "Generating";
+        stepName = "Generation";
+      } else if (department === "editor") {
+        newStatus = "Editing";
+        stepName = "Editing";
+      } else if (department === "review") {
+        newStatus = "Awaiting Review";
+        stepName = "Review";
+      } else if (department === "publishing") {
+        newStatus = "Published";
+        stepName = "Publishing";
+      }
 
       updateProductionProgress(productionId, newStatus);
+
+      if (stepName) {
+        setExecutionTimeline((prev) =>
+          prev.map((step) =>
+            step.name === stepName ? { ...step, status: "running" } : step
+          )
+        );
+      }
     });
 
     const subCompleted = events.subscribe("TaskCompleted", (event) => {
@@ -1185,9 +1247,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       let newStatus: Production["status"] = "Drafting";
       let reasoningPatch: any = {};
+      let stepName = "";
 
       if (department === "research") {
         newStatus = "Research Complete";
+        stepName = "Research";
         reasoningPatch = {
           research: {
             notes: output,
@@ -1199,6 +1263,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       } else if (department === "creative-decision" || department === "creative") {
         newStatus = "Planning Complete";
+        stepName = department === "creative-decision" ? "Creative Decision" : "Planning";
         reasoningPatch = {
           planning: {
             outline: output,
@@ -1209,6 +1274,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else if (department === "production") {
         if (rawResponse?.storyboard) {
           newStatus = "Storyboard Complete";
+          stepName = "Storyboard";
           reasoningPatch = {
             storyboard: {
               scenes: rawResponse.storyboard.scenes || [],
@@ -1219,6 +1285,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
         } else {
           newStatus = "Generating";
+          stepName = "Generation";
           reasoningPatch = {
             generation: {
               assets: rawResponse?.allVideoUrls || [],
@@ -1229,6 +1296,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       } else if (department === "editor") {
         newStatus = "Awaiting Review";
+        stepName = "Editing";
         reasoningPatch = {
           editing: {
             timeline: rawResponse?.project || {},
@@ -1239,6 +1307,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       } else if (department === "review") {
         newStatus = "Approved";
+        stepName = "Review";
         reasoningPatch = {
           review: {
             approvalState: "Approved",
@@ -1248,6 +1317,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       } else if (department === "publishing") {
         newStatus = "Published";
+        stepName = "Publishing";
         reasoningPatch = {
           publishing: {
             publishJob: rawResponse || {},
@@ -1258,6 +1328,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       updateProductionProgress(productionId, newStatus, reasoningPatch);
+
+      if (stepName) {
+        setExecutionTimeline((prev) =>
+          prev.map((step) =>
+            step.name === stepName
+              ? {
+                  ...step,
+                  status: "completed",
+                  provider: rawResponse?.modelVersion || "openai",
+                  duration: 1500,
+                  cost: 0.005,
+                  confidence: 90
+                }
+              : step
+          )
+        );
+      }
     });
 
     const subFailed = events.subscribe("TaskFailed", (event) => {
@@ -1266,9 +1353,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       let newStatus: Production["status"] = "Failed";
       let reasoningPatch: any = {};
+      let stepName = "";
 
       if (department === "production") {
         newStatus = "Generation Failed";
+        stepName = "Generation";
         reasoningPatch = {
           generation: {
             failures: [error || "Generation execution aborted."]
@@ -1276,14 +1365,26 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       } else if (department === "editor") {
         newStatus = "Editing Failed";
+        stepName = "Editing";
         reasoningPatch = {
           editing: {
             renderStatus: "failed"
           }
         };
+      } else if (department === "research") {
+        newStatus = "Failed";
+        stepName = "Research";
       }
 
       updateProductionProgress(productionId, newStatus, reasoningPatch);
+
+      if (stepName) {
+        setExecutionTimeline((prev) =>
+          prev.map((step) =>
+            step.name === stepName ? { ...step, status: "failed", error } : step
+          )
+        );
+      }
     });
 
     return () => {

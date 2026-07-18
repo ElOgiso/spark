@@ -196,8 +196,19 @@ export class EditingExecutionPipeline {
     const renderService = RenderService.getInstance();
     const renderJob = renderService.startRender(currentProject, currentProject.exportSettings);
 
+    // Wait for the render job to complete (simulated progress polling)
+    let polledJob = renderService.getRenderStatus(renderJob.id) || renderJob;
+    while (polledJob.status === 'queued' || polledJob.status === 'rendering') {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      polledJob = renderService.getRenderStatus(renderJob.id) || polledJob;
+    }
+
+    if (polledJob.status === 'failed') {
+      throw new Error(`Render job failed: ${polledJob.error || 'Unknown rendering error'}`);
+    }
+
     const exportService = ExportService.getInstance();
-    const exportPackage = exportService.createExportPackage(renderJob, currentProject, {
+    const exportPackage = exportService.createExportPackage(polledJob, currentProject, {
       title: currentProject.name,
       description: `Automated ${style} production render for ${platform}`,
       tags: ['automated', 'production', platform],
@@ -206,7 +217,7 @@ export class EditingExecutionPipeline {
 
     return {
       project: currentProject,
-      renderJob,
+      renderJob: polledJob,
       exportPackage,
     };
   }

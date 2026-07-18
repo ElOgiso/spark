@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, Mic, Volume2, VolumeX, Send, Sparkles, User, AudioLines, Crown, Loader2 } from "lucide-react";
+import { X, Mic, Volume2, VolumeX, Send, Sparkles, User, AudioLines, Crown, Loader2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSpark } from "../state/SparkContext";
 import { useXaiRealtime } from "../hooks/useXaiRealtime";
@@ -421,11 +421,19 @@ How can I help you operate your workspace today?`,
               );
             })}
 
-            {isExecuting && (
+            {(isExecuting || executionTimeline.some((step: any) => step.status === 'failed')) && (
               <div className="max-w-3xl w-full mx-auto pl-12 pr-6 py-4 my-3 bg-card/25 border border-border/40 rounded-2xl backdrop-blur-md shadow-lg shadow-black/5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90 mb-3">
-                  <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
-                  <span>Spark Media OS Pipeline Execution</span>
+                  {executionTimeline.some((step: any) => step.status === 'failed') ? (
+                    <AlertTriangle className="w-4 h-4 text-destructive animate-pulse" />
+                  ) : (
+                    <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
+                  )}
+                  <span>
+                    {executionTimeline.some((step: any) => step.status === 'failed') 
+                      ? "Pipeline Execution Failed" 
+                      : "Spark Media OS Pipeline Execution"}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
                   {executionTimeline.map((step: any) => {
@@ -433,27 +441,27 @@ How can I help you operate your workspace today?`,
                     const isRunning = step.status === 'running';
                     const isCompleted = step.status === 'completed';
                     const isFailed = step.status === 'failed';
-
+ 
                     return (
                       <div
                         key={step.name}
                         className={`flex flex-col justify-between p-2 rounded-xl border text-[11px] transition-all duration-300 min-h-[64px] ${
                           isRunning ? 'bg-accent/15 border-accent/50 shadow-sm shadow-accent/10 animate-pulse' :
                           isCompleted ? 'bg-emerald-500/10 border-emerald-500/35' :
-                          isFailed ? 'bg-destructive/15 border-destructive/35' :
+                          isFailed ? 'bg-destructive/15 border-destructive/35 shadow-sm shadow-destructive/10' :
                           'bg-muted/10 border-border/30 opacity-55'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1 mb-1">
                           <span className="font-semibold text-foreground/90 truncate">{step.name}</span>
                           <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${
-                            isRunning ? 'bg-accent' :
+                            isRunning ? 'bg-accent animate-pulse' :
                             isCompleted ? 'bg-emerald-500' :
                             isFailed ? 'bg-destructive' :
                             'bg-muted-foreground/40'
                           }`} />
                         </div>
-                        {isCompleted && step.duration && (
+                        {isCompleted && step.duration !== undefined && (
                           <div className="text-[9px] text-muted-foreground/80 leading-relaxed mt-1 border-t border-border/20 pt-1">
                             <div className="flex justify-between gap-1">
                               <span className="capitalize font-medium text-foreground/75">{step.provider}</span>
@@ -468,6 +476,9 @@ How can I help you operate your workspace today?`,
                         {isRunning && (
                           <span className="text-[9px] text-accent font-semibold animate-pulse">Running...</span>
                         )}
+                        {isFailed && (
+                          <span className="text-[9px] text-destructive font-semibold">Failed</span>
+                        )}
                         {isIdle && (
                           <span className="text-[9px] text-muted-foreground/60">Queued</span>
                         )}
@@ -475,6 +486,35 @@ How can I help you operate your workspace today?`,
                     );
                   })}
                 </div>
+ 
+                {executionTimeline.some((s: any) => s.status === "failed") && (
+                  <div className="mt-3.5 p-3.5 rounded-xl bg-destructive/5 border border-destructive/20 text-[11px] leading-relaxed text-destructive animate-fadeIn duration-500">
+                    <div className="font-semibold text-foreground/90 mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-destructive font-semibold">
+                        <AlertTriangle className="w-4 h-4 text-destructive" />
+                        Stage Failed: {executionTimeline.find((s: any) => s.status === "failed")?.name}
+                      </span>
+                      <span className="text-[10px] text-destructive font-bold bg-destructive/10 px-1.5 py-0.5 rounded-md">
+                        Provider: {executionTimeline.find((s: any) => s.status === "failed")?.provider || "openai"}
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground/85 font-medium mb-3">
+                      Error: {executionTimeline.find((s: any) => s.status === "failed")?.error || "No AI provider is configured. Check API keys or toggle simulator mode."}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const activeProd = productions[0];
+                        if (activeProd) {
+                          createProductionFromSpark(activeProd.sparkId || activeProd.id);
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-all font-semibold active:scale-95 cursor-pointer shadow-sm shadow-destructive/10"
+                    >
+                      Retry Resumption
+                    </button>
+                  </div>
+                )}
+ 
                 {executionTimeline.find((s: any) => s.name === "Creative Decision")?.status === "completed" && (
                   <div className="mt-3.5 p-3.5 rounded-xl bg-accent/5 border border-accent/20 text-[11px] leading-relaxed text-muted-foreground animate-fadeIn duration-500">
                     <div className="font-semibold text-foreground/90 mb-2 flex items-center justify-between">
