@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
-import { AuthPanel } from "./AuthPanel";
 import { useAuth } from "../../state/AuthContext";
 import { useDeviceType } from "../../hooks/useDeviceType";
 import { MobileAuthExperience } from "../mobile/auth/MobileAuthExperience";
+import { DesktopAuthExperience } from "../desktop/DesktopAuthExperience";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -13,7 +13,7 @@ type AuthGateProps = {
 export function AuthGate({ children, requireAuth = false, fallback = null }: AuthGateProps) {
   const auth = useAuth();
   const deviceType = useDeviceType();
-  const [mobileComplete, setMobileComplete] = useState(false);
+  const [complete, setComplete] = useState(false);
 
   if (!requireAuth) {
     return <>{children}</>;
@@ -21,40 +21,27 @@ export function AuthGate({ children, requireAuth = false, fallback = null }: Aut
 
   if (deviceType === "mobile") {
     if (!auth.isAuthenticated || !auth.isOnboardingComplete) {
-      if (!mobileComplete) {
-        return <MobileAuthExperience onComplete={() => setMobileComplete(true)} />;
+      if (!complete) {
+        return <MobileAuthExperience onComplete={() => setComplete(true)} />;
       }
     }
-  }
-
-  if (!auth.isConfigured) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          <AuthPanel />
-        </div>
-      </div>
-    );
+  } else {
+    if (!auth.isAuthenticated || !auth.isOnboardingComplete) {
+      if (!complete) {
+        return <DesktopAuthExperience onComplete={() => setComplete(true)} />;
+      }
+    }
   }
 
   if (auth.loading) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Restoring Spark session...</p>
-      </div>
-    );
-  }
-
-  if (!auth.isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          {fallback ?? <AuthPanel />}
-        </div>
+        <p className="text-sm text-muted-foreground font-mono animate-pulse">Restoring Executive Spark Session...</p>
       </div>
     );
   }
 
   return <>{children}</>;
 }
+
 
