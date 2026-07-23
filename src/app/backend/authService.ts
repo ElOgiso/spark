@@ -63,6 +63,27 @@ export async function signOut(): Promise<AuthResult<true>> {
   return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }
 
+export async function resetPasswordForEmail(email: string): Promise<AuthResult<true>> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return unavailable<true>();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
+}
+
+export async function resendVerificationEmail(email: string): Promise<AuthResult<true>> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return unavailable<true>();
+
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+  });
+  return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
+}
+
 export function onAuthStateChange(
   callback: (event: AuthChangeEvent, session: Session | null) => void,
 ): () => void {

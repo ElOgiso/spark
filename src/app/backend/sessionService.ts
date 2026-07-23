@@ -77,6 +77,26 @@ export async function signOut(): Promise<{ error: string | null }> {
   return { error: result.error };
 }
 
+export async function sendPasswordResetEmail(email: string): Promise<{ error: string | null }> {
+  if (!isAuthBackendReady()) {
+    return { error: null };
+  }
+
+  const { resetPasswordForEmail } = await import("./authService");
+  const result = await resetPasswordForEmail(email);
+  return { error: result.error };
+}
+
+export async function resendEmailVerification(email: string): Promise<{ error: string | null }> {
+  if (!isAuthBackendReady()) {
+    return { error: null };
+  }
+
+  const { resendVerificationEmail } = await import("./authService");
+  const result = await resendVerificationEmail(email);
+  return { error: result.error };
+}
+
 export async function bootstrapUserSession(
   user: User | null,
   localBrand?: Partial<SparkBrand>,

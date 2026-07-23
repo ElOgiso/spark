@@ -1,6 +1,8 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { AuthPanel } from "./AuthPanel";
 import { useAuth } from "../../state/AuthContext";
+import { useDeviceType } from "../../hooks/useDeviceType";
+import { MobileAuthExperience } from "../mobile/auth/MobileAuthExperience";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -10,7 +12,24 @@ type AuthGateProps = {
 
 export function AuthGate({ children, requireAuth = false, fallback = null }: AuthGateProps) {
   const auth = useAuth();
+  const deviceType = useDeviceType();
+  const [mobileSetupDone, setMobileSetupDone] = useState(false);
 
+  // If mobile and requires auth/onboarding setup
+  if (deviceType === "mobile") {
+    // Session Decision Engine:
+    // If not authenticated OR (authenticated but onboarding incomplete and not yet marked done in session)
+    if (!auth.isAuthenticated || (!auth.isOnboardingComplete && !mobileSetupDone)) {
+      return (
+        <MobileAuthExperience
+          onAuthenticated={() => setMobileSetupDone(true)}
+        />
+      );
+    }
+    return <>{children}</>;
+  }
+
+  // Desktop Path
   if (!requireAuth) {
     return <>{children}</>;
   }
