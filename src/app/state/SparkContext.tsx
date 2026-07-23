@@ -48,6 +48,15 @@ import {
   persistReviewNeedsEdit,
 } from "../backend/workspaceSync";
 
+export interface ChatMessage {
+  id?: string;
+  sender: "user" | "spark";
+  text: string;
+  timestamp: Date;
+  media?: any;
+  isStreaming?: boolean;
+}
+
 interface SparkContextType {
   brand: Brand;
   character: Character;
@@ -62,6 +71,7 @@ interface SparkContextType {
   exportPackages: ExportPackage[];
   analyticsInsights: AnalyticsInsight[];
   assets: Asset[];
+  chatMessages: ChatMessage[];
   
   // Execution states
   isExecuting: boolean;
@@ -73,6 +83,9 @@ interface SparkContextType {
   updateBrand: (patch: Partial<Brand>) => void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
+  addChatMessage: (msg: ChatMessage) => void;
+  updateChatMessage: (id: string, text: string, isStreaming?: boolean) => void;
+
 
   createProductionFromSpark: (sparkId: string) => void;
   approveReviewItem: (reviewId: string) => void;
@@ -589,12 +602,34 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [streamingMetrics, setStreamingMetrics] = useState<any>(null);
   const [pendingTaskPrompt, setPendingTaskPrompt] = useState<string | null>(null);
 
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
+    {
+      id: "init-1",
+      sender: "spark",
+      text: `Spark Operating System Online.
+
+Before I build your creative operating system, I need to understand your business.`,
+      timestamp: new Date(),
+    },
+  ]);
+
+  const addChatMessage = (msg: ChatMessage) => {
+    setChatMessages((prev) => [...prev, msg]);
+  };
+
+  const updateChatMessage = (id: string, text: string, isStreaming: boolean = false) => {
+    setChatMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, text, isStreaming } : m))
+    );
+  };
+
   const updateBrand = (patch: Partial<Brand>) => {
     setState((prev: any) => ({
       ...prev,
       brand: { ...prev.brand, ...patch }
     }));
   };
+
 
   const updateAutomationMode = (mode: AutomationMode) => {
     setState((prev: any) => ({ ...prev, automationMode: mode }));
@@ -1422,10 +1457,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isExecuting,
         executionTimeline,
         streamingOutput,
-        streamingMetrics,
+        chatMessages,
+        addChatMessage,
+        updateChatMessage,
         updateBrand,
         updateAutomationMode,
         updateProductionMode,
+
 
         createProductionFromSpark,
         approveReviewItem,

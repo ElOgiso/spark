@@ -43,20 +43,13 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     isExecuting,
     executionTimeline,
     streamingMetrics,
-    sendMessage
+    sendMessage,
+    chatMessages,
+    addChatMessage,
+    updateChatMessage,
   } = useSpark() as any;
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      sender: "spark",
-      text: `Hello! I am Spark, your Media OS AI Assistant. I have indexed your brand voice rules and channel metrics.
-
-I notice you have a hot opportunity: **"How Nigerian Creators Are Using AI"** (97% fit). I also found **2 creative reviews** awaiting your approval. 
-
-How can I help you operate your workspace today?`,
-      timestamp: new Date()
-    }
-  ]);
+  const messages: Message[] = chatMessages;
   const [inputText, setInputText] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
@@ -78,29 +71,30 @@ How can I help you operate your workspace today?`,
         setInputText(lastMsg.text);
         if (lastMsg.isFinal) {
           setInputText("");
-          setMessages((prev) => [...prev, { sender: "user", text: lastMsg.text, timestamp: new Date() }]);
+          addChatMessage({ sender: "user", text: lastMsg.text, timestamp: new Date() });
           
           const sparkMessageId = `spark-msg-${Date.now()}`;
-          setMessages((prev) => [...prev, {
+          addChatMessage({
             id: sparkMessageId,
             sender: "spark",
             text: "Initializing runtime orchestrator...",
             timestamp: new Date(),
             isStreaming: true
-          }]);
+          });
 
           sendMessage(lastMsg.text, (chunk: string) => {
-            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
+            updateChatMessage(sparkMessageId, chunk, true);
           }).then((finalText: string) => {
-            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
+            updateChatMessage(sparkMessageId, finalText, false);
           }).catch((err: any) => {
             console.error("[AIChatModal] Internal runtime error:", err);
-            setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", isStreaming: false } : m));
+            updateChatMessage(sparkMessageId, "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", false);
           });
         }
       }
     }
   }, [voiceTranscript]);
+
 
   // Cancel recording on close
   useEffect(() => {
@@ -120,86 +114,35 @@ How can I help you operate your workspace today?`,
   };
 
   // State mutation actions driven by AI agent
-  const handleActionApprove = (reviewId: string, msgIndex: number) => {
-    // Perform live update in SparkContext
+  const handleActionApprove = (reviewId: string) => {
     approveReviewItem(reviewId);
-
-    // Update message card state dynamically
-    setMessages((prev) =>
-      prev.map((msg, i) =>
-        i === msgIndex && msg.media
-          ? { ...msg, media: { ...msg.media, status: "Approved" } }
-          : msg
-      )
-    );
-
     const feedbackText = `Approved review item "${reviewItems.find((r: any) => r.id === reviewId)?.title || "item"}" successfully! The production has been promoted and scheduled on your behalf.`;
-    setMessages((prev) => [
-      ...prev,
-      { sender: "spark", text: feedbackText, timestamp: new Date() }
-    ]);
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
   };
 
-  const handleActionRequestEdit = (reviewId: string, msgIndex: number) => {
-    // Perform live update in SparkContext
+
+  const handleActionRequestEdit = (reviewId: string) => {
     rejectOrRequestEditReviewItem(reviewId);
-
-    // Update message card state dynamically
-    setMessages((prev) =>
-      prev.map((msg, i) =>
-        i === msgIndex && msg.media
-          ? { ...msg, media: { ...msg.media, status: "Needs Edit" } }
-          : msg
-      )
-    );
-
     const feedbackText = `Requested edit for item "${reviewItems.find((r: any) => r.id === reviewId)?.title || "item"}". Its status has been set to "Needs Edit" in the pipeline.`;
-    setMessages((prev) => [
-      ...prev,
-      { sender: "spark", text: feedbackText, timestamp: new Date() }
-    ]);
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
   };
 
-  const handleActionRegenerate = (reviewId: string, msgIndex: number) => {
+  const handleActionRegenerate = (reviewId: string) => {
     setLoadingCardId(reviewId);
     
-    // Simulate generation delay
     setTimeout(() => {
       setLoadingCardId(null);
-      
-      const alternativeHooks = [
-        "I analyzed 12 top-performing campaigns, and they all shared this single pattern...",
-        "Here is the secret algorithm behind Lagos creator success that they never share...",
-        "Before you post your next video, make sure you hook them with this curiosity method..."
-      ];
-      const newHook = alternativeHooks[Math.floor(Math.random() * alternativeHooks.length)];
-
-      setMessages((prev) =>
-        prev.map((msg, i) =>
-          i === msgIndex && msg.media
-            ? { ...msg, media: { ...msg.media, concept: newHook, status: "Pending Review" } }
-            : msg
-        )
-      );
-
       const feedbackText = `Successfully regenerated scenes and hooks. Script and concept updated with high-engagement alternatives. Safety checks re-evaluated: Passed.`;
-      setMessages((prev) => [
-        ...prev,
-        { sender: "spark", text: feedbackText, timestamp: new Date() }
-      ]);
+      addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
     }, 1500);
   };
 
   const handleActionCreateFromSpark = (sparkId: string) => {
-    const targetSpark = Sparkles;
     createProductionFromSpark(sparkId);
-    
     const feedbackText = `Created production draft from viral spark "${productions.find((p: any) => p.sparkId === sparkId)?.title || "AI Media Empires"}". You will find the active scenes ready inside your drafting board!`;
-    setMessages((prev) => [
-      ...prev,
-      { sender: "spark", text: feedbackText, timestamp: new Date() }
-    ]);
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
   };
+
 
   const getSystemOverview = () => {
     const activeProds = productions ? productions.filter((p: any) => p.status !== "Completed" && p.status !== "Published") : [];
@@ -217,27 +160,28 @@ How can I help you operate your workspace today?`,
       timestamp: new Date()
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    addChatMessage(userMessage);
     setInputText("");
 
     const sparkMessageId = `spark-msg-${Date.now()}`;
-    setMessages((prev) => [...prev, {
+    addChatMessage({
       id: sparkMessageId,
       sender: "spark",
       text: "Thinking...",
       timestamp: new Date(),
       isStreaming: true
-    }]);
+    });
 
     sendMessage(userMessage.text, (chunk: string) => {
-      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: chunk } : m));
+      updateChatMessage(sparkMessageId, chunk, true);
     }).then((finalText: string) => {
-      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: finalText, isStreaming: false } : m));
+      updateChatMessage(sparkMessageId, finalText, false);
     }).catch((err: any) => {
       console.error("[AIChatModal] Internal runtime error:", err);
-      setMessages((prev) => prev.map(m => m.id === sparkMessageId ? { ...m, text: "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", isStreaming: false } : m));
+      updateChatMessage(sparkMessageId, "An execution error occurred in the media pipeline. Check the Developer tab or logs for diagnostic reports.", false);
     });
   };
+
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -372,26 +316,27 @@ How can I help you operate your workspace today?`,
                           {msg.media.type === "video" && (
                             <>
                               <button
-                                onClick={() => handleActionApprove(msg.media!.id, idx)}
+                                onClick={() => handleActionApprove(msg.media!.id)}
                                 disabled={msg.media.status === "Approved"}
                                 className="flex-1 py-2 rounded-lg bg-success hover:bg-success/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
                               >
                                 Approve
                               </button>
                               <button
-                                onClick={() => handleActionRequestEdit(msg.media!.id, idx)}
+                                onClick={() => handleActionRequestEdit(msg.media!.id)}
                                 disabled={msg.media.status === "Needs Edit"}
                                 className="flex-1 py-2 rounded-lg bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
                               >
                                 Request Edit
                               </button>
                               <button
-                                onClick={() => handleActionRegenerate(msg.media!.id, idx)}
+                                onClick={() => handleActionRegenerate(msg.media!.id)}
                                 className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/90 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
                                 title="Regenerate scenes"
                               >
                                 Regenerate
                               </button>
+
                             </>
                           )}
 
@@ -592,3 +537,4 @@ How can I help you operate your workspace today?`,
     </AnimatePresence>
   );
 }
+

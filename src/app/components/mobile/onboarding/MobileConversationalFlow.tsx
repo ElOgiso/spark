@@ -34,8 +34,7 @@ type MobileConversationalFlowProps = {
 
 export function MobileConversationalFlow({ onComplete }: MobileConversationalFlowProps) {
   const auth = useAuth();
-  const { updateBrand, updateAutomationMode, addMemoryItem, createProductionFromSpark, viralSparks } = useSpark();
-
+  const { updateBrand, updateAutomationMode, addMemoryItem, createProductionFromSpark, viralSparks, addChatMessage } = useSpark();
 
   const [step, setStep] = useState<FlowStep>("awakens");
   const [guideState, setGuideState] = useState<SparkGuideState>("speaking");
@@ -66,6 +65,13 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     setStep("character-scanning");
     setGuideState("scanning");
 
+    addChatMessage({ sender: "user", text: `Character choice: ${choice}`, timestamp: new Date() });
+    addChatMessage({
+      sender: "spark",
+      text: `Scanning character mesh for ${choice}... I'll remember this character across every future production.`,
+      timestamp: new Date()
+    });
+
     setTimeout(() => {
       // Seed Character Memory
       addMemoryItem(
@@ -82,6 +88,9 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const handleNicheChoice = (choice: string) => {
     setNicheSelection(choice);
     updateBrand({ niche: choice });
+    addChatMessage({ sender: "user", text: `Niche choice: ${choice}`, timestamp: new Date() });
+    addChatMessage({ sender: "spark", text: `Perfect. I'll build around your ${choice} niche.`, timestamp: new Date() });
+
     // Seed Niche Memory
     addMemoryItem(
       `Primary content domain set to ${choice}`,
@@ -95,6 +104,9 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const handleVoiceChoice = (choice: string) => {
     setVoiceSelection(choice);
     updateBrand({ archetype: choice });
+    addChatMessage({ sender: "user", text: `Voice archetype: ${choice}`, timestamp: new Date() });
+    addChatMessage({ sender: "spark", text: `Configured voice archetype as ${choice}.`, timestamp: new Date() });
+
     // Seed Voice Memory
     addMemoryItem(
       `Tone of voice archetype configured as ${choice}`,
@@ -115,9 +127,13 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const handleAutomationChoice = (mode: "manual" | "balanced" | "autonomous") => {
     setAutomationModeSelection(mode);
     updateAutomationMode(mode);
+    addChatMessage({ sender: "user", text: `Automation mode: ${mode}`, timestamp: new Date() });
+    addChatMessage({ sender: "spark", text: `Operating autonomy configured as ${mode}. Initializing Creative OS...`, timestamp: new Date() });
+
     setStep("initialization");
     setGuideState("thinking");
   };
+
 
 
   // Screen 8 VisionOS Calibration Progress
