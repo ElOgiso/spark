@@ -25,14 +25,11 @@ type AuthContextValue = {
   mode: "demo" | "authenticated";
   error: string | null;
   isOnboardingComplete: boolean;
-  currentOnboardingStep: number;
-  isEmailVerified: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  sendPasswordResetEmail: (email: string) => Promise<string | null>;
-  resendVerificationEmail: (email: string) => Promise<string | null>;
-  updateOnboardingStep: (step: number) => void;
+  sendPasswordResetEmail: (email: string) => Promise<{ error: string | null }>;
+  resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
   markOnboardingComplete: () => void;
   refreshSession: () => Promise<void>;
   clearError: () => void;
@@ -46,19 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [brand, setBrand] = useState<BrandRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(() => {
-    return localStorage.getItem("spark_onboarding_completed") === "true";
-  });
-  const [currentOnboardingStep, setCurrentOnboardingStep] = useState<number>(() => {
-    const saved = localStorage.getItem("spark_onboarding_step");
-    return saved ? parseInt(saved, 10) : 1;
+    return localStorage.getItem("spark_onboarding_complete") === "true";
   });
 
   const isConfigured = isAuthBackendReady();
   const requireAuth = isAuthRequired();
   const currentUser = session?.user ?? null;
-  const isEmailVerified = Boolean(currentUser?.email_confirmed_at);
 
   const bootstrap = useCallback(async (nextSession: Session | null) => {
     setSession(nextSession);
@@ -73,10 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBrand(result.brand);
     setError(result.error);
 
-    // If default brand already has niche or setup, consider onboarding completed
-    if (result.brand?.niche) {
+    // Check if brand/profile has existing onboarding parameters
+    if (result.brand && (result.brand.niche || result.brand.archetype)) {
       setIsOnboardingComplete(true);
-      localStorage.setItem("spark_onboarding_completed", "true");
+      localStorage.setItem("spark_onboarding_complete", "true");
     }
   }, []);
 
@@ -134,31 +125,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setProfile(null);
     setBrand(null);
+    setIsOnboardingComplete(false);
+    localStorage.removeItem("spark_onboarding_complete");
     setLoading(false);
   }, []);
 
-  const sendPasswordResetEmail = useCallback(async (email: string) => {
-    const { sendPasswordResetEmail: serviceSendReset } = await import("../backend/sessionService");
-    const res = await serviceSendReset(email);
-    if (res.error) setError(res.error);
-    return res.error;
+  const sendReset = useCallback(async (email: string) => {
+    const { sendPasswordResetEmail } = await import("../backend/sessionService");
+    return sendPasswordResetEmail(email);
   }, []);
 
-  const resendVerificationEmail = useCallback(async (email: string) => {
-    const { resendEmailVerification: serviceResend } = await import("../backend/sessionService");
-    const res = await serviceResend(email);
-    if (res.error) setError(res.error);
-    return res.error;
-  }, []);
-
-  const updateOnboardingStep = useCallback((step: number) => {
-    setCurrentOnboardingStep(step);
-    localStorage.setItem("spark_onboarding_step", String(step));
+  const sendResendVerification = useCallback(async (email: string) => {
+    const { resendVerification } = await import("../backend/sessionService");
+    return resendVerification(email);
   }, []);
 
   const markOnboardingComplete = useCallback(() => {
     setIsOnboardingComplete(true);
-    localStorage.setItem("spark_onboarding_completed", "true");
+    localStorage.setItem("spark_onboarding_complete", "true");
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
@@ -173,14 +157,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     mode: currentUser ? "authenticated" : "demo",
     error: error ?? (!isConfigured ? unavailableAuthMessage() : null),
     isOnboardingComplete,
-    currentOnboardingStep,
-    isEmailVerified,
     signIn,
     signUp,
     signOut,
-    sendPasswordResetEmail,
-    resendVerificationEmail,
-    updateOnboardingStep,
+    sendPasswordResetEmail: sendReset,
+    resendVerificationEmail: sendResendVerification,
     markOnboardingComplete,
     refreshSession,
     clearError: () => setError(null),
@@ -189,22 +170,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     currentUser,
     error,
     isConfigured,
+    isOnboardingComplete,
     loading,
+    markOnboardingComplete,
     profile,
     refreshSession,
     requireAuth,
+    sendReset,
+    sendResendVerification,
     session,
     signIn,
     signOut,
     signUp,
-    isOnboardingComplete,
-    currentOnboardingStep,
-    isEmailVerified,
-    sendPasswordResetEmail,
-    resendVerificationEmail,
-    updateOnboardingStep,
-    markOnboardingComplete,
   ]);
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

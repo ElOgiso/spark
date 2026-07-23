@@ -33,7 +33,8 @@ import { RuntimeOrchestrator } from "../services/runtime/runtimeOrchestrator";
 import { InteractionController, ExecutionRequest } from "../services/interaction/interactionController";
 import { useAuth } from "./AuthContext";
 import { brandRowToDomain, domainBrandToRowPatch } from "../backend/mappers/brandMapper";
-import { updateBrand } from "../backend/repositories/brandRepository";
+import { updateBrand as updateBrandRepository } from "../backend/repositories/brandRepository";
+
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import {
   hydrateWorkspace,
@@ -69,8 +70,10 @@ interface SparkContextType {
   streamingMetrics: any;
 
   // Actions
+  updateBrand: (patch: Partial<Brand>) => void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
+
   createProductionFromSpark: (sparkId: string) => void;
   approveReviewItem: (reviewId: string) => void;
   rejectOrRequestEditReviewItem: (reviewId: string) => void;
@@ -553,11 +556,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (hydratedBrandIdRef.current !== backendBrandId) return;
 
     const timer = window.setTimeout(() => {
-      void updateBrand(
+      void updateBrandRepository(
         backendBrandId,
         domainBrandToRowPatch(state.brand, state.automationMode),
       );
     }, 900);
+
 
     return () => window.clearTimeout(timer);
   }, [
@@ -585,9 +589,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [streamingMetrics, setStreamingMetrics] = useState<any>(null);
   const [pendingTaskPrompt, setPendingTaskPrompt] = useState<string | null>(null);
 
+  const updateBrand = (patch: Partial<Brand>) => {
+    setState((prev: any) => ({
+      ...prev,
+      brand: { ...prev.brand, ...patch }
+    }));
+  };
+
   const updateAutomationMode = (mode: AutomationMode) => {
     setState((prev: any) => ({ ...prev, automationMode: mode }));
   };
+
 
   const updateProductionMode = (mode: ProductionMode) => {
     setState((prev: any) => ({ ...prev, productionMode: mode }));
@@ -1411,8 +1423,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         executionTimeline,
         streamingOutput,
         streamingMetrics,
+        updateBrand,
         updateAutomationMode,
         updateProductionMode,
+
         createProductionFromSpark,
         approveReviewItem,
         rejectOrRequestEditReviewItem,

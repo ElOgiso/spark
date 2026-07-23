@@ -1,93 +1,53 @@
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useAuth } from "../../../state/AuthContext";
 import { MobileCreateAccountView } from "./MobileCreateAccountView";
 import { MobileSignInView } from "./MobileSignInView";
 import { MobileForgotPasswordView } from "./MobileForgotPasswordView";
-import { BrandGenesisFlow } from "../onboarding/BrandGenesisFlow";
-import { useAuth } from "../../../state/AuthContext";
+import { MobileConversationalFlow } from "../onboarding/MobileConversationalFlow";
 
-type AuthViewState = "create-account" | "sign-in" | "forgot-password" | "brand-genesis";
+type MobileAuthViewState = "create-account" | "sign-in" | "forgot-password" | "onboarding";
 
 type MobileAuthExperienceProps = {
-  onAuthenticated: () => void;
+  onComplete: () => void;
 };
 
-export function MobileAuthExperience({ onAuthenticated }: MobileAuthExperienceProps) {
+export function MobileAuthExperience({ onComplete }: MobileAuthExperienceProps) {
   const auth = useAuth();
-  
-  // Decide initial view based on Session Decision Engine
-  const [viewState, setViewState] = useState<AuthViewState>(() => {
-    if (auth.isAuthenticated) {
-      return "brand-genesis";
+
+  const [viewState, setViewState] = useState<MobileAuthViewState>(() => {
+    if (auth.isAuthenticated && !auth.isOnboardingComplete) {
+      return "onboarding";
     }
     return "create-account";
   });
 
+  if (auth.isAuthenticated && auth.isOnboardingComplete) {
+    onComplete();
+    return null;
+  }
+
+  if (viewState === "onboarding" || (auth.isAuthenticated && !auth.isOnboardingComplete)) {
+    return <MobileConversationalFlow onComplete={onComplete} />;
+  }
+
+  if (viewState === "sign-in") {
+    return (
+      <MobileSignInView
+        onSwitchToSignUp={() => setViewState("create-account")}
+        onForgotPassword={() => setViewState("forgot-password")}
+      />
+    );
+  }
+
+  if (viewState === "forgot-password") {
+    return <MobileForgotPasswordView onBack={() => setViewState("sign-in")} />;
+  }
+
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased overflow-hidden">
-      <AnimatePresence mode="wait">
-        {viewState === "create-account" && (
-          <motion.div
-            key="create-account"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-full h-full"
-          >
-            <MobileCreateAccountView
-              onSwitchToSignIn={() => setViewState("sign-in")}
-              onForgotPassword={() => setViewState("forgot-password")}
-              onSuccess={() => setViewState("brand-genesis")}
-            />
-          </motion.div>
-        )}
-
-        {viewState === "sign-in" && (
-          <motion.div
-            key="sign-in"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-full h-full"
-          >
-            <MobileSignInView
-              onSwitchToSignUp={() => setViewState("create-account")}
-              onForgotPassword={() => setViewState("forgot-password")}
-              onSuccess={() => {
-                if (auth.isOnboardingComplete) {
-                  onAuthenticated();
-                } else {
-                  setViewState("brand-genesis");
-                }
-              }}
-            />
-          </motion.div>
-        )}
-
-        {viewState === "forgot-password" && (
-          <motion.div
-            key="forgot-password"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-full h-full"
-          >
-            <MobileForgotPasswordView onBack={() => setViewState("sign-in")} />
-          </motion.div>
-        )}
-
-        {viewState === "brand-genesis" && (
-          <motion.div
-            key="brand-genesis"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.02 }}
-            className="w-full h-full"
-          >
-            <BrandGenesisFlow onComplete={onAuthenticated} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <MobileCreateAccountView
+      onSwitchToSignIn={() => setViewState("sign-in")}
+      onForgotPassword={() => setViewState("forgot-password")}
+      onAccountCreated={() => setViewState("onboarding")}
+    />
   );
 }

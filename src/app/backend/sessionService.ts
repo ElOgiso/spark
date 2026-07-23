@@ -79,23 +79,22 @@ export async function signOut(): Promise<{ error: string | null }> {
 
 export async function sendPasswordResetEmail(email: string): Promise<{ error: string | null }> {
   if (!isAuthBackendReady()) {
-    return { error: null };
+    return { error: unavailableAuthMessage() };
   }
-
   const { resetPasswordForEmail } = await import("./authService");
   const result = await resetPasswordForEmail(email);
   return { error: result.error };
 }
 
-export async function resendEmailVerification(email: string): Promise<{ error: string | null }> {
+export async function resendVerification(email: string): Promise<{ error: string | null }> {
   if (!isAuthBackendReady()) {
-    return { error: null };
+    return { error: unavailableAuthMessage() };
   }
-
   const { resendVerificationEmail } = await import("./authService");
   const result = await resendVerificationEmail(email);
   return { error: result.error };
 }
+
 
 export async function bootstrapUserSession(
   user: User | null,

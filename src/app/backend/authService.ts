@@ -67,9 +67,7 @@ export async function resetPasswordForEmail(email: string): Promise<AuthResult<t
   const supabase = getSupabaseClient();
   if (!supabase) return unavailable<true>();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
-  });
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
   return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }
 
@@ -77,10 +75,7 @@ export async function resendVerificationEmail(email: string): Promise<AuthResult
   const supabase = getSupabaseClient();
   if (!supabase) return unavailable<true>();
 
-  const { error } = await supabase.auth.resend({
-    type: "signup",
-    email,
-  });
+  const { error } = await supabase.auth.resend({ type: "signup", email });
   return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }
 
@@ -95,3 +90,4 @@ export function onAuthStateChange(
   const { data } = supabase.auth.onAuthStateChange(callback);
   return () => data.subscription.unsubscribe();
 }
+

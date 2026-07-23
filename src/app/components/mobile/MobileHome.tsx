@@ -4,7 +4,6 @@ import {
   ArrowRight, Loader2, Clock, Package,
 } from "lucide-react";
 import { useSpark } from "../../state/SparkContext";
-import { useAuth } from "../../state/AuthContext";
 import { AIChatPill } from "../AIChatPill";
 import { AIChatModal } from "../AIChatModal";
 import { useState } from "react";
@@ -23,49 +22,47 @@ interface MobileHomeProps {
 export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const { productions, reviewItems, viralSparks } = useSpark();
-  const auth = useAuth();
   const isEmpty = productions.length === 0;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const userDisplayName = auth.currentUser?.email?.split("@")[0] ?? "Alex";
 
   // Pipeline counts
   const draftingCount = productions.filter(p => ["Drafting", "Draft", "Researching", "Research Complete", "Planning", "Planning Complete", "Storyboarding", "Storyboard Complete", "Generating", "Editing"].includes(p.status)).length;
   const readyCount = productions.filter(p => ["Ready for Review", "Awaiting Review"].includes(p.status)).length;
   const approvedCount = productions.filter(p => p.status === "Approved" && p.id !== "p7" && !p.id.includes("scheduled") && p.id !== "p8" && !p.id.includes("export")).length;
   const scheduledCount = productions.filter(p => p.status === "Approved" && (p.id === "p7" || p.id.includes("scheduled"))).length;
-  const publishedCount = 8; // Baseline active OS count
+  const publishedCount = isEmpty ? 0 : 8; // standard baseline or dynamic equivalent
 
-  const priorityItems = [
-    {
-      icon: Flame,
-      iconColor: "text-destructive",
-      borderColor: "border-l-destructive",
-      bg: "bg-destructive/5",
-      label: "First Viral Spark Ready",
-      desc: `${auth.brand?.niche ?? "AI Agency"} Trends · 98% Brand Fit`,
-      action: "Create",
-      path: "/viral-sparks",
-    },
+  const priorityItems = isEmpty ? [] : [
     {
       icon: AlertCircle,
       iconColor: "text-warning",
       borderColor: "border-l-warning",
       bg: "bg-warning/5",
-      label: `${readyCount || 1} production proposal waiting`,
-      desc: "Executive Director Brief — 1 min ago",
+      label: `${readyCount} reviews waiting`,
+      desc: "Creative review — oldest 2 min",
       action: "Review",
       path: "/review",
+    },
+    {
+      icon: Flame,
+      iconColor: "text-destructive",
+      borderColor: "border-l-destructive",
+      bg: "bg-destructive/5",
+      label: "Hot opportunity",
+      desc: "Nigerian Creators + AI · 97% fit",
+      action: "Create",
+      path: "/viral-sparks",
     },
     {
       icon: CheckCircle2,
       iconColor: "text-success",
       borderColor: "border-l-success",
       bg: "bg-success/5",
-      label: "Brand Genesis Complete",
-      desc: "Memory, Voice & Character Calibrated",
-      action: "Memory",
-      path: "/more",
+      label: "Publishing today 2 PM",
+      desc: "Psychology of Viral Content · YouTube",
+      action: "Calendar",
+      path: "/review", // Since calendar isn't directly a separate page, we can route it to review queue (e.g. approved / scheduled list)
     },
   ];
 
@@ -109,7 +106,7 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="px-5 pt-4 pb-3">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-1.5">
-              <h1 className="text-xl font-medium">{greeting}, {userDisplayName}</h1>
+              <h1 className="text-xl font-medium">{greeting}, Alex</h1>
               <AIChatPill onClick={() => setIsChatOpen(true)} isMobile={true} />
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
