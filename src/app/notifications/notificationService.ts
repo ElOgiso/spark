@@ -1,183 +1,148 @@
 import { AppNotification, NotificationType, NotificationPriority } from "./notificationTypes";
 
-const LOCAL_STORAGE_KEY = "spark_notifications_store";
+const STORAGE_KEY = "spark_notifications_store";
 
-// Initial set of seed notifications for executive presentation
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: "n1",
-    type: "new_viral_opportunity",
-    title: "New Viral Spark opportunity",
-    description: "Nigerian Creator Economy + AI topic matches your Brand Voice with 97% confidence.",
-    timestamp: "5m ago",
-    priority: "high",
-    read: false,
-    relatedRoute: "/viral-sparks",
-    actionLabel: "Analyze Spark"
-  },
-  {
-    id: "n2",
-    type: "review_required",
-    title: "Review Awaiting Executive Sign-Off",
-    description: "Storyboard 'Psychology of Viral Content' is complete and awaiting your structural review.",
-    timestamp: "12m ago",
-    priority: "critical",
-    read: false,
-    relatedRoute: "/review",
-    actionLabel: "Begin Review"
-  },
-  {
-    id: "n3",
-    type: "publishing_complete",
-    title: "Weekly Tech Round-Up published",
-    description: "Successfully released to connected YouTube and LinkedIn channels. Initial retention: +14% above baseline.",
-    timestamp: "1h ago",
-    priority: "medium",
-    read: false,
-    relatedRoute: "/calendar",
-    actionLabel: "View Performance"
-  },
-  {
-    id: "n4",
-    type: "memory_updated",
-    title: "Strategic Rule Learned",
-    description: "Spark identified that placements of CTAs before the final 10 seconds increase subscriber conversion by 44%. Added to active guidelines.",
-    timestamp: "2h ago",
-    priority: "low",
-    read: true,
-    relatedRoute: "/my-spark",
-    actionLabel: "Inspect Memory"
-  },
-  {
-    id: "n5",
-    type: "publishing_failed",
-    title: "Instagram Reel schedule blocked",
-    description: "Authorization expired for connected Instagram creator channel. Re-auth required before 2:00 PM publication.",
-    timestamp: "4h ago",
-    priority: "critical",
-    read: false,
-    relatedRoute: "/calendar",
-    actionLabel: "Resolve Conflict"
+type Listener = (notifications: AppNotification[]) => void;
+
+class NotificationServiceManager {
+  private listeners: Listener[] = [];
+  private notifications: AppNotification[] = [];
+
+  constructor() {
+    this.load();
   }
-];
 
-export class NotificationService {
-  private static listeners: Array<(notifications: AppNotification[]) => void> = [];
-
-  public static getNotifications(): AppNotification[] {
+  private load() {
     try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        this.notifications = JSON.parse(stored);
+      } else {
+        this.notifications = this.getDefaultNotifications();
+        this.save();
       }
-    } catch (e) {
-      console.error("Error reading notifications", e);
+    } catch {
+      this.notifications = this.getDefaultNotifications();
     }
-    // Seed initial notifications if empty
-    this.saveNotifications(INITIAL_NOTIFICATIONS);
-    return INITIAL_NOTIFICATIONS;
   }
 
-  public static addNotification(
-    typeOrInput:
-      | NotificationType
-      | {
-          type: NotificationType;
-          title: string;
-          description: string;
-          priority: NotificationPriority;
-          relatedRoute: string;
-          actionLabel?: string;
-          metadata?: any;
-        },
+  private save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.notifications));
+    } catch {
+      // Ignore storage errors
+    }
+    this.notify();
+  }
+
+  private notify() {
+    this.listeners.forEach((listener) => listener([...this.notifications]));
+  }
+
+  private getDefaultNotifications(): AppNotification[] {
+    return [
+      {
+        id: "notif-1",
+        type: "new_viral_opportunity",
+        title: "New Viral Opportunity Discovered",
+        description: "AI Tech Startups in West Africa is trending (+40% velocity).",
+        timestamp: "10m ago",
+        priority: "high",
+        read: false,
+        relatedRoute: "/viral-sparks",
+        actionLabel: "View Opportunity",
+      },
+      {
+        id: "notif-2",
+        type: "review_required",
+        title: "Production Ready for Review",
+        description: "Top 5 AI Tools Nigerian Founders Use Daily is ready for executive sign-off.",
+        timestamp: "1h ago",
+        priority: "high",
+        read: false,
+        relatedRoute: "/review",
+        actionLabel: "Review Script",
+      },
+    ];
+  }
+
+  public subscribe(listener: Listener): () => void {
+    this.listeners.push(listener);
+    listener([...this.notifications]);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  public getNotifications(): AppNotification[] {
+    return [...this.notifications];
+  }
+
+  public getUnreadCount(): number {
+    return this.notifications.filter((n) => !n.read).length;
+  }
+
+  public addNotification(
+    typeOrPayload: NotificationType | Partial<AppNotification>,
     title?: string,
     description?: string,
-    priority?: NotificationPriority,
-    relatedRoute?: string,
-    actionLabel?: string,
-    metadata?: any
-  ): AppNotification {
-    const input = typeof typeOrInput === "object"
-      ? typeOrInput
-      : {
-          type: typeOrInput,
-          title: title ?? "Spark notification",
-          description: description ?? "",
-          priority: priority ?? "medium",
-          relatedRoute: relatedRoute ?? "/",
-          actionLabel,
-          metadata,
-        };
-    const notifications = this.getNotifications();
-    const newNotif: AppNotification = {
-      id: "notif_" + Date.now(),
-      type: input.type,
-      title: input.title,
-      description: input.description,
-      timestamp: "Just now",
-      priority: input.priority,
-      read: false,
-      relatedRoute: input.relatedRoute,
-      actionLabel: input.actionLabel,
-      metadata: input.metadata
-    };
-    
-    const updated = [newNotif, ...notifications];
-    this.saveNotifications(updated);
-    this.notifyListeners(updated);
+    priority: NotificationPriority = "medium",
+    relatedRoute: string = "/",
+    actionLabel?: string
+  ) {
+    let newNotif: AppNotification;
+    if (typeof typeOrPayload === "object") {
+      newNotif = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        type: typeOrPayload.type || "system_update",
+        title: typeOrPayload.title || "Notification",
+        description: typeOrPayload.description || "",
+        timestamp: typeOrPayload.timestamp || "Just now",
+        priority: typeOrPayload.priority || "medium",
+        read: false,
+        relatedRoute: typeOrPayload.relatedRoute || "/",
+        actionLabel: typeOrPayload.actionLabel,
+        metadata: typeOrPayload.metadata,
+      };
+    } else {
+      newNotif = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        type: typeOrPayload,
+        title: title || "Notification",
+        description: description || "",
+        timestamp: "Just now",
+        priority,
+        read: false,
+        relatedRoute,
+        actionLabel,
+      };
+    }
+    this.notifications.unshift(newNotif);
+    this.save();
     return newNotif;
   }
 
-  public static markAsRead(id: string): void {
-    const notifications = this.getNotifications();
-    const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
-    this.saveNotifications(updated);
-    this.notifyListeners(updated);
+  public markAsRead(id: string) {
+    this.notifications = this.notifications.map((n) =>
+      n.id === id ? { ...n, read: true } : n
+    );
+    this.save();
   }
 
-  public static markAllAsRead(): void {
-    const notifications = this.getNotifications();
-    const updated = notifications.map((n) => ({ ...n, read: true }));
-    this.saveNotifications(updated);
-    this.notifyListeners(updated);
+  public markAllAsRead() {
+    this.notifications = this.notifications.map((n) => ({ ...n, read: true }));
+    this.save();
   }
 
-  public static deleteNotification(id: string): void {
-    const notifications = this.getNotifications();
-    const updated = notifications.filter((n) => n.id !== id);
-    this.saveNotifications(updated);
-    this.notifyListeners(updated);
+  public deleteNotification(id: string) {
+    this.notifications = this.notifications.filter((n) => n.id !== id);
+    this.save();
   }
 
-  public static clearAll(): void {
-    this.saveNotifications([]);
-    this.notifyListeners([]);
-  }
-
-  public static subscribe(callback: (notifications: AppNotification[]) => void): () => void {
-    this.listeners.push(callback);
-    // Initial emission
-    callback(this.getNotifications());
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== callback);
-    };
-  }
-
-  private static saveNotifications(notifications: AppNotification[]): void {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(notifications));
-    } catch (e) {
-      console.error("Failed to save notifications", e);
-    }
-  }
-
-  private static notifyListeners(notifications: AppNotification[]): void {
-    this.listeners.forEach((listener) => {
-      try {
-        listener(notifications);
-      } catch (e) {
-        console.error("Error in notification listener", e);
-      }
-    });
+  public clearAll() {
+    this.notifications = [];
+    this.save();
   }
 }
+
+export const NotificationService = new NotificationServiceManager();
