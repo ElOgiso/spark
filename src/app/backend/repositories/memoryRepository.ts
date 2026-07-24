@@ -21,3 +21,22 @@ export async function archiveMemoryItem(id: string): Promise<RepositoryResult<Me
 export async function deleteMemoryItem(id: string): Promise<RepositoryResult<true>> {
   return deleteRow("memory_items", id);
 }
+
+export const memoryRepository = {
+  async listMemoryItems(brandId: string): Promise<MemoryItemRow[]> {
+    const res = await listMemoryItems(brandId);
+    return res.data || [];
+  },
+  async addMemoryItem(values: Partial<MemoryItemRow>): Promise<MemoryItemRow | null> {
+    const res = await createMemoryItem(values);
+    return res.data || null;
+  },
+  async updateMemoryItem(id: string, values: Partial<MemoryItemRow>): Promise<MemoryItemRow | null> {
+    const res = await updateMemoryItem(id, values);
+    return res.data || null;
+  },
+  async deleteMemoryItem(id: string): Promise<boolean> {
+    const res = await deleteMemoryItem(id);
+    return !res.error;
+  },
+};

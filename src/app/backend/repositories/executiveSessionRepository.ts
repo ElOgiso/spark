@@ -40,3 +40,15 @@ export async function upsertExecutiveSession(
   if (error) return repositoryError<ExecutiveSessionRow>(error.message);
   return { data: data as ExecutiveSessionRow, error: null, source: "supabase" };
 }
+
+export const executiveSessionRepository = {
+  async getExecutiveSession(brandId: string): Promise<ExecutiveSessionRow | null> {
+    const res = await getExecutiveSession(brandId);
+    return res.data;
+  },
+  async upsertSession(patch: Partial<ExecutiveSessionRow> & { brand_id: string }): Promise<ExecutiveSessionRow | null> {
+    const { brand_id, id, ...rest } = patch;
+    const res = await upsertExecutiveSession(brand_id, rest);
+    return res.data;
+  },
+};

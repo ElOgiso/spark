@@ -1,11 +1,9 @@
 /**
  * Silent workspace hydrate/persist — no UI.
- * Keeps conversation/runtime boundary intact; only used by SparkContext.
+ * Keeps conversation/runtime boundary intact; used exclusively by SparkContext.
  */
 import { isSupabaseConfigured } from "./supabaseClient";
-import {
-  listCharacters,
-} from "./repositories/brandRepository";
+import { listCharacters } from "./repositories/brandRepository";
 import { listMemoryItems, createMemoryItem, deleteMemoryItem } from "./repositories/memoryRepository";
 import {
   listProductions,
@@ -21,13 +19,14 @@ import {
   approveReviewItem as approveReviewItemRepo,
   requestReviewEdits,
 } from "./repositories/reviewRepository";
-import {
-  listPublishJobs,
-  createPublishJob,
-} from "./repositories/calendarRepository";
+import { listPublishJobs, createPublishJob } from "./repositories/calendarRepository";
 import { listAnalyticsSnapshots } from "./repositories/analyticsRepository";
-import { listByBrand, updateRow } from "./repositories/repositoryUtils";
-import type { AccountRow, CharacterRow } from "./database.types";
+import { conversationRepository } from "./repositories/conversationRepository";
+import { executiveSessionRepository } from "./repositories/executiveSessionRepository";
+import { executiveSummaryRepository } from "./repositories/executiveSummaryRepository";
+import { executiveTimelineRepository } from "./repositories/executiveTimelineRepository";
+import { listByBrand } from "./repositories/repositoryUtils";
+import type { AccountRow, CharacterRow, ExecutiveConversationMessageRow } from "./database.types";
 import type {
   Account,
   AnalyticsInsight,
@@ -52,6 +51,7 @@ import {
   reviewRowToDomain,
   viralSparkRowToDomain,
 } from "./mappers/workspaceMappers";
+import { ExecutiveContext, createEmptyExecutiveContext } from "../state/executiveContext";
 
 export type WorkspaceSnapshot = {
   character?: Character;
@@ -135,6 +135,59 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     publishJobs: (jobs.data ?? []).map(publishJobRowToDomain),
     analyticsInsights: (analytics.data ?? []).map(analyticsRowToDomain),
   };
+}
+
+export async function hydrateExecutiveContext(brandId: string): Promise<ExecutiveContext> {
+  if (!isSupabaseConfigured()) {
+    return createEmptyExecutiveContext();
+  }
+
+  const [
+    summary,
+    session,
+    memoryRows,
+    messages,
+    timeline,
+  ] = await Promise.all([
+    executiveSummaryRepository.getSummary(brandId),
+    executiveSessionRepository.getExecutiveSession(brandId),
+    listMemoryItems(brandId),
+    conversationRepository.listConversationMessages(brandId),
+    executiveTimelineRepository.listTimeline(brandId),
+  ]);
+
+  const workingMemory = {
+    context: (session?.working_memory_snapshot as Record<string, unknown>) || {},
+  };
+
+  return {
+    summary,
+    session,
+    memory: memoryRows.data || [],
+    workingMemory,
+    conversation: messages,
+    timeline,
+  };
+}
+
+export async function persistExecutiveMessage(
+  brandId: string,
+  sessionId: string,
+  sender: "user" | "director",
+  text: string,
+  metadata?: Record<string, unknown>
+): Promise<ExecutiveConversationMessageRow | null> {
+  if (!isSupabaseConfigured()) return null;
+  return await conversationRepository.createConversationMessage({
+    brand_id: brandId,
+    session_id: sessionId,
+    sender,
+    text,
+    metadata: metadata || {},
+    role: sender === "user" ? "user" : "assistant",
+    department: "Executive Director",
+    importance: "MEDIUM",
+  });
 }
 
 export async function persistMemoryCreate(brandId: string, item: MemoryItem) {

@@ -172,7 +172,7 @@ export interface PublishJobRow {
   account_id: string | null;
   platform: string | null;
   scheduled_for: string | null;
-  status: string * null;
+  status: string | null;
   caption: string | null;
   metadata: Json;
   failure_reason: string | null;
@@ -187,7 +187,7 @@ export interface AnalyticsSnapshotRow {
   platform: string | null;
   metrics: Json;
   insight: string | null;
-  recommendation: string * null;
+  recommendation: string | null;
   learned_memory_id: string | null;
   captured_at: string;
   created_at: string;
