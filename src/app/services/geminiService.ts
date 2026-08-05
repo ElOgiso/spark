@@ -158,20 +158,35 @@ export async function generateSuperSparkVoice(
 
   if (!cleanText) return null;
 
-  // 1. OpenAI Native TTS (Voice: nova)
+  // 1. ElevenLabs Premium TTS
+  if (activeProvider === "elevenlabs") {
+    try {
+      const { generateElevenLabsVoice } = await import("./runtime/providers/elevenLabsTTS");
+      const audioUri = await generateElevenLabsVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId);
+      if (audioUri) return audioUri;
+    } catch {}
+  }
+
+  // 2. OpenAI Native TTS (Voice: nova)
   if (activeProvider === "openai") {
     const audioUri = await generateOpenAIVoice(cleanText, "nova");
     if (audioUri) return audioUri;
   }
 
-  // 2. Gemini Native TTS (Voice: Aoede)
+  // 3. Gemini Native TTS (Voice: Aoede)
   if (activeProvider === "gemini") {
     const audioUri = await generateGeminiVoice(cleanText, "Aoede");
     if (audioUri) return audioUri;
   }
 
-  // 3. Fallback Order: OpenAI Native TTS -> Gemini Native TTS
+  // 4. Fallback Order: ElevenLabs -> OpenAI Native TTS -> Gemini Native TTS
   // NEVER fall back to browser speechSynthesis
+  try {
+    const { generateElevenLabsVoice } = await import("./runtime/providers/elevenLabsTTS");
+    const elevenLabsAudio = await generateElevenLabsVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId);
+    if (elevenLabsAudio) return elevenLabsAudio;
+  } catch {}
+
   const openAiAudio = await generateOpenAIVoice(cleanText, "nova");
   if (openAiAudio) return openAiAudio;
 

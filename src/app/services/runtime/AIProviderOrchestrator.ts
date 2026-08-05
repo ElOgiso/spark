@@ -538,7 +538,12 @@ export class AIProviderOrchestrator {
       capabilities: ["Speech", "Text To Speech"],
       isAvailable: (customKeys) => Boolean(resolveProviderKey("elevenlabs", customKeys)),
       execute: async (options) => {
-        throw new Error("ElevenLabs execution requires voice synthesis parameter.");
+        const { generateElevenLabsVoice } = await import("./providers/elevenLabsTTS");
+        const audioUri = await generateElevenLabsVoice(options.prompt);
+        if (!audioUri) {
+          throw new Error("ElevenLabs voice synthesis returned null or provider key missing.");
+        }
+        return audioUri;
       },
     });
 

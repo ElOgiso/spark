@@ -95,14 +95,20 @@ Return JSON matching this exact structure with NO markdown backticks:
       const storyboard: ProductionScene[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
-      // Synthesize real voiceover audio via provider TTS pipeline when available
+      // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline
       let realVoiceUrl: string | undefined = undefined;
       try {
-        const { generateSuperSparkVoice } = await import("../geminiService");
         const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
-        const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
-        if (synthesizedVoice && synthesizedVoice.length > 50) {
-          realVoiceUrl = synthesizedVoice;
+        const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
+        const elevenVoice = await generateElevenLabsVoice(voiceScript);
+        if (elevenVoice && elevenVoice.length > 50) {
+          realVoiceUrl = elevenVoice;
+        } else {
+          const { generateSuperSparkVoice } = await import("../geminiService");
+          const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+          if (synthesizedVoice && synthesizedVoice.length > 50) {
+            realVoiceUrl = synthesizedVoice;
+          }
         }
       } catch (voiceErr) {
         console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
