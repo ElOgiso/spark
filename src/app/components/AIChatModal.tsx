@@ -167,8 +167,8 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     }
   };
 
-  // Phase 19C: Session History UI States
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Phase 19C: Session History UI States (Default Closed)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
@@ -192,7 +192,16 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     }
   }, [isOpen]);
 
-  // Deliver Executive Return Briefing when user opens chat after offline period
+  // Open brand-new chat session on open if active session has messages
+  useEffect(() => {
+    if (isOpen) {
+      if (messages.length > 0 && startNewSession) {
+        startNewSession();
+      }
+    }
+  }, [isOpen]);
+
+  // Deliver Executive Return Briefing when user opens chat on fresh session
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       const returnBriefing = generateExecutiveReturnBriefing(sparkState);
@@ -203,7 +212,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
       });
       speakText(returnBriefing, isMuted);
     }
-  }, [isOpen]);
+  }, [isOpen, messages.length]);
 
   // Auto scroll container to bottom without triggering window/page layout scroll shift
   useEffect(() => {
