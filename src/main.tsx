@@ -50,6 +50,17 @@ if (typeof window !== "undefined") {
     );
   };
 
+  // Intercept console.error to prevent extension noise from popping up in error overlays
+  const origConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    const joined = args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+    if (isExtensionOrWalletError(joined) || args.some((a) => isExtensionOrWalletError(a))) {
+      console.warn("[Spark Exception Guard] Intercepted wallet/extension error:", joined);
+      return;
+    }
+    origConsoleError.apply(console, args);
+  };
+
   window.addEventListener("unhandledrejection", (event) => {
     if (isExtensionOrWalletError(event.reason) || isExtensionOrWalletError(event)) {
       console.warn("[Spark Exception Guard] Suppressed browser extension rejection:", event.reason);
@@ -71,6 +82,9 @@ if (typeof window !== "undefined") {
       event.stopImmediatePropagation?.();
     }
   }, true);
+
+  // Attach guard helper to window for ErrorBoundary access
+  (window as any).__isExtensionOrWalletError = isExtensionOrWalletError;
 }
 
 interface ErrorBoundaryProps {
@@ -89,6 +103,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   };
 
   public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    const isGuard = typeof window !== "undefined" && (window as any).__isExtensionOrWalletError;
+    if (isGuard && isGuard(error)) {
+      console.warn("[Spark ErrorBoundary] Ignored extension error:", error);
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 
