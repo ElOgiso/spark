@@ -569,7 +569,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 : actionSuccess === "Regenerating..."
                 ? "Spark Intelligence is drafting a fresh creative blueprint..."
                 : actionSuccess === "Regenerated"
-                ? "Storyboard regenerated with a fresh Nigerian cultural hook & alternative thumbnails!"
+                  ? "Storyboard & script regenerated with a fresh curiosity hook and updated thumbnails!"
                 : actionSuccess === "Exporting..."
                 ? "Compiling production sequence, voice narrative, and subtitles to 4K Master Zip..."
                 : actionSuccess === "Exported"
