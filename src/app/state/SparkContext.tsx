@@ -817,6 +817,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         })
         .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));
     });
+
+    return { production: initialProduction, reviewItem: initialReviewItem };
   };
 
   const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
@@ -1273,16 +1275,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else if (isSampleReq) {
       const spark = state.viralSparks?.[0];
       const sparkId = spark?.id || "vs-1";
-      createProductionFromSpark(sparkId);
+      const created = createProductionFromSpark(sparkId);
+      const realProd = created?.production;
+      const realReview = created?.reviewItem;
       taskMedia = {
         type: "storyboard",
-        id: `sample-prod-${Date.now()}`,
-        title: "Sample Storyboard Preview",
-        sceneCount: 3,
+        id: realReview?.id || realProd?.id || `sample-prod-${Date.now()}`,
+        title: realProd?.title || spark?.title || "Sample Storyboard Preview",
+        sceneCount: realProd?.scenes?.length || 3,
         duration: "3:20",
         coverFrame: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
-        status: "Drafting",
-        meta: "One-time sample storyboard generated in workspace",
+        status: realReview?.status || "Pending Review",
+        meta: `One-time sample storyboard generated for "${realProd?.title || "Cut"}"`,
       };
     } else if (isApprovalReq) {
       const targetReview = state.reviewItems?.find((r: any) => r.status === "Pending Review") || state.reviewItems?.[0];
@@ -1292,9 +1296,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           type: "video",
           id: targetReview.id,
           title: targetReview.title,
-          videoUrl: targetReview.videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          videoUrl: (targetReview as any).videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           status: "Approved",
-          concept: targetReview.reason || "High engagement viral cut",
+          concept: targetReview.whyThisWorks || "High engagement viral cut",
           meta: `Action Executed: Approved & Scheduled for Publishing`,
         };
       }
@@ -1306,7 +1310,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           type: "video",
           id: targetReview.id,
           title: targetReview.title,
-          videoUrl: targetReview.videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          videoUrl: (targetReview as any).videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           status: "Needs Edit",
           concept: "Opening hook & scene pacing adjustment requested",
           meta: `Action Executed: Status updated to Needs Edit`,
@@ -1315,16 +1319,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else if (isCreateReq) {
       const spark = state.viralSparks?.[0];
       const sparkId = spark?.id || "vs-1";
-      createProductionFromSpark(sparkId);
-      const newProdId = `prod-${Date.now()}`;
+      const created = createProductionFromSpark(sparkId);
+      const realProd = created?.production;
+      const realReview = created?.reviewItem;
       taskMedia = {
         type: "video",
-        id: newProdId,
-        title: spark?.title || `Production Cut: ${prompt.slice(0, 40)}`,
-        videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        status: "In Pipeline",
+        id: realReview?.id || realProd?.id || `prod-${Date.now()}`,
+        title: realProd?.title || spark?.title || `Production Cut: ${prompt.slice(0, 40)}`,
+        videoUrl: (realReview as any)?.videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        status: realReview?.status || "Pending Review",
         concept: spark?.hook || "AI-generated script & 3-scene vertical storyboard",
-        meta: "Action Executed: Active production created in workspace",
+        meta: `Action Executed: Created Production "${realProd?.title || "Short Cut"}" queued for Review`,
       };
     } else if (lower.includes("autonomous mode") || lower.includes("full auto")) {
       updateAutomationMode("autonomous");

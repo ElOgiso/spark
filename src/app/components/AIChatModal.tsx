@@ -385,124 +385,26 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
       lower.includes("storyboard") ||
       lower.includes("trend");
 
-    // Initialize initial message state
+    // Initialize initial message state with clean real stage tracking
     addChatMessage({
       id: sparkMessageId,
       sender: "spark",
-      text: isGenerationCommand ? "Initializing AI Department Swarm Pipeline..." : "Thinking...",
+      text: isGenerationCommand ? "Executing AI Production Loop..." : "Thinking...",
       timestamp: new Date(),
       isStreaming: true,
       ...(isGenerationCommand
         ? {
-            activeDepartment: "Executive Director",
+            activeDepartment: "Research Department",
             swarmSteps: [
-              { department: "Executive Director", status: "completed", action: "✔ Strategy & Mission Accepted" },
-              {
-                department: "Research Department",
-                status: "running",
-                action: "Scanning live market trends...",
-                subActions: ["Searching YouTube Data API...", "Searching TikTok Creator Search...", "Searching Google Trends..."],
-              },
-              { department: "Analyst Department", status: "idle", action: "Ranking virality fit scores..." },
-              { department: "Creative Director", status: "idle", action: "Formulating curiosity hook..." },
-              { department: "Scriptwriter Department", status: "idle", action: "Writing platform script..." },
-              { department: "Visual Producer", status: "idle", action: "Rendering 3-scene vertical storyboard..." },
-              { department: "Publishing Department", status: "idle", action: "Preparing schedule window..." },
+              { department: "Executive Director", status: "completed", action: "Executive Mission Accepted" },
+              { department: "Research Department", status: "running", action: "Analyzing brand memory & live signals..." },
+              { department: "Creative Director", status: "idle", action: "Generating production brief & shot list..." },
+              { department: "Visual Producer", status: "idle", action: "Rendering multi-scene storyboard..." },
+              { department: "Publishing Department", status: "idle", action: "Queuing for Executive Review..." },
             ],
           }
         : {}),
     });
-
-    if (isGenerationCommand) {
-      eventBus.emit("TREND_FOUND", { title: commandText }, brand?.name);
-
-      setTimeout(() => {
-        updateChatMessage(sparkMessageId, "Research & Analyst Departments completed trend scoring.", true);
-        eventBus.emit("OPPORTUNITY_CREATED", { title: commandText }, brand?.name);
-
-        setState((prev: any) => ({
-          ...prev,
-          chatMessages: (prev.chatMessages || []).map((m: any) =>
-            m.id === sparkMessageId
-              ? {
-                  ...m,
-                  activeDepartment: "Creative Director",
-                  swarmSteps: [
-                    { department: "Executive Director", status: "completed", action: "✔ Strategy & Mission Accepted" },
-                    { department: "Research Department", status: "completed", action: "Found 24 breakout trend signals" },
-                    { department: "Analyst Department", status: "completed", action: "Predicting reach (97% Confidence Score)" },
-                    {
-                      department: "Creative Director",
-                      status: "running",
-                      action: "Formulating curiosity hook...",
-                      subActions: ["Drafting curiosity gap intro...", "Structuring narrative arc..."],
-                    },
-                    { department: "Scriptwriter Department", status: "idle", action: "Writing platform script..." },
-                    { department: "Visual Producer", status: "idle", action: "Rendering 3-scene vertical storyboard..." },
-                    { department: "Publishing Department", status: "idle", action: "Preparing schedule window..." },
-                  ],
-                }
-              : m
-          ),
-        }));
-      }, 600);
-
-      setTimeout(() => {
-        eventBus.emit("SCRIPT_READY", { title: commandText }, brand?.name);
-
-        setState((prev: any) => ({
-          ...prev,
-          chatMessages: (prev.chatMessages || []).map((m: any) =>
-            m.id === sparkMessageId
-              ? {
-                  ...m,
-                  activeDepartment: "Visual Producer",
-                  swarmSteps: [
-                    { department: "Executive Director", status: "completed", action: "✔ Strategy & Mission Accepted" },
-                    { department: "Research Department", status: "completed", action: "Found 24 breakout trend signals" },
-                    { department: "Analyst Department", status: "completed", action: "Predicting reach (97% Confidence Score)" },
-                    { department: "Creative Director", status: "completed", action: "Curiosity hook & angle established" },
-                    { department: "Scriptwriter Department", status: "completed", action: "Script & CTA finalized" },
-                    {
-                      department: "Visual Producer",
-                      status: "running",
-                      action: "Rendering 3-scene vertical storyboard...",
-                      subActions: ["Preparing Visual Prompt...", "Injecting Character Bible Rules...", "Structuring 9:16 aspect ratio cuts..."],
-                    },
-                    { department: "Publishing Department", status: "idle", action: "Preparing schedule window..." },
-                  ],
-                }
-              : m
-          ),
-        }));
-      }, 1200);
-
-      setTimeout(() => {
-        eventBus.emit("STORYBOARD_READY", { title: commandText }, brand?.name);
-        eventBus.emit("REVIEW_REQUIRED", { title: commandText }, brand?.name);
-
-        setState((prev: any) => ({
-          ...prev,
-          chatMessages: (prev.chatMessages || []).map((m: any) =>
-            m.id === sparkMessageId
-              ? {
-                  ...m,
-                  activeDepartment: "Publishing Department",
-                  swarmSteps: [
-                    { department: "Executive Director", status: "completed", action: "✔ Strategy & Mission Accepted" },
-                    { department: "Research Department", status: "completed", action: "Found 24 breakout trend signals" },
-                    { department: "Analyst Department", status: "completed", action: "Predicting reach (97% Confidence Score)" },
-                    { department: "Creative Director", status: "completed", action: "Curiosity hook & angle established" },
-                    { department: "Scriptwriter Department", status: "completed", action: "Script & CTA finalized" },
-                    { department: "Visual Producer", status: "completed", action: "3-scene vertical storyboard rendered" },
-                    { department: "Publishing Department", status: "completed", action: "Waiting Approval for Scheduled Window" },
-                  ],
-                }
-              : m
-          ),
-        }));
-      }, 1800);
-    }
 
     // Send to SparkContext & LLM Engine
     sendMessage(commandText, (chunk: string) => {
@@ -532,6 +434,16 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
                 isStreaming: false,
                 media: media || m.media,
                 audioUrl: audioUrl || m.audioUrl,
+                activeDepartment: "Executive Director",
+                swarmSteps: isGenerationCommand
+                  ? [
+                      { department: "Executive Director", status: "completed", action: "Executive Mission Accepted" },
+                      { department: "Research Department", status: "completed", action: "Extracted viral format from live signals" },
+                      { department: "Creative Director", status: "completed", action: "Production brief & hook finalized" },
+                      { department: "Visual Producer", status: "completed", action: "Multi-scene storyboard rendered" },
+                      { department: "Publishing Department", status: "completed", action: "Queued in Creative Review" },
+                    ]
+                  : m.swarmSteps,
               }
             : m
         ),
