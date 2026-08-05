@@ -60,7 +60,7 @@ export class YouTubeResearchProvider {
     const storedTokens = getStoredAccountTokens() as Record<string, any>;
     const googleOAuthToken = storedTokens?.google?.accessToken || storedTokens?.google?.access_token || null;
 
-    let avatar = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(handle)}`;
+    let avatar = "";
     let banner: string | undefined = undefined;
     let followers: number | null = null;
     let videoCount: number | null = null;
@@ -98,6 +98,7 @@ export class YouTubeResearchProvider {
 
     if (!googleApiKey && !googleOAuthToken) {
       status = "unavailable";
+      metricsAvailability = "unavailable";
       description =
         "YouTube API Key or Google Account Connection required. Please add VITE_YOUTUBE_API_KEY to .env or connect your Google account in Settings.";
     } else {
@@ -158,10 +159,12 @@ export class YouTubeResearchProvider {
         // Process Channel Metadata if Channel Item was successfully resolved
         if (!channelItem) {
           status = "error";
+          metricsAvailability = "unavailable";
           description = `YouTube Channel not found for handle "${handle}". Verify handle or channel URL.`;
         } else {
+          status = "active";
           channelId = channelItem.id || channelId;
-          avatar = channelItem.snippet?.thumbnails?.medium?.url || channelItem.snippet?.thumbnails?.high?.url || channelItem.snippet?.thumbnails?.default?.url || avatar;
+          avatar = channelItem.snippet?.thumbnails?.medium?.url || channelItem.snippet?.thumbnails?.high?.url || channelItem.snippet?.thumbnails?.default?.url || "";
           banner = channelItem.brandingSettings?.image?.bannerExternalUrl || undefined;
           description = channelItem.snippet?.description || description;
           country = channelItem.snippet?.country || undefined;

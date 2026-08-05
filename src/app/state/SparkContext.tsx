@@ -1095,21 +1095,49 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const syncResearchSource = async (id: string) => {
     const existing = (state.researchSources || []).find((s: any) => s.id === id);
     if (!existing) return;
-    const { ResearchSourceService } = await import("../services/research/researchSourceService");
-    const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
-    const brandId = getBrandWorkspaceId();
-    const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId, true);
 
-    const { memoryItems: newMemoryItems, viralSparks: newSparks } =
-      ResearchDepartmentService.processPatterns(brandId, source, patterns);
-
+    // Immediately set source status to "syncing" for active UI feedback
     setState((prev: any) => ({
       ...prev,
-      researchSources: (prev.researchSources || []).map((s: any) => (s.id === id ? source : s)),
-      researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
-      memoryItems: [...newMemoryItems, ...(prev.memoryItems || [])],
-      viralSparks: [...newSparks, ...(prev.viralSparks || [])],
+      researchSources: (prev.researchSources || []).map((s: any) =>
+        s.id === id ? { ...s, status: "syncing" } : s
+      ),
     }));
+
+    try {
+      const { ResearchSourceService } = await import("../services/research/researchSourceService");
+      const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
+      const brandId = getBrandWorkspaceId();
+
+      // Force manual refresh
+      const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId, true);
+
+      const { memoryItems: newMemoryItems, viralSparks: newSparks } =
+        ResearchDepartmentService.processPatterns(brandId, source, patterns);
+
+      setState((prev: any) => {
+        const existingSparks = prev.viralSparks || [];
+        const filteredNewSparks = newSparks.filter(
+          (ns: any) => !existingSparks.some((es: any) => es.sourceId === ns.sourceId && es.title === ns.title)
+        );
+
+        return {
+          ...prev,
+          researchSources: (prev.researchSources || []).map((s: any) => (s.id === id ? source : s)),
+          researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
+          memoryItems: [...newMemoryItems, ...(prev.memoryItems || [])],
+          viralSparks: [...filteredNewSparks, ...existingSparks],
+        };
+      });
+    } catch (err) {
+      console.warn("[SparkContext] syncResearchSource notice:", err);
+      setState((prev: any) => ({
+        ...prev,
+        researchSources: (prev.researchSources || []).map((s: any) =>
+          s.id === id ? { ...s, status: "error" } : s
+        ),
+      }));
+    }
   };
 
   const addAsset = (name: string, type: "video" | "audio" | "image" | "document", size: string) => {
