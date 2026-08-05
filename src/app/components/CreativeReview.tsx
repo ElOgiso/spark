@@ -32,8 +32,8 @@ interface CreativeReviewProps {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
-  const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem } = useSpark() as any;
-  
+  const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
+
   // Find the first item that is pending review, or default to the first item
   const activeReview = reviewItems.find((r: any) => r.status === "Pending Review") || reviewItems[0];
   const reviewId = activeReview?.id || "r1";
@@ -42,7 +42,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const activeProd = productions.find((p: any) => p.id === activeReview?.productionId);
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["why-this-works"])
+    new Set(["why-this-works", "storyboard"])
   );
 
   const toggleSection = (section: string) => {
@@ -55,6 +55,32 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
+
+  const handleGenerateAssets = () => {
+    if (activeProd?.id && generateProductionAssets) {
+      setActionSuccess("Generating Assets...");
+      void generateProductionAssets(activeProd.id).then(() => {
+        setActionSuccess("Assets Generated");
+        setTimeout(() => setActionSuccess(null), 3000);
+      });
+    }
+  };
+
+  const handleCancelProduction = () => {
+    if (activeProd?.id && cancelProduction) {
+      cancelProduction(activeProd.id);
+      setActionSuccess("Production Cancelled");
+      NotificationService.addNotification({
+        title: "Production Cancelled",
+        description: `"${activeProd?.title || activeReview?.title || "Production"}" generation has been cancelled cleanly.`,
+        type: "system_update",
+        priority: "medium",
+        actionLabel: "View Review Queue",
+        relatedRoute: "/review"
+      });
+      setTimeout(() => setActionSuccess(null), 3000);
+    }
+  };
 
   const handleApprove = () => {
     approveReviewItem(reviewId);
@@ -546,9 +572,28 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               className="flex-1"
               icon={<CheckCircle2 className="w-5 h-5" />}
               onClick={handleApprove}
-              disabled={regenerating || exporting}
+              disabled={regenerating || exporting || activeProd?.isGeneratingAssets}
             >
               Approve Production
+            </Button>
+            <Button
+              variant="accent"
+              size="lg"
+              icon={<Sparkles className={`w-4 h-4 ${activeProd?.isGeneratingAssets ? "animate-spin text-purple-400" : ""}`} />}
+              onClick={handleGenerateAssets}
+              disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
+            >
+              {activeProd?.isGeneratingAssets ? "Synthesizing Storyboard..." : "Generate Assets"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="lg"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              icon={<XCircle className="w-4 h-4" />}
+              onClick={handleCancelProduction}
+              disabled={regenerating || exporting}
+            >
+              Cancel Production
             </Button>
             <Button
               variant="secondary"
@@ -558,15 +603,6 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               disabled={regenerating || exporting}
             >
               Request Revision
-            </Button>
-            <Button
-              variant="regenerate"
-              size="lg"
-              icon={<RotateCw className={`w-4 h-4 ${regenerating ? "animate-spin" : ""}`} />}
-              onClick={handleRegenerate}
-              disabled={regenerating || exporting}
-            >
-              {regenerating ? "Improving Format..." : "Improve Brand Format"}
             </Button>
             <Button
               variant="schedule"
@@ -585,15 +621,6 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               disabled={regenerating || exporting}
             >
               {exporting ? "Compiling..." : "Export Assets"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="lg"
-              icon={<XCircle className="w-4 h-4" />}
-              onClick={handleRequestEdit}
-              disabled={regenerating || exporting}
-            >
-              Reject
             </Button>
           </div>
         </div>

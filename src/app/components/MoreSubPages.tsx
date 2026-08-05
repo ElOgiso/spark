@@ -15,6 +15,7 @@ import { ModelRouter } from "../services/runtime/modelRouter";
 import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig } from "../domain/types";
 import {
   ArrowLeft,
+  Zap,
   FileText,
   Shield,
   CreditCard,
@@ -419,6 +420,46 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          ),
+        };
+      case "/more/production-settings":
+        return {
+          title: "Production Generation Settings",
+          icon: Zap,
+          description: "Configure automatic asset synthesis for new productions.",
+          content: (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-border/40 pb-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Production Generation</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Controls whether SPARK synthesizes full multi-scene storyboards, voiceovers, and visual assets when initializing a Production.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => spark.toggleProductionGeneration?.()}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      spark.productionGenerationEnabled !== false
+                        ? "bg-success/20 text-success border-success/40"
+                        : "bg-muted/20 text-muted-foreground border-border/50"
+                    }`}
+                  >
+                    {spark.productionGenerationEnabled !== false ? "ON (Enabled)" : "OFF (Disabled)"}
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-xl border border-border/50 bg-background/50 space-y-2 text-xs text-muted-foreground">
+                  <p className="font-semibold text-foreground">Executive Workflow Rule:</p>
+                  <p>
+                    When <strong>ON</strong> (Default), SPARK creates complete Production Briefs and automatically schedules background multi-scene storyboard & voiceover synthesis.
+                  </p>
+                  <p>
+                    When <strong>OFF</strong>, SPARK generates lightweight Production Briefs only, deferring media rendering until you explicitly request asset synthesis.
+                  </p>
                 </div>
               </div>
             </div>

@@ -84,6 +84,10 @@ interface SparkContextType {
   updateProductionMode: (mode: ProductionMode) => void;
   updateAISettings: (newSettings: AISettings) => void;
   createProductionFromSpark: (sparkId: string) => void;
+  generateProductionAssets: (productionId: string) => Promise<void>;
+  cancelProduction: (productionId: string) => void;
+  productionGenerationEnabled?: boolean;
+  toggleProductionGeneration?: (enabled?: boolean) => void;
   approveReviewItem: (reviewId: string) => void;
   rejectOrRequestEditReviewItem: (reviewId: string) => void;
   addMemoryItem: (text: string, type: "learned" | "rule", category?: any) => void;
@@ -815,6 +819,78 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return true;
+    try {
+      return localStorage.getItem("spark_production_generation_enabled") !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleProductionGeneration = (enabled?: boolean) => {
+    const next = enabled !== undefined ? enabled : !productionGenerationEnabled;
+    setProductionGenerationEnabledState(next);
+    if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("spark_production_generation_enabled", String(next));
+      } catch {}
+    }
+  };
+
+  const generateProductionAssets = async (productionId: string) => {
+    const prod = state.productions.find((p: any) => p.id === productionId);
+    if (!prod) return;
+
+    setState((prev: any) => ({
+      ...prev,
+      productions: prev.productions.map((p: any) =>
+        p.id === productionId ? { ...p, isGeneratingAssets: true } : p
+      ),
+    }));
+
+    try {
+      const { productionService } = await import("../services/productionService");
+      const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
+        production: prod,
+        brand: state.brand,
+        character: state.character,
+      });
+
+      setState((prev: any) => ({
+        ...prev,
+        productions: prev.productions.map((p: any) => (p.id === productionId ? updatedProd : p)),
+        reviewItems: prev.reviewItems.map((r: any) =>
+          r.productionId === productionId
+            ? { ...r, brief: updatedBrief, openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment }
+            : r
+        ),
+      }));
+    } catch (err) {
+      console.warn("[SparkContext] Asset generation notice:", err);
+      setState((prev: any) => ({
+        ...prev,
+        productions: prev.productions.map((p: any) =>
+          p.id === productionId ? { ...p, isGeneratingAssets: false } : p
+        ),
+      }));
+    }
+  };
+
+  const cancelProduction = (productionId: string) => {
+    void import("../services/productionService").then(({ productionService }) => {
+      void productionService.cancelProduction(productionId).then((cancelledProd) => {
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) => (p.id === productionId ? cancelledProd : p)),
+          reviewItems: prev.reviewItems.map((r: any) =>
+            r.productionId === productionId ? { ...r, status: "Needs Edit" } : r
+          ),
+        }));
+      });
+    });
+  };
+
   const approveReviewItem = (reviewId: string) => {
     setState((prev: any) => {
       const review = prev.reviewItems.find((r: any) => r.id === reviewId);
@@ -1247,6 +1323,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateProductionMode,
         updateAISettings,
         createProductionFromSpark,
+        generateProductionAssets,
+        cancelProduction,
+        productionGenerationEnabled,
+        toggleProductionGeneration,
         approveReviewItem,
         rejectOrRequestEditReviewItem,
         addMemoryItem,

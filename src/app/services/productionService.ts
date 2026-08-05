@@ -2,6 +2,7 @@ import { IProductionService } from "../domain/contracts";
 import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
+import { ProductionAssetService } from "./production/productionAssetService";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -14,6 +15,25 @@ export class ProductionService implements IProductionService {
   private saveFullState(updates: any) {
     const current = this.getFullState();
     savePersistedState({ ...current, ...updates });
+  }
+
+  isProductionGenerationEnabled(): boolean {
+    if (typeof localStorage === "undefined") return true;
+    try {
+      const val = localStorage.getItem("spark_production_generation_enabled");
+      return val !== "false";
+    } catch {
+      return true;
+    }
+  }
+
+  setProductionGenerationEnabled(enabled: boolean): void {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem("spark_production_generation_enabled", String(enabled));
+    } catch (err) {
+      console.warn("[ProductionService] Toggle save notice:", err);
+    }
   }
 
   async getProductions(): Promise<Production[]> {
@@ -103,12 +123,91 @@ export class ProductionService implements IProductionService {
     return { production, reviewItem, brief };
   }
 
+  /**
+   * Executive Trigger: Generates complete multi-scene storyboard, voiceover, and thumbnail assets
+   */
+  async generateAssetsForProduction(params: {
+    production: Production;
+    brand: Brand;
+    character?: Character;
+  }): Promise<{ production: Production; brief: ProductionBrief }> {
+    const { production, brand, character } = params;
+    if (!production.brief) {
+      throw new Error("Production brief must exist before generating assets.");
+    }
+
+    const result = await ProductionAssetService.generateAssets({
+      production,
+      brief: production.brief,
+      brand,
+      character,
+    });
+
+    const updatedProd: Production = {
+      ...production,
+      brief: result.brief,
+      scenes: result.scenes,
+      audioUrl: result.audioUrl,
+      videoUrl: result.videoUrl,
+      isGeneratingAssets: false,
+    };
+
+    const state = this.getFullState();
+    const currentProds: Production[] = state.productions || [];
+    const currentReviews: ReviewItem[] = state.reviewItems || [];
+
+    this.saveFullState({
+      productions: currentProds.map((p) => (p.id === production.id ? updatedProd : p)),
+      reviewItems: currentReviews.map((r) =>
+        r.productionId === production.id
+          ? {
+              ...r,
+              brief: result.brief,
+              openingMoment: result.brief.storyboard?.[0]?.visualDescription || r.openingMoment,
+            }
+          : r
+      ),
+    });
+
+    return { production: updatedProd, brief: result.brief };
+  }
+
+  /**
+   * Executive Action: Cancels active production asset generation cleanly
+   */
+  async cancelProduction(id: string): Promise<Production> {
+    const productions = await this.getProductions();
+    let updatedProd: Production | null = null;
+    const updated = productions.map((p) => {
+      if (p.id === id) {
+        updatedProd = { ...p, status: "Cancelled", isGeneratingAssets: false };
+        return updatedProd;
+      }
+      return p;
+    });
+
+    if (!updatedProd) {
+      throw new Error(`Production with id ${id} not found`);
+    }
+
+    const state = this.getFullState();
+    const currentReviews: ReviewItem[] = state.reviewItems || [];
+    this.saveFullState({
+      productions: updated,
+      reviewItems: currentReviews.map((r) =>
+        r.productionId === id ? { ...r, status: "Needs Edit" } : r
+      ),
+    });
+
+    return updatedProd;
+  }
+
   async updateProductionStatus(id: string, status: Production["status"]): Promise<Production> {
     const productions = await this.getProductions();
     let updatedProd: Production | null = null;
     const updated = productions.map((p) => {
       if (p.id === id) {
-        updatedProd = { ...p, status };
+        updatedProd = { ...p, status, isGeneratingAssets: false };
         return updatedProd;
       }
       return p;

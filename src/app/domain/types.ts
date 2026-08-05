@@ -66,6 +66,20 @@ export interface ViralSpark {
   sourceId?: string;
 }
 
+export interface ProductionScene {
+  scene: number;
+  duration: string;
+  shotList: string;
+  cameraDirection: string;
+  transitions: string;
+  onScreenText: string;
+  pacing: string;
+  scriptSnippet: string;
+  visualDescription: string;
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+}
+
 export interface ProductionBrief {
   title: string;
   productionMode: string;
@@ -77,13 +91,20 @@ export interface ProductionBrief {
   whyThisWorks: string;
   brandFitScore: number;
   suggestedDuration: string;
+  storyboard?: ProductionScene[];
+  audioUrl?: string;
+  generatedAssets?: {
+    sceneClips?: string[];
+    thumbnails?: { id: string; concept: string; variant: string; url?: string }[];
+    voiceoverUrl?: string;
+  };
 }
 
 export interface Production {
   id: string;
   title: string;
   sparkId?: string;
-  status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed";
+  status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed" | "Cancelled";
   mode: ProductionMode;
   dateCreated: string;
   aspectRatio: string;
@@ -91,6 +112,9 @@ export interface Production {
   scenes: { scene: number; description: string; duration: string }[];
   reasoning?: any;
   brief?: ProductionBrief;
+  audioUrl?: string;
+  videoUrl?: string;
+  isGeneratingAssets?: boolean;
 }
 
 export interface QualityCheck {

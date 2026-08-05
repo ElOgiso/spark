@@ -168,6 +168,13 @@ export function MorePage({ onNavigate }: MorePageProps) {
       title: "Preferences",
       items: [
         {
+          icon: Zap,
+          label: "Production Settings",
+          description: "Production Generation toggle (ON / OFF)",
+          meta: spark?.productionGenerationEnabled !== false ? "ON" : "OFF",
+          action: () => onNavigate("/more/production-settings"),
+        },
+        {
           icon: Bell,
           label: "Notifications",
           description: "Alert types and delivery settings",
