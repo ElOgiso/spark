@@ -1253,9 +1253,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
 
+      const providerId = (await import("../services/runtime/AIProviderOrchestrator")).AIProviderOrchestrator.getLastUsedProviderId();
       return {
         text: responseText,
-        media: taskMedia
+        media: taskMedia,
+        providerId
       };
     } finally {
       setThinkingState(null);

@@ -30,6 +30,7 @@ import { DepartmentActivity, DepartmentStep } from "./DepartmentActivity";
 import { eventBus } from "../services/runtime/eventBus";
 import { ConversationSession } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
+import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrator";
 
 interface AIChatModalProps {
   isOpen: boolean;
@@ -422,6 +423,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     }).then((res: any) => {
       const finalText = typeof res === "string" ? res : res?.text || "";
       const media = typeof res === "object" ? res?.media : null;
+      const providerId = typeof res === "object" ? res?.providerId : AIProviderOrchestrator.getLastUsedProviderId();
 
       setState((prev: any) => ({
         ...prev,
@@ -437,7 +439,10 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
         ),
       }));
 
-      speakText(finalText, isMuted);
+      // Automatically trigger provider-native TTS voice playback
+      void speakText(finalText, isMuted, providerId).catch((err) => {
+        console.warn("[SuperSparkVoice] Automatic voice playback notice:", err);
+      });
     });
   };
 
