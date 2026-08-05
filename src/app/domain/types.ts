@@ -66,6 +66,19 @@ export interface ViralSpark {
   sourceId?: string;
 }
 
+export interface ProductionBrief {
+  title: string;
+  productionMode: string;
+  hook: string;
+  scriptOutline: string;
+  visualDirection: string;
+  caption: string;
+  platformRecommendation: string;
+  whyThisWorks: string;
+  brandFitScore: number;
+  suggestedDuration: string;
+}
+
 export interface Production {
   id: string;
   title: string;
@@ -77,6 +90,7 @@ export interface Production {
   formats: string[];
   scenes: { scene: number; description: string; duration: string }[];
   reasoning?: any;
+  brief?: ProductionBrief;
 }
 
 export interface QualityCheck {
@@ -97,6 +111,8 @@ export interface ReviewItem {
   conceptText: string;
   openingMoment: string;
   qualityCheck: QualityCheck;
+  brief?: ProductionBrief;
+  whyThisWorks?: string;
 }
 
 export interface PublishJob {

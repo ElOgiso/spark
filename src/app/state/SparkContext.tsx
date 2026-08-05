@@ -729,9 +729,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const createProductionFromSpark = (sparkOrId: string | ViralSpark) => {
-    const spark = typeof sparkOrId === "string" 
-      ? state.viralSparks.find((s: any) => s.id === sparkOrId) || state.viralSparks[0]
-      : sparkOrId;
+    const spark =
+      typeof sparkOrId === "string"
+        ? state.viralSparks.find((s: any) => s.id === sparkOrId) || state.viralSparks[0]
+        : sparkOrId;
     if (!spark) return;
 
     const prodId = `p-${Date.now()}`;
@@ -742,24 +743,24 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const platformFit = spark.platformFit || "YouTube Shorts";
     const formats = platformFit.split(" + ").map((s: string) => s.trim()).filter(Boolean);
 
-    const newProduction: Production = {
+    // Initial optimistic state creation
+    const initialProduction: Production = {
       id: prodId,
       title: spark.title,
       sparkId: spark.id,
       status: status,
       mode: state.productionMode,
       dateCreated: new Date().toISOString().split("T")[0],
-      aspectRatio:
-        platformFit.includes("YouTube") && !platformFit.includes("TikTok") ? "16:9" : "9:16",
+      aspectRatio: platformFit.includes("YouTube") && !platformFit.includes("TikTok") ? "16:9" : "9:16",
       formats,
       scenes: [
         { scene: 1, description: `Hook Angle: ${spark.angle} (${hostStyle} host presentation)`, duration: "0-5s" },
         { scene: 2, description: `Body Point 1: Deep dive on ${spark.title}`, duration: "5-25s" },
-        { scene: 3, description: `CTA and brand alignment for ${state.brand.name}`, duration: "25-30s" }
-      ]
+        { scene: 3, description: `CTA and brand alignment for ${state.brand.name}`, duration: "25-30s" },
+      ],
     };
 
-    const newReviewItem: ReviewItem = {
+    const initialReviewItem: ReviewItem = {
       id: reviewId,
       productionId: prodId,
       title: spark.title,
@@ -770,28 +771,48 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       scriptSnippet: spark.hook,
       conceptText: spark.whyNow,
       openingMoment: spark.angle,
-      qualityCheck: { brandSafety: "Passed", policyCheck: "Passed", technicalCheck: "Passed" }
+      qualityCheck: { brandSafety: "Passed", policyCheck: "Passed", technicalCheck: "Passed" },
     };
 
     setState((prev: any) => {
       const alreadyCreatedReview = prev.reviewItems.some((r: any) => r.title === spark.title);
-      const updatedReviewItems = alreadyCreatedReview ? prev.reviewItems : [newReviewItem, ...prev.reviewItems];
+      const updatedReviewItems = alreadyCreatedReview ? prev.reviewItems : [initialReviewItem, ...prev.reviewItems];
       const updatedProductions = prev.productions.some((p: any) => p.title === spark.title)
         ? prev.productions
-        : [newProduction, ...prev.productions];
+        : [initialProduction, ...prev.productions];
 
       return {
         ...prev,
         productions: updatedProductions,
-        reviewItems: updatedReviewItems
+        reviewItems: updatedReviewItems,
       };
     });
 
-    // Background Supabase persistence if configured (requires brand UUID)
-    const brandId = getBrandWorkspaceId();
-    if (isSupabaseConfigured() && brandId) {
-      void persistProductionCreate(brandId, newProduction);
-    }
+    // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
+    void import("../services/productionService").then(({ productionService }) => {
+      void productionService
+        .createProductionFromSpark({
+          spark,
+          brand: state.brand,
+          character: state.character,
+          niche: state.brand.niche,
+          memoryItems: state.memoryItems || [],
+          productionMode: state.productionMode,
+        })
+        .then(({ production: enrichedProd, reviewItem: enrichedReview }) => {
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd } : p)),
+            reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
+          }));
+
+          const brandId = getBrandWorkspaceId();
+          if (isSupabaseConfigured() && brandId) {
+            void persistProductionCreate(brandId, enrichedProd);
+          }
+        })
+        .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));
+    });
   };
 
   const approveReviewItem = (reviewId: string) => {
