@@ -1017,6 +1017,17 @@ export function MySpark({ onNavigate }: MySparkProps) {
                       ? `${Math.round(source.researchConfidence * 100)}% Confidence`
                       : "Not enough data";
 
+                    const isSyncing = source.status === "syncing" || syncingSourceId === source.id;
+                    const isHealthy = source.status === "active";
+                    const isNeedsAttention = source.status === "error" || source.status === "unavailable";
+
+                    const statusLabel = isSyncing ? "Syncing" : isHealthy ? "Healthy" : "Needs attention";
+                    const statusBadgeStyle = isSyncing
+                      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      : isHealthy
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      : "bg-rose-500/10 text-rose-400 border-rose-500/20";
+
                     return (
                       <div
                         key={source.id}
@@ -1063,12 +1074,29 @@ export function MySpark({ onNavigate }: MySparkProps) {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Auto Updating
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-full border ${statusBadgeStyle}`}>
+                                {isSyncing ? (
+                                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                                ) : isHealthy ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                ) : (
+                                  <AlertCircle className="w-2.5 h-2.5 text-rose-400" />
+                                )}
+                                {statusLabel}
                               </span>
                             </div>
                           </div>
+
+                          {/* Honest Needs Attention Warning Banner */}
+                          {isNeedsAttention && (
+                            <div className="mt-1 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2">
+                              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                              <div>
+                                <p className="font-semibold text-rose-200">Needs Attention</p>
+                                <p className="text-[11px] text-rose-300/90 mt-0.5">{source.description || "Source data currently unavailable. Verify handle or check API settings."}</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="pt-3 border-t border-border/40 flex items-center justify-between text-xs">
