@@ -1148,7 +1148,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (msg.media?.id) syncResearchSource(msg.media.id);
+                                    if (msg.media?.id) syncResearchSource?.(msg.media.id);
                                   }}
                                   className="px-3 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
                                 >
