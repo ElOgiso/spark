@@ -7,19 +7,20 @@ export const SPARK_EXECUTIVE_VOICE_PROFILE = {
   name: "Super Spark",
   title: "Executive Creative Director",
   identity: "Spark Executive OS Director",
-  voiceId: "Puck", // Fixed Gemini Live / TTS male voice
+  voiceId: "Kore", // Fixed Gemini Live / TTS female voice
+  elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel / Executive Female Voice
   model: "gemini-2.0-flash",
   ttsModel: "gemini-3.1-flash-tts-preview",
-  gender: "Male" as const,
-  language: "English (US)" as const,
-  accent: "Neutral Executive Male" as const,
-  tone: "Warm, Professional, Calm, Confident" as const,
-  speakingStyle: "Articulate Executive Partner" as const,
+  gender: "Female" as const,
+  language: "English (International / Nigerian Cadence)" as const,
+  accent: "Warm Neutral Executive Female" as const,
+  tone: "Warm, Calm, Intelligent, Executive, Natural, Consistent" as const,
+  speakingStyle: "Trusted Executive Partner" as const,
   streaming: true,
   thinking: true,
   interruptions: true,
-  pitch: 0.88,
-  rate: 1.02,
+  pitch: 1.05, // Warm female pitch
+  rate: 1.0,   // Natural executive cadence
 } as const;
 
 // Retrieve API key dynamically using unified 4-tier provider key resolver
@@ -27,15 +28,18 @@ function getGeminiApiKey(): string | undefined {
   return resolveProviderKey("gemini");
 }
 
-const SUPER_SPARK_SYSTEM_INSTRUCTION = `You are Super Spark, the Executive Creative Director and executive partner for Spark Media OS.
+const SUPER_SPARK_SYSTEM_INSTRUCTION = `You are Super Spark, the Executive Creative Director and trusted executive partner for Spark Media OS.
 
-HUMAN CONVERSATION & EXECUTIVE PARTNER DIRECTIVES:
-1. EXECUTIVE PARTNER TONE: Speak naturally as an articulate, warm, confident, sharp executive partner.
-2. CONVERSATIONAL CONTINUITY & CONTEXT: Carefully read and reference previous conversation history. If the user asks "Are you reading at all?" or checks your attention, demonstrate direct understanding of what they said and acknowledge it.
-3. CONVERSATIONAL VS TASK REQUESTS:
-   - For greetings, check-ins, or strategy questions ("Hello", "What are you doing?", "Are you reading at all?"): Respond naturally as an executive director. NEVER output generic disclaimers or canned template boilerplate.
-   - For action requests ("Create video", "Approve review", "Publish cut"): Confirm execution clearly in 1-3 sharp, direct sentences.
-4. NO CANNED TEMPLATES: Never output phrases like "Understood. Noted. Let's move on..." or generic marketing copy. Answer the user's exact words directly.`;
+EXECUTIVE PERSONALITY & CONVERSATION DIRECTIVES:
+1. EXECUTIVE PARTNER VOICE: You are female, warm, calm, intelligent, natural, and highly executive. Speak with a natural, poised cadence (warm neutral international tone with a subtle Nigerian English rhythm when appropriate).
+2. CONCISE CONVERSATIONAL REPLIES: By default, respond in 1 to 3 short, clear sentences. Never output long essays, generic tutorials, or marketing boilerplate unless explicitly requested by the user.
+3. DIRECT ANSWERING: Answer exactly what was asked directly and concisely, like a trusted executive peer.
+4. NATURAL CASUAL TOUCHES: You may naturally use light, warm Nigerian executive phrases (e.g. "I've got you", "No wahala", "All set") ONLY if the user's conversation style is casual. Never force slang.
+5. EXECUTIVE SAFETY GATE & CONFIRMATION:
+   - You must NEVER autonomously enable/disable production, generate videos, create productions, modify workspace settings, publish content, schedule posts, or trigger automation without explicit user confirmation.
+   - If the user asks for a sensitive action or setting change (e.g., "Turn production on", "Publish this now", "Delete this session"), reply:
+     "I can do that for you. Would you like me to proceed?"
+   - WAIT for explicit confirmation ("Yes", "Go ahead", "Do it", "Confirm") before triggering the action.`;
 
 export interface GeminiMessage {
   role: 'user' | 'model';
@@ -136,7 +140,7 @@ function generateSmartFallbackResponse(
 }
 
 /**
- * Generate Gemini TTS Male Voice Audio for Super Spark Executive Director
+ * Generate Executive TTS Voice Audio for Super Spark
  */
 export async function generateSuperSparkVoice(text: string): Promise<string | null> {
   const apiKey = getGeminiApiKey();
@@ -148,18 +152,14 @@ export async function generateSuperSparkVoice(text: string): Promise<string | nu
 
     const ai = new GoogleGenAI({
       apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
     const response = await ai.models.generateContent({
       model: SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel,
-      contents: [{ parts: [{ text: `Speak in a clear, confident, warm executive male voice (${SPARK_EXECUTIVE_VOICE_PROFILE.voiceId}): ${text.slice(0, 400)}` }] }],
+      contents: [{ parts: [{ text: `Speak in a clear, warm, calm, intelligent executive female voice (${SPARK_EXECUTIVE_VOICE_PROFILE.voiceId}): ${text.slice(0, 400)}` }] }],
       config: {
-        responseModalities: [Modality?.AUDIO || 'AUDIO'],
+        responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: SPARK_EXECUTIVE_VOICE_PROFILE.voiceId },
@@ -168,64 +168,28 @@ export async function generateSuperSparkVoice(text: string): Promise<string | nu
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      return `data:audio/wav;base64,${base64Audio}`;
+    const candidate = response.candidates?.[0];
+    const part = candidate?.content?.parts?.[0];
+
+    if (part && 'inlineData' in part && part.inlineData?.data) {
+      return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
     }
-  } catch (err) {
-    console.warn('[SuperSpark] Gemini TTS Audio generation fallback:', err);
-  }
 
-  return null;
+    return null;
+  } catch (error) {
+    console.warn('[SuperSparkVoice] TTS audio generation notice:', error);
+    return null;
+  }
 }
 
-/**
- * Clean up any accidental echoing from response
- */
-function cleanEchoingPrefix(response: string, userPrompt: string): string {
-  let cleaned = response.trim();
-  const lowerPrompt = userPrompt.trim().toLowerCase();
-  
-  if (cleaned.toLowerCase().startsWith(`"${lowerPrompt}"`)) {
-    cleaned = cleaned.slice(lowerPrompt.length + 2).trim();
-  } else if (cleaned.toLowerCase().startsWith(`you asked:`)) {
-    cleaned = cleaned.replace(/^you asked:[^\n]*\n?/i, '').trim();
-  } else if (cleaned.toLowerCase().startsWith(`you said:`)) {
-    cleaned = cleaned.replace(/^you said:[^\n]*\n?/i, '').trim();
-  }
-  
-  return cleaned;
-}
+function cleanEchoingPrefix(text: string, originalPrompt: string): string {
+  if (!text) return "";
+  let cleanText = text.replace(/^(system:|assistant:|model:|user:)/gi, "").trim();
 
-
-
-/**
- * Universal Gemini API executor for multi-modal text/vision analysis
- */
-export async function callGeminiAPI(prompt: string, systemInstruction?: string): Promise<string> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    return "";
+  const promptPrefix = originalPrompt.trim();
+  if (cleanText.toLowerCase().startsWith(promptPrefix.toLowerCase())) {
+    cleanText = cleanText.slice(promptPrefix.length).trim();
   }
 
-  try {
-    const { GoogleGenAI } = await import('@google/genai').catch(() => ({ GoogleGenAI: null as any }));
-    if (!GoogleGenAI) return "";
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
-
-    const response = await ai.models.generateContent({
-      model: SPARK_EXECUTIVE_VOICE_PROFILE.model,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: systemInstruction ? { systemInstruction } : undefined,
-    });
-
-    return (response.text || "").trim();
-  } catch (err) {
-    console.warn("[geminiService] callGeminiAPI error:", err);
-    return "";
-  }
+  return cleanText;
 }

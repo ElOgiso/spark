@@ -1160,8 +1160,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const lower = prompt.toLowerCase();
     let taskMedia: any = null;
 
-    // Universal Natural Language Task Router (Only for genuine task execution requests)
-    const isApprovalReq = /\b(approve|accept|publish review|ship it|schedule cut)\b/i.test(lower);
+    const lastAssistantMsg = history.length > 0 ? history[history.length - 1] : null;
+    const isAwaitingConfirmation = lastAssistantMsg?.sender === "spark" && lastAssistantMsg.text.toLowerCase().includes("would you like me to proceed?");
+    const isConfirmed = /^(yes|yeah|sure|go ahead|do it|confirm|proceed|ok|okay|approve it)[\s!.]*$/i.test(lower);
+
+    // Sensitive workspace/production action checks
+    const isSensitiveActionReq = /\b(turn production|enable production|disable production|generate video|publish content|schedule post|autonomous mode|full auto)\b/i.test(lower);
+
+    if (isSensitiveActionReq && !isConfirmed && !isAwaitingConfirmation) {
+      const confirmationPrompt = `I can do that for you. Would you like me to proceed?`;
+      if (onChunk) onChunk(confirmationPrompt);
+      return confirmationPrompt;
+    }
+
+    // Universal Natural Language Task Router (Only executed with explicit intent or confirmation)
+    const isApprovalReq = /\b(approve|accept|publish review|ship it|schedule cut)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed);
     const isEditReq = /\b(needs edit|reject|revision|request edit)\b/i.test(lower);
     const isCreateReq = /\b(create video|make video|generate video|create short|draft script|create storyboard|generate cut)\b/i.test(lower);
 
@@ -1176,7 +1189,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           videoUrl: targetReview.videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           status: "Approved",
           concept: targetReview.reason || "High engagement viral cut",
-          meta: `Action Executed: Approved & Scheduled for Publishing`
+          meta: `Action Executed: Approved & Scheduled for Publishing`,
         };
       }
     } else if (isEditReq) {
@@ -1190,7 +1203,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           videoUrl: targetReview.videoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           status: "Needs Edit",
           concept: "Opening hook & scene pacing adjustment requested",
-          meta: `Action Executed: Status updated to Needs Edit`
+          meta: `Action Executed: Status updated to Needs Edit`,
         };
       }
     } else if (isCreateReq) {
@@ -1205,7 +1218,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
         status: "In Pipeline",
         concept: spark?.hook || "AI-generated script & 3-scene vertical storyboard",
-        meta: "Action Executed: Active production created in workspace"
+        meta: "Action Executed: Active production created in workspace",
       };
     } else if (lower.includes("autonomous mode") || lower.includes("full auto")) {
       updateAutomationMode("autonomous");

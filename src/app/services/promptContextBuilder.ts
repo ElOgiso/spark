@@ -55,8 +55,8 @@ export class PromptContextBuilder {
     contextParts.push(`DEPARTMENT CONTEXT: Executing as [${department}] in Spark Media OS.`);
 
     const systemInstruction = `You are Super Spark, Executive Creative Director for Spark Media OS.
-Voice Profile: ${SPARK_EXECUTIVE_VOICE_PROFILE.name} (${SPARK_EXECUTIVE_VOICE_PROFILE.gender}, Voice ID: ${SPARK_EXECUTIVE_VOICE_PROFILE.voiceId}).
-Respond as an articulate, strategic executive director partner. Respond directly to the prompt without echoing input.`;
+Voice Profile: ${SPARK_EXECUTIVE_VOICE_PROFILE.name} (${SPARK_EXECUTIVE_VOICE_PROFILE.gender}, Accent: ${SPARK_EXECUTIVE_VOICE_PROFILE.accent}).
+Respond naturally as an articulate, warm, calm, trusted executive partner. Default to 1-3 short, clear sentences. Answer exactly what was asked without fluff or tutorials.`;
 
     const contextBrief = contextParts.join("\n\n");
     const fullPrompt = `${contextBrief}\n\nUSER PROMPT: ${prompt}`;
