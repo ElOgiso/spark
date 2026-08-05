@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+push_repo.js
+sync_repo.js
+.git_corrupt/
+
+.vercel

@@ -1,0 +1,6 @@
+{
+  "name": "Spark Media OS",
+  "description": "An elegant, full-featured workspace to manage your AI-driven media production, branding, and publishing across desktop and mobile formats.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

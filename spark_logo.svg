@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1A1523" />
+      <stop offset="40%" stop-color="#0E0A14" />
+      <stop offset="100%" stop-color="#050307" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#E000EC" stop-opacity="0.38" />
+      <stop offset="50%" stop-color="#8E00A8" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="glassSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22" />
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.04" />
+      <stop offset="70%" stop-color="#e040ff" stop-opacity="0.02" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.12" />
+    </linearGradient>
+    <linearGradient id="rimLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5" />
+      <stop offset="30%" stop-color="#d050ff" stop-opacity="0.25" />
+      <stop offset="70%" stop-color="#401050" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.35" />
+    </linearGradient>
+    <linearGradient id="spark3D" x1="15%" y1="10%" x2="85%" y2="90%">
+      <stop offset="0%" stop-color="#FF7DFD" />
+      <stop offset="35%" stop-color="#E300EC" />
+      <stop offset="75%" stop-color="#9C00B8" />
+      <stop offset="100%" stop-color="#600078" />
+    </linearGradient>
+    <linearGradient id="sparkHighlight" x1="30%" y1="10%" x2="70%" y2="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.75" />
+      <stop offset="50%" stop-color="#ffc2ff" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#e300ec" stop-opacity="0" />
+    </linearGradient>
+    <filter id="starGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bgGrad)" />
+  <rect width="512" height="512" fill="url(#centerGlow)" />
+  <rect width="512" height="512" fill="url(#glassSheen)" />
+  <rect width="508" height="508" x="2" y="2" fill="none" stroke="url(#rimLight)" stroke-width="3" rx="1" />
+  <g transform="translate(256, 256) scale(4.4) translate(-50, -50)">
+    <path d="M 71 19 C 61 31, 54 43, 58 48 C 65 52, 73 53, 73 53 C 62 55, 53 52, 48 57 C 42 66, 33 77, 33 77 C 40 64, 46 54, 42 48 C 34 47, 30 49, 30 49 C 41 47, 46 48, 71 19 Z" fill="#E300EC" filter="url(#starGlow)" opacity="0.85"/>
+    <path d="M 71 19 C 61 31, 54 43, 58 48 C 65 52, 73 53, 73 53 C 62 55, 53 52, 48 57 C 42 66, 33 77, 33 77 C 40 64, 46 54, 42 48 C 34 47, 30 49, 30 49 C 41 47, 46 48, 71 19 Z" fill="url(#spark3D)" />
+    <path d="M 71 19 C 61 31, 54 43, 58 48 C 63 50, 68 52, 73 53 C 62 53, 53 51, 48 57 C 45 62, 40 70, 37 74 C 40 64, 46 54, 42 48 C 36 47, 30 49, 30 49 C 41 47, 46 48, 71 19 Z" fill="url(#sparkHighlight)" />
+    <g>
+      <polygon points="41,30 47,40 43,37" fill="url(#spark3D)" />
+      <polygon points="41,30 45,37 43,37" fill="#ffffff" opacity="0.65"/>
+      <polygon points="53,60 57,69 53,62" fill="url(#spark3D)" />
+      <polygon points="53,60 55,66 53,62" fill="#ffffff" opacity="0.65"/>
+      <polygon points="63,48 72,46 64,50" fill="url(#spark3D)" />
+      <polygon points="63,48 68,47 64,50" fill="#ffffff" opacity="0.65"/>
+    </g>
+  </g>
+</svg>
