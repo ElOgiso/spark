@@ -114,14 +114,26 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     }, 1500);
   };
 
-  const handleRegenerate = () => {
-    setRegenerating(true);
-    setActionSuccess("Regenerating...");
-    setTimeout(() => {
-      setRegenerating(false);
-      setActionSuccess("Regenerated");
+  const handleRegenerate = async () => {
+    const prodId = activeProd?.id || activeReview?.productionId;
+    if (!prodId || !generateProductionAssets) {
+      setActionSuccess("Production not found");
       setTimeout(() => setActionSuccess(null), 3000);
-    }, 2000);
+      return;
+    }
+
+    setRegenerating(true);
+    setActionSuccess("Regenerating Assets...");
+    try {
+      await generateProductionAssets(prodId);
+      setActionSuccess("Regenerated");
+    } catch (err) {
+      console.warn("[CreativeReview] Regenerate notice:", err);
+      setActionSuccess("Regeneration failed");
+    } finally {
+      setRegenerating(false);
+      setTimeout(() => setActionSuccess(null), 3000);
+    }
   };
 
   const handleExport = () => {
