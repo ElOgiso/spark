@@ -1254,10 +1254,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       const providerId = (await import("../services/runtime/AIProviderOrchestrator")).AIProviderOrchestrator.getLastUsedProviderId();
+      const { generateSuperSparkVoice } = await import("../services/geminiService");
+
+      let audioUrl: string | null = null;
+      try {
+        audioUrl = await generateSuperSparkVoice(responseText, providerId);
+      } catch (err) {
+        console.warn("[SparkContext] Executive voice generation notice:", err);
+      }
+
       return {
         text: responseText,
         media: taskMedia,
-        providerId
+        providerId,
+        audioUrl,
       };
     } finally {
       setThinkingState(null);

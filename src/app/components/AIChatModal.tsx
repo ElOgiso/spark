@@ -150,6 +150,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Lock body scroll when modal is open to prevent page layout shift
   useEffect(() => {
@@ -420,10 +421,20 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     // Send to SparkContext & LLM Engine
     sendMessage(commandText, (chunk: string) => {
       updateChatMessage(sparkMessageId, chunk, true);
-    }).then((res: any) => {
+    }).then(async (res: any) => {
       const finalText = typeof res === "string" ? res : res?.text || "";
       const media = typeof res === "object" ? res?.media : null;
       const providerId = typeof res === "object" ? res?.providerId : AIProviderOrchestrator.getLastUsedProviderId();
+      let audioUrl = typeof res === "object" ? res?.audioUrl : null;
+
+      if (!audioUrl && finalText && !isMuted) {
+        try {
+          const { generateSuperSparkVoice } = await import("../services/geminiService");
+          audioUrl = await generateSuperSparkVoice(finalText, providerId);
+        } catch (err) {
+          console.warn("[AIChatModal] Voice fallback notice:", err);
+        }
+      }
 
       setState((prev: any) => ({
         ...prev,
@@ -434,15 +445,29 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
                 text: finalText,
                 isStreaming: false,
                 media: media || m.media,
+                audioUrl: audioUrl || m.audioUrl,
               }
             : m
         ),
       }));
 
-      // Automatically trigger provider-native TTS voice playback
-      void speakText(finalText, isMuted, providerId).catch((err) => {
-        console.warn("[SuperSparkVoice] Automatic voice playback notice:", err);
-      });
+      // Play provider-native female executive voice audio immediately
+      if (audioUrl && !isMuted && typeof window !== "undefined") {
+        try {
+          stopSpeaking();
+          if (activeAudioRef.current) {
+            activeAudioRef.current.pause();
+            activeAudioRef.current = null;
+          }
+          const audio = new Audio(audioUrl);
+          activeAudioRef.current = audio;
+          await audio.play();
+        } catch (audioErr) {
+          console.warn("[AIChatModal] Audio playback notice:", audioErr);
+        }
+      } else if (!isMuted) {
+        void speakText(finalText, isMuted, providerId);
+      }
     });
   };
 
