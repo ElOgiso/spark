@@ -1,3 +1,8 @@
+import { PromptContextBuilder } from "./promptContextBuilder";
+import { ModelRouter } from "./runtime/modelRouter";
+import { AIProviderOrchestrator, resolveProviderKey } from "./runtime/AIProviderOrchestrator";
+import type { ThinkingState, AIProviderId } from "../domain/types";
+
 /**
  * Immutable Executive Director Voice & Identity Configuration
  * This profile governs Super Spark's executive voice when speaking with the creator.
@@ -7,7 +12,8 @@ export const SPARK_EXECUTIVE_VOICE_PROFILE = {
   name: "Super Spark",
   title: "Executive Creative Director",
   identity: "Spark Executive OS Director",
-  voiceId: "Kore", // Fixed Gemini Live / TTS female voice
+  voiceId: "Aoede", // High-quality Gemini female voice (Aoede)
+  openAiVoiceId: "nova", // High-quality OpenAI female voice (Nova)
   elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel / Executive Female Voice
   model: "gemini-2.0-flash",
   ttsModel: "gemini-3.1-flash-tts-preview",
@@ -45,11 +51,6 @@ export interface GeminiMessage {
   role: 'user' | 'model';
   parts: { text: string }[];
 }
-
-import { PromptContextBuilder } from "./promptContextBuilder";
-import { ModelRouter } from "./runtime/modelRouter";
-import { resolveProviderKey } from "./runtime/AIProviderOrchestrator";
-import type { ThinkingState } from "../domain/types";
 
 export async function generateSuperSparkResponse(
   prompt: string,
@@ -140,29 +141,101 @@ function generateSmartFallbackResponse(
 }
 
 /**
- * Generate Executive TTS Voice Audio for Super Spark
+ * Generate Executive Provider-Native TTS Voice Audio for Super Spark
  */
-export async function generateSuperSparkVoice(text: string): Promise<string | null> {
-  const apiKey = getGeminiApiKey();
+export async function generateSuperSparkVoice(
+  text: string,
+  providerId?: AIProviderId
+): Promise<string | null> {
+  const activeProvider = providerId || AIProviderOrchestrator.getLastUsedProviderId() || "gemini";
+
+  const cleanText = text
+    .replace(/^#+\s*/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/^[-*•]\s+/gm, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+
+  if (!cleanText) return null;
+
+  // 1. OpenAI Native TTS (Voice: nova)
+  if (activeProvider === "openai") {
+    const audioUri = await generateOpenAIVoice(cleanText, "nova");
+    if (audioUri) return audioUri;
+  }
+
+  // 2. Gemini Native TTS (Voice: Aoede)
+  if (activeProvider === "gemini") {
+    const audioUri = await generateGeminiVoice(cleanText, "Aoede");
+    if (audioUri) return audioUri;
+  }
+
+  // 3. Fallback Order: OpenAI Native TTS -> Gemini Native TTS
+  // NEVER fall back to browser speechSynthesis
+  const openAiAudio = await generateOpenAIVoice(cleanText, "nova");
+  if (openAiAudio) return openAiAudio;
+
+  const geminiAudio = await generateGeminiVoice(cleanText, "Aoede");
+  if (geminiAudio) return geminiAudio;
+
+  return null;
+}
+
+async function generateOpenAIVoice(text: string, voice: "nova" | "coral" = "nova"): Promise<string | null> {
+  const apiKey = resolveProviderKey("openai");
   if (!apiKey) return null;
 
   try {
-    const { GoogleGenAI, Modality } = await import('@google/genai').catch(() => ({ GoogleGenAI: null as any, Modality: null as any }));
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        input: text.slice(0, 400),
+        voice,
+        response_format: "mp3",
+      }),
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (err) {
+    console.warn("[OpenAIVoice] Provider-native TTS notice:", err);
+  }
+  return null;
+}
+
+async function generateGeminiVoice(text: string, voiceName: "Aoede" | "Sulafat" = "Aoede"): Promise<string | null> {
+  const apiKey = resolveProviderKey("gemini");
+  if (!apiKey) return null;
+
+  try {
+    const { GoogleGenAI, Modality } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any, Modality: null as any }));
     if (!GoogleGenAI) return null;
 
     const ai = new GoogleGenAI({
       apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
     });
 
     const response = await ai.models.generateContent({
       model: SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel,
-      contents: [{ parts: [{ text: `Speak in a clear, warm, calm, intelligent executive female voice (${SPARK_EXECUTIVE_VOICE_PROFILE.voiceId}): ${text.slice(0, 400)}` }] }],
+      contents: [{ parts: [{ text: `Speak in an executive female voice (${voiceName}): ${text.slice(0, 400)}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: SPARK_EXECUTIVE_VOICE_PROFILE.voiceId },
+            prebuiltVoiceConfig: { voiceName },
           },
         },
       },
@@ -171,15 +244,13 @@ export async function generateSuperSparkVoice(text: string): Promise<string | nu
     const candidate = response.candidates?.[0];
     const part = candidate?.content?.parts?.[0];
 
-    if (part && 'inlineData' in part && part.inlineData?.data) {
+    if (part && "inlineData" in part && part.inlineData?.data) {
       return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
     }
-
-    return null;
-  } catch (error) {
-    console.warn('[SuperSparkVoice] TTS audio generation notice:', error);
-    return null;
+  } catch (err) {
+    console.warn("[GeminiVoice] Provider-native TTS notice:", err);
   }
+  return null;
 }
 
 function cleanEchoingPrefix(text: string, originalPrompt: string): string {

@@ -91,6 +91,11 @@ export class AIProviderOrchestrator {
   private static plugins: Map<AIProviderId, AIProviderPlugin> = new Map();
   private static providerHealth: Map<AIProviderId, { healthy: boolean; latencyMs: number; errorCount: number }> = new Map();
   private static isInitialized = false;
+  private static lastUsedProviderId: AIProviderId = "gemini";
+
+  static getLastUsedProviderId(): AIProviderId {
+    return this.lastUsedProviderId;
+  }
 
   static initialize(): void {
     if (this.isInitialized) return;
@@ -669,7 +674,8 @@ export class AIProviderOrchestrator {
           const result = await provider.execute(options);
           const latencyMs = Date.now() - startTime;
 
-          // Record healthy stats
+          // Record healthy stats and last used provider for provider-native TTS
+          this.lastUsedProviderId = provider.id;
           this.providerHealth.set(provider.id, { healthy: true, latencyMs, errorCount: 0 });
 
           if (options.onThinking) {

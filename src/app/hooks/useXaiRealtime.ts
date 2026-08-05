@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { generateSuperSparkVoice, SPARK_EXECUTIVE_VOICE_PROFILE } from '../services/geminiService';
 import { resolveProviderKey } from '../services/runtime/AIProviderOrchestrator';
+import type { AIProviderId } from '../domain/types';
 
 export interface VoiceMessage {
   role: 'user' | 'model';
@@ -143,7 +144,7 @@ export function useXaiRealtime() {
   /**
    * Speak response using Gemini TTS Male Voice or browser male voice fallback
    */
-  const speakText = useCallback(async (text: string, isMuted: boolean = false) => {
+  const speakText = useCallback(async (text: string, isMuted: boolean = false, providerId?: AIProviderId) => {
     // If muted or empty text, stop any active audio and exit
     if (isMuted || !text) {
       stopSpeaking();
@@ -163,77 +164,17 @@ export function useXaiRealtime() {
 
     if (!spokenText) return;
 
-    // 1. Try ElevenLabs API if key is available
+    // Provider-Native Premium TTS Execution (OpenAI 'nova' / Gemini 'Aoede' / ElevenLabs)
     try {
-      const elevenKey = resolveProviderKey("elevenlabs");
-      if (elevenKey) {
-        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "xi-api-key": elevenKey,
-          },
-          body: JSON.stringify({
-            text: spokenText.slice(0, 400),
-            model_id: "eleven_monolingual_v1",
-            voice_settings: { stability: 0.75, similarity_boost: 0.85 },
-          }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          await audio.play();
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('[SuperSparkVoice] ElevenLabs TTS notice:', e);
-    }
-
-    // 2. Try Gemini TTS Female Voice ('Kore')
-    try {
-      const geminiAudioUri = await generateSuperSparkVoice(spokenText);
-      if (geminiAudioUri) {
-        const audio = new Audio(geminiAudioUri);
+      const audioUri = await generateSuperSparkVoice(spokenText, providerId);
+      if (audioUri) {
+        const audio = new Audio(audioUri);
         audioRef.current = audio;
         await audio.play();
         return;
       }
     } catch (e) {
-      console.warn('[SuperSparkVoice] Gemini audio notice:', e);
-    }
-
-    // 3. Web Speech API Fallback with guaranteed Executive Female Voice configuration
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(spokenText);
-      
-      const getExecutiveFemaleVoice = (): SpeechSynthesisVoice | null => {
-        const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
-        if (!voices || voices.length === 0) return null;
-
-        const preferredVoices = [
-          'samantha', 'karen', 'zira', 'victoria', 'google uk english female',
-          'google us english', 'veena', 'fiona', 'moira', 'tessa', 'female'
-        ];
-
-        for (const pref of preferredVoices) {
-          const match = voices.find((v) => v.name.toLowerCase().includes(pref) && v.lang.startsWith('en'));
-          if (match) return match;
-        }
-
-        return voices.find((v) => v.lang.startsWith('en')) || voices[0] || null;
-      };
-
-      const voice = getExecutiveFemaleVoice();
-      if (voice) {
-        utterance.voice = voice;
-      }
-
-      utterance.pitch = SPARK_EXECUTIVE_VOICE_PROFILE.pitch; // Warm executive female pitch (1.05)
-      utterance.rate = SPARK_EXECUTIVE_VOICE_PROFILE.rate;   // Natural executive rate (1.0)
-      window.speechSynthesis.speak(utterance);
+      console.warn('[SuperSparkVoice] Provider-native audio notice:', e);
     }
   }, [stopSpeaking]);
 
