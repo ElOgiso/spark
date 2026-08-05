@@ -54,12 +54,28 @@ export class PromptContextBuilder {
     // 5. Department Specific Instructions
     contextParts.push(`DEPARTMENT CONTEXT: Executing as [${department}] in Spark Media OS.`);
 
+    // 6. Context Window Protection & History Summarization (Part D Governance)
+    let historyContext = "";
+    if (history && history.length > 0) {
+      if (history.length > 6) {
+        const olderMessages = history.slice(0, history.length - 6);
+        const recentMessages = history.slice(history.length - 6);
+        const summary = olderMessages.map((m) => `${m.sender.toUpperCase()}: ${m.text.slice(0, 80)}`).join(" | ");
+        contextParts.push(`EARLIER SESSION CONTEXT (Summarized to save tokens): ${summary}`);
+        historyContext = recentMessages.map((m) => `${m.sender === "spark" ? "SUPER SPARK" : "USER"}: ${m.text}`).join("\n");
+      } else {
+        historyContext = history.map((m) => `${m.sender === "spark" ? "SUPER SPARK" : "USER"}: ${m.text}`).join("\n");
+      }
+    }
+
     const systemInstruction = `You are Super Spark, Executive Creative Director for Spark Media OS.
 Voice Profile: ${SPARK_EXECUTIVE_VOICE_PROFILE.name} (${SPARK_EXECUTIVE_VOICE_PROFILE.gender}, Accent: ${SPARK_EXECUTIVE_VOICE_PROFILE.accent}).
 Respond naturally as an articulate, warm, calm, trusted executive partner. Default to 1-3 short, clear sentences. Answer exactly what was asked without fluff or tutorials.`;
 
     const contextBrief = contextParts.join("\n\n");
-    const fullPrompt = `${contextBrief}\n\nUSER PROMPT: ${prompt}`;
+    const fullPrompt = historyContext
+      ? `${contextBrief}\n\nRECENT CONVERSATION:\n${historyContext}\n\nUSER PROMPT: ${prompt}`
+      : `${contextBrief}\n\nUSER PROMPT: ${prompt}`;
 
     return {
       systemInstruction,

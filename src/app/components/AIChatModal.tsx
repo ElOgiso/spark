@@ -208,6 +208,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
 
   const { isRecording, status, connect, disconnect, transcript: voiceTranscript, currentText, speakText, stopSpeaking } = useXaiRealtime();
 
@@ -290,15 +291,6 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
       return () => {
         document.body.style.overflow = originalOverflow;
       };
-    }
-  }, [isOpen]);
-
-  // Open brand-new chat session on open if active session has messages
-  useEffect(() => {
-    if (isOpen) {
-      if (messages.length > 0 && startNewSession) {
-        startNewSession();
-      }
     }
   }, [isOpen]);
 
@@ -673,15 +665,36 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
               >
                 <Edit2 className="w-3.5 h-3.5 text-accent-foreground" /> Rename
               </button>
-              <button
-                onClick={() => {
-                  deleteSession(s.id);
-                  setActiveMenuSessionId(null);
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-destructive hover:bg-destructive/10 rounded-lg cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
+              {confirmDeleteSessionId === s.id ? (
+                <div className="w-full p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs space-y-1.5">
+                  <p className="text-[11px] text-rose-300 font-medium">Delete conversation?</p>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        deleteSession(s.id);
+                        setConfirmDeleteSessionId(null);
+                        setActiveMenuSessionId(null);
+                      }}
+                      className="px-2 py-0.5 rounded bg-rose-500 text-white font-semibold text-[10px] hover:bg-rose-600 transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteSessionId(null)}
+                      className="px-2 py-0.5 rounded bg-muted/40 text-muted-foreground hover:text-foreground text-[10px] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteSessionId(s.id)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" /> Delete
+                </button>
+              )}
             </div>
           )}
         </div>

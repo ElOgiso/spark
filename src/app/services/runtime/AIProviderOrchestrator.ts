@@ -650,11 +650,12 @@ export class AIProviderOrchestrator {
       });
     }
 
-    // Execute with automatic retry & seamless failover across candidate providers
+    // Execute with automatic retry & seamless failover across candidate providers (max 2 candidates: A -> B -> stop)
     let lastError: Error | null = null;
+    const candidatesToTry = candidates.slice(0, 2);
 
-    for (let i = 0; i < candidates.length; i++) {
-      const provider = candidates[i];
+    for (let i = 0; i < candidatesToTry.length; i++) {
+      const provider = candidatesToTry[i];
       const startTime = Date.now();
 
       if (options.onThinking && i > 0) {

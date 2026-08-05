@@ -1192,7 +1192,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   };
 
+  const activeAiRequestRef = React.useRef<boolean>(false);
+
   const sendMessage = async (prompt: string, onChunk?: (chunk: string) => void) => {
+    if (activeAiRequestRef.current) {
+      const busyMsg = "I am currently processing your active request. Please allow me a moment to complete it.";
+      if (onChunk) onChunk(busyMsg);
+      return { text: busyMsg, media: null, providerId: null, audioUrl: null };
+    }
+
+    activeAiRequestRef.current = true;
     const history = (state.chatMessages || []).map((m: any) => ({
       sender: m.sender,
       text: m.text
@@ -1389,6 +1398,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         audioUrl,
       };
     } finally {
+      activeAiRequestRef.current = false;
       setThinkingState(null);
     }
   };
