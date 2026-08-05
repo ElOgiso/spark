@@ -23,11 +23,11 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSpark } from "../state/SparkContext";
+import { eventBus } from "../services/runtime/eventBus";
 import { useXaiRealtime } from "../hooks/useXaiRealtime";
 import { SparkLogo } from "./SparkLogo";
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import { DepartmentActivity, DepartmentStep } from "./DepartmentActivity";
-import { eventBus } from "../services/runtime/eventBus";
 import { ConversationSession } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
 import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrator";
@@ -150,6 +150,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     approveReviewItem,
     rejectOrRequestEditReviewItem,
     createProductionFromSpark,
+    generateAssetsForProduction,
     updateAutomationMode,
     addMemoryItem,
     syncResearchSource,
@@ -213,6 +214,73 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeSparkMsgIdRef = useRef<string | null>(null);
+
+  // Real Event-Driven Swarm Progression listener via eventBus
+  useEffect(() => {
+    const updateStep = (departmentName: string, status: "idle" | "running" | "completed" | "error", actionText: string) => {
+      const msgId = activeSparkMsgIdRef.current;
+      if (!msgId) return;
+
+      setState((prev: any) => ({
+        ...prev,
+        chatMessages: (prev.chatMessages || []).map((m: any) => {
+          if (m.id !== msgId || !m.swarmSteps) return m;
+          const updatedSteps = m.swarmSteps.map((step: any) => {
+            if (step.department === departmentName) {
+              return { ...step, status, action: actionText };
+            }
+            return step;
+          });
+          return {
+            ...m,
+            activeDepartment: departmentName,
+            swarmSteps: updatedSteps,
+          };
+        }),
+      }));
+    };
+
+    const unsubTrend = eventBus.on("TREND_FOUND", (evt) => {
+      const title = evt.data?.title || "Inspiration signal analyzed";
+      updateStep("Research Department", "completed", `Extracted signal: "${title}"`);
+      updateStep("Creative Director", "running", "Synthesizing production brief & hook...");
+    });
+
+    const unsubOpp = eventBus.on("OPPORTUNITY_CREATED", (evt) => {
+      const title = evt.data?.title || "Production Draft";
+      updateStep("Creative Director", "completed", `Brief created: "${title}"`);
+      updateStep("Visual Producer", "running", "Structuring visual shot list & pacing...");
+    });
+
+    const unsubScript = eventBus.on("SCRIPT_READY", (evt) => {
+      const title = evt.data?.title || "Curiosity Hook";
+      updateStep("Creative Director", "completed", `Script & hook finalized ("${title}")`);
+    });
+
+    const unsubRender = eventBus.on("RENDER_STARTED", () => {
+      updateStep("Visual Producer", "running", "Rendering multi-scene storyboard frames...");
+    });
+
+    const unsubBoard = eventBus.on("STORYBOARD_READY", () => {
+      updateStep("Visual Producer", "completed", "Multi-scene storyboard rendered");
+      updateStep("Publishing Department", "running", "Preparing review queue entry...");
+    });
+
+    const unsubReview = eventBus.on("REVIEW_REQUIRED", (evt) => {
+      const reviewId = evt.data?.reviewId || "";
+      updateStep("Publishing Department", "completed", `Queued in Creative Review (${reviewId})`);
+    });
+
+    return () => {
+      unsubTrend();
+      unsubOpp();
+      unsubScript();
+      unsubRender();
+      unsubBoard();
+      unsubReview();
+    };
+  }, [setState]);
 
   // Lock body scroll when modal is open to prevent page layout shift
   useEffect(() => {
@@ -374,6 +442,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     setInputText("");
 
     const sparkMessageId = `spark-msg-${Date.now()}`;
+    activeSparkMsgIdRef.current = sparkMessageId;
     const lower = commandText.toLowerCase();
 
     const isGenerationCommand =
@@ -383,6 +452,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
       lower.includes("script") ||
       lower.includes("campaign") ||
       lower.includes("storyboard") ||
+      lower.includes("short") ||
       lower.includes("trend");
 
     // Initialize initial message state with clean real stage tracking
@@ -434,16 +504,6 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
                 isStreaming: false,
                 media: media || m.media,
                 audioUrl: audioUrl || m.audioUrl,
-                activeDepartment: "Executive Director",
-                swarmSteps: isGenerationCommand
-                  ? [
-                      { department: "Executive Director", status: "completed", action: "Executive Mission Accepted" },
-                      { department: "Research Department", status: "completed", action: "Extracted viral format from live signals" },
-                      { department: "Creative Director", status: "completed", action: "Production brief & hook finalized" },
-                      { department: "Visual Producer", status: "completed", action: "Multi-scene storyboard rendered" },
-                      { department: "Publishing Department", status: "completed", action: "Queued in Creative Review" },
-                    ]
-                  : m.swarmSteps,
               }
             : m
         ),
@@ -484,15 +544,23 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     speakText(feedbackText, isMuted);
   };
 
-  const handleActionRegenerate = (reviewId: string) => {
+  const handleActionRegenerate = async (reviewId: string) => {
     setLoadingCardId(reviewId);
-
-    setTimeout(() => {
-      setLoadingCardId(null);
-      const feedbackText = `Successfully regenerated scenes and hooks. Script and concept updated with high-engagement alternatives. Safety checks re-evaluated: Passed.`;
+    try {
+      const review = reviewItems?.find((r: any) => r.id === reviewId);
+      const prodId = review?.productionId || reviewId;
+      if (generateAssetsForProduction) {
+        await generateAssetsForProduction(prodId);
+      }
+      const feedbackText = `Regenerated scenes and visual storyboard for "${review?.title || "Cut"}". Storyboard and review items updated.`;
       addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
-      speakText(feedbackText, isMuted);
-    }, 1500);
+      if (readRepliesAloud) speakText(feedbackText, isMuted);
+    } catch (err: any) {
+      console.warn("[AIChatModal] Regenerate notice:", err);
+      addChatMessage({ sender: "spark", text: `Regeneration notice: ${err?.message || "Failed to regenerate assets."}`, timestamp: new Date() });
+    } finally {
+      setLoadingCardId(null);
+    }
   };
 
   const handleActionCreateFromSpark = (sparkId: string) => {

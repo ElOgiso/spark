@@ -23,6 +23,7 @@ import {
 } from "../domain/types";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
+import { eventBus } from "../services/runtime/eventBus";
 import {
   hydrateWorkspace,
   persistAccountToken,
@@ -792,6 +793,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
+    eventBus.emit("TREND_FOUND", { sparkId: spark.id, title: spark.title }, state.brand.name);
+    eventBus.emit("OPPORTUNITY_CREATED", { prodId, title: spark.title }, state.brand.name);
+    eventBus.emit("REVIEW_REQUIRED", { reviewId, prodId, title: spark.title }, state.brand.name);
+
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
     void import("../services/productionService").then(({ productionService }) => {
       void productionService
@@ -809,6 +814,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd } : p)),
             reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
           }));
+
+          eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
 
           const brandId = getBrandWorkspaceId();
           if (isSupabaseConfigured() && brandId) {
@@ -844,6 +851,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const prod = state.productions.find((p: any) => p.id === productionId);
     if (!prod) return;
 
+    eventBus.emit("RENDER_STARTED", { prodId: productionId }, state.brand.name);
+
     setState((prev: any) => ({
       ...prev,
       productions: prev.productions.map((p: any) =>
@@ -868,6 +877,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             : r
         ),
       }));
+
+      eventBus.emit("STORYBOARD_READY", { prodId: productionId, title: updatedProd.title }, state.brand.name);
     } catch (err) {
       console.warn("[SparkContext] Asset generation notice:", err);
       setState((prev: any) => ({
