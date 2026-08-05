@@ -1001,7 +1001,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { ResearchSourceService } = await import("../services/research/researchSourceService");
     const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
     const brandId = getBrandWorkspaceId();
-    const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId);
+    const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId, true);
 
     const { memoryItems: newMemoryItems, viralSparks: newSparks } =
       ResearchDepartmentService.processPatterns(brandId, source, patterns);

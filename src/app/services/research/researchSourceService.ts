@@ -140,6 +140,21 @@ export class ResearchSourceService {
       extracted = ResearchProviderStubs.extractStub(platform, cleanUrl, sourceId);
     }
 
+    // AI Multimodal Breakdown on Creator's Top Video Asset (if available)
+    let videoResearch: any = undefined;
+    const topVideo = extracted.source.recentVideos?.[0];
+    if (topVideo?.url) {
+      try {
+        videoResearch = await VideoUnderstandingProvider.analyzeVideo(topVideo.url);
+      } catch (err) {
+        console.warn("[ResearchSourceService] Profile top video AI analysis notice:", err);
+      }
+    }
+
+    const aiLearnings = videoResearch
+      ? [videoResearch.hookAnalysis, videoResearch.retentionAnalysis, videoResearch.pacingAnalysis, ...(extracted.source.learnings || [])]
+      : extracted.source.learnings || [];
+
     const source: ResearchSource = {
       id: sourceId,
       platform,
@@ -157,10 +172,12 @@ export class ResearchSourceService {
       verified: extracted.source.verified || false,
       description: extracted.source.description || "",
       status: extracted.source.status || "active",
+      sourceType: "channel",
+      videoResearch,
       recentVideos: extracted.source.recentVideos || [],
       topContent: extracted.source.topContent || [],
-      learnings: extracted.source.learnings || [],
-      researchConfidence: extracted.source.researchConfidence ?? null,
+      learnings: aiLearnings,
+      researchConfidence: videoResearch?.confidence || extracted.source.researchConfidence || 88,
       lastSyncedAt: now,
       createdAt: now,
       updatedAt: now,
@@ -168,9 +185,9 @@ export class ResearchSourceService {
         {
           id: `obs-${sourceId}-1`,
           sourceId,
-          contentTitle: `${extracted.source.displayName || "Channel"} Public Baseline`,
-          videoLengthSec: 27,
-          hookText: "Opener poses a direct curiosity question",
+          contentTitle: `${extracted.source.displayName || "Channel"} AI Hook Analysis`,
+          videoLengthSec: videoResearch?.durationSec || 30,
+          hookText: videoResearch?.hookAnalysis || "Opener poses a high-curiosity question",
           publishedAt: now,
           createdAt: now,
         },
@@ -179,8 +196,11 @@ export class ResearchSourceService {
 
     const patterns = extracted.patterns;
 
-    // Persist source & patterns silently
+    // Process profile video research into Executive Memory & Viral Sparks
     if (brandId) {
+      if (videoResearch) {
+        ResearchDepartmentService.processVideoResearch(brandId, source, videoResearch);
+      }
       persistResearchSourceCreate(brandId, source).catch((err) =>
         console.warn("[ResearchSourceService] Source persist notice:", err)
       );
@@ -204,6 +224,32 @@ export class ResearchSourceService {
       return { source, patterns: [] };
     }
 
+    const now = new Date().toISOString();
+
+    // Branch A: Single Video Asset Resync
+    if (source.sourceType === "video" || VideoUnderstandingProvider.isSingleVideoUrl(source.url)) {
+      const vRes = await VideoUnderstandingProvider.analyzeVideo(source.url);
+      const updatedSource: ResearchSource = {
+        ...source,
+        displayName: vRes.title,
+        avatar: vRes.thumbnail,
+        videoResearch: vRes,
+        learnings: [vRes.hookAnalysis, vRes.retentionAnalysis, vRes.editingStyle],
+        researchConfidence: vRes.confidence,
+        lastSyncedAt: now,
+        updatedAt: now,
+      };
+
+      if (brandId) {
+        ResearchDepartmentService.processVideoResearch(brandId, updatedSource, vRes);
+        persistResearchSourceUpdate(source.id, { lastSyncedAt: now, updatedAt: now }).catch((err) =>
+          console.warn("[ResearchSourceService] Video source sync persist notice:", err)
+        );
+      }
+      return { source: updatedSource, patterns: [] };
+    }
+
+    // Branch B: Profile / Account Resync
     let extracted: ExtractedSourceResult;
     if (source.platform === "youtube") {
       extracted = await YouTubeResearchProvider.extract(source.url, source.id);
@@ -211,15 +257,32 @@ export class ResearchSourceService {
       extracted = ResearchProviderStubs.extractStub(source.platform, source.url, source.id);
     }
 
-    const now = new Date().toISOString();
+    // AI Multimodal Re-analysis on Top Video
+    let videoResearch = source.videoResearch;
+    const topVideo = extracted.source.recentVideos?.[0] || source.recentVideos?.[0];
+    if (topVideo?.url) {
+      try {
+        videoResearch = await VideoUnderstandingProvider.analyzeVideo(topVideo.url);
+      } catch (err) {
+        console.warn("[ResearchSourceService] Resync top video AI analysis notice:", err);
+      }
+    }
+
     const updatedSource: ResearchSource = {
       ...source,
       ...extracted.source,
+      videoResearch,
+      learnings: videoResearch
+        ? [videoResearch.hookAnalysis, videoResearch.retentionAnalysis, videoResearch.pacingAnalysis, ...(extracted.source.learnings || [])]
+        : extracted.source.learnings || source.learnings,
       lastSyncedAt: now,
       updatedAt: now,
     };
 
     if (brandId) {
+      if (videoResearch) {
+        ResearchDepartmentService.processVideoResearch(brandId, updatedSource, videoResearch);
+      }
       persistResearchSourceUpdate(source.id, { lastSyncedAt: now, updatedAt: now }).catch((err) =>
         console.warn("[ResearchSourceService] Source sync persist notice:", err)
       );

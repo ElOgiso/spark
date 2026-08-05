@@ -1117,8 +1117,8 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         {isExpanded && (
                           <div className="mt-2 pt-4 border-t border-border/60 space-y-5 text-xs">
 
-                            {/* Phase 19: Deep AI Video Understanding Drawer View for Video Assets */}
-                            {source.sourceType === "video" && source.videoResearch && (
+                            {/* Phase 19: Deep AI Video Understanding Drawer View for Video & Profile Assets */}
+                            {source.videoResearch && (
                               <div className="p-4 rounded-xl bg-card border border-accent/30 space-y-4">
                                 <div className="flex items-center justify-between border-b border-border/40 pb-3">
                                   <div className="flex items-center gap-2">
