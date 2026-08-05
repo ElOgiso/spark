@@ -135,8 +135,37 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
 
   const messages: Message[] = chatMessages || [];
   const [inputText, setInputText] = useState("");
-  const [isMuted, setIsMuted] = useState(false);
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
+
+  // Phase 19F: Dedicated Voice Mode & Read Replies Aloud Settings
+  const [readRepliesAloud, setReadRepliesAloud] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return true;
+    try {
+      return localStorage.getItem("spark_read_replies_aloud") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const isMuted = !readRepliesAloud;
+
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+
+  const handleToggleReadRepliesAloud = () => {
+    const next = !readRepliesAloud;
+    setReadRepliesAloud(next);
+    if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("spark_read_replies_aloud", String(next));
+      } catch {}
+    }
+    if (!next) {
+      stopSpeaking();
+      if (activeAudioRef.current) {
+        activeAudioRef.current.pause();
+        activeAudioRef.current = null;
+      }
+    }
+  };
 
   // Phase 19C: Session History UI States
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -215,19 +244,34 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     }
   }, [isOpen]);
 
+  const toggleVoiceMode = () => {
+    if (!isVoiceModeOpen) {
+      setIsVoiceModeOpen(true);
+      connect();
+    } else {
+      if (isRecording) {
+        disconnect();
+      } else {
+        connect();
+      }
+    }
+  };
+
+  const closeVoiceMode = () => {
+    setIsVoiceModeOpen(false);
+    disconnect();
+    stopSpeaking();
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current = null;
+    }
+  };
+
   const toggleRecording = () => {
     if (isRecording) {
       disconnect();
     } else {
       connect();
-    }
-  };
-
-  const handleToggleMute = () => {
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    if (nextMuted) {
-      stopSpeaking();
     }
   };
 
@@ -745,6 +789,128 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
 
         {/* Main Super Spark Chat Container */}
         <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden">
+          {/* Phase 19F: Dedicated Executive Voice Mode Overlay Surface */}
+          <AnimatePresence>
+            {isVoiceModeOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="absolute inset-0 z-40 bg-background/95 backdrop-blur-3xl flex flex-col items-center justify-between p-8 text-center"
+              >
+                {/* Voice Mode Header */}
+                <div className="w-full max-w-2xl flex items-center justify-between pt-2">
+                  <div className="flex items-center gap-3 text-left">
+                    <SparkLogo className="w-8 h-8" variant="superspark" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Super Spark Voice Mode</h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        Provider: <span className="font-semibold text-accent-foreground">{SPARK_EXECUTIVE_VOICE_PROFILE.name} ({SPARK_EXECUTIVE_VOICE_PROFILE.accent})</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleToggleReadRepliesAloud}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        readRepliesAloud
+                          ? "bg-accent/20 text-accent-foreground border-accent/40"
+                          : "bg-muted/20 text-muted-foreground border-border/50"
+                      }`}
+                    >
+                      {readRepliesAloud ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                      {readRepliesAloud ? "Voice ON" : "Voice OFF"}
+                    </button>
+
+                    <button
+                      onClick={closeVoiceMode}
+                      className="p-2 rounded-xl border border-border/60 hover:bg-white/5 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+                      title="Return to Text Chat"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Center Executive Voice Orb */}
+                <div className="relative flex flex-col items-center justify-center my-auto space-y-8">
+                  <div className="relative flex items-center justify-center">
+                    {/* Outer Pulsing Aura Rings */}
+                    <motion.div
+                      animate={
+                        sparkState.thinkingState
+                          ? { scale: [1, 1.25, 1], rotate: [0, 180, 360], opacity: [0.3, 0.7, 0.3] }
+                          : isRecording
+                          ? { scale: [1, 1.35, 1], opacity: [0.4, 0.8, 0.4] }
+                          : { scale: [1, 1.1, 1], opacity: [0.2, 0.5, 0.2] }
+                      }
+                      transition={{ repeat: Infinity, duration: sparkState.thinkingState ? 3 : 2, ease: "easeInOut" }}
+                      className={`w-64 h-64 rounded-full border-2 absolute ${
+                        sparkState.thinkingState
+                          ? "border-purple-500/40 bg-purple-500/10 shadow-[0_0_80px_rgba(168,85,247,0.3)]"
+                          : isRecording
+                          ? "border-cyan-500/40 bg-cyan-500/10 shadow-[0_0_80px_rgba(6,182,212,0.3)]"
+                          : "border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_80px_rgba(16,185,129,0.3)]"
+                      }`}
+                    />
+
+                    {/* Core Executive Glass Orb */}
+                    <div className="w-40 h-40 rounded-full border border-white/20 bg-card/80 backdrop-blur-2xl flex items-center justify-center shadow-2xl relative z-10">
+                      {sparkState.thinkingState ? (
+                        <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
+                      ) : isRecording ? (
+                        <AudioLines className="w-12 h-12 text-cyan-400 animate-pulse" />
+                      ) : (
+                        <Sparkles className="w-12 h-12 text-emerald-400 animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Live Transcript / Status Indicator */}
+                  <div className="max-w-md space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 px-3 py-1 rounded-full border border-border/50 bg-background/50">
+                      {sparkState.thinkingState
+                        ? "Formulating Executive Response..."
+                        : isRecording
+                        ? "Listening to Creator..."
+                        : "Voice Session Active"}
+                    </span>
+
+                    <p className="text-base font-medium text-foreground min-h-[3rem] px-4 py-2 flex items-center justify-center">
+                      {currentText ||
+                        (sparkState.thinkingState
+                          ? sparkState.thinkingState.step
+                          : "Speak freely to Super Spark...")}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bottom Voice Controls */}
+                <div className="w-full max-w-md flex items-center justify-center gap-6 pb-4">
+                  <button
+                    onClick={toggleRecording}
+                    className={`p-5 rounded-full border transition-all duration-300 active:scale-95 shadow-xl cursor-pointer ${
+                      isRecording
+                        ? "bg-destructive/20 border-destructive/50 text-destructive"
+                        : "bg-cyan-500/20 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30"
+                    }`}
+                    title={isRecording ? "Pause Listening" : "Resume Listening"}
+                  >
+                    <Mic className="w-6 h-6" />
+                  </button>
+
+                  <button
+                    onClick={closeVoiceMode}
+                    className="px-6 py-3 rounded-full border border-border/80 bg-card/80 hover:bg-card text-xs font-semibold text-foreground transition-all cursor-pointer shadow-lg"
+                  >
+                    Exit Voice Mode
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* Modal Header — Fixed h-16, shrink-0, zero reflow */}
           <header className="relative flex items-center justify-between border-b border-border/50 px-6 h-16 bg-card/40 backdrop-blur-md shrink-0 z-30">
             <div className="flex items-center gap-3">
@@ -778,13 +944,13 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={handleToggleMute}
-                className={`p-2.5 rounded-xl border border-border/80 bg-accent/5 transition-all duration-200 hover:bg-accent/10 active:scale-95 cursor-pointer text-muted-foreground hover:text-foreground ${
-                  !isMuted ? "text-accent-foreground bg-accent/15 border-accent/30 shadow-sm" : "opacity-70"
+                onClick={handleToggleReadRepliesAloud}
+                className={`p-2.5 rounded-xl border border-border/80 transition-all duration-200 active:scale-95 cursor-pointer ${
+                  readRepliesAloud ? "text-accent-foreground bg-accent/15 border-accent/40 shadow-sm" : "text-muted-foreground bg-accent/5 opacity-70"
                 }`}
-                title={isMuted ? "Unmute Voice" : "Mute Speaker"}
+                title={readRepliesAloud ? "Read Replies Aloud: ON" : "Read Replies Aloud: OFF"}
               >
-                {isMuted ? <VolumeX className="w-4 h-4 text-muted-foreground" /> : <Volume2 className="w-4 h-4 text-accent-foreground" />}
+                {readRepliesAloud ? <Volume2 className="w-4 h-4 text-accent-foreground" /> : <VolumeX className="w-4 h-4 text-muted-foreground" />}
               </button>
 
               <button
@@ -1018,18 +1184,18 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
               </div>
 
               <button
-                onClick={toggleRecording}
+                onClick={toggleVoiceMode}
                 className={`
                   relative p-4 rounded-2xl border transition-all duration-300 active:scale-95 overflow-hidden shrink-0 cursor-pointer
                   ${
-                    isRecording
-                      ? "bg-destructive/10 border-destructive/30 text-destructive shadow-md shadow-destructive/5"
+                    isVoiceModeOpen || isRecording
+                      ? "bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-md shadow-purple-900/20"
                       : "bg-input-background border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
                   }
                 `}
-                title={isRecording ? "Stop Listening" : "Speak to Super Spark"}
+                title={isVoiceModeOpen ? "Exit Voice Mode" : "Open Super Spark Voice Mode"}
               >
-                {isRecording && <span className="absolute inset-0 bg-destructive/10 animate-ping rounded-2xl" />}
+                {isRecording && <span className="absolute inset-0 bg-purple-500/20 animate-ping rounded-2xl" />}
                 <Mic className="w-5 h-5 relative" />
               </button>
 
