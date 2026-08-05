@@ -270,6 +270,19 @@ export interface PatternBreakdownScores {
   postingConsistency: number;
 }
 
+export interface ConversationSession {
+  id: string;
+  workspaceId?: string;
+  brandId: string;
+  userId?: string;
+  title: string;
+  subtitle?: string;
+  category?: "executive" | "research" | "production" | "general";
+  isArchived?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ResearchSource {
   id: string;
   platform: "youtube" | "tiktok" | "instagram" | "x" | "facebook" | "linkedin";

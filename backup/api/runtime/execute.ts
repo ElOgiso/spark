@@ -9,10 +9,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { provider, endpoint, payload } = req.body;
 
     const keys = {
-      openai: process.env.OPEN_AI_KEY,
-      anthropic: process.env.ANTHROPIC_API_KEY,
-      google: process.env.GOOGLE_AI_API_KEY,
-      xai: process.env.XAI_API_KEY
+      openai: process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY || process.env.VITE_OPENAI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.VITE_ANTHROPIC_API_KEY,
+      google: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_GOOGLE_AI_API_KEY,
+      xai: process.env.XAI_API_KEY || process.env.GROK_API_KEY || process.env.VITE_XAI_API_KEY
     };
 
     let headers: Record<string, string> = {
@@ -22,14 +22,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let targetUrl = endpoint;
 
     if (provider === 'openai') {
-      headers['Authorization'] = `Bearer ${keys.openai || ''}`;
+      if (!keys.openai) return res.status(400).json({ error: 'OpenAI API Key not configured in Vercel environment variables (OPENAI_API_KEY).' });
+      headers['Authorization'] = `Bearer ${keys.openai}`;
+    } else if (provider === 'xai' || provider === 'grok') {
+      if (!keys.xai) return res.status(400).json({ error: 'xAI Grok API Key not configured in Vercel environment variables (XAI_API_KEY or GROK_API_KEY).' });
+      headers['Authorization'] = `Bearer ${keys.xai}`;
     } else if (provider === 'anthropic') {
-      headers['x-api-key'] = keys.anthropic || '';
+      if (!keys.anthropic) return res.status(400).json({ error: 'Anthropic Claude API Key not configured in Vercel environment variables (ANTHROPIC_API_KEY).' });
+      headers['x-api-key'] = keys.anthropic;
       headers['anthropic-version'] = '2023-06-01';
       headers['anthropic-dangerous-direct-browser-access'] = 'true';
-    } else if (provider === 'google') {
+    } else if (provider === 'google' || provider === 'gemini') {
+      if (!keys.google) return res.status(400).json({ error: 'Google Gemini API Key not configured in Vercel environment variables (GEMINI_API_KEY or GOOGLE_AI_API_KEY).' });
       const delimiter = targetUrl.includes('?') ? '&' : '?';
-      targetUrl = `${targetUrl}${delimiter}key=${keys.google || ''}`;
+      targetUrl = `${targetUrl}${delimiter}key=${keys.google}`;
     }
 
     const response = await fetch(targetUrl, {
@@ -49,3 +55,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: err.message || String(err) });
   }
 }
+

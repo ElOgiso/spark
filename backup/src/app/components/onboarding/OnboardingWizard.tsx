@@ -147,6 +147,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [assemblyPhase, setAssemblyPhase] = useState("Assigning 6 Specialized AI Executive Directors...");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const [messages, setMessages] = useState<ChatTurn[]>([
     {
@@ -159,7 +160,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   ]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [messages, isThinking, currentStep]);
 
   // Restore state if we are coming back from an OAuth flow
@@ -456,7 +462,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       {/* Main Conversation Glass Card */}
       <div className="w-full max-w-2xl flex-1 sm:h-[620px] sm:flex-none flex flex-col bg-white/5 border-t sm:border border-purple-500/30 sm:rounded-2xl overflow-hidden relative shadow-2xl">
         {/* Messages Stream */}
-        <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 overflow-x-hidden">
+        <div ref={chatContainerRef} className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 overflow-x-hidden">
           {messages.map((m) => (
             <div
               key={m.id}

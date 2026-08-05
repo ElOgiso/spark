@@ -239,6 +239,19 @@ export interface AuditLogRow {
   updated_at: string;
 }
 
+export interface ConversationSessionRow {
+  id: string;
+  workspace_id?: string;
+  brand_id: string;
+  user_id?: string;
+  title: string;
+  subtitle?: string;
+  category?: "executive" | "research" | "production" | "general";
+  is_archived?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ConversationMessageRow {
   id: string;
   brand_id: string;

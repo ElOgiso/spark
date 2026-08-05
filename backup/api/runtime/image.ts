@@ -8,10 +8,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { provider, prompt, aspectRatio, model } = req.body;
     const keys = {
-      openai: process.env.OPEN_AI_KEY,
-      flux: process.env.FLUX_API_KEY || process.env.FAL_API_KEY,
-      ideogram: process.env.IDEOGRAM_API_KEY,
-      recraft: process.env.RECRAFT_API_KEY
+      openai: process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY || process.env.VITE_OPENAI_API_KEY,
+      flux: process.env.FLUX_API_KEY || process.env.FAL_API_KEY || process.env.VITE_FLUX_API_KEY || process.env.VITE_FAL_API_KEY,
+      ideogram: process.env.IDEOGRAM_API_KEY || process.env.VITE_IDEOGRAM_API_KEY,
+      recraft: process.env.RECRAFT_API_KEY || process.env.VITE_RECRAFT_API_KEY
     };
 
     // 1. OpenAI Images (DALL-E 3)

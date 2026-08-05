@@ -8,7 +8,7 @@ export const SPARK_EXECUTIVE_VOICE_PROFILE = {
   title: "Executive Creative Director",
   identity: "Spark Executive OS Director",
   voiceId: "Puck", // Fixed Gemini Live / TTS male voice
-  model: "gemini-2.0-flash-exp",
+  model: "gemini-2.0-flash",
   ttsModel: "gemini-3.1-flash-tts-preview",
   gender: "Male" as const,
   language: "English (US)" as const,

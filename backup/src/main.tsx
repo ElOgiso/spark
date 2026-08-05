@@ -12,33 +12,79 @@ if (typeof window !== "undefined") {
 
 // Suppress unhandled extension / web3 / MetaMask errors from interrupting application runtime
 if (typeof window !== "undefined") {
+  const isExtensionOrWalletError = (err: any): boolean => {
+    if (!err) return false;
+    let str = "";
+    if (typeof err === "string") {
+      str = err;
+    } else {
+      try {
+        str = [
+          err.message,
+          err.stack,
+          err.reason,
+          err.name,
+          err.code,
+          err.description,
+          typeof err === "object" ? JSON.stringify(err) : "",
+          String(err),
+        ]
+          .filter(Boolean)
+          .join(" ");
+      } catch {
+        str = String(err);
+      }
+    }
+
+    const lower = str.toLowerCase();
+    return (
+      lower.includes("metamask") ||
+      lower.includes("ethereum") ||
+      lower.includes("wallet") ||
+      lower.includes("web3") ||
+      lower.includes("cannot redefine property") ||
+      lower.includes("failed to connect") ||
+      lower.includes("user rejected") ||
+      lower.includes("rpc error") ||
+      lower.includes("evm")
+    );
+  };
+
+  // Intercept console.error to prevent extension noise from popping up in error overlays
+  const origConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    const joined = args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+    if (isExtensionOrWalletError(joined) || args.some((a) => isExtensionOrWalletError(a))) {
+      console.warn("[Spark Exception Guard] Intercepted wallet/extension error:", joined);
+      return;
+    }
+    origConsoleError.apply(console, args);
+  };
+
   window.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason ? String(event.reason) : "";
-    if (
-      reason.includes("MetaMask") ||
-      reason.includes("ethereum") ||
-      reason.includes("wallet") ||
-      reason.includes("Failed to connect")
-    ) {
-      console.warn("[Spark Exception Guard] Suppressed browser extension rejection:", reason);
+    if (isExtensionOrWalletError(event.reason) || isExtensionOrWalletError(event)) {
+      console.warn("[Spark Exception Guard] Suppressed browser extension rejection:", event.reason);
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation?.();
     }
-  });
+  }, true);
 
   window.addEventListener("error", (event) => {
-    const msg = event.message ? String(event.message) : "";
     if (
-      msg.includes("MetaMask") ||
-      msg.includes("ethereum") ||
-      msg.includes("wallet") ||
-      msg.includes("Failed to connect")
+      isExtensionOrWalletError(event.error) ||
+      isExtensionOrWalletError(event.message) ||
+      isExtensionOrWalletError(event)
     ) {
-      console.warn("[Spark Exception Guard] Suppressed browser extension error:", msg);
+      console.warn("[Spark Exception Guard] Suppressed browser extension error:", event.message);
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation?.();
     }
-  });
+  }, true);
+
+  // Attach guard helper to window for ErrorBoundary access
+  (window as any).__isExtensionOrWalletError = isExtensionOrWalletError;
 }
 
 interface ErrorBoundaryProps {
@@ -57,6 +103,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   };
 
   public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    const isGuard = typeof window !== "undefined" && (window as any).__isExtensionOrWalletError;
+    if (isGuard && isGuard(error)) {
+      console.warn("[Spark ErrorBoundary] Ignored extension error:", error);
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 

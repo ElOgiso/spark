@@ -19,6 +19,28 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!-- Web3/Extension Property Redefinition Guard -->
+    <script>
+      (function() {
+        try {
+          const origDefine = Object.defineProperty;
+          Object.defineProperty = function(obj, prop, descriptor) {
+            try {
+              return origDefine.apply(this, arguments);
+            } catch (err) {
+              if (obj === window && (prop === 'ethereum' || prop === 'solana' || String(prop).toLowerCase().includes('ethereum'))) {
+                console.warn('[Spark Web3 Guard] Prevented extension property redefinition error for:', prop);
+                return obj;
+              }
+              throw err;
+            }
+          };
+        } catch (e) {
+          // ignore guard initialization error
+        }
+      })();
+    </script>
+
     <!-- Google Identity Services SDK -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
