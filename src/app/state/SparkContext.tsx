@@ -1177,8 +1177,86 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const isApprovalReq = /\b(approve|accept|publish review|ship it|schedule cut)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed);
     const isEditReq = /\b(needs edit|reject|revision|request edit)\b/i.test(lower);
     const isCreateReq = /\b(create video|make video|generate video|create short|draft script|create storyboard|generate cut)\b/i.test(lower);
+    const isSampleReq = /\b(generate sample|show sample|preview this|create a one-time example|sample production)\b/i.test(lower);
+    const isProdTurnOn = /\b(turn production on|enable production|resume production)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed && lower.includes("on"));
+    const isProdTurnOff = /\b(turn production off|disable production|pause production)\b/i.test(lower);
+    const isProdCancel = /\b(cancel production)\b/i.test(lower);
+    const urlMatch = prompt.match(/https?:\/\/[^\s]+/i);
+    const isResearchReq = /\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch;
+    const isMemoryReq = /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
 
-    if (isApprovalReq) {
+    if (isProdTurnOn) {
+      toggleProductionGeneration(true);
+      taskMedia = {
+        type: "production_status",
+        id: `prod-on-${Date.now()}`,
+        title: "Production Generation Enabled",
+        status: "Enabled",
+        meta: "Full multi-scene storyboard and media rendering active.",
+      };
+    } else if (isProdTurnOff) {
+      toggleProductionGeneration(false);
+      taskMedia = {
+        type: "production_status",
+        id: `prod-off-${Date.now()}`,
+        title: "Production Generation Disabled",
+        status: "Disabled",
+        meta: "Lightweight brief mode active. Automatic media rendering paused.",
+      };
+    } else if (isProdCancel) {
+      const activeProd = state.productions?.find((p: any) => p.status !== "Cancelled") || state.productions?.[0];
+      if (activeProd) {
+        cancelProduction(activeProd.id);
+      }
+      taskMedia = {
+        type: "production_status",
+        id: `prod-cancel-${Date.now()}`,
+        title: "Production Cancelled",
+        status: "Cancelled",
+        meta: "Production job stopped cleanly. Workspace queue updated.",
+      };
+    } else if (isResearchReq && urlMatch) {
+      const targetUrl = urlMatch[0];
+      addResearchSource(targetUrl);
+      const domain = targetUrl.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] || "Research Source";
+      const platform = targetUrl.includes("youtube") ? "YouTube" : targetUrl.includes("tiktok") ? "TikTok" : targetUrl.includes("instagram") ? "Instagram" : "Profile Link";
+      taskMedia = {
+        type: "research_source",
+        id: `rs-${Date.now()}`,
+        title: domain,
+        url: targetUrl,
+        platform,
+        status: "Synced",
+        meta: "Research source added and analyzed by AI",
+      };
+    } else if (isMemoryReq) {
+      const cleanMem = prompt.replace(/remember|save this|add memory|never forget|note that/gi, "").trim();
+      const ruleText = cleanMem || prompt;
+      addMemoryItem(ruleText, "rule", "Strategy");
+      taskMedia = {
+        type: "memory_saved",
+        id: `mem-${Date.now()}`,
+        title: "Brand Memory Rule Saved",
+        rule: ruleText,
+        category: "Strategy",
+        source: "Executive Chat",
+        meta: "Committed to SPARK workspace memory bank",
+      };
+    } else if (isSampleReq) {
+      const spark = state.viralSparks?.[0];
+      const sparkId = spark?.id || "vs-1";
+      createProductionFromSpark(sparkId);
+      taskMedia = {
+        type: "storyboard",
+        id: `sample-prod-${Date.now()}`,
+        title: "Sample Storyboard Preview",
+        sceneCount: 3,
+        duration: "3:20",
+        coverFrame: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
+        status: "Drafting",
+        meta: "One-time sample storyboard generated in workspace",
+      };
+    } else if (isApprovalReq) {
       const targetReview = state.reviewItems?.find((r: any) => r.status === "Pending Review") || state.reviewItems?.[0];
       if (targetReview) {
         approveReviewItem(targetReview.id);
@@ -1224,9 +1302,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateAutomationMode("autonomous");
     } else if (lower.includes("copilot mode") || lower.includes("semi auto")) {
       updateAutomationMode("balanced");
-    } else if (lower.startsWith("remember ") || lower.startsWith("add memory ") || lower.startsWith("save memory ")) {
-      const cleanMem = prompt.replace(/remember|add memory|save memory|note that/gi, "").trim();
-      addMemoryItem(cleanMem || prompt, "rule", "Strategy");
     }
 
     try {

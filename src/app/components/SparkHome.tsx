@@ -429,7 +429,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
         </div>
       </main>
-      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} onNavigate={onNavigate} />
     </>
   );
 }

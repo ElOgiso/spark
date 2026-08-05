@@ -272,7 +272,7 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
         </div>
       </div>
 
-      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} onNavigate={onNavigate} />
     </div>
   );
 }

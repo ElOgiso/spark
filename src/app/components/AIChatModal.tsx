@@ -35,16 +35,47 @@ import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrat
 interface AIChatModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNavigate?: (path: string) => void;
 }
 
 interface MessageMedia {
-  type: "video" | "storyboard" | "opportunity";
+  type: "video" | "storyboard" | "opportunity" | "production_status" | "research_source" | "memory_saved";
   id: string;
   title: string;
   videoUrl?: string;
+  coverFrame?: string;
+  url?: string;
+  platform?: string;
+  rule?: string;
+  category?: string;
+  source?: string;
+  sceneCount?: number;
+  duration?: string;
   status: string;
   concept?: string;
   meta?: string;
+}
+
+function formatExecutiveThinkingStep(stepText?: string): string {
+  if (!stepText) return "Working on it...";
+  const lower = stepText.toLowerCase();
+
+  if (lower.includes("research") || lower.includes("url") || lower.includes("channel") || lower.includes("pattern") || lower.includes("source")) {
+    return "Analyzing the source...";
+  }
+  if (lower.includes("production") || lower.includes("storyboard") || lower.includes("scene") || lower.includes("render")) {
+    return "Preparing your production...";
+  }
+  if (lower.includes("connect") || lower.includes("sync") || lower.includes("network")) {
+    return "Connecting your research...";
+  }
+  if (lower.includes("final") || lower.includes("ready") || lower.includes("complete")) {
+    return "Almost ready...";
+  }
+  if (lower.includes("plan") || lower.includes("strategy") || lower.includes("reasoning")) {
+    return "Reviewing your request...";
+  }
+  return "Working on it...";
 }
 
 interface Message {
@@ -66,16 +97,17 @@ const FormattedText: React.FC<{ content: string }> = ({ content }) => {
   return (
     <div className="space-y-2">
       {lines.map((line, idx) => {
+        if (!line.trim()) return <div key={idx} className="h-1" />;
         if (line.startsWith("### ")) {
           return (
-            <h3 key={idx} className="text-base font-bold text-foreground mt-3 mb-1.5 flex items-center gap-2">
+            <h3 key={idx} className="text-sm font-bold text-foreground mt-3 mb-1">
               {line.replace("### ", "")}
             </h3>
           );
         }
         if (line.startsWith("## ")) {
           return (
-            <h2 key={idx} className="text-lg font-extrabold text-foreground mt-4 mb-2">
+            <h2 key={idx} className="text-base font-bold text-foreground mt-3 mb-1">
               {line.replace("## ", "")}
             </h2>
           );
@@ -108,7 +140,7 @@ const FormattedText: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
+export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const sparkState = useSpark() as any;
   const {
     brand,
@@ -120,6 +152,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
     createProductionFromSpark,
     updateAutomationMode,
     addMemoryItem,
+    syncResearchSource,
     sendMessage,
     chatMessages,
     addChatMessage,
@@ -1090,6 +1123,75 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
                               </>
                             )}
 
+                            {msg.media.type === "production_status" && (
+                              <button
+                                onClick={() => {
+                                  onNavigate?.("/more/production-settings");
+                                  onClose();
+                                }}
+                                className="w-full py-2.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent-foreground border border-accent/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                              >
+                                Configure Production Settings
+                              </button>
+                            )}
+
+                            {msg.media.type === "research_source" && (
+                              <div className="w-full flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    onNavigate?.("/my-spark");
+                                    onClose();
+                                  }}
+                                  className="flex-1 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                >
+                                  View in My Spark
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (msg.media?.id) syncResearchSource(msg.media.id);
+                                  }}
+                                  className="px-3 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                >
+                                  Sync Now
+                                </button>
+                              </div>
+                            )}
+
+                            {msg.media.type === "memory_saved" && (
+                              <button
+                                onClick={() => {
+                                  onNavigate?.("/more/memory");
+                                  onClose();
+                                }}
+                                className="w-full py-2.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                              >
+                                View Memory Bank
+                              </button>
+                            )}
+
+                            {msg.media.type === "storyboard" && (
+                              <div className="w-full flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    onNavigate?.("/review");
+                                    onClose();
+                                  }}
+                                  className="flex-1 py-2.5 rounded-lg bg-accent hover:bg-accent/90 text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                >
+                                  Open in Review
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    onNavigate?.("/review");
+                                    onClose();
+                                  }}
+                                  className="flex-1 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                >
+                                  Open Storyboard
+                                </button>
+                              </div>
+                            )}
+
                             {msg.media.type === "opportunity" && (
                               <button
                                 onClick={() => handleActionCreateFromSpark(msg.media!.id)}
@@ -1121,12 +1223,7 @@ export function AIChatModal({ isOpen, onClose }: AIChatModalProps) {
               {sparkState.thinkingState && (
                 <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-accent/10 border border-accent/20 text-xs text-accent-foreground font-medium animate-pulse my-2">
                   <Sparkles className="w-4 h-4 text-accent-foreground animate-spin" />
-                  <span>
-                    {sparkState.thinkingState.step
-                      ?.replace(/\[.*?\]/g, "")
-                      ?.replace(/xAI|OpenAI|Gemini|Claude|Grok/gi, "")
-                      ?.trim() || "Thinking..."}
-                  </span>
+                  <span>{formatExecutiveThinkingStep(sparkState.thinkingState.step)}</span>
                 </div>
               )}
 
