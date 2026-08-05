@@ -84,6 +84,36 @@ export class ModelRouter {
   }
 
   /**
+   * Reads persisted user routing config from localStorage or defaults
+   */
+  static getUserRoutingConfig(): AIModelRoutingConfig {
+    if (typeof localStorage === "undefined") return this.getDefaultRoutingConfig();
+    try {
+      const saved = localStorage.getItem("spark_ai_model_routing");
+      if (saved) return { ...this.getDefaultRoutingConfig(), ...JSON.parse(saved) };
+    } catch (err) {
+      console.warn("[ModelRouter] Parse notice:", err);
+    }
+    return this.getDefaultRoutingConfig();
+  }
+
+  /**
+   * Updates and persists user routing preferences across sessions
+   */
+  static setUserRoutingConfig(config: Partial<AIModelRoutingConfig>): AIModelRoutingConfig {
+    const current = this.getUserRoutingConfig();
+    const updated = { ...current, ...config };
+    if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("spark_ai_model_routing", JSON.stringify(updated));
+      } catch (err) {
+        console.warn("[ModelRouter] Save notice:", err);
+      }
+    }
+    return updated;
+  }
+
+  /**
    * Main Router Request Execution Point
    */
   static async executeCategoryRequest(
@@ -91,7 +121,8 @@ export class ModelRouter {
     options: AIExecutionOptions,
     userRoutingConfig?: Partial<AIModelRoutingConfig>
   ): Promise<string> {
-    const preferredProvider = this.resolveProvider(category, userRoutingConfig);
+    const activeConfig = userRoutingConfig || this.getUserRoutingConfig();
+    const preferredProvider = this.resolveProvider(category, activeConfig);
     const capability = options.capability || this.mapCategoryToCapability(category);
 
     return AIProviderOrchestrator.execute({

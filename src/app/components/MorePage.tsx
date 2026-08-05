@@ -25,7 +25,8 @@ import {
   LogIn,
   X,
   User,
-  Palette
+  Palette,
+  Sparkles
 } from "lucide-react";
 
 interface MorePageProps {
@@ -146,6 +147,13 @@ export function MorePage({ onNavigate }: MorePageProps) {
           description: "Connected AI, MCP, and local services",
           meta: "Open",
           action: () => onNavigate("/more/integrations"),
+        },
+        {
+          icon: Sparkles,
+          label: "AI Preferences",
+          description: "Task routing models (Super Spark, Research, Production, etc.)",
+          meta: "Best Available (Default)",
+          action: () => onNavigate("/more/ai-preferences"),
         },
         {
           icon: Users,

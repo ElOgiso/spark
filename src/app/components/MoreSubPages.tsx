@@ -11,6 +11,8 @@ import {
 import { NotificationService } from "../notifications/notificationService";
 import type { MemoryItem } from "../domain/types";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../theme";
+import { ModelRouter } from "../services/runtime/modelRouter";
+import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig } from "../domain/types";
 import {
   ArrowLeft,
   FileText,
@@ -43,13 +45,13 @@ import {
   Settings,
   Activity,
   RefreshCw,
+  Sparkles,
   Sliders,
   Globe,
   Layers,
   Server,
   XCircle,
   Palette,
-  Sparkles,
   Youtube,
   Twitter,
   Facebook,
@@ -340,9 +342,88 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     applyTheme(newTheme);
   };
 
+  // AI Routing Preferences
+  const [aiRoutingConfig, setAiRoutingConfig] = useState<AIModelRoutingConfig>(() =>
+    ModelRouter.getUserRoutingConfig()
+  );
+
+  const handleUpdateAIRouting = (category: AIRoutingCategory, provider: AIProviderId) => {
+    const updated = ModelRouter.setUserRoutingConfig({ [category]: provider });
+    setAiRoutingConfig(updated);
+    NotificationService.addNotification({
+      title: "AI Routing Updated",
+      description: `Default AI provider for ${category} updated to ${provider === "auto" ? "Best Available" : provider.toUpperCase()}.`,
+      type: "system_update",
+      priority: "medium",
+      actionLabel: "View Preferences",
+      relatedRoute: "/more/ai-preferences"
+    });
+  };
+
   // Map subPath to titles and components
   const getSubPageDetails = () => {
     switch (subPath) {
+      case "/more/ai-preferences":
+        return {
+          title: "AI Preferences & Task Routing",
+          icon: Sparkles,
+          description: "Configure specific AI models per task. Default remains Best Available, so most users never need to change anything.",
+          content: (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-border/40 pb-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Task-Based Model Routing</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      SPARK automatically selects the optimal provider via ModelRouter. You can override specific tasks below.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full border border-purple-500/30 font-semibold">
+                    Multi-Provider Active
+                  </span>
+                </div>
+
+                <div className="space-y-4 pt-2">
+                  {[
+                    { key: "superSpark", name: "Super Spark (Executive Chat)", desc: "Primary executive conversational assistant & decision engine", defaultModel: "OpenAI / Claude / Gemini / Grok" },
+                    { key: "research", name: "Research Department & Signal Radar", desc: "Breakout trend discovery, pattern recognition, and hook scoring", defaultModel: "Claude / Gemini" },
+                    { key: "videoUnderstanding", name: "Video Understanding & Multimodal Vision", desc: "2-tier keyframe visual analysis, transcript parsing, and frame extraction", defaultModel: "xAI Grok / Gemini / OpenAI" },
+                    { key: "production", name: "Production & Scripting Engine", desc: "Production Brief generation, 3-scene storyboarding, and captioning", defaultModel: "Claude / OpenAI" },
+                    { key: "automation", name: "Autonomous Media OS Engine", desc: "Background trend monitoring, publishing queue scheduling, and memory formation", defaultModel: "OpenAI / Gemini" },
+                    { key: "executive", name: "Executive Briefings & Synthesis", desc: "Return briefing, offline summaries, and strategic directives", defaultModel: "OpenAI / Gemini" },
+                    { key: "analytics", name: "Analytics & Virality Predictor", desc: "Audience reach estimation, engagement scoring, and performance attribution", defaultModel: "Gemini / OpenAI" },
+                  ].map((task) => {
+                    const currentVal = aiRoutingConfig[task.key as AIRoutingCategory] || "auto";
+                    return (
+                      <div key={task.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border/60 bg-background/50 hover:bg-background/80 transition-all">
+                        <div className="space-y-1 max-w-lg">
+                          <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
+                            {task.name}
+                            <span className="text-[10px] font-mono font-normal text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-md border border-border/40">
+                              Default: {task.defaultModel}
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-muted-foreground">{task.desc}</p>
+                        </div>
+                        <select
+                          value={currentVal}
+                          onChange={(e) => handleUpdateAIRouting(task.key as AIRoutingCategory, e.target.value as AIProviderId)}
+                          className="bg-input-background border border-border text-xs text-foreground font-semibold px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer shrink-0 min-w-[180px]"
+                        >
+                          <option value="auto">Best Available (Default)</option>
+                          <option value="openai">OpenAI (GPT-4o / GPT-5.4)</option>
+                          <option value="gemini">Google Gemini (2.0 Flash)</option>
+                          <option value="claude">Anthropic Claude 3.5</option>
+                          <option value="grok">xAI Grok 2 Vision</option>
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ),
+        };
       case "/more/theme":
         return {
           title: "Theme & Visual Appearance",

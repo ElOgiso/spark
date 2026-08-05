@@ -267,6 +267,7 @@ function AppContent() {
         case "/more/billing":
         case "/more/api":
         case "/more/integrations":
+        case "/more/ai-preferences":
         case "/more/team":
         case "/more/legal":
         case "/more/support":

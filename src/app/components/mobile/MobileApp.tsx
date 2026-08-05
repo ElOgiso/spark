@@ -8,14 +8,23 @@ import { MobileAnalytics } from "./MobileAnalytics";
 import { MobileMore } from "./MobileMore";
 import { MySpark } from "../MySpark";
 
+import { MoreSubPages } from "../MoreSubPages";
+
 type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more" | "my-spark";
 
 export function MobileApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("spark");
+  const [subPath, setSubPath] = useState<string | null>(null);
   const { productions } = useSpark();
   const pendingReviewsCount = productions.filter((p) => p.status === "Ready for Review").length;
 
   const handleMobileNavigate = (path: string) => {
+    if (path.startsWith("/more/")) {
+      setSubPath(path);
+      setActiveTab("more");
+      return;
+    }
+    setSubPath(null);
     if (path === "/review") {
       setActiveTab("review");
     } else if (path === "/viral-sparks") {
@@ -32,6 +41,10 @@ export function MobileApp() {
   };
 
   const renderContent = () => {
+    if (activeTab === "more" && subPath) {
+      return <MoreSubPages onNavigate={handleMobileNavigate} subPath={subPath} />;
+    }
+
     switch (activeTab) {
       case "spark": return <MobileHome onNavigate={handleMobileNavigate} />;
       case "viral-sparks": return <MobileViralSparks onNavigate={handleMobileNavigate} />;
