@@ -95,6 +95,27 @@ Return JSON matching this exact structure with NO markdown backticks:
       const storyboard: ProductionScene[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
+      // Synthesize real voiceover audio via provider TTS pipeline when available
+      let realVoiceUrl: string | undefined = undefined;
+      try {
+        const { generateSuperSparkVoice } = await import("../geminiService");
+        const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
+        const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+        if (synthesizedVoice && synthesizedVoice.length > 50) {
+          realVoiceUrl = synthesizedVoice;
+        }
+      } catch (voiceErr) {
+        console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
+      }
+
+      // Check if video provider environment key exists (e.g. Kling, Luma, Runway)
+      const hasVideoKey = Boolean(
+        (typeof process !== "undefined" && (process.env?.VITE_KLING_API_KEY || process.env?.VITE_LUMA_API_KEY || process.env?.VITE_RUNWAY_API_KEY)) ||
+        (typeof import.meta !== "undefined" && ((import.meta as any).env?.VITE_KLING_API_KEY || (import.meta as any).env?.VITE_LUMA_API_KEY || (import.meta as any).env?.VITE_RUNWAY_API_KEY))
+      );
+
+      const realVideoUrl: string | undefined = hasVideoKey ? undefined : undefined; // Unavailable unless real video API key emits stream
+
       const updatedBrief: ProductionBrief = {
         ...brief,
         storyboard: storyboard.length > 0 ? storyboard : [
@@ -111,11 +132,11 @@ Return JSON matching this exact structure with NO markdown backticks:
           },
         ],
         generatedAssets: {
-          sceneClips: ["clip_scene_1.mp4", "clip_scene_2.mp4", "clip_scene_3.mp4"],
+          sceneClips: realVideoUrl ? [realVideoUrl] : undefined,
           thumbnails,
-          voiceoverUrl: "voiceover_master.mp3",
+          voiceoverUrl: realVoiceUrl,
         },
-        audioUrl: "voiceover_master.mp3",
+        audioUrl: realVoiceUrl,
       };
 
       const updatedScenes = updatedBrief.storyboard!.map((s) => ({
@@ -127,8 +148,8 @@ Return JSON matching this exact structure with NO markdown backticks:
       return {
         brief: updatedBrief,
         scenes: updatedScenes,
-        audioUrl: "voiceover_master.mp3",
-        videoUrl: "preview_render_916.mp4",
+        audioUrl: realVoiceUrl,
+        videoUrl: realVideoUrl,
       };
     } catch (err) {
       console.warn("[ProductionAssetService] AI storyboard fallback:", err);
@@ -169,16 +190,29 @@ Return JSON matching this exact structure with NO markdown backticks:
         },
       ];
 
+      // Synthesize real voiceover audio fallback
+      let realVoiceUrl: string | undefined = undefined;
+      try {
+        const { generateSuperSparkVoice } = await import("../geminiService");
+        const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
+        const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+        if (synthesizedVoice && synthesizedVoice.length > 50) {
+          realVoiceUrl = synthesizedVoice;
+        }
+      } catch {}
+
       const updatedBrief: ProductionBrief = {
         ...brief,
         storyboard: fallbackStoryboard,
         generatedAssets: {
-          sceneClips: ["clip_scene_1.mp4", "clip_scene_2.mp4", "clip_scene_3.mp4"],
+          sceneClips: undefined,
           thumbnails: [
             { id: "t1", variant: "A", concept: "Presenter contrast thumbnail" },
             { id: "t2", variant: "B", concept: "Metric graphic thumbnail" },
           ],
+          voiceoverUrl: realVoiceUrl,
         },
+        audioUrl: realVoiceUrl,
       };
 
       return {
@@ -188,6 +222,8 @@ Return JSON matching this exact structure with NO markdown backticks:
           description: `[${s.duration}] ${s.shotList} — Text: "${s.onScreenText}"`,
           duration: s.duration,
         })),
+        audioUrl: realVoiceUrl,
+        videoUrl: undefined,
       };
     }
   }
