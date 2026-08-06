@@ -149,11 +149,15 @@ export class VideoUnderstandingProvider {
 
     const { platform, videoId } = this.extractVideoId(cleanUrl);
     const googleApiKey =
-      import.meta.env.VITE_GOOGLE_API_KEY ||
-      import.meta.env.VITE_YOUTUBE_API_KEY ||
+      (typeof import.meta !== "undefined" && ((import.meta as any).env?.VITE_YOUTUBE_API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY || (import.meta as any).env?.YOUTUBE_API_KEY || (import.meta as any).env?.GOOGLE_API_KEY)) ||
+      (typeof process !== "undefined" && (process.env?.VITE_YOUTUBE_API_KEY || process.env?.VITE_GOOGLE_API_KEY || process.env?.YOUTUBE_API_KEY || process.env?.GOOGLE_API_KEY)) ||
       (typeof localStorage !== "undefined" ? localStorage.getItem("youtube_api_key") || localStorage.getItem("google_api_key") : null);
+
     const storedTokens = getStoredAccountTokens() as Record<string, any>;
-    const googleOAuthToken = storedTokens?.google?.accessToken || storedTokens?.google?.access_token || null;
+    const ytTokenObj = storedTokens["YouTube Shorts"] || storedTokens["YouTube"] || storedTokens["youtube"] || storedTokens["google"];
+    const googleOAuthToken = (ytTokenObj?.status === "Connected" || ytTokenObj?.status === "Refreshing" || !ytTokenObj?.status)
+      ? (ytTokenObj?.accessToken || ytTokenObj?.access_token || ytTokenObj?.token?.accessToken || null)
+      : null;
 
     // Stage 1: Metadata Extraction
     let title = `${platform.toUpperCase()} Viral Video`;

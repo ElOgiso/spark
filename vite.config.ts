@@ -144,6 +144,11 @@ export default defineConfig({
     'process.env.elevenlabs_API_Key': JSON.stringify(process.env.elevenlabs_API_Key || process.env.ELEVENLABS_API_KEY || process.env.VITE_ELEVENLABS_API_KEY || ''),
     'process.env.ELEVENLABS_API_KEY': JSON.stringify(process.env.ELEVENLABS_API_KEY || process.env.elevenlabs_API_Key || process.env.VITE_ELEVENLABS_API_KEY || ''),
     'process.env.VITE_ELEVENLABS_API_KEY': JSON.stringify(process.env.VITE_ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY || process.env.elevenlabs_API_Key || ''),
+
+    'process.env.YOUTUBE_API_KEY': JSON.stringify(process.env.YOUTUBE_API_KEY || process.env.VITE_YOUTUBE_API_KEY || process.env.VITE_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY || ''),
+    'process.env.VITE_YOUTUBE_API_KEY': JSON.stringify(process.env.VITE_YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY || process.env.VITE_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY || ''),
+    'process.env.GOOGLE_API_KEY': JSON.stringify(process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY || process.env.YOUTUBE_API_KEY || process.env.VITE_YOUTUBE_API_KEY || ''),
+    'process.env.VITE_GOOGLE_API_KEY': JSON.stringify(process.env.VITE_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY || ''),
   },
   plugins: [
     apiServerPlugin(),

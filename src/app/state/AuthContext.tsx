@@ -304,8 +304,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isConfigured) {
       await sessionSignOut();
     }
-    localStorage.removeItem("spark_demo_user");
-    localStorage.removeItem("spark_onboarding_complete");
+    const { clearAllStoredAccountTokens } = await import("../services/socialIntegrationService");
+    clearAllStoredAccountTokens();
     setDemoUser(null);
     setSession(null);
     setProfile(null);

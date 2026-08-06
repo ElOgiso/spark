@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spark — Completing Connection</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <style>
+      html, body { height: 100%; margin: 0; background: #0B0F19; color: #e5e7eb; font-family: system-ui, sans-serif; }
+      .wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+      p { opacity: 0.8; font-size: 14px; }
+    </style>
+    <script>
+      (function () {
+        try {
+          var params = new URLSearchParams(window.location.search || "");
+          var state = params.get("state") || "";
+          var provider = "google";
+          if (/spark_oauth_x/i.test(state) || /twitter/i.test(state)) provider = "x";
+          params.set("spark_oauth", provider);
+          window.location.replace("/?" + params.toString());
+        } catch (e) {
+          window.location.replace("/?spark_oauth=google&error=callback_redirect_failed");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div>
+        <p>Completing platform connection…</p>
+      </div>
+    </div>
+  </body>
+</html>

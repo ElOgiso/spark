@@ -857,6 +857,24 @@ function platformKeysMatch(a: string, b: string): boolean {
   return false;
 }
 
+/** Purge all local token caches, brand pointers, and onboarding state across user sign-out boundaries. */
+export function clearAllStoredAccountTokens(): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem("spark_social_account_tokens_v2");
+    localStorage.removeItem("spark_platform_analytics_v1");
+    localStorage.removeItem("spark_current_brand_id");
+    localStorage.removeItem("spark_current_brand_name");
+    localStorage.removeItem("spark_onboarding_state");
+    localStorage.removeItem("spark_onboarding_step");
+    localStorage.removeItem("spark_onboarding_resume_state");
+    localStorage.removeItem("spark_onboarding_complete");
+    localStorage.removeItem("spark_demo_user");
+  } catch (err) {
+    console.warn("[socialIntegrationService] Token purge notice:", err);
+  }
+}
+
 /** Remove a connected social account from local token store + optional Supabase row. */
 export async function disconnectConnectedAccount(platform: string): Promise<void> {
   try {
