@@ -813,10 +813,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             memoryItems: state.memoryItems || [],
             productionMode: state.productionMode,
           })
-          .then(({ production: enrichedProd, reviewItem: enrichedReview }) => {
+          .then(async ({ production: enrichedProd, reviewItem: enrichedReview }) => {
             setState((prev: any) => ({
               ...prev,
-              productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd } : p)),
+              productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd, isGeneratingAssets: ProductionGenerationGuard.isEnabled() } : p)),
               reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
             }));
 
@@ -825,6 +825,39 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const brandId = getBrandWorkspaceId();
             if (isSupabaseConfigured() && brandId) {
               void persistProductionCreate(brandId, enrichedProd);
+            }
+
+            // Chain asset generation automatically when Production Generation is ON
+            if (ProductionGenerationGuard.isEnabled()) {
+              try {
+                const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
+                  production: enrichedProd,
+                  brand: state.brand,
+                  character: state.character,
+                });
+
+                setState((prev: any) => ({
+                  ...prev,
+                  productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...updatedProd, isGeneratingAssets: false } : p)),
+                  reviewItems: prev.reviewItems.map((r: any) =>
+                    r.productionId === prodId
+                      ? {
+                          ...r,
+                          brief: updatedBrief,
+                          openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
+                        }
+                      : r
+                  ),
+                }));
+
+                eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
+              } catch (assetErr) {
+                console.warn("[SparkContext] Auto asset generation notice:", assetErr);
+                setState((prev: any) => ({
+                  ...prev,
+                  productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, isGeneratingAssets: false } : p)),
+                }));
+              }
             }
           })
           .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));

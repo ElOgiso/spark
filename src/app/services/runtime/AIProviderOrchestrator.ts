@@ -101,14 +101,97 @@ export class AIProviderOrchestrator {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // 1. Google Gemini Provider Plugin (Gemini 2.0 Flash)
+    // 1. Google Gemini Provider Plugin (Gemini 2.0 Flash / Veo / Imagen)
     this.registerPlugin({
       id: "gemini",
-      name: "Google Gemini (2.0 Flash / Pro)",
-      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Text To Speech"],
+      name: "Google Gemini (2.0 Flash / Pro / Veo / Imagen)",
+      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Text To Speech", "Video Generation", "Image Generation"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("gemini", options.customApiKeys);
+
+        // 1A. Handle Video Generation
+        if (options.capability === "Video Generation") {
+          if (apiKey) {
+            try {
+              const videoRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-goog-api-key": apiKey,
+                },
+                body: JSON.stringify({
+                  prompt: { text: options.prompt },
+                  aspectRatio: "9:16",
+                  durationSeconds: 5,
+                }),
+              });
+              if (videoRes.ok) {
+                const vidData = await videoRes.json();
+                const videoUrl = vidData.response?.video?.uri || vidData.name || "";
+                if (videoUrl) {
+                  if (options.onChunk) options.onChunk(videoUrl);
+                  return videoUrl;
+                }
+              }
+            } catch (vErr) {
+              console.warn("[Gemini Provider] Video generation API notice:", vErr);
+            }
+          }
+
+          // Fallback to proxy
+          const proxyRes = await fetch("/api/runtime/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider: "google",
+              endpoint: "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
+              payload: { prompt: { text: options.prompt }, aspectRatio: "9:16" },
+            }),
+          }).catch(() => null);
+
+          if (proxyRes && proxyRes.ok) {
+            const data = await proxyRes.json();
+            const videoUrl = data.response?.video?.uri || data.videoUrl || data.url || "";
+            if (videoUrl) {
+              if (options.onChunk) options.onChunk(videoUrl);
+              return videoUrl;
+            }
+          }
+
+          throw new Error("Gemini Video Generation is processing or API key quota exceeded.");
+        }
+
+        // 1B. Handle Image Generation via Google Imagen
+        if (options.capability === "Image Generation") {
+          if (apiKey) {
+            try {
+              const imgRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-goog-api-key": apiKey,
+                },
+                body: JSON.stringify({
+                  instances: [{ prompt: options.prompt }],
+                  parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
+                }),
+              });
+              if (imgRes.ok) {
+                const imgData = await imgRes.json();
+                const b64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+                if (b64) {
+                  const dataUri = `data:image/png;base64,${b64}`;
+                  if (options.onChunk) options.onChunk(dataUri);
+                  return dataUri;
+                }
+              }
+            } catch (iErr) {
+              console.warn("[Gemini Provider] Imagen 3 direct generation notice:", iErr);
+            }
+          }
+        }
+
         if (apiKey) {
           try {
             const { GoogleGenAI } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any }));

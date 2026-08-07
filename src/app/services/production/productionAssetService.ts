@@ -315,6 +315,8 @@ Return JSON matching this exact structure with NO markdown backticks:
         scene: s.scene,
         description: `[${s.duration}] ${s.shotList} — Text: "${s.onScreenText}"`,
         duration: s.duration,
+        image: s.image,
+        videoUrl: s.videoUrl,
       }));
 
       return {

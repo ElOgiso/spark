@@ -164,11 +164,18 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     hookType: "High-curiosity gap angle",
     openingMoment: brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment || "Vertical 9:16 presenter with text overlays",
     captionDirection: brief?.caption || "Lead with stat. Use em-dash rhythm. End with open loop question. 3-line max mobile preview.",
-    thumbnails: [
-      { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A" },
-      { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B" },
-      { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C" },
-    ],
+    thumbnails: brief?.generatedAssets?.thumbnails?.length
+      ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
+          id: t.id || String(idx + 1),
+          concept: t.concept,
+          variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
+          image: brief.generatedAssets?.generatedFrames?.[idx] || brief.storyboard?.[idx]?.image,
+        }))
+      : [
+          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] },
+          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] },
+          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] },
+        ],
     narrative: {
       hook: brief?.hook || activeReview?.scriptSnippet || "Failed marketing campaigns waste time and energy",
       buildUp: brief?.scriptOutline ? brief.scriptOutline.slice(0, 100) : "Modern strategy breakdown",
@@ -181,11 +188,21 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           scene: s.scene || idx + 1,
           description: s.description,
           duration: s.duration || "0–10s",
+          image: s.image || brief?.storyboard?.[idx]?.image || brief?.generatedAssets?.generatedFrames?.[idx],
+          videoUrl: s.videoUrl || activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
+        }))
+      : brief?.storyboard?.length
+      ? brief.storyboard.map((s: any, idx: number) => ({
+          scene: s.scene || idx + 1,
+          description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
+          duration: s.duration || "0–10s",
+          image: s.image || brief.generatedAssets?.generatedFrames?.[idx],
+          videoUrl: s.videoUrl || brief.videoUrl || brief.generatedAssets?.generatedVideos?.[0],
         }))
       : [
-          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s" },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s" },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s" },
+          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
+          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
+          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
         ],
     platformStrategy: {
       youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
@@ -301,7 +318,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 <span>Proposed Thumbnail Variants</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {proposal.thumbnails.map((t) => (
+                {proposal.thumbnails.map((t: any) => (
                   <ThumbnailVariantCard 
                     key={t.id}
                     id={activeReview?.id || "p1"}
