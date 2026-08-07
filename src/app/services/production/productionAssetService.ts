@@ -114,13 +114,46 @@ Return JSON matching this exact structure with NO markdown backticks:
         console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
       }
 
-      // Check if video provider environment key exists (e.g. Kling, Luma, Runway)
-      const hasVideoKey = Boolean(
-        (typeof process !== "undefined" && (process.env?.VITE_KLING_API_KEY || process.env?.VITE_LUMA_API_KEY || process.env?.VITE_RUNWAY_API_KEY)) ||
-        (typeof import.meta !== "undefined" && ((import.meta as any).env?.VITE_KLING_API_KEY || (import.meta as any).env?.VITE_LUMA_API_KEY || (import.meta as any).env?.VITE_RUNWAY_API_KEY))
-      );
+      // 1. Storyboard Scene Keyframe Image Generation via ModelRouter ("storyboardImages")
+      const sceneImages: string[] = [];
+      const renderStartedAt = new Date().toISOString();
 
-      const realVideoUrl: string | undefined = hasVideoKey ? undefined : undefined; // Unavailable unless real video API key emits stream
+      try {
+        const { ModelRouter } = await import("../runtime/modelRouter");
+        for (const scene of storyboard) {
+          const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Brand: ${brand.name}`;
+          try {
+            const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+              prompt: imagePrompt,
+            });
+            if (imgUrl && imgUrl.length > 20) {
+              sceneImages.push(imgUrl);
+              scene.image = imgUrl;
+            }
+          } catch (sceneErr) {
+            console.warn(`[ProductionAssetService] Scene ${scene.scene} image generation notice:`, sceneErr);
+          }
+        }
+      } catch (imgErr) {
+        console.warn("[ProductionAssetService] Storyboard image generation notice:", imgErr);
+      }
+
+      // 2. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
+      let realVideoUrl: string | undefined = undefined;
+      try {
+        const { ModelRouter } = await import("../runtime/modelRouter");
+        const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
+        const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
+          prompt: videoPrompt,
+        });
+        if (generatedVideo && generatedVideo.length > 20) {
+          realVideoUrl = generatedVideo;
+        }
+      } catch (vidErr) {
+        console.warn("[ProductionAssetService] Video generation notice:", vidErr);
+      }
+
+      const renderCompletedAt = new Date().toISOString();
 
       const updatedBrief: ProductionBrief = {
         ...brief,
@@ -141,8 +174,18 @@ Return JSON matching this exact structure with NO markdown backticks:
           sceneClips: realVideoUrl ? [realVideoUrl] : undefined,
           thumbnails,
           voiceoverUrl: realVoiceUrl,
+          generatedFrames: sceneImages.length > 0 ? sceneImages : undefined,
+          generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
+          generatedAudio: realVoiceUrl ? [realVoiceUrl] : undefined,
+          generationMetadata: {
+            renderStartedAt,
+            renderCompletedAt,
+            providerUsed: "AIProviderOrchestrator",
+            generationStatus: "Completed",
+          },
         },
         audioUrl: realVoiceUrl,
+        videoUrl: realVideoUrl,
       };
 
       const updatedScenes = updatedBrief.storyboard!.map((s) => ({

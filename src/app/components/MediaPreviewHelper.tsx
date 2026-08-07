@@ -257,10 +257,16 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
       {/* LEFT: Video Screen Container */}
       <div className="flex-1 relative aspect-video md:aspect-auto bg-neutral-950 flex flex-col justify-between overflow-hidden group select-none">
         
-        {/* Animated video background representation */}
-        <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} transition-all duration-1000 ${
-          isPlaying ? "animate-pulse saturate-150 scale-105" : "saturate-75"
-        }`} />
+        {/* Animated video background representation or real generated media */}
+        {(activeScene as any).videoUrl ? (
+          <video src={(activeScene as any).videoUrl} autoPlay loop muted className="absolute inset-0 w-full h-full object-cover" />
+        ) : (activeScene as any).image ? (
+          <img src={(activeScene as any).image} alt={activeScene.description} className="absolute inset-0 w-full h-full object-cover opacity-80" />
+        ) : (
+          <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} transition-all duration-1000 ${
+            isPlaying ? "animate-pulse saturate-150 scale-105" : "saturate-75"
+          }`} />
+        )}
         
         {/* Media patterns & overlays */}
         <div className="absolute inset-0 bg-black/40" />

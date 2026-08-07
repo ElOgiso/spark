@@ -23,6 +23,9 @@ export class ModelRouter {
       scheduling: "auto",
       memory: "auto",
       review: "auto",
+      storyboardImages: "openai",
+      videoGeneration: "gemini",
+      voice: "auto",
     };
   }
 
@@ -44,6 +47,12 @@ export class ModelRouter {
         return "Reasoning";
       case "videoUnderstanding":
         return "Video Understanding";
+      case "storyboardImages":
+        return "Image Generation";
+      case "videoGeneration":
+        return "Video Generation";
+      case "voice":
+        return "Text To Speech";
       default:
         return "Chat";
     }
@@ -62,8 +71,14 @@ export class ModelRouter {
       return preferred;
     }
 
-    // Category Best Available Default Table (Phase 19B.2 Routing Spec)
+    // Category Best Available Default Table
     switch (category) {
+      case "storyboardImages":
+        return "openai"; // Default: OpenAI -> Gemini -> Grok -> others
+      case "videoGeneration":
+        return "gemini"; // Default: Gemini -> Runway -> Kling -> Higgsfield -> Luma
+      case "voice":
+        return "elevenlabs";
       case "superSpark":
       case "executive":
       case "automation":

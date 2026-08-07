@@ -78,6 +78,8 @@ export interface ProductionScene {
   visualDescription: string;
   mediaUrl?: string;
   thumbnailUrl?: string;
+  image?: string;
+  videoUrl?: string;
 }
 
 export interface ProductionBrief {
@@ -93,10 +95,20 @@ export interface ProductionBrief {
   suggestedDuration: string;
   storyboard?: ProductionScene[];
   audioUrl?: string;
+  videoUrl?: string;
   generatedAssets?: {
     sceneClips?: string[];
     thumbnails?: { id: string; concept: string; variant: string; url?: string }[];
     voiceoverUrl?: string;
+    generatedFrames?: string[];
+    generatedVideos?: string[];
+    generatedAudio?: string[];
+    generationMetadata?: {
+      renderStartedAt?: string;
+      renderCompletedAt?: string;
+      providerUsed?: string;
+      generationStatus?: string;
+    };
   };
 }
 
@@ -432,6 +444,7 @@ export type AICapabilityType =
   | "Reasoning"
   | "Tool Calling"
   | "Image Generation"
+  | "Video Generation"
   | "Speech"
   | "Text To Speech"
   | "Embeddings"
@@ -444,7 +457,10 @@ export type AIProviderId =
   | "claude"
   | "grok"
   | "elevenlabs"
-  | "higgsfield";
+  | "higgsfield"
+  | "kling"
+  | "luma"
+  | "runway";
 
 export type AIRoutingCategory =
   | "superSpark"
@@ -457,7 +473,10 @@ export type AIRoutingCategory =
   | "publishing"
   | "scheduling"
   | "memory"
-  | "review";
+  | "review"
+  | "storyboardImages"
+  | "videoGeneration"
+  | "voice";
 
 export type AIModelRoutingConfig = Record<AIRoutingCategory, AIProviderId>;
 
