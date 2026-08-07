@@ -1,5 +1,6 @@
 import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
+import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 
 export class ProductionBriefService {
   /**
@@ -15,6 +16,23 @@ export class ProductionBriefService {
     productionMode?: string;
   }): Promise<ProductionBrief> {
     const { spark, brand, character, niche, memoryItems = [], productionMode = "Narrator" } = params;
+
+    // System-wide guard check: Block AI generation if Production is OFF
+    if (!ProductionGenerationGuard.isEnabled()) {
+      console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
+      return {
+        title: spark.title,
+        productionMode,
+        hook: spark.hook,
+        scriptOutline: "Production Generation is turned OFF. Enable Production Generation to draft script.",
+        visualDirection: "Production Generation is turned OFF. Planning mode active.",
+        caption: spark.title,
+        platformRecommendation: spark.platformFit || "YouTube Shorts",
+        whyThisWorks: spark.whyNow,
+        brandFitScore: spark.brandFitScore || 90,
+        suggestedDuration: "30-60s",
+      };
+    }
 
     const brandRules = memoryItems.map((m) => `- [${m.category || "Rule"}]: ${m.text}`).join("\n");
     const hostStyle = character?.style || "Executive Director";

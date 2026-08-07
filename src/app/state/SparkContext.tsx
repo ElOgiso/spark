@@ -38,6 +38,7 @@ import {
   persistAISettings,
 } from "../backend/workspaceSync";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
+import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
   getBrandWorkspaceId,
@@ -801,56 +802,64 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     eventBus.emit("REVIEW_REQUIRED", { reviewId, prodId, title: spark.title }, state.brand.name);
 
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
-    void import("../services/productionService").then(({ productionService }) => {
-      void productionService
-        .createProductionFromSpark({
-          spark,
-          brand: state.brand,
-          character: state.character,
-          niche: state.brand.niche,
-          memoryItems: state.memoryItems || [],
-          productionMode: state.productionMode,
-        })
-        .then(({ production: enrichedProd, reviewItem: enrichedReview }) => {
-          setState((prev: any) => ({
-            ...prev,
-            productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd } : p)),
-            reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
-          }));
+    if (ProductionGenerationGuard.isEnabled()) {
+      void import("../services/productionService").then(({ productionService }) => {
+        void productionService
+          .createProductionFromSpark({
+            spark,
+            brand: state.brand,
+            character: state.character,
+            niche: state.brand.niche,
+            memoryItems: state.memoryItems || [],
+            productionMode: state.productionMode,
+          })
+          .then(({ production: enrichedProd, reviewItem: enrichedReview }) => {
+            setState((prev: any) => ({
+              ...prev,
+              productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd } : p)),
+              reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
+            }));
 
-          eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
+            eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
 
-          const brandId = getBrandWorkspaceId();
-          if (isSupabaseConfigured() && brandId) {
-            void persistProductionCreate(brandId, enrichedProd);
-          }
-        })
-        .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));
-    });
+            const brandId = getBrandWorkspaceId();
+            if (isSupabaseConfigured() && brandId) {
+              void persistProductionCreate(brandId, enrichedProd);
+            }
+          })
+          .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));
+      });
+    }
 
     return { production: initialProduction, reviewItem: initialReviewItem };
   };
 
   const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
-    if (typeof localStorage === "undefined") return true;
-    try {
-      return localStorage.getItem("spark_production_generation_enabled") !== "false";
-    } catch {
-      return true;
-    }
+    return ProductionGenerationGuard.isEnabled();
   });
 
   const toggleProductionGeneration = (enabled?: boolean) => {
     const next = enabled !== undefined ? enabled : !productionGenerationEnabled;
     setProductionGenerationEnabledState(next);
-    if (typeof localStorage !== "undefined") {
-      try {
-        localStorage.setItem("spark_production_generation_enabled", String(next));
-      } catch {}
+    ProductionGenerationGuard.setEnabled(next);
+
+    // If turning OFF, immediately cancel active asset generations and pause queues
+    if (!next) {
+      setState((prev: any) => ({
+        ...prev,
+        productions: (prev.productions || []).map((p: any) =>
+          p.isGeneratingAssets ? { ...p, isGeneratingAssets: false } : p
+        ),
+      }));
     }
   };
 
   const generateProductionAssets = async (productionId: string) => {
+    if (!ProductionGenerationGuard.isEnabled()) {
+      console.warn("[SparkContext] Asset generation blocked: Production Generation is OFF.");
+      return;
+    }
+
     const prod = state.productions.find((p: any) => p.id === productionId);
     if (!prod) return;
 

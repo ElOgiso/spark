@@ -27,6 +27,7 @@ import { eventBus } from "../services/runtime/eventBus";
 import { useXaiRealtime } from "../hooks/useXaiRealtime";
 import { SparkLogo } from "./SparkLogo";
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
+import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { DepartmentActivity, DepartmentStep } from "./DepartmentActivity";
 import { ConversationSession } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
@@ -436,6 +437,46 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     const sparkMessageId = `spark-msg-${Date.now()}`;
     activeSparkMsgIdRef.current = sparkMessageId;
     const lower = commandText.toLowerCase();
+    const prodEnabled = ProductionGenerationGuard.isEnabled();
+
+    const isConfirmationToEnable =
+      lower === "yes" ||
+      lower.includes("yes, enable") ||
+      lower.includes("enable production") ||
+      lower.includes("turn on production");
+
+    if (!prodEnabled) {
+      if (isConfirmationToEnable) {
+        sparkState.toggleProductionGeneration(true);
+        const confirmText = "Production Generation is now enabled. Would you like me to proceed with drafting and generating your video now?";
+        addChatMessage({
+          sender: "spark",
+          text: confirmText,
+          timestamp: new Date(),
+        });
+        void speakText(confirmText, isMuted);
+        return;
+      }
+
+      const isGenerationIntent =
+        lower.includes("generate") ||
+        lower.includes("create") ||
+        lower.includes("render") ||
+        lower.includes("make video") ||
+        lower.includes("draft brief") ||
+        lower.includes("storyboard");
+
+      if (isGenerationIntent) {
+        const blockedText = "Production Generation is currently turned off. No drafting or asset generation can run while it's disabled. Would you like me to enable Production Generation first?";
+        addChatMessage({
+          sender: "spark",
+          text: blockedText,
+          timestamp: new Date(),
+        });
+        void speakText(blockedText, isMuted);
+        return;
+      }
+    }
 
     const isGenerationCommand =
       lower.includes("create") ||

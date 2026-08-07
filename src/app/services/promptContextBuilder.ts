@@ -5,6 +5,7 @@
  */
 
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "./geminiService";
+import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 
 export interface PromptContextParams {
   department?: string;
@@ -49,6 +50,15 @@ export class PromptContextBuilder {
       const pendingReviews = workspaceState.reviewItems?.filter((r: any) => r.status === "Pending Review")?.length || 0;
       const autoMode = workspaceState.automationMode || "balanced";
       contextParts.push(`WORKSPACE SNAPSHOT: Active Productions=${activeProds}, Pending Reviews=${pendingReviews}, Automation Mode=${autoMode.toUpperCase()}`);
+    }
+
+    const prodEnabled = ProductionGenerationGuard.isEnabled();
+    contextParts.push(`PRODUCTION GENERATION STATUS: ${prodEnabled ? "ENABLED (Drafting & Media Rendering Active)" : "DISABLED (Planning & Advisory Mode Only - Zero AI Media Generation)"}`);
+
+    if (!prodEnabled) {
+      contextParts.push(
+        `CRITICAL SYSTEM GUARD: Production Generation is currently OFF. If the user asks to generate/create/render a video, brief, script, or image, do NOT attempt generation. Reply: "Production Generation is currently turned off. No drafting or asset generation can run while it's disabled. Would you like me to enable Production Generation first?"`
+      );
     }
 
     // 5. Department Specific Instructions

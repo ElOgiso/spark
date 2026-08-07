@@ -1,6 +1,7 @@
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
+import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 
 export interface ProductionAssetGenerationResult {
   brief: ProductionBrief;
@@ -100,6 +101,7 @@ export class ProductionAssetService {
     brand: Brand;
     character?: Character;
   }): Promise<ProductionAssetGenerationResult> {
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
     const { production, brief, brand, character } = params;
 
     const hostStyle = character?.style || "Executive Presenter";
