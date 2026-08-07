@@ -64,6 +64,11 @@ export interface ViralSpark {
   suggestedProductionMode: string;
   origin?: "TREND" | "SOURCE" | "HYBRID";
   sourceId?: string;
+  fingerprint?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  lastSyncedAt?: string;
+  syncCount?: number;
 }
 
 export interface ProductionScene {
@@ -189,6 +194,10 @@ export interface MemoryItem {
   category?: "Character" | "Voice" | "Brand" | "Niche" | "Audio" | "Winning hooks" | "Winning thumbnails" | "Audience preferences" | "Failures" | "Publishing behavior";
   pinned?: boolean;
   archived?: boolean;
+  fingerprint?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  syncCount?: number;
 }
 
 export interface Asset {
@@ -434,6 +443,11 @@ export interface ResearchPattern {
   evidence: string;
   metrics?: Record<string, any>;
   createdAt: string;
+  fingerprint?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  lastSyncedAt?: string;
+  syncCount?: number;
 }
 
 /** Phase 19A: Dynamic AI Model Routing & Orchestration Types */

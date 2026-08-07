@@ -1,6 +1,17 @@
 import type { ResearchSource, ResearchPattern, MemoryItem, ViralSpark, RecentVideo } from "../../domain/types";
 import { persistMemoryCreate, persistViralSparkCreate } from "../../backend/workspaceSync";
 
+export function computeFingerprint(raw: string): string {
+  const clean = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return `fp-${Math.abs(hash).toString(36)}`;
+}
+
 export class ResearchDepartmentService {
   /**
    * Generates SPARK's analytical observations for extracted videos based on real metadata.
@@ -41,22 +52,30 @@ export class ResearchDepartmentService {
   }
 
   /**
-   * Consumes extracted ResearchPatterns and orchestrates:
-   * 1. Categorized Video Analysis
-   * 2. Executive Memory updates
-   * 3. Brand Intelligence enrichment (account-specific rules)
-   * 4. Unified Spark Scoring & Viral Spark generation
+   * Consumes extracted ResearchPatterns with Deterministic Intelligence Fingerprinting:
+   * 1. Check existing ViralSparks & MemoryItems by fingerprint / video title.
+   * 2. If existing: UPDATE mutable metrics (views, lastSeenAt, syncCount). DO NOT duplicate.
+   * 3. If new: Create & persist new ViralSpark / MemoryItem with fingerprint.
    */
   static processPatterns(
     brandId: string,
     source: ResearchSource,
-    patterns: ResearchPattern[]
-  ): { memoryItems: MemoryItem[]; viralSparks: ViralSpark[] } {
+    patterns: ResearchPattern[],
+    existingSparks: ViralSpark[] = [],
+    existingMemories: MemoryItem[] = []
+  ): {
+    memoryItems: MemoryItem[];
+    viralSparks: ViralSpark[];
+    updatedSparks: ViralSpark[];
+    updatedMemories: MemoryItem[];
+  } {
     const now = new Date().toISOString();
     const dateStr = now.slice(0, 10);
 
     const memoryItems: MemoryItem[] = [];
     const viralSparks: ViralSpark[] = [];
+    const updatedSparks: ViralSpark[] = [];
+    const updatedMemories: MemoryItem[] = [];
 
     // Analyze recent videos metadata through SPARK's analytical lens
     if (source.recentVideos && source.recentVideos.length > 0) {
@@ -89,77 +108,131 @@ export class ResearchDepartmentService {
 
     for (let i = 0; i < effectivePatterns.length; i++) {
       const p = effectivePatterns[i];
+      const sparkTitle = `${source.displayName}: ${p.title}`;
+      const sparkFingerprint = computeFingerprint(`${source.platform}:${source.id}:${p.patternType}:${p.title}:${p.evidence || ""}`);
+      const memoryFingerprint = computeFingerprint(`mem:${source.id}:${p.title}:${p.description}`);
 
-      // 1. Executive Memory Creation
-      const memoryItem: MemoryItem = {
-        id: `m-src-${Date.now()}-${i}`,
-        type: "learned",
-        text: `[Inspiration Account - ${source.displayName}] ${p.title}: ${p.description} (Confidence: ${Math.round((p.confidence || 0) * 100)}%)`,
-        dateAdded: dateStr,
-        category: "Winning hooks",
-      };
-      memoryItems.push(memoryItem);
+      // 1. Executive Memory Creation vs. Update
+      const existingMem = existingMemories.find(
+        (m) => (m.fingerprint && m.fingerprint === memoryFingerprint) || m.text.includes(p.title)
+      );
 
-      // Persist memory item quietly if brandId available
-      if (brandId) {
-        persistMemoryCreate(brandId, memoryItem).catch((err) =>
-          console.warn("[ResearchDepartmentService] Memory persist notice:", err)
-        );
+      if (existingMem) {
+        existingMem.lastSeenAt = now;
+        existingMem.syncCount = (existingMem.syncCount || 1) + 1;
+        updatedMemories.push(existingMem);
+      } else {
+        const memoryItem: MemoryItem = {
+          id: `m-src-${Date.now()}-${i}`,
+          type: "learned",
+          text: `[Inspiration Account - ${source.displayName}] ${p.title}: ${p.description} (Confidence: ${Math.round((p.confidence || 0) * 100)}%)`,
+          dateAdded: dateStr,
+          category: "Winning hooks",
+          fingerprint: memoryFingerprint,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          syncCount: 1,
+        };
+        memoryItems.push(memoryItem);
+
+        if (brandId) {
+          persistMemoryCreate(brandId, memoryItem).catch((err) =>
+            console.warn("[ResearchDepartmentService] Memory persist notice:", err)
+          );
+        }
       }
 
-      // 2. Unified Spark Scoring & Generation
-      const spark: ViralSpark = {
-        id: `spk-src-${Date.now()}-${i}`,
-        title: `${source.displayName}: ${p.title}`,
-        hook: p.description,
-        views: p.metrics?.viewCount ? `${p.metrics.viewCount.toLocaleString()}` : "Unavailable from Platform",
-        velocity: "Unavailable",
-        platformFit: source.platform === "youtube" ? "YouTube Shorts" : `${source.platform.toUpperCase()}`,
-        brandFitScore: Math.round((p.confidence || 0.5) * 100),
-        category: "rising",
-        timeWindow: "Active Now",
-        productionTime: "15 mins",
-        whyNow: `SPARK observed this ${p.patternType.toLowerCase()} format on Inspiration Account (${source.displayName}).`,
-        angle: p.title,
-        audienceEmotion: "Unavailable",
-        expectedRetention: "Unavailable",
-        difficulty: "Medium",
-        riskLevel: "Low",
-        suggestedFormat: "Vertical 9:16",
-        suggestedProductionMode: "standard",
-        origin: "SOURCE",
-        sourceId: source.id,
-      };
-      viralSparks.push(spark);
+      // 2. Unified Spark Scoring & Generation vs. Metric Update
+      const existingSpark = existingSparks.find(
+        (s) => (s.fingerprint && s.fingerprint === sparkFingerprint) || (s.sourceId === source.id && s.title === sparkTitle)
+      );
 
-      // Persist viral spark quietly if brandId available
-      if (brandId) {
-        persistViralSparkCreate(brandId, spark).catch((err) =>
-          console.warn("[ResearchDepartmentService] Spark persist notice:", err)
-        );
+      const newViewsStr = p.metrics?.viewCount ? `${p.metrics.viewCount.toLocaleString()}` : "Unavailable from Platform";
+      const newScore = Math.round((p.confidence || 0.5) * 100);
+
+      if (existingSpark) {
+        // DO NOT create duplicate. Update mutable metrics only!
+        existingSpark.views = newViewsStr;
+        existingSpark.brandFitScore = newScore;
+        existingSpark.lastSeenAt = now;
+        existingSpark.lastSyncedAt = now;
+        existingSpark.syncCount = (existingSpark.syncCount || 1) + 1;
+        existingSpark.fingerprint = sparkFingerprint;
+        updatedSparks.push(existingSpark);
+      } else {
+        const spark: ViralSpark = {
+          id: `spk-src-${Date.now()}-${i}`,
+          title: sparkTitle,
+          hook: p.description,
+          views: newViewsStr,
+          velocity: "Unavailable",
+          platformFit: source.platform === "youtube" ? "YouTube Shorts" : `${source.platform.toUpperCase()}`,
+          brandFitScore: newScore,
+          category: "rising",
+          timeWindow: "Active Now",
+          productionTime: "15 mins",
+          whyNow: `SPARK observed this ${p.patternType.toLowerCase()} format on Inspiration Account (${source.displayName}).`,
+          angle: p.title,
+          audienceEmotion: "Unavailable",
+          expectedRetention: "Unavailable",
+          difficulty: "Medium",
+          riskLevel: "Low",
+          suggestedFormat: "Vertical 9:16",
+          suggestedProductionMode: "standard",
+          origin: "SOURCE",
+          sourceId: source.id,
+          fingerprint: sparkFingerprint,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          lastSyncedAt: now,
+          syncCount: 1,
+        };
+        viralSparks.push(spark);
+
+        if (brandId) {
+          persistViralSparkCreate(brandId, spark).catch((err) =>
+            console.warn("[ResearchDepartmentService] Spark persist notice:", err)
+          );
+        }
       }
     }
 
-    // 3. Process source learnings into Executive Memory
+    // 3. Process source learnings into Executive Memory (Deduplicated)
     if (source.learnings && source.learnings.length > 0) {
       source.learnings.forEach((learning, idx) => {
-        const learningMemory: MemoryItem = {
-          id: `m-learn-${Date.now()}-${idx}`,
-          type: "learned",
-          text: `[SPARK Learned - ${source.displayName}] ${learning}`,
-          dateAdded: dateStr,
-          category: "Audience preferences",
-        };
-        memoryItems.push(learningMemory);
-        if (brandId) {
-          persistMemoryCreate(brandId, learningMemory).catch((err) =>
-            console.warn("[ResearchDepartmentService] Learning memory persist notice:", err)
-          );
+        const learningFp = computeFingerprint(`learn:${source.id}:${learning}`);
+        const existingLearnMem = existingMemories.find(
+          (m) => (m.fingerprint && m.fingerprint === learningFp) || m.text.includes(learning)
+        );
+
+        if (existingLearnMem) {
+          existingLearnMem.lastSeenAt = now;
+          existingLearnMem.syncCount = (existingLearnMem.syncCount || 1) + 1;
+          updatedMemories.push(existingLearnMem);
+        } else {
+          const learningMemory: MemoryItem = {
+            id: `m-learn-${Date.now()}-${idx}`,
+            type: "learned",
+            text: `[SPARK Learned - ${source.displayName}] ${learning}`,
+            dateAdded: dateStr,
+            category: "Audience preferences",
+            fingerprint: learningFp,
+            firstSeenAt: now,
+            lastSeenAt: now,
+            syncCount: 1,
+          };
+          memoryItems.push(learningMemory);
+
+          if (brandId) {
+            persistMemoryCreate(brandId, learningMemory).catch((err) =>
+              console.warn("[ResearchDepartmentService] Memory persist notice:", err)
+            );
+          }
         }
       });
     }
 
-    return { memoryItems, viralSparks };
+    return { memoryItems, viralSparks, updatedSparks, updatedMemories };
   }
 
   /**

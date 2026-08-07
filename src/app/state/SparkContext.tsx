@@ -1084,17 +1084,34 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const { source, patterns } = result;
 
-    // Research Department Service owns pattern processing, memory updates & spark generation
-    const { memoryItems: newMemoryItems, viralSparks: newSparks } =
-      ResearchDepartmentService.processPatterns(brandId, source, patterns);
+    setState((prev: any) => {
+      const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
+        ResearchDepartmentService.processPatterns(
+          brandId,
+          source,
+          patterns,
+          prev.viralSparks || [],
+          prev.memoryItems || []
+        );
 
-    setState((prev: any) => ({
-      ...prev,
-      researchSources: [source, ...(prev.researchSources || []).filter((s: any) => s.id !== source.id)],
-      researchPatterns: [...patterns, ...(prev.researchPatterns || [])],
-      memoryItems: [...newMemoryItems, ...(prev.memoryItems || [])],
-      viralSparks: [...newSparks, ...(prev.viralSparks || [])],
-    }));
+      const mergedSparks = (prev.viralSparks || []).map((s: any) => {
+        const u = updatedSparks.find((us: any) => us.id === s.id || (us.fingerprint && us.fingerprint === s.fingerprint));
+        return u ? { ...s, ...u } : s;
+      });
+
+      const mergedMemories = (prev.memoryItems || []).map((m: any) => {
+        const u = updatedMemories.find((um: any) => um.id === m.id || (um.fingerprint && um.fingerprint === m.fingerprint));
+        return u ? { ...m, ...u } : m;
+      });
+
+      return {
+        ...prev,
+        researchSources: [source, ...(prev.researchSources || []).filter((s: any) => s.id !== source.id)],
+        researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== source.id)],
+        memoryItems: [...newMemoryItems, ...mergedMemories],
+        viralSparks: [...newSparks, ...mergedSparks],
+      };
+    });
   };
 
   const removeResearchSource = (id: string) => {
@@ -1128,21 +1145,32 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Force manual refresh
       const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId, true);
 
-      const { memoryItems: newMemoryItems, viralSparks: newSparks } =
-        ResearchDepartmentService.processPatterns(brandId, source, patterns);
-
       setState((prev: any) => {
-        const existingSparks = prev.viralSparks || [];
-        const filteredNewSparks = newSparks.filter(
-          (ns: any) => !existingSparks.some((es: any) => es.sourceId === ns.sourceId && es.title === ns.title)
-        );
+        const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
+          ResearchDepartmentService.processPatterns(
+            brandId,
+            source,
+            patterns,
+            prev.viralSparks || [],
+            prev.memoryItems || []
+          );
+
+        const mergedSparks = (prev.viralSparks || []).map((s: any) => {
+          const u = updatedSparks.find((us: any) => us.id === s.id || (us.fingerprint && us.fingerprint === s.fingerprint));
+          return u ? { ...s, ...u } : s;
+        });
+
+        const mergedMemories = (prev.memoryItems || []).map((m: any) => {
+          const u = updatedMemories.find((um: any) => um.id === m.id || (um.fingerprint && um.fingerprint === m.fingerprint));
+          return u ? { ...m, ...u } : m;
+        });
 
         return {
           ...prev,
           researchSources: (prev.researchSources || []).map((s: any) => (s.id === id ? source : s)),
           researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
-          memoryItems: [...newMemoryItems, ...(prev.memoryItems || [])],
-          viralSparks: [...filteredNewSparks, ...existingSparks],
+          memoryItems: [...newMemoryItems, ...mergedMemories],
+          viralSparks: [...newSparks, ...mergedSparks],
         };
       });
     } catch (err) {
