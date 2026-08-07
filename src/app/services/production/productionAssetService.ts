@@ -34,20 +34,35 @@ export class ProductionAssetService {
       const { getSupabaseClient } = await import("../../backend/supabaseClient");
       const supabase = getSupabaseClient();
 
-      if (supabase && dataUrlOrBlob.startsWith("data:")) {
-        const base64Data = dataUrlOrBlob.split(",")[1];
-        if (base64Data) {
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: mimeType });
+      if (supabase) {
+        let uploadBlob: Blob | null = null;
 
+        if (dataUrlOrBlob.startsWith("data:")) {
+          const base64Data = dataUrlOrBlob.split(",")[1];
+          if (base64Data) {
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            uploadBlob = new Blob([byteArray], { type: mimeType });
+          }
+        } else if (dataUrlOrBlob.startsWith("http://") || dataUrlOrBlob.startsWith("https://")) {
+          try {
+            const fetched = await fetch(dataUrlOrBlob);
+            if (fetched.ok) {
+              uploadBlob = await fetched.blob();
+            }
+          } catch (fetchErr) {
+            console.warn("[ProductionAssetService] Remote URL fetch for storage upload notice:", fetchErr);
+          }
+        }
+
+        if (uploadBlob) {
           const bucket = "production-assets";
-          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
-            contentType: mimeType,
+          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, uploadBlob, {
+            contentType: mimeType || uploadBlob.type || "image/png",
             upsert: true,
           });
 

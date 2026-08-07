@@ -128,7 +128,28 @@ export class AIProviderOrchestrator {
               });
               if (videoRes.ok) {
                 const vidData = await videoRes.json();
-                const videoUrl = vidData.response?.video?.uri || vidData.name || "";
+                let videoUrl = vidData.response?.video?.uri || vidData.response?.generatedVideos?.[0]?.video?.uri || "";
+
+                // If LRO returned operation name, poll until done
+                const opName = vidData.name;
+                if (!videoUrl && opName && !vidData.done) {
+                  for (let attempt = 0; attempt < 10; attempt++) {
+                    await new Promise((r) => setTimeout(r, 2000));
+                    try {
+                      const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}`, {
+                        headers: { "x-goog-api-key": apiKey },
+                      });
+                      if (pollRes.ok) {
+                        const pollData = await pollRes.json();
+                        if (pollData.done) {
+                          videoUrl = pollData.response?.video?.uri || pollData.response?.generatedVideos?.[0]?.video?.uri || pollData.response?.videoUrl || "";
+                          break;
+                        }
+                      }
+                    } catch {}
+                  }
+                }
+
                 if (videoUrl) {
                   if (options.onChunk) options.onChunk(videoUrl);
                   return videoUrl;
