@@ -200,6 +200,23 @@ export interface MemoryItem {
   syncCount?: number;
 }
 
+export interface ProductionAsset {
+  id: string;
+  brandId?: string;
+  productionId: string;
+  assetType: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
+  provider?: string;
+  storageBucket?: string;
+  storagePath?: string;
+  publicUrl?: string;
+  mimeType?: string;
+  duration?: string;
+  generationPrompt?: string;
+  generationSettings?: Record<string, any>;
+  status: "completed" | "failed" | "pending";
+  createdAt?: string;
+}
+
 export interface Asset {
   id: string;
   name: string;

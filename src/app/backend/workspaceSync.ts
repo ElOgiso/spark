@@ -442,3 +442,30 @@ export async function persistAISettings(brandId: string, aiSettings: import("../
   }
 }
 
+export async function persistProductionAssetCreate(
+  brandId: string,
+  asset: import("../domain/types").ProductionAsset
+): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const { createProductionAsset } = await import("./repositories/productionAssetRepository");
+    await createProductionAsset({
+      id: asset.id,
+      brand_id: brandId,
+      production_id: asset.productionId,
+      asset_type: asset.assetType,
+      provider: asset.provider || "AIProviderOrchestrator",
+      storage_bucket: asset.storageBucket || "production-assets",
+      storage_path: asset.storagePath,
+      public_url: asset.publicUrl,
+      mime_type: asset.mimeType,
+      duration: asset.duration,
+      generation_prompt: asset.generationPrompt,
+      generation_settings: asset.generationSettings || {},
+      status: asset.status,
+    });
+  } catch (err) {
+    console.warn("[workspaceSync] Production asset persist notice:", err);
+  }
+}
+

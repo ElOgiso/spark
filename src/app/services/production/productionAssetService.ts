@@ -1,4 +1,4 @@
-import type { Production, ProductionBrief, ProductionScene, Brand, Character } from "../../domain/types";
+import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 
@@ -10,6 +10,86 @@ export interface ProductionAssetGenerationResult {
 }
 
 export class ProductionAssetService {
+  /**
+   * Automatically uploads generated base64 / blob data URIs into Supabase Storage
+   * bucket 'production-assets' under paths e.g. `production-id/storyboard/scene-01.png`
+   */
+  static async uploadAssetToStorage(params: {
+    productionId: string;
+    brandId?: string;
+    assetType: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
+    storagePath: string;
+    dataUrlOrBlob: string;
+    mimeType: string;
+    prompt?: string;
+    provider?: string;
+  }): Promise<{ publicUrl: string; storagePath: string; assetId: string }> {
+    const { productionId, brandId = "default-brand", assetType, storagePath, dataUrlOrBlob, mimeType, prompt, provider } = params;
+    const assetId = `pa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    let finalPublicUrl = dataUrlOrBlob;
+
+    try {
+      const { getSupabaseClient } = await import("../../backend/supabaseClient");
+      const supabase = getSupabaseClient();
+
+      if (supabase && dataUrlOrBlob.startsWith("data:")) {
+        const base64Data = dataUrlOrBlob.split(",")[1];
+        if (base64Data) {
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: mimeType });
+
+          const bucket = "production-assets";
+          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
+            contentType: mimeType,
+            upsert: true,
+          });
+
+          if (!error && data) {
+            const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+            if (pubData?.publicUrl) {
+              finalPublicUrl = pubData.publicUrl;
+            }
+          } else if (error) {
+            console.warn("[ProductionAssetService] Supabase Storage upload notice:", error);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[ProductionAssetService] Asset upload error, using raw URL:", err);
+    }
+
+    // Persist production asset record to Supabase production_assets table
+    const prodAsset: ProductionAsset = {
+      id: assetId,
+      brandId,
+      productionId,
+      assetType,
+      provider: provider || "AIProviderOrchestrator",
+      storageBucket: "production-assets",
+      storagePath,
+      publicUrl: finalPublicUrl,
+      mimeType,
+      generationPrompt: prompt,
+      status: "completed",
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const { persistProductionAssetCreate } = await import("../../backend/workspaceSync");
+      void persistProductionAssetCreate(brandId, prodAsset);
+    } catch (dbErr) {
+      console.warn("[ProductionAssetService] Production asset record persist notice:", dbErr);
+    }
+
+    return { publicUrl: finalPublicUrl, storagePath, assetId };
+  }
+
   /**
    * Generates storyboards, scene clips, voiceover, and thumbnail assets
    * via Capability Registry -> Model Router -> Provider Adapters.
@@ -102,12 +182,32 @@ Return JSON matching this exact structure with NO markdown backticks:
         const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
         const elevenVoice = await generateElevenLabsVoice(voiceScript);
         if (elevenVoice && elevenVoice.length > 50) {
-          realVoiceUrl = elevenVoice;
+          const storedAudio = await this.uploadAssetToStorage({
+            productionId: production.id,
+            brandId: (brand as any).id,
+            assetType: "audio",
+            storagePath: `${production.id}/audio/voice.mp3`,
+            dataUrlOrBlob: elevenVoice,
+            mimeType: "audio/mpeg",
+            prompt: voiceScript,
+            provider: "ElevenLabs",
+          });
+          realVoiceUrl = storedAudio.publicUrl;
         } else {
           const { generateSuperSparkVoice } = await import("../geminiService");
           const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
           if (synthesizedVoice && synthesizedVoice.length > 50) {
-            realVoiceUrl = synthesizedVoice;
+            const storedAudio = await this.uploadAssetToStorage({
+              productionId: production.id,
+              brandId: (brand as any).id,
+              assetType: "audio",
+              storagePath: `${production.id}/audio/voice.mp3`,
+              dataUrlOrBlob: synthesizedVoice,
+              mimeType: "audio/wav",
+              prompt: voiceScript,
+              provider: "Google Gemini TTS",
+            });
+            realVoiceUrl = storedAudio.publicUrl;
           }
         }
       } catch (voiceErr) {
@@ -120,15 +220,26 @@ Return JSON matching this exact structure with NO markdown backticks:
 
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
-        for (const scene of storyboard) {
+        for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
+          const scene = storyboard[sIdx];
           const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Brand: ${brand.name}`;
           try {
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
             });
             if (imgUrl && imgUrl.length > 20) {
-              sceneImages.push(imgUrl);
-              scene.image = imgUrl;
+              const storedImg = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "frame",
+                storagePath: `${production.id}/frames/scene-0${sIdx + 1}.png`,
+                dataUrlOrBlob: imgUrl,
+                mimeType: "image/png",
+                prompt: imagePrompt,
+                provider: "OpenAI Image / ModelRouter",
+              });
+              sceneImages.push(storedImg.publicUrl);
+              scene.image = storedImg.publicUrl;
             }
           } catch (sceneErr) {
             console.warn(`[ProductionAssetService] Scene ${scene.scene} image generation notice:`, sceneErr);
@@ -147,7 +258,17 @@ Return JSON matching this exact structure with NO markdown backticks:
           prompt: videoPrompt,
         });
         if (generatedVideo && generatedVideo.length > 20) {
-          realVideoUrl = generatedVideo;
+          const storedVid = await this.uploadAssetToStorage({
+            productionId: production.id,
+            brandId: (brand as any).id,
+            assetType: "video",
+            storagePath: `${production.id}/video/master.mp4`,
+            dataUrlOrBlob: generatedVideo,
+            mimeType: "video/mp4",
+            prompt: videoPrompt,
+            provider: "Google Gemini Video / ModelRouter",
+          });
+          realVideoUrl = storedVid.publicUrl;
         }
       } catch (vidErr) {
         console.warn("[ProductionAssetService] Video generation notice:", vidErr);

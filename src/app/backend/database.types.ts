@@ -149,6 +149,23 @@ export interface ProductionRow {
   updated_at: string;
 }
 
+export interface ProductionAssetRow {
+  id: string;
+  brand_id?: string | null;
+  production_id: string;
+  asset_type: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
+  provider?: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  public_url?: string | null;
+  mime_type?: string | null;
+  duration?: string | null;
+  generation_prompt?: string | null;
+  generation_settings?: Json | null;
+  status: string;
+  created_at?: string | null;
+}
+
 export interface ReviewItemRow {
   id: string;
   brand_id: string;
@@ -376,6 +393,7 @@ export interface Database {
       executive_sessions: Table<ExecutiveSessionRow>;
       executive_director_summaries: Table<ExecutiveDirectorSummaryRow>;
       executive_timeline: Table<ExecutiveTimelineRow>;
+      production_assets: Table<ProductionAssetRow>;
       research_sources: Table<ResearchSourceRow>;
       research_patterns: Table<ResearchPatternRow>;
     };
