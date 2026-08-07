@@ -116,8 +116,9 @@ export class ProductionAssetService {
     brand: Brand;
     character?: Character;
   }): Promise<ProductionAssetGenerationResult> {
-    ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
     const { production, brief, brand, character } = params;
+    console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
     const hostStyle = character?.style || "Executive Presenter";
 
@@ -180,11 +181,14 @@ Return JSON matching this exact structure with NO markdown backticks:
 `;
 
     try {
+      console.log(`[SPARK Pipeline] Provider Request: Storyboard structure via ModelRouter...`);
       // Execute through ModelRouter (respecting user AI Preferences)
       const rawResponse = await ModelRouter.executeCategoryRequest("production", {
         prompt,
         systemInstruction,
       });
+
+      console.log(`[SPARK Pipeline] Provider Response: Storyboard structure received (${rawResponse.length} chars)`);
 
       const cleanJson = rawResponse.replace(/```json/gi, "").replace(/```/g, "").trim();
       const parsed = JSON.parse(cleanJson);
@@ -241,9 +245,11 @@ Return JSON matching this exact structure with NO markdown backticks:
           const scene = storyboard[sIdx];
           const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Brand: ${brand.name}`;
           try {
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} image via ModelRouter ("storyboardImages")...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
             });
+            console.log(`[SPARK Pipeline] Provider Response: Scene ${sIdx + 1} image received (${imgUrl ? imgUrl.slice(0, 50) + "..." : "none"})`);
             if (imgUrl && imgUrl.length > 20) {
               const storedImg = await this.uploadAssetToStorage({
                 productionId: production.id,
@@ -255,15 +261,16 @@ Return JSON matching this exact structure with NO markdown backticks:
                 prompt: imagePrompt,
                 provider: "OpenAI Image / ModelRouter",
               });
+              console.log(`[SPARK Pipeline] Upload to Supabase Storage: Scene ${sIdx + 1} SUCCESS -> ${storedImg.publicUrl}`);
               sceneImages.push(storedImg.publicUrl);
               scene.image = storedImg.publicUrl;
             }
           } catch (sceneErr) {
-            console.warn(`[ProductionAssetService] Scene ${scene.scene} image generation notice:`, sceneErr);
+            console.warn(`[SPARK Pipeline] Scene ${scene.scene} image generation notice/fallback:`, sceneErr);
           }
         }
       } catch (imgErr) {
-        console.warn("[ProductionAssetService] Storyboard image generation notice:", imgErr);
+        console.warn("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
       }
 
       // 2. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
@@ -271,9 +278,11 @@ Return JSON matching this exact structure with NO markdown backticks:
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
         const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
+        console.log(`[SPARK Pipeline] Provider Request: Video generation via ModelRouter ("videoGeneration")...`);
         const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
           prompt: videoPrompt,
         });
+        console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
         if (generatedVideo && generatedVideo.length > 20) {
           const storedVid = await this.uploadAssetToStorage({
             productionId: production.id,
@@ -285,10 +294,11 @@ Return JSON matching this exact structure with NO markdown backticks:
             prompt: videoPrompt,
             provider: "Google Gemini Video / ModelRouter",
           });
+          console.log(`[SPARK Pipeline] Upload to Supabase Storage: Video SUCCESS -> ${storedVid.publicUrl}`);
           realVideoUrl = storedVid.publicUrl;
         }
       } catch (vidErr) {
-        console.warn("[ProductionAssetService] Video generation notice:", vidErr);
+        console.warn("[SPARK Pipeline] Video generation notice/fallback:", vidErr);
       }
 
       const renderCompletedAt = new Date().toISOString();
