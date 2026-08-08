@@ -172,13 +172,13 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const [inputText, setInputText] = useState("");
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
 
-  // Phase 19F: Dedicated Voice Mode & Read Replies Aloud Settings
+  // Phase 19F: Dedicated Voice Mode & Read Replies Aloud Settings (Defaults to OFF after initial open greeting)
   const [readRepliesAloud, setReadRepliesAloud] = useState<boolean>(() => {
-    if (typeof localStorage === "undefined") return true;
+    if (typeof localStorage === "undefined") return false;
     try {
-      return localStorage.getItem("spark_read_replies_aloud") !== "false";
+      return localStorage.getItem("spark_read_replies_aloud") === "true";
     } catch {
-      return true;
+      return false;
     }
   });
   const isMuted = !readRepliesAloud;
@@ -295,16 +295,27 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     }
   }, [isOpen]);
 
+  const hasPlayedOpenGreetingRef = useRef(false);
+
   // Deliver Executive Return Briefing when user opens chat on fresh session
   useEffect(() => {
-    if (isOpen && messages.length === 0) {
+    if (isOpen && messages.length === 0 && !hasPlayedOpenGreetingRef.current) {
+      hasPlayedOpenGreetingRef.current = true;
       const returnBriefing = generateExecutiveReturnBriefing(sparkState);
       addChatMessage({
         sender: "spark",
         text: returnBriefing,
         timestamp: new Date(),
       });
-      speakText(returnBriefing, isMuted);
+
+      // Speak greeting ONCE on first open of fresh session, then ensure speaker remains OFF for replies
+      void speakText(returnBriefing, false);
+      setReadRepliesAloud(false);
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem("spark_read_replies_aloud", "false");
+        } catch {}
+      }
     }
   }, [isOpen, messages.length]);
 

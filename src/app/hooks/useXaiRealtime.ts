@@ -142,7 +142,8 @@ export function useXaiRealtime() {
   }, []);
 
   /**
-   * Speak response using Gemini TTS Male Voice or browser male voice fallback
+   * Speak response using Executive Provider-Native TTS (OpenAI "nova" / Gemini "Aoede")
+   * NEVER falls back to browser speechSynthesis.
    */
   const speakText = useCallback(async (text: string, isMuted: boolean = false, providerId?: AIProviderId) => {
     // If muted or empty text, stop any active audio and exit
@@ -164,7 +165,7 @@ export function useXaiRealtime() {
 
     if (!spokenText) return;
 
-    // Provider-Native Premium TTS Execution (OpenAI 'nova' / Gemini 'Aoede' / ElevenLabs)
+    // Provider-Native Premium TTS Execution (OpenAI 'nova' / Gemini 'Aoede')
     try {
       const audioUri = await generateSuperSparkVoice(spokenText, providerId);
       if (audioUri) {

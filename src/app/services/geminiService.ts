@@ -142,12 +142,15 @@ function generateSmartFallbackResponse(
 
 /**
  * Generate Executive Provider-Native TTS Voice Audio for Super Spark
+ * Stack: OpenAI 'nova' (primary) -> Gemini 'Aoede' (secondary).
+ * ElevenLabs is reserved exclusively for production content voiceover (ProductionAssetService).
+ * NEVER falls back to browser speechSynthesis.
  */
 export async function generateSuperSparkVoice(
   text: string,
   providerId?: AIProviderId
 ): Promise<string | null> {
-  const activeProvider = providerId || AIProviderOrchestrator.getLastUsedProviderId() || "gemini";
+  const preferred = providerId || AIProviderOrchestrator.getLastUsedProviderId() || "openai";
 
   const cleanText = text
     .replace(/^#+\s*/gm, "")
@@ -158,40 +161,21 @@ export async function generateSuperSparkVoice(
 
   if (!cleanText) return null;
 
-  // 1. ElevenLabs Premium TTS
-  if (activeProvider === "elevenlabs") {
-    try {
-      const { generateElevenLabsVoice } = await import("./runtime/providers/elevenLabsTTS");
-      const audioUri = await generateElevenLabsVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId);
-      if (audioUri) return audioUri;
-    } catch {}
+  // 1. If OpenAI or auto preferred, attempt OpenAI native TTS first (Voice: nova)
+  if (preferred === "openai" || (preferred as string) === "grok" || preferred === "auto") {
+    const openAiAudio = await generateOpenAIVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.openAiVoiceId);
+    if (openAiAudio) return openAiAudio;
+
+    const geminiAudio = await generateGeminiVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.voiceId);
+    if (geminiAudio) return geminiAudio;
+  } else {
+    // 2. If Gemini preferred, attempt Gemini native TTS first (Voice: Aoede)
+    const geminiAudio = await generateGeminiVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.voiceId);
+    if (geminiAudio) return geminiAudio;
+
+    const openAiAudio = await generateOpenAIVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.openAiVoiceId);
+    if (openAiAudio) return openAiAudio;
   }
-
-  // 2. OpenAI Native TTS (Voice: nova)
-  if (activeProvider === "openai") {
-    const audioUri = await generateOpenAIVoice(cleanText, "nova");
-    if (audioUri) return audioUri;
-  }
-
-  // 3. Gemini Native TTS (Voice: Aoede)
-  if (activeProvider === "gemini") {
-    const audioUri = await generateGeminiVoice(cleanText, "Aoede");
-    if (audioUri) return audioUri;
-  }
-
-  // 4. Fallback Order: ElevenLabs -> OpenAI Native TTS -> Gemini Native TTS
-  // NEVER fall back to browser speechSynthesis
-  try {
-    const { generateElevenLabsVoice } = await import("./runtime/providers/elevenLabsTTS");
-    const elevenLabsAudio = await generateElevenLabsVoice(cleanText, SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId);
-    if (elevenLabsAudio) return elevenLabsAudio;
-  } catch {}
-
-  const openAiAudio = await generateOpenAIVoice(cleanText, "nova");
-  if (openAiAudio) return openAiAudio;
-
-  const geminiAudio = await generateGeminiVoice(cleanText, "Aoede");
-  if (geminiAudio) return geminiAudio;
 
   return null;
 }
@@ -208,8 +192,8 @@ async function generateOpenAIVoice(text: string, voice: "nova" | "coral" = "nova
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "tts-1",
-        input: text.slice(0, 400),
+        model: "tts-1-hd",
+        input: text.slice(0, 600),
         voice,
         response_format: "mp3",
       }),
@@ -223,14 +207,38 @@ async function generateOpenAIVoice(text: string, voice: "nova" | "coral" = "nova
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(blob);
       });
+    } else {
+      // Fallback to standard tts-1 if tts-1-hd quota/tier differs
+      const fallbackRes = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: text.slice(0, 600),
+          voice,
+          response_format: "mp3",
+        }),
+      });
+      if (fallbackRes.ok) {
+        const blob = await fallbackRes.blob();
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      }
     }
   } catch (err) {
-    console.warn("[OpenAIVoice] Provider-native TTS notice:", err);
+    console.warn("[OpenAIVoice] Super Spark TTS notice:", err);
   }
   return null;
 }
 
-async function generateGeminiVoice(text: string, voiceName: "Aoede" | "Sulafat" = "Aoede"): Promise<string | null> {
+async function generateGeminiVoice(text: string, voiceName: string = "Aoede"): Promise<string | null> {
   const apiKey = resolveProviderKey("gemini");
   if (!apiKey) return null;
 
@@ -245,7 +253,7 @@ async function generateGeminiVoice(text: string, voiceName: "Aoede" | "Sulafat" 
 
     const response = await ai.models.generateContent({
       model: SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel,
-      contents: [{ parts: [{ text: `Speak in an executive female voice (${voiceName}): ${text.slice(0, 400)}` }] }],
+      contents: [{ parts: [{ text: `Speak warmly and concisely in a female executive tone (${voiceName}): ${text.slice(0, 600)}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -254,16 +262,30 @@ async function generateGeminiVoice(text: string, voiceName: "Aoede" | "Sulafat" 
           },
         },
       },
+    }).catch(async () => {
+      // Try stable model fallback if preview model is unconfigured
+      return ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ parts: [{ text: `Speak in a female executive voice (${voiceName}): ${text.slice(0, 600)}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      });
     });
 
-    const candidate = response.candidates?.[0];
+    const candidate = response?.candidates?.[0];
     const part = candidate?.content?.parts?.[0];
 
     if (part && "inlineData" in part && part.inlineData?.data) {
       return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
     }
   } catch (err) {
-    console.warn("[GeminiVoice] Provider-native TTS notice:", err);
+    console.warn("[GeminiVoice] Super Spark TTS notice:", err);
   }
   return null;
 }
