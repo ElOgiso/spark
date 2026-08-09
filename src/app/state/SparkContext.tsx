@@ -343,7 +343,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     if (isSupabaseConfigured() && brandId) {
-      hydrateWorkspace(brandId).then((snap) => {
+      Promise.all([
+        hydrateWorkspace(brandId),
+        import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(brandId)).catch(() => null),
+      ]).then(([snap, execContext]) => {
         setState((prev: any) => {
           const byPlatform = new Map<string, Account>();
           // Hydrate with Supabase accounts that are connected
@@ -358,22 +361,28 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // Merge local tokens
           tokenAccounts.forEach((a) => byPlatform.set(a.platform, a));
           
-          return {
+          const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
+          const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
+
+          const merged = {
             ...prev,
+            brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
             character: snap.character || prev.character,
             accounts: Array.from(byPlatform.values()),
+            automationMode: cloudAutomationMode || prev.automationMode,
+            aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
             memoryItems:
-              snap.memoryItems?.length > 0 ? snap.memoryItems : prev.memoryItems,
+              snap.memoryItems && snap.memoryItems.length > 0 ? snap.memoryItems : prev.memoryItems,
             viralSparks:
-              snap.viralSparks?.length > 0 ? snap.viralSparks : prev.viralSparks,
+              snap.viralSparks && snap.viralSparks.length > 0 ? snap.viralSparks : prev.viralSparks,
             productions:
-              snap.productions?.length > 0 ? snap.productions : prev.productions,
+              snap.productions && snap.productions.length > 0 ? snap.productions : prev.productions,
             reviewItems:
-              snap.reviewItems?.length > 0 ? snap.reviewItems : prev.reviewItems,
+              snap.reviewItems && snap.reviewItems.length > 0 ? snap.reviewItems : prev.reviewItems,
             publishJobs:
-              snap.publishJobs?.length > 0 ? snap.publishJobs : prev.publishJobs,
+              snap.publishJobs && snap.publishJobs.length > 0 ? snap.publishJobs : prev.publishJobs,
             analyticsInsights:
-              snap.analyticsInsights?.length > 0
+              snap.analyticsInsights && snap.analyticsInsights.length > 0
                 ? snap.analyticsInsights
                 : prev.analyticsInsights,
             researchSources:
@@ -381,6 +390,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             researchPatterns:
               snap.researchPatterns?.length ? snap.researchPatterns : prev.researchPatterns || [],
           };
+
+          savePersistedState(merged, brandId);
+          return merged;
         });
       });
     }
@@ -674,8 +686,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     const brandId = getBrandWorkspaceId();
-    if (brandId && initialMemoryItems[0]) {
-      void persistMemoryCreate(brandId, initialMemoryItems[0]);
+    if (brandId) {
+      if (initialMemoryItems[0]) {
+        void persistMemoryCreate(brandId, initialMemoryItems[0]);
+      }
+      void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+        void persistBrandUpdate(brandId, {
+          name: brandName,
+          niche: niche,
+          purpose: vision,
+          audience: {
+            primary: audience,
+            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
+            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+          },
+          tone: [{ label: tone, active: true }],
+        });
+      });
     }
   };
 

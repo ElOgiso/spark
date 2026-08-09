@@ -96,12 +96,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setError(result.error);
 
-    const complete = localStorage.getItem("spark_onboarding_complete");
-    if (complete === "false") {
-      setIsOnboardingComplete(false);
-    } else {
+    // Cloud-First Workspace Identity:
+    // If user has an existing brand in Supabase, they are a returning user -> onboarding complete!
+    const localFlag = typeof localStorage !== "undefined" ? localStorage.getItem("spark_onboarding_complete") : null;
+    const hasCloudBrand = Boolean(result.brand?.id);
+
+    if (hasCloudBrand && localFlag !== "false") {
       setIsOnboardingComplete(true);
-      localStorage.setItem("spark_onboarding_complete", "true");
+      try {
+        localStorage.setItem("spark_onboarding_complete", "true");
+      } catch {}
+    } else if (!hasCloudBrand || localFlag === "false") {
+      setIsOnboardingComplete(false);
     }
   }, []);
 
@@ -306,6 +312,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const { clearAllStoredAccountTokens } = await import("../services/socialIntegrationService");
     clearAllStoredAccountTokens();
+    const { clearPersistedState } = await import("./persistence");
+    clearPersistedState();
+    if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.removeItem("spark_current_brand_id");
+        localStorage.removeItem("spark_current_brand_name");
+        localStorage.removeItem("spark_onboarding_complete");
+        localStorage.removeItem("spark_demo_user");
+      } catch {}
+    }
     setDemoUser(null);
     setSession(null);
     setProfile(null);

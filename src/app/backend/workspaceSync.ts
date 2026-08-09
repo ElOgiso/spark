@@ -2,7 +2,7 @@
  * Silent workspace hydrate/persist — no UI.
  * Keeps conversation/runtime boundary intact; used exclusively by SparkContext.
  */
-import { isSupabaseConfigured } from "./supabaseClient";
+import { getSupabaseClient, isSupabaseConfigured } from "./supabaseClient";
 import { listCharacters } from "./repositories/brandRepository";
 import { listMemoryItems, createMemoryItem, updateMemoryItem, deleteMemoryItem } from "./repositories/memoryRepository";
 import {
@@ -34,7 +34,7 @@ import { executiveSessionRepository } from "./repositories/executiveSessionRepos
 import { executiveSummaryRepository } from "./repositories/executiveSummaryRepository";
 import { executiveTimelineRepository } from "./repositories/executiveTimelineRepository";
 import { listByBrand } from "./repositories/repositoryUtils";
-import type { AccountRow, CharacterRow, ExecutiveConversationMessageRow } from "./database.types";
+import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow } from "./database.types";
 import type {
   Account,
   AnalyticsInsight,
@@ -65,6 +65,7 @@ import {
 import { ExecutiveContext, createEmptyExecutiveContext } from "../state/ExecutiveContext";
 
 export type WorkspaceSnapshot = {
+  brand?: Brand;
   character?: Character;
   accounts: Account[];
   memoryItems: MemoryItem[];
@@ -76,6 +77,42 @@ export type WorkspaceSnapshot = {
   researchSources?: ResearchSource[];
   researchPatterns?: ResearchPattern[];
 };
+
+function brandRowToDomain(row: BrandRow): Brand {
+  return {
+    name: row.name || "My Brand",
+    niche: row.niche || "Content Creation",
+    archetype: row.archetype || "The Expert Guide",
+    purpose: row.purpose || "Creating authoritative, engaging digital media content.",
+    contentPillars: Array.isArray(row.content_pillars)
+      ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
+      : [
+          { label: "AI & Automation", active: true },
+          { label: "Digital Strategy", active: true },
+          { label: "Content Creation", active: true },
+          { label: "Growth Marketing", active: true },
+        ],
+    audience: (row.audience && typeof row.audience === "object" && !Array.isArray(row.audience))
+      ? (row.audience as any)
+      : {
+          primary: "Digital creators and forward-thinking professionals",
+          painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
+          desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+        },
+    tone: Array.isArray(row.tone)
+      ? (row.tone as any[]).map((t) => typeof t === "string" ? { label: t, active: true } : t)
+      : [
+          { label: "Energetic", active: true },
+          { label: "Relatable", active: true },
+          { label: "Expert", active: true },
+          { label: "Inspiring", active: true },
+        ],
+    automation_mode: row.automation_mode || "balanced",
+    review_required: row.review_required ?? true,
+    publish_requires_approval: row.publish_requires_approval ?? true,
+    autonomous_publishing_enabled: row.autonomous_publishing_enabled ?? false,
+  };
+}
 
 function characterRowToDomain(row: CharacterRow): Character {
   const appearance = (row.appearance && typeof row.appearance === "object" && !Array.isArray(row.appearance)
@@ -116,7 +153,9 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     };
   }
 
+  const supabase = getSupabaseClient();
   const [
+    brandRes,
     characters,
     accounts,
     memory,
@@ -128,6 +167,9 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     sourcesRes,
     patternsRes,
   ] = await Promise.all([
+    isUuid(brandId) && supabase
+      ? (supabase.from("brands") as any).select("*").eq("id", brandId).single()
+      : Promise.resolve({ data: null }),
     listCharacters(brandId),
     listByBrand("accounts", brandId),
     listMemoryItems(brandId),
@@ -140,11 +182,13 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     listResearchPatterns(brandId),
   ]);
 
+  const brand = brandRes?.data ? brandRowToDomain(brandRes.data) : undefined;
   const firstCharacter = characters.data?.[0]
     ? characterRowToDomain(characters.data[0])
     : undefined;
 
   return {
+    brand,
     character: firstCharacter,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
     memoryItems: (memory.data ?? []).map(memoryRowToDomain),
