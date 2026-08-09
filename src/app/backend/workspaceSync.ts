@@ -502,6 +502,9 @@ export async function persistProductionAssetCreate(
       storage_bucket: asset.storageBucket || "production-assets",
       storage_path: asset.storagePath,
       public_url: asset.publicUrl,
+      drive_file_id: asset.driveFileId || null,
+      drive_web_view_link: asset.driveWebViewLink || null,
+      expires_at: asset.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       mime_type: asset.mimeType,
       duration: asset.duration,
       generation_prompt: asset.generationPrompt,
@@ -510,6 +513,41 @@ export async function persistProductionAssetCreate(
     });
   } catch (err) {
     console.warn("[workspaceSync] Production asset persist notice:", err);
+  }
+}
+
+/**
+ * Lifecycle Management: Deletes expired working storage objects from Supabase Storage
+ * after ~7 days while keeping metadata and Drive references intact.
+ */
+export async function cleanupExpiredWorkingStorage(brandId: string): Promise<number> {
+  if (!isSupabaseConfigured()) return 0;
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return 0;
+
+    const now = new Date().toISOString();
+    const { data: expiredRows, error } = await (supabase.from("production_assets") as any)
+      .select("id, storage_path, storage_bucket")
+      .eq("brand_id", brandId)
+      .lt("expires_at", now)
+      .not("storage_path", "is", null);
+
+    if (error || !expiredRows || (expiredRows as any[]).length === 0) return 0;
+
+    const pathsToRemove = (expiredRows as any[])
+      .map((r: any) => r.storage_path)
+      .filter(Boolean) as string[];
+
+    if (pathsToRemove.length > 0) {
+      await supabase.storage.from("production-assets").remove(pathsToRemove);
+      console.log(`[workspaceSync] Cleaned up ${pathsToRemove.length} expired working storage objects.`);
+    }
+
+    return pathsToRemove.length;
+  } catch (err) {
+    console.warn("[workspaceSync] Working storage cleanup notice:", err);
+    return 0;
   }
 }
 

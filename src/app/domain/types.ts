@@ -209,6 +209,9 @@ export interface ProductionAsset {
   storageBucket?: string;
   storagePath?: string;
   publicUrl?: string;
+  driveFileId?: string;
+  driveWebViewLink?: string;
+  expiresAt?: string;
   mimeType?: string;
   duration?: string;
   generationPrompt?: string;

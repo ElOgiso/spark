@@ -12,8 +12,11 @@ export interface ProductionAssetGenerationResult {
 
 export class ProductionAssetService {
   /**
-   * Automatically uploads generated base64 / blob data URIs into Supabase Storage
-   * bucket 'production-assets' under paths e.g. `production-id/storyboard/scene-01.png`
+   * Complete Media Asset Pipeline:
+   * 1. Working storage upload (Supabase 'production-assets' default)
+   * 2. Optional parallel / preferred path: Google Drive folder (if user connected Drive)
+   * 3. Saves ONLY metadata in production_assets table (storage_path, public_url, drive_file_id, provider, expires_at)
+   * 4. Lifecycle management: supports deleting working storage objects after 7 days
    */
   static async uploadAssetToStorage(params: {
     productionId: string;
@@ -24,63 +27,83 @@ export class ProductionAssetService {
     mimeType: string;
     prompt?: string;
     provider?: string;
-  }): Promise<{ publicUrl: string; storagePath: string; assetId: string }> {
+  }): Promise<{ publicUrl: string; storagePath: string; assetId: string; driveFileId?: string; driveWebViewLink?: string }> {
     const { productionId, brandId = "default-brand", assetType, storagePath, dataUrlOrBlob, mimeType, prompt, provider } = params;
     const assetId = `pa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     let finalPublicUrl = dataUrlOrBlob;
+    let driveFileId: string | undefined = undefined;
+    let driveWebViewLink: string | undefined = undefined;
 
+    let uploadBlob: Blob | null = null;
+    if (dataUrlOrBlob.startsWith("data:")) {
+      const base64Data = dataUrlOrBlob.split(",")[1];
+      if (base64Data) {
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        uploadBlob = new Blob([byteArray], { type: mimeType });
+      }
+    } else if (dataUrlOrBlob.startsWith("http://") || dataUrlOrBlob.startsWith("https://")) {
+      try {
+        const fetched = await fetch(dataUrlOrBlob);
+        if (fetched.ok) {
+          uploadBlob = await fetched.blob();
+        }
+      } catch (fetchErr) {
+        console.warn("[ProductionAssetService] Remote URL fetch for storage upload notice:", fetchErr);
+      }
+    }
+
+    // 1. Working Storage Upload (Supabase default)
     try {
       const { getSupabaseClient } = await import("../../backend/supabaseClient");
       const supabase = getSupabaseClient();
 
-      if (supabase) {
-        let uploadBlob: Blob | null = null;
+      if (supabase && uploadBlob) {
+        const bucket = "production-assets";
+        const { data, error } = await supabase.storage.from(bucket).upload(storagePath, uploadBlob, {
+          contentType: mimeType || uploadBlob.type || "image/png",
+          upsert: true,
+        });
 
-        if (dataUrlOrBlob.startsWith("data:")) {
-          const base64Data = dataUrlOrBlob.split(",")[1];
-          if (base64Data) {
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            uploadBlob = new Blob([byteArray], { type: mimeType });
+        if (!error && data) {
+          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+          if (pubData?.publicUrl) {
+            finalPublicUrl = pubData.publicUrl;
           }
-        } else if (dataUrlOrBlob.startsWith("http://") || dataUrlOrBlob.startsWith("https://")) {
-          try {
-            const fetched = await fetch(dataUrlOrBlob);
-            if (fetched.ok) {
-              uploadBlob = await fetched.blob();
-            }
-          } catch (fetchErr) {
-            console.warn("[ProductionAssetService] Remote URL fetch for storage upload notice:", fetchErr);
-          }
-        }
-
-        if (uploadBlob) {
-          const bucket = "production-assets";
-          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, uploadBlob, {
-            contentType: mimeType || uploadBlob.type || "image/png",
-            upsert: true,
-          });
-
-          if (!error && data) {
-            const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              finalPublicUrl = pubData.publicUrl;
-            }
-          } else if (error) {
-            console.warn("[ProductionAssetService] Supabase Storage upload notice:", error);
-          }
+        } else if (error) {
+          console.warn("[ProductionAssetService] Supabase Storage upload notice:", error);
         }
       }
     } catch (err) {
-      console.warn("[ProductionAssetService] Asset upload error, using raw URL:", err);
+      console.warn("[ProductionAssetService] Working storage upload notice:", err);
     }
 
-    // Persist production asset record to Supabase production_assets table
+    // 2. Optional Parallel / Preferred Path: Google Drive Upload (if user connected Drive)
+    try {
+      const { uploadToUserGoogleDriveIfConnected } = await import("../googleDriveService");
+      if (uploadBlob) {
+        const driveResult = await uploadToUserGoogleDriveIfConnected({
+          blob: uploadBlob,
+          filename: storagePath.split("/").pop() || `${assetId}.png`,
+          mimeType: mimeType || uploadBlob.type,
+          productionId,
+        });
+        if (driveResult) {
+          driveFileId = driveResult.fileId;
+          driveWebViewLink = driveResult.webViewLink;
+        }
+      }
+    } catch (driveErr) {
+      console.log("[ProductionAssetService] Google Drive upload notice (optional path):", driveErr);
+    }
+
+    // 3. Save ONLY metadata in production_assets table
     const prodAsset: ProductionAsset = {
       id: assetId,
       brandId,
@@ -90,6 +113,9 @@ export class ProductionAssetService {
       storageBucket: "production-assets",
       storagePath,
       publicUrl: finalPublicUrl,
+      driveFileId,
+      driveWebViewLink,
+      expiresAt,
       mimeType,
       generationPrompt: prompt,
       status: "completed",
@@ -103,7 +129,7 @@ export class ProductionAssetService {
       console.warn("[ProductionAssetService] Production asset record persist notice:", dbErr);
     }
 
-    return { publicUrl: finalPublicUrl, storagePath, assetId };
+    return { publicUrl: finalPublicUrl, storagePath, assetId, driveFileId, driveWebViewLink };
   }
 
   /**

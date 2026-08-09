@@ -158,6 +158,9 @@ export interface ProductionAssetRow {
   storage_bucket?: string | null;
   storage_path?: string | null;
   public_url?: string | null;
+  drive_file_id?: string | null;
+  drive_web_view_link?: string | null;
+  expires_at?: string | null;
   mime_type?: string | null;
   duration?: string | null;
   generation_prompt?: string | null;
