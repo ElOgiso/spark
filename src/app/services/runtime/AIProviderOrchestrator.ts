@@ -110,8 +110,20 @@ export class AIProviderOrchestrator {
       execute: async (options) => {
         const apiKey = resolveProviderKey("gemini", options.customApiKeys);
 
-        // 1A. Handle Video Generation
+        // 1A. Handle Video Generation via Google Veo
         if (options.capability === "Video Generation") {
+          const videoPayload = {
+            instances: [{ prompt: options.prompt }],
+            parameters: {
+              aspectRatio: "9:16",
+              sampleCount: 1,
+            },
+          };
+
+          let opName = "";
+          let finalVideoUrl = "";
+
+          // Direct client call if key present
           if (apiKey) {
             try {
               const videoRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning", {
@@ -120,96 +132,150 @@ export class AIProviderOrchestrator {
                   "Content-Type": "application/json",
                   "x-goog-api-key": apiKey,
                 },
-                body: JSON.stringify({
-                  prompt: { text: options.prompt },
-                  aspectRatio: "9:16",
-                  durationSeconds: 5,
-                }),
+                body: JSON.stringify(videoPayload),
               });
+
               if (videoRes.ok) {
                 const vidData = await videoRes.json();
-                let videoUrl = vidData.response?.video?.uri || vidData.response?.generatedVideos?.[0]?.video?.uri || "";
-
-                // If LRO returned operation name, poll until done
-                const opName = vidData.name;
-                if (!videoUrl && opName && !vidData.done) {
-                  for (let attempt = 0; attempt < 10; attempt++) {
-                    await new Promise((r) => setTimeout(r, 2000));
-                    try {
-                      const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}`, {
-                        headers: { "x-goog-api-key": apiKey },
-                      });
-                      if (pollRes.ok) {
-                        const pollData = await pollRes.json();
-                        if (pollData.done) {
-                          videoUrl = pollData.response?.video?.uri || pollData.response?.generatedVideos?.[0]?.video?.uri || pollData.response?.videoUrl || "";
-                          break;
-                        }
-                      }
-                    } catch {}
-                  }
-                }
-
-                if (videoUrl) {
-                  if (options.onChunk) options.onChunk(videoUrl);
-                  return videoUrl;
-                }
+                opName = vidData.name || "";
+                finalVideoUrl = vidData.response?.video?.uri || vidData.response?.generatedVideos?.[0]?.video?.uri || "";
               }
             } catch (vErr) {
-              console.warn("[Gemini Provider] Video generation API notice:", vErr);
+              console.warn("[Gemini Provider] Video generation API direct notice:", vErr);
             }
           }
 
-          // Fallback to proxy
-          const proxyRes = await fetch("/api/runtime/execute", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              provider: "google",
-              endpoint: "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
-              payload: { prompt: { text: options.prompt }, aspectRatio: "9:16" },
-            }),
-          }).catch(() => null);
+          // Fallback to server proxy if no opName or direct call failed
+          if (!opName && !finalVideoUrl) {
+            try {
+              const proxyRes = await fetch("/api/runtime/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  provider: "google",
+                  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
+                  payload: videoPayload,
+                }),
+              });
 
-          if (proxyRes && proxyRes.ok) {
-            const data = await proxyRes.json();
-            const videoUrl = data.response?.video?.uri || data.videoUrl || data.url || "";
-            if (videoUrl) {
-              if (options.onChunk) options.onChunk(videoUrl);
-              return videoUrl;
+              if (proxyRes.ok) {
+                const data = await proxyRes.json();
+                opName = data.name || "";
+                finalVideoUrl = data.response?.video?.uri || data.response?.generatedVideos?.[0]?.video?.uri || data.videoUrl || "";
+              }
+            } catch (pErr) {
+              console.warn("[Gemini Provider] Video generation proxy notice:", pErr);
             }
+          }
+
+          // Poll operation if returned
+          if (!finalVideoUrl && opName) {
+            console.log(`[Gemini Provider] Polling Veo video operation: ${opName}`);
+            for (let attempt = 0; attempt < 18; attempt++) {
+              await new Promise((r) => setTimeout(r, 8000));
+              try {
+                let pollData: any = null;
+                if (apiKey) {
+                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}`, {
+                    headers: { "x-goog-api-key": apiKey },
+                  });
+                  if (pollRes.ok) pollData = await pollRes.json();
+                }
+
+                if (!pollData) {
+                  const proxyPoll = await fetch("/api/runtime/execute", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      provider: "google",
+                      endpoint: `https://generativelanguage.googleapis.com/v1beta/${opName}`,
+                      method: "GET",
+                    }),
+                  });
+                  if (proxyPoll.ok) pollData = await proxyPoll.json();
+                }
+
+                if (pollData?.done) {
+                  finalVideoUrl = pollData.response?.video?.uri || pollData.response?.generatedVideos?.[0]?.video?.uri || pollData.response?.videoUrl || "";
+                  if (finalVideoUrl) break;
+                }
+              } catch (pollErr) {
+                console.warn(`[Gemini Provider] Poll attempt ${attempt + 1} notice:`, pollErr);
+              }
+            }
+          }
+
+          if (finalVideoUrl) {
+            if (options.onChunk) options.onChunk(finalVideoUrl);
+            return finalVideoUrl;
           }
 
           throw new Error("Gemini Video Generation is processing or API key quota exceeded.");
         }
 
-        // 1B. Handle Image Generation via Google Imagen
+        // 1B. Handle Image Generation via Google Imagen 4.0 / 3.0
         if (options.capability === "Image Generation") {
+          const imagenPayload = {
+            instances: [{ prompt: options.prompt }],
+            parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
+          };
+
           if (apiKey) {
-            try {
-              const imgRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "x-goog-api-key": apiKey,
-                },
-                body: JSON.stringify({
-                  instances: [{ prompt: options.prompt }],
-                  parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
-                }),
-              });
-              if (imgRes.ok) {
-                const imgData = await imgRes.json();
-                const b64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-                if (b64) {
-                  const dataUri = `data:image/png;base64,${b64}`;
-                  if (options.onChunk) options.onChunk(dataUri);
-                  return dataUri;
+            // Try Imagen 4.0 first, then Imagen 3.0 fallback
+            const endpoints = [
+              "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
+              "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict",
+            ];
+
+            for (const ep of endpoints) {
+              try {
+                const imgRes = await fetch(ep, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": apiKey,
+                  },
+                  body: JSON.stringify(imagenPayload),
+                });
+
+                if (imgRes.ok) {
+                  const imgData = await imgRes.json();
+                  const b64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+                  if (b64) {
+                    const dataUri = `data:image/png;base64,${b64}`;
+                    if (options.onChunk) options.onChunk(dataUri);
+                    return dataUri;
+                  }
                 }
+              } catch (iErr) {
+                console.warn(`[Gemini Provider] Direct Imagen call notice (${ep}):`, iErr);
               }
-            } catch (iErr) {
-              console.warn("[Gemini Provider] Imagen 3 direct generation notice:", iErr);
             }
+          }
+
+          // Server proxy fallback for Imagen
+          try {
+            const proxyRes = await fetch("/api/runtime/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider: "google",
+                endpoint: "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
+                payload: imagenPayload,
+              }),
+            });
+
+            if (proxyRes.ok) {
+              const imgData = await proxyRes.json();
+              const b64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+              if (b64) {
+                const dataUri = `data:image/png;base64,${b64}`;
+                if (options.onChunk) options.onChunk(dataUri);
+                return dataUri;
+              }
+            }
+          } catch (pErr) {
+            console.warn("[Gemini Provider] Imagen proxy notice:", pErr);
           }
         }
 
@@ -294,75 +360,109 @@ export class AIProviderOrchestrator {
       execute: async (options) => {
         const apiKey = resolveProviderKey("openai", options.customApiKeys);
 
-        if (apiKey) {
-          // Direct client execution if key present
-          if (options.capability === "Image Generation") {
+        // Handle OpenAI Image Generation
+        if (options.capability === "Image Generation") {
+          const openAiImagePayload = {
+            model: "dall-e-3",
+            prompt: options.prompt,
+            n: 1,
+            size: "1024x1792", // portrait 9:16 for storyboard
+            response_format: "b64_json",
+          };
+
+          // 1. Direct client call
+          if (apiKey) {
             try {
-              const res = await fetch("https://api.openai.com/v1/responses", {
+              const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${apiKey}`,
                 },
-                body: JSON.stringify({
-                  model: "gpt-5.4-mini",
-                  input: [{ role: "user", content: options.prompt }],
-                  text: { format: { type: "text" }, verbosity: "medium" },
-                  reasoning: { effort: "medium", mode: "standard", summary: "auto" },
-                  tools: [
-                    { type: "web_search", user_location: { type: "approximate" }, search_context_size: "high" },
-                    {
-                      type: "image_generation",
-                      model: "gpt-image-1.5",
-                      size: "auto",
-                      quality: "high",
-                      output_format: "png",
-                      background: "auto",
-                      moderation: "auto",
-                      partial_images: 3,
-                    },
-                  ],
-                  store: true,
-                  include: ["reasoning.encrypted_content", "web_search_call.action.sources"],
-                }),
+                body: JSON.stringify(openAiImagePayload),
               });
 
-              if (res.ok) {
-                const data = await res.json();
-                const outputItem = data.output?.find((o: any) => o.type === "image_generation" || o.type === "message" || o.image_url);
-                const imageUrl = outputItem?.image_url || outputItem?.content?.[0]?.image_url?.url || data.output?.[0]?.content?.[0]?.text;
-                if (imageUrl) {
-                  if (options.onChunk) options.onChunk(imageUrl);
-                  return imageUrl;
+              if (imgRes.ok) {
+                const imgData = await imgRes.json();
+                const b64 = imgData.data?.[0]?.b64_json;
+                if (b64) {
+                  const dataUri = `data:image/png;base64,${b64}`;
+                  if (options.onChunk) options.onChunk(dataUri);
+                  return dataUri;
+                }
+                const url = imgData.data?.[0]?.url;
+                if (url) {
+                  if (options.onChunk) options.onChunk(url);
+                  return url;
+                }
+              } else {
+                // Fallback: try gpt-image-1.5 / gpt-image-1 if dall-e-3 fails
+                const gptImgRes = await fetch("https://api.openai.com/v1/images/generations", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: "gpt-image-1.5",
+                    prompt: options.prompt,
+                    n: 1,
+                    size: "1024x1792",
+                    response_format: "b64_json",
+                  }),
+                }).catch(() => null);
+
+                if (gptImgRes && gptImgRes.ok) {
+                  const gptData = await gptImgRes.json();
+                  const b64 = gptData.data?.[0]?.b64_json;
+                  if (b64) {
+                    const dataUri = `data:image/png;base64,${b64}`;
+                    if (options.onChunk) options.onChunk(dataUri);
+                    return dataUri;
+                  }
                 }
               }
-            } catch (respErr) {
-              console.warn("[OpenAI Provider] Responses API image generation notice, falling back:", respErr);
-            }
-
-            const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify({
-                model: "dall-e-3",
-                prompt: options.prompt,
-                n: 1,
-                size: "1024x1024",
-              }),
-            });
-            if (imgRes.ok) {
-              const imgData = await imgRes.json();
-              const url = imgData.data?.[0]?.url || "";
-              if (options.onChunk) options.onChunk(url);
-              return url;
+            } catch (dallErr) {
+              console.warn("[OpenAI Provider] Direct image generations notice:", dallErr);
             }
           }
 
+          // 2. Server proxy fallback via /api/runtime/execute
           try {
-            const messages = [];
+            const proxyRes = await fetch("/api/runtime/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider: "openai",
+                endpoint: "https://api.openai.com/v1/images/generations",
+                payload: openAiImagePayload,
+              }),
+            });
+
+            if (proxyRes.ok) {
+              const imgData = await proxyRes.json();
+              const b64 = imgData.data?.[0]?.b64_json;
+              if (b64) {
+                const dataUri = `data:image/png;base64,${b64}`;
+                if (options.onChunk) options.onChunk(dataUri);
+                return dataUri;
+              }
+              const url = imgData.data?.[0]?.url;
+              if (url) {
+                if (options.onChunk) options.onChunk(url);
+                return url;
+              }
+            }
+          } catch (pErr) {
+            console.warn("[OpenAI Provider] Image generation proxy notice:", pErr);
+          }
+
+          throw new Error("OpenAI image generation failed or returned no image bytes.");
+        }
+
+        if (apiKey) {
+          try {
+            const messages: any[] = [];
             if (options.systemInstruction) {
               messages.push({ role: "system", content: options.systemInstruction });
             }

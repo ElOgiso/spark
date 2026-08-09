@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { provider, endpoint, payload } = req.body;
+    const { provider, endpoint, payload, method = 'POST' } = req.body;
 
     const keys = {
       openai: process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY || process.env.VITE_OPENAI_API_KEY,
@@ -34,15 +34,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers['anthropic-dangerous-direct-browser-access'] = 'true';
     } else if (provider === 'google' || provider === 'gemini') {
       if (!keys.google) return res.status(400).json({ error: 'Google Gemini API Key not configured in Vercel environment variables (GEMINI_API_KEY or GOOGLE_AI_API_KEY).' });
+      headers['x-goog-api-key'] = keys.google;
       const delimiter = targetUrl.includes('?') ? '&' : '?';
       targetUrl = `${targetUrl}${delimiter}key=${keys.google}`;
     }
 
-    const response = await fetch(targetUrl, {
-      method: 'POST',
+    const fetchOptions: RequestInit = {
+      method: method.toUpperCase(),
       headers,
-      body: JSON.stringify(payload)
-    });
+    };
+
+    if (method.toUpperCase() !== 'GET' && payload) {
+      fetchOptions.body = JSON.stringify(payload);
+    }
+
+    const response = await fetch(targetUrl, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
