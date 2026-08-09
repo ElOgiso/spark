@@ -14,6 +14,40 @@ export interface PromptContextParams {
   history?: { sender: "user" | "spark"; text: string }[];
 }
 
+/**
+ * Verified SPARK Founder & Builder Knowledge
+ * Canonical foundation details for Maurice Otabor (ElOgiso)
+ */
+export const SPARK_FOUNDER_KNOWLEDGE = {
+  name: "Maurice Otabor",
+  artName: "ElOgiso",
+  origin: "Nigeria",
+  birthDate: "13 April 1996", // Note: does not celebrate birthdays — do NOT surface birthday prompts
+  roles: [
+    "Nigerian AI enthusiast",
+    "Hand-paint artist",
+    "Crypto investor",
+    "Developer",
+    "Web3 & culture creator",
+  ],
+  artWorld: "Known as ElOgiso; digital tribe and culture-on-chain work; creator behind Azurai",
+  presence: {
+    art: "https://elogiso.art",
+    bio: "https://bio.site/elogiso",
+    x: "@ElOgiso (also linked with @MauriceOtabor in bio)",
+  },
+  aesthetic: "Prefers white and black",
+  path: "Built through multiple online hustles; art + developer side; community and tribe building",
+  publicPositioning: "Artist and culture channeler from Nigeria; work mixes hand-drawn, digital, AI-augmented, and motion; founder energy around Azurai / culture on-chain; Web3 creator and community builder; now building SPARK as an AI-native Media Operating System.",
+  lockedBlurb: "Maurice Otabor (ElOgiso) — Founder of SPARK. Nigerian AI enthusiast, hand-paint artist, crypto investor, and developer. Known in the art world as ElOgiso; builds at the intersection of culture, technology, and media systems. Art and builder presence: ElOgiso.art · @ElOgiso.",
+  rules: [
+    "About / Founder copy: short, quiet, executive — not a full biography dump.",
+    "Do NOT auto-wish happy birthday or store birthday as a celebration event (Maurice does not celebrate birthdays — never surface birthday prompts in product).",
+    "Do NOT invent awards, metrics, or titles not verified.",
+    "Super Spark knows founder context as brand memory for the SPARK product organization, not as every user's brand.",
+  ],
+} as const;
+
 export class PromptContextBuilder {
   static buildContext(params: PromptContextParams): {
     systemInstruction: string;
@@ -61,10 +95,19 @@ export class PromptContextBuilder {
       );
     }
 
-    // 5. Department Specific Instructions
+    // 5. SPARK Product Org & Founder Knowledge Base (for questions about SPARK creator/builder/developer)
+    contextParts.push(
+      `SPARK PRODUCT FOUNDATION & FOUNDER KNOWLEDGE:\n` +
+      `• Founder / Builder: ${SPARK_FOUNDER_KNOWLEDGE.name} (${SPARK_FOUNDER_KNOWLEDGE.artName})\n` +
+      `• Summary: ${SPARK_FOUNDER_KNOWLEDGE.lockedBlurb}\n` +
+      `• Web & Social: ${SPARK_FOUNDER_KNOWLEDGE.presence.art} · ${SPARK_FOUNDER_KNOWLEDGE.presence.x}\n` +
+      `• Guidelines: When asked about who founded, built, or developed SPARK, answer with the short, quiet, executive blurb. Do NOT auto-wish happy birthday or surface birthday prompts. Do NOT invent unverified titles or metrics.`
+    );
+
+    // 6. Department Specific Instructions
     contextParts.push(`DEPARTMENT CONTEXT: Executing as [${department}] in Spark Media OS.`);
 
-    // 6. Context Window Protection & History Summarization (Part D Governance)
+    // 7. Context Window Protection & History Summarization (Part D Governance)
     let historyContext = "";
     if (history && history.length > 0) {
       if (history.length > 6) {

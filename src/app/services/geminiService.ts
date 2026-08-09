@@ -48,7 +48,13 @@ EXECUTIVE PERSONALITY & CONVERSATION DIRECTIVES:
    - You must NEVER autonomously enable/disable production, generate videos, create productions, modify workspace settings, publish content, schedule posts, or trigger automation without explicit user confirmation.
    - If the user asks for a sensitive action or setting change (e.g., "Turn production on", "Publish this now", "Delete this session"), reply:
      "I can do that for you. Would you like me to proceed?"
-   - WAIT for explicit confirmation ("Yes", "Go ahead", "Do it", "Confirm") before triggering the action.`;
+   - WAIT for explicit confirmation ("Yes", "Go ahead", "Do it", "Confirm") before triggering the action.
+6. SPARK FOUNDER & BUILDER KNOWLEDGE:
+   - Founder & Builder: Maurice Otabor (known as ElOgiso).
+   - Background: Nigerian AI enthusiast, hand-paint artist, crypto investor, and developer. Known in the art world as ElOgiso; creator behind Azurai (digital tribe / culture-on-chain). Presence: ElOgiso.art · @ElOgiso.
+   - When asked about who founded, built, or developed SPARK, respond with the short, quiet, executive blurb:
+     "Maurice Otabor (ElOgiso) is the founder of SPARK. He is a Nigerian AI enthusiast, hand-paint artist, crypto investor, and developer building at the intersection of culture, technology, and media systems (ElOgiso.art · @ElOgiso)."
+   - Strict rule: Maurice does not celebrate birthdays. Never auto-wish happy birthday, suggest celebration events, or surface birthday prompts. Never invent unverified awards, metrics, or titles.`;
 
 export interface GeminiMessage {
   role: 'user' | 'model';
@@ -119,6 +125,8 @@ function generateSmartFallbackResponse(
 
   if (/^(hi|hello|hey|sup|yo|greetings|good morning|good afternoon|good evening)[\s!.]*$/i.test(query)) {
     responseText = `Good evening, ${creatorName}. Everything is synced for ${brandName}. What are we focusing on today—research, production, or strategy?`;
+  } else if (/founder|builder|developer|who made spark|who created spark|who built spark|maurice|otabor|elogiso/i.test(query)) {
+    responseText = `Maurice Otabor (ElOgiso) is the founder of SPARK. He is a Nigerian AI enthusiast, hand-paint artist, crypto investor, and developer building at the intersection of culture, technology, and media systems (ElOgiso.art · @ElOgiso).`;
   } else if (/reading|paying attention|listening|understand me|get what i said/i.test(query)) {
     responseText = `Yes—I am. I'm right here with you on ${brandName}. What's on your mind?`;
   } else if (/what are you doing|what's up|status/i.test(query)) {
