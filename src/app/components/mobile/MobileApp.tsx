@@ -6,7 +6,7 @@ import { MobileViralSparks } from "./MobileViralSparks";
 import { MobileReview } from "./MobileReview";
 import { MobileAnalytics } from "./MobileAnalytics";
 import { MobileMore } from "./MobileMore";
-import { MySpark } from "../MySpark";
+import { MobileMySpark } from "./MobileMySpark";
 
 import { MoreSubPages } from "../MoreSubPages";
 
@@ -51,7 +51,7 @@ export function MobileApp() {
       case "review": return <MobileReview onNavigate={handleMobileNavigate} />;
       case "analytics": return <MobileAnalytics onNavigate={handleMobileNavigate} />;
       case "more": return <MobileMore onNavigate={handleMobileNavigate} />;
-      case "my-spark": return <MySpark onNavigate={handleMobileNavigate} />;
+      case "my-spark": return <MobileMySpark onNavigate={handleMobileNavigate} />;
       default: return <MobileHome onNavigate={handleMobileNavigate} />;
     }
   };
