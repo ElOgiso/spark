@@ -12,16 +12,19 @@ export const SPARK_EXECUTIVE_VOICE_PROFILE = {
   name: "Super Spark",
   title: "Executive Creative Director",
   identity: "Spark Executive OS Director",
-  voiceId: "Aoede", // High-quality Gemini female voice (Aoede)
-  openAiVoiceId: "nova", // High-quality OpenAI female voice (Nova)
-  elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel / Executive Female Voice
+  voiceId: "Aoede", // Secondary Gemini female voice (Aoede)
+  openAiVoiceId: "coral", // Primary OpenAI female voice (Coral - easygoing, savvy, relaxed)
+  openAiTtsModel: "gpt-4o-mini-tts", // Official latest OpenAI speech model with tone instructions
+  openAiTtsFallbackModels: ["tts-1-hd", "tts-1"] as const,
+  instructions: "Speak as Super Spark: warm, easygoing, savvy female creative partner. Natural, relaxed, versatile. Light energy, clear, human. Suitable for content creators. Not robotic, not formal corporate.",
+  elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel / Executive Female Voice (production content only)
   model: "gemini-2.0-flash",
   ttsModel: "gemini-3.1-flash-tts-preview",
   gender: "Female" as const,
-  language: "English (International / Nigerian Cadence)" as const,
-  accent: "Warm Neutral Executive Female" as const,
-  tone: "Warm, Calm, Intelligent, Executive, Natural, Consistent" as const,
-  speakingStyle: "Trusted Executive Partner" as const,
+  language: "English (International / Creative Cadence)" as const,
+  accent: "Warm Easygoing Executive Female" as const,
+  tone: "Warm, Easygoing, Savvy, Relaxed, Creative, Human" as const,
+  speakingStyle: "Trusted Creative Partner" as const,
   streaming: true,
   thinking: true,
   interruptions: true,
@@ -180,61 +183,129 @@ export async function generateSuperSparkVoice(
   return null;
 }
 
-async function generateOpenAIVoice(text: string, voice: "nova" | "coral" = "nova"): Promise<string | null> {
+async function generateOpenAIVoice(text: string, voice: string = SPARK_EXECUTIVE_VOICE_PROFILE.openAiVoiceId): Promise<string | null> {
   const apiKey = resolveProviderKey("openai");
-  if (!apiKey) return null;
+  const cleanedInput = text.slice(0, 4096);
 
-  try {
-    const res = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "tts-1-hd",
-        input: text.slice(0, 600),
-        voice,
-        response_format: "mp3",
-      }),
-    });
-
-    if (res.ok) {
-      const blob = await res.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } else {
-      // Fallback to standard tts-1 if tts-1-hd quota/tier differs
-      const fallbackRes = await fetch("https://api.openai.com/v1/audio/speech", {
+  // 1. Direct client call if key available
+  if (apiKey) {
+    // Attempt 1: gpt-4o-mini-tts with instructions
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "tts-1",
-          input: text.slice(0, 600),
+          model: "gpt-4o-mini-tts",
+          input: cleanedInput,
           voice,
           response_format: "mp3",
+          instructions: SPARK_EXECUTIVE_VOICE_PROFILE.instructions,
         }),
       });
-      if (fallbackRes.ok) {
-        const blob = await fallbackRes.blob();
+
+      if (res.ok) {
+        const blob = await res.blob();
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
           reader.onerror = () => resolve(null);
           reader.readAsDataURL(blob);
         });
+      } else {
+        const errBody = await res.text().catch(() => "");
+        console.warn(`[OpenAIVoice] gpt-4o-mini-tts (${res.status}):`, errBody);
+      }
+    } catch (e) {
+      console.warn("[OpenAIVoice] Direct gpt-4o-mini-tts notice:", e);
+    }
+
+    // Attempt 2: Fallback to tts-1-hd / tts-1 (no instructions field)
+    for (const model of SPARK_EXECUTIVE_VOICE_PROFILE.openAiTtsFallbackModels) {
+      try {
+        const res = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            input: cleanedInput,
+            voice,
+            response_format: "mp3",
+          }),
+        });
+
+        if (res.ok) {
+          const blob = await res.blob();
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        } else {
+          const errBody = await res.text().catch(() => "");
+          console.warn(`[OpenAIVoice] ${model} (${res.status}):`, errBody);
+        }
+      } catch (fErr) {
+        console.warn(`[OpenAIVoice] Direct ${model} notice:`, fErr);
       }
     }
-  } catch (err) {
-    console.warn("[OpenAIVoice] Super Spark TTS notice:", err);
   }
+
+  // 2. Server proxy fallback via /api/runtime/execute (uses Vercel server-side OPENAI_API_KEY)
+  try {
+    const proxyRes = await fetch("/api/runtime/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "openai",
+        endpoint: "https://api.openai.com/v1/audio/speech",
+        payload: {
+          model: "gpt-4o-mini-tts",
+          input: cleanedInput,
+          voice,
+          response_format: "mp3",
+          instructions: SPARK_EXECUTIVE_VOICE_PROFILE.instructions,
+        },
+      }),
+    });
+
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      if (data.dataUrl) return data.dataUrl;
+      if (data.audioBase64) return `data:audio/mpeg;base64,${data.audioBase64}`;
+    } else {
+      // Proxy fallback with tts-1-hd
+      const proxyFallback = await fetch("/api/runtime/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "openai",
+          endpoint: "https://api.openai.com/v1/audio/speech",
+          payload: {
+            model: "tts-1-hd",
+            input: cleanedInput,
+            voice,
+            response_format: "mp3",
+          },
+        }),
+      });
+
+      if (proxyFallback.ok) {
+        const data = await proxyFallback.json();
+        if (data.dataUrl) return data.dataUrl;
+        if (data.audioBase64) return `data:audio/mpeg;base64,${data.audioBase64}`;
+      }
+    }
+  } catch (pErr) {
+    console.warn("[OpenAIVoice] Server proxy audio/speech notice:", pErr);
+  }
+
   return null;
 }
 

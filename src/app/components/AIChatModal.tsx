@@ -199,6 +199,12 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
         activeAudioRef.current.pause();
         activeAudioRef.current = null;
       }
+    } else {
+      // User gesture unlocks iOS audio: immediately speak latest Super Spark message
+      const lastSparkMessage = [...messages].reverse().find((m) => m.sender === "spark");
+      if (lastSparkMessage && lastSparkMessage.text) {
+        void speakText(lastSparkMessage.text, false);
+      }
     }
   };
 
@@ -563,7 +569,9 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
           }
           const audio = new Audio(audioUrl);
           activeAudioRef.current = audio;
-          await audio.play();
+          await audio.play().catch((playErr) => {
+            console.log("[AIChatModal] Audio play deferred:", playErr?.message || playErr);
+          });
         } catch (audioErr) {
           console.warn("[AIChatModal] Audio playback notice:", audioErr);
         }

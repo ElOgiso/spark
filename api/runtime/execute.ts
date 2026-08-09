@@ -55,6 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(response.status).json({ error: errorText });
     }
 
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('audio/') || contentType.includes('application/octet-stream') || targetUrl.includes('/audio/speech')) {
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mime = contentType.includes('audio/') ? contentType.split(';')[0] : 'audio/mpeg';
+      return res.status(200).json({
+        dataUrl: `data:${mime};base64,${base64}`,
+        audioBase64: base64,
+        mimeType: mime,
+      });
+    }
+
     const responseData = await response.json();
     return res.status(200).json(responseData);
   } catch (err: any) {

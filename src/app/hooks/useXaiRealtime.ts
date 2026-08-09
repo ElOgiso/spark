@@ -142,8 +142,8 @@ export function useXaiRealtime() {
   }, []);
 
   /**
-   * Speak response using Executive Provider-Native TTS (OpenAI "nova" / Gemini "Aoede")
-   * NEVER falls back to browser speechSynthesis.
+   * Speak response using Executive Provider-Native TTS (OpenAI "coral" / Gemini "Aoede")
+   * Autoplay-safe for iOS and desktop browsers. NEVER falls back to browser speechSynthesis.
    */
   const speakText = useCallback(async (text: string, isMuted: boolean = false, providerId?: AIProviderId) => {
     // If muted or empty text, stop any active audio and exit
@@ -165,13 +165,16 @@ export function useXaiRealtime() {
 
     if (!spokenText) return;
 
-    // Provider-Native Premium TTS Execution (OpenAI 'nova' / Gemini 'Aoede')
+    // Provider-Native Premium TTS Execution (OpenAI 'coral' / Gemini 'Aoede')
     try {
       const audioUri = await generateSuperSparkVoice(spokenText, providerId);
       if (audioUri) {
         const audio = new Audio(audioUri);
         audioRef.current = audio;
-        await audio.play();
+        await audio.play().catch((playErr) => {
+          // Autoplay blocked by browser policy without user gesture (e.g. iOS)
+          console.log('[SuperSparkVoice] Autoplay deferred until user gesture / speaker tap:', playErr?.message || playErr);
+        });
         return;
       }
     } catch (e) {
