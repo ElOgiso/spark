@@ -258,9 +258,9 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   };
 
   const productionConfig = {
-    express: { label: "Express", desc: "Rapid — one format, minimal review gates", time: "2–4 hours" },
-    standard: { label: "Standard", desc: "Balanced — multiple formats, standard review", time: "6–12 hours" },
-    deep: { label: "Deep", desc: "Comprehensive — full series, all formats, all gates", time: "24–48 hours" },
+    express: { label: "Narrator", desc: "Images + voice + music/SFX + captions + motion", time: "2–4 hours" },
+    standard: { label: "Hybrid", desc: "Animated hook + narrator pipeline", time: "6–12 hours" },
+    deep: { label: "Cinematic", desc: "Storyboard + video generation + consistency + voice + audio", time: "24–48 hours" },
   };
 
   return (

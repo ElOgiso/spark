@@ -136,15 +136,42 @@ export class ProductionAssetService {
    * Generates storyboards, scene clips, voiceover, and thumbnail assets
    * via Capability Registry -> Model Router -> Provider Adapters.
    */
+  /**
+   * Generates storyboards, scene clips, voiceover, and thumbnail assets
+   * via Capability Registry -> Model Router -> Provider Adapters.
+   */
   static async generateAssets(params: {
     production: Production;
     brief: ProductionBrief;
     brand: Brand;
     character?: Character;
+    onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character } = params;
+    const { production, brief, brand, character, onProgress } = params;
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
+
+    const stages: import("../../domain/types").GenerationProgressStage[] = [
+      { id: "storyboard", label: "Storyboard structure", status: "active" },
+      { id: "voice", label: "Voiceover synthesis", status: "pending" },
+      { id: "keyframes", label: "Scene keyframes", status: "pending" },
+      { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
+      { id: "video", label: "Master video preview", status: "pending" },
+      { id: "saving", label: "Finalizing media", status: "pending" },
+    ];
+
+    const emitProgress = (percent: number, stage: string, message?: string) => {
+      if (onProgress) {
+        onProgress({
+          percent: Math.min(100, Math.max(0, percent)),
+          stage,
+          stages: stages.map((s) => ({ ...s })),
+          message,
+        });
+      }
+    };
+
+    emitProgress(5, "Storyboard", "Generating vertical 9:16 multi-scene structure...");
 
     const hostStyle = character?.style || "Executive Presenter";
 
@@ -222,6 +249,10 @@ Return JSON matching this exact structure with NO markdown backticks:
       const storyboard: ProductionScene[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
+      stages[0].status = "done";
+      stages[1].status = "active";
+      emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
+
       // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline
       let realVoiceUrl: string | undefined = undefined;
       try {
@@ -261,12 +292,17 @@ Return JSON matching this exact structure with NO markdown backticks:
         console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
       }
 
+      stages[1].status = realVoiceUrl ? "done" : "failed";
+      stages[2].status = "active";
+      emitProgress(20, "Keyframes", "Rendering 9:16 vertical scene keyframes...");
+
       // 1. Storyboard Scene Keyframe Image Generation via ModelRouter ("storyboardImages")
       const sceneImages: string[] = [];
       const renderStartedAt = new Date().toISOString();
 
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
+        const totalScenes = storyboard.length || 3;
         for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
           const scene = storyboard[sIdx];
           const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Hook: "${brief.hook}". Brand: ${brand.name}`;
@@ -294,15 +330,23 @@ Return JSON matching this exact structure with NO markdown backticks:
           } catch (sceneErr) {
             console.warn(`[SPARK Pipeline] Scene ${scene.scene} image generation notice/fallback:`, sceneErr);
           }
+
+          const currentPct = 20 + Math.round(((sIdx + 1) / totalScenes) * 35);
+          emitProgress(currentPct, "Keyframes", `Rendered keyframe ${sIdx + 1} of ${totalScenes}...`);
         }
       } catch (imgErr) {
         console.warn("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
       }
 
+      stages[2].status = sceneImages.length > 0 ? "done" : "failed";
+      stages[3].status = "active";
+      emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants (A, B, C)...");
+
       // 2. Proposed Thumbnail Variants Real Image Generation Loop via ModelRouter ("storyboardImages")
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
+        const totalThumbs = thumbnails.length || 3;
         for (let tIdx = 0; tIdx < thumbnails.length; tIdx++) {
           const thumb = thumbnails[tIdx];
           const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
@@ -340,10 +384,17 @@ Return JSON matching this exact structure with NO markdown backticks:
             image: thumbUrl || sceneImages[tIdx],
             url: thumbUrl || sceneImages[tIdx],
           });
+
+          const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
+          emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
         }
       } catch (tLoopErr) {
         console.warn("[SPARK Pipeline] Thumbnail generation loop notice:", tLoopErr);
       }
+
+      stages[3].status = enrichedThumbnails.some((t) => t.image) ? "done" : "failed";
+      stages[4].status = "active";
+      emitProgress(80, "Video", "Rendering 9:16 master video preview via Google Veo...");
 
       // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
       let realVideoUrl: string | undefined = undefined;
@@ -373,7 +424,18 @@ Return JSON matching this exact structure with NO markdown backticks:
         console.warn("[SPARK Pipeline] Video generation notice/fallback:", vidErr);
       }
 
+      stages[4].status = realVideoUrl ? "done" : "failed";
+      stages[5].status = "active";
+      emitProgress(96, "Saving", "Synchronizing storage assets & metadata...");
+
       const renderCompletedAt = new Date().toISOString();
+
+      const finalProgress: import("../../domain/types").GenerationProgress = {
+        percent: 100,
+        stage: "Complete",
+        stages: stages.map((s) => ({ ...s, status: s.status === "active" ? "done" : s.status })),
+        message: "Media assets synthesized and ready for executive review.",
+      };
 
       const updatedBrief: ProductionBrief = {
         ...brief,
@@ -397,6 +459,7 @@ Return JSON matching this exact structure with NO markdown backticks:
           generatedFrames: sceneImages.length > 0 ? sceneImages : undefined,
           generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
           generatedAudio: realVoiceUrl ? [realVoiceUrl] : undefined,
+          generationProgress: finalProgress,
           generationMetadata: {
             renderStartedAt,
             renderCompletedAt,
@@ -415,6 +478,8 @@ Return JSON matching this exact structure with NO markdown backticks:
         image: s.image,
         videoUrl: s.videoUrl,
       }));
+
+      emitProgress(100, "Complete", "Media assets synthesized and ready for executive review.");
 
       return {
         brief: updatedBrief,

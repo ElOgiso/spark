@@ -861,6 +861,28 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   production: enrichedProd,
                   brand: state.brand,
                   character: state.character,
+                  onProgress: (progress) => {
+                    setState((prev: any) => ({
+                      ...prev,
+                      productions: prev.productions.map((p: any) =>
+                        p.id === prodId ? { ...p, generationProgress: progress } : p
+                      ),
+                      reviewItems: prev.reviewItems.map((r: any) =>
+                        r.productionId === prodId && r.brief
+                          ? {
+                              ...r,
+                              brief: {
+                                ...r.brief,
+                                generatedAssets: {
+                                  ...r.brief.generatedAssets,
+                                  generationProgress: progress,
+                                },
+                              },
+                            }
+                          : r
+                      ),
+                    }));
+                  },
                 });
 
                 setState((prev: any) => ({
@@ -938,6 +960,28 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         production: prod,
         brand: state.brand,
         character: state.character,
+        onProgress: (progress) => {
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) =>
+              p.id === productionId ? { ...p, generationProgress: progress } : p
+            ),
+            reviewItems: prev.reviewItems.map((r: any) =>
+              r.productionId === productionId && r.brief
+                ? {
+                    ...r,
+                    brief: {
+                      ...r.brief,
+                      generatedAssets: {
+                        ...r.brief.generatedAssets,
+                        generationProgress: progress,
+                      },
+                    },
+                  }
+                : r
+            ),
+          }));
+        },
       });
 
       setState((prev: any) => ({

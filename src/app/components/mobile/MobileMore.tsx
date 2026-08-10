@@ -46,7 +46,19 @@ interface MobileMoreProps {
 }
 
 export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
-  const { memoryItems, addMemoryItem, removeMemoryItem, brand, character, accounts: contextAccounts, aiSettings, updateAISettings } = useSpark() as any;
+  const {
+    memoryItems,
+    addMemoryItem,
+    removeMemoryItem,
+    brand,
+    character,
+    accounts: contextAccounts,
+    aiSettings,
+    updateAISettings,
+    updateBrand,
+    productionGenerationEnabled,
+    toggleProductionGeneration,
+  } = useSpark() as any;
   const auth = useAuth();
 
   const userDisplayName = auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || character?.name || "Creator";
@@ -138,10 +150,10 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
   // Preference Settings
   const [notifSettings, setNotifSettings] = useState({
-    dailyBrief: true,
-    reviewAlerts: true,
-    weeklyGrowth: true,
-    publishConfirm: false
+    renderReady: true,
+    scheduledPost: true,
+    weeklyReport: false,
+    anomalyAlerts: true,
   });
 
   const [privacySettings, setPrivacySettings] = useState({
@@ -186,6 +198,12 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     {
       title: "Preferences",
       items: [
+        {
+          icon: Zap,
+          label: "Production Settings",
+          badge: productionGenerationEnabled !== false ? "ON" : "OFF",
+          path: "/more/production-settings",
+        },
         {
           icon: Palette,
           label: "Appearance & Theme",
@@ -864,18 +882,37 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             </div>
           );
 
-        case "Legal":
+        case "Production Settings":
           return (
             <div className="space-y-4">
-              <div className="rounded-xl border border-border bg-card p-4 space-y-4 text-xs leading-relaxed">
-                <div>
-                  <h4 className="font-bold text-foreground mb-1">Terms of Service</h4>
-                  <p className="text-muted-foreground">Welcome to Spark. By utilizing our platform and system adapters, you agree to copyright boundaries and delegated pipeline decisions in active automation channels.</p>
+              <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Production Generation</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Autonomous multi-scene storyboard, voiceover, and visual asset synthesis.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleProductionGeneration?.()}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                      productionGenerationEnabled !== false
+                        ? "bg-success/20 text-success border-success/40"
+                        : "bg-muted/20 text-muted-foreground border-border/50"
+                    }`}
+                  >
+                    {productionGenerationEnabled !== false ? "ON" : "OFF"}
+                  </button>
                 </div>
-                <hr className="border-border/50" />
-                <div>
-                  <h4 className="font-bold text-foreground mb-1">Privacy Policy</h4>
-                  <p className="text-muted-foreground">We prioritize secure storage of credential tokens and telemetry logs. Rendered scripts and files are strictly private and never combined with generic public LLM datasets.</p>
+
+                <div className="p-3 rounded-lg border border-border/50 bg-background/50 space-y-1.5 text-xs text-muted-foreground">
+                  <p className="font-semibold text-foreground">Executive Workflow Rule:</p>
+                  <p>
+                    When <strong>ON</strong> (Default), SPARK synthesizes full multi-scene keyframes, thumbnails, and preview clips.
+                  </p>
+                  <p>
+                    When <strong>OFF</strong>, SPARK generates lightweight Production Briefs only, deferring media rendering until requested.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1034,8 +1071,11 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             </Button>
             <Button
               onClick={() => {
-                const name = prompt("Enter new workspace/brand name to switch to:", "Creative Studio Lagos");
+                const name = prompt("Enter workspace/brand name to switch to:", brand?.name || "Creative Studio");
                 if (name && name.trim()) {
+                  if (typeof updateBrand === "function") {
+                    updateBrand({ ...brand, name: name.trim() });
+                  }
                   alert(`Successfully switched active workspace to: ${name.trim()}`);
                 }
               }}
@@ -1043,7 +1083,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
               className="w-full text-xs flex items-center justify-center gap-1.5"
             >
               <Users className="w-4 h-4 text-muted-foreground" />
-              Switch Workspace
+              Switch Workspace ({brand?.name || "Default"})
             </Button>
           </div>
         ) : (

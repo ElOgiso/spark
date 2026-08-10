@@ -87,6 +87,19 @@ export interface ProductionScene {
   videoUrl?: string;
 }
 
+export interface GenerationProgressStage {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "done" | "failed";
+}
+
+export interface GenerationProgress {
+  percent: number;
+  stage: string;
+  stages: GenerationProgressStage[];
+  message?: string;
+}
+
 export interface ProductionBrief {
   title: string;
   productionMode: string;
@@ -108,6 +121,7 @@ export interface ProductionBrief {
     generatedFrames?: string[];
     generatedVideos?: string[];
     generatedAudio?: string[];
+    generationProgress?: GenerationProgress;
     generationMetadata?: {
       renderStartedAt?: string;
       renderCompletedAt?: string;
@@ -132,6 +146,7 @@ export interface Production {
   audioUrl?: string;
   videoUrl?: string;
   isGeneratingAssets?: boolean;
+  generationProgress?: GenerationProgress;
 }
 
 export interface QualityCheck {

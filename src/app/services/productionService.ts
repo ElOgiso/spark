@@ -130,8 +130,9 @@ export class ProductionService implements IProductionService {
     production: Production;
     brand: Brand;
     character?: Character;
+    onProgress?: (progress: import("../domain/types").GenerationProgress) => void;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
-    const { production, brand, character } = params;
+    const { production, brand, character, onProgress } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -141,6 +142,7 @@ export class ProductionService implements IProductionService {
       brief: production.brief,
       brand,
       character,
+      onProgress,
     });
 
     const updatedProd: Production = {
@@ -150,6 +152,7 @@ export class ProductionService implements IProductionService {
       audioUrl: result.audioUrl,
       videoUrl: result.videoUrl,
       isGeneratingAssets: false,
+      generationProgress: result.brief.generatedAssets?.generationProgress,
     };
 
     const state = this.getFullState();

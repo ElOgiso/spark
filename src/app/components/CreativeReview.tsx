@@ -300,18 +300,63 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
-          {/* Active Generation Notice */}
+          {/* Active Generation Progress Card */}
           {activeProd?.isGeneratingAssets && (
-            <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-between animate-pulse">
-              <div className="flex items-center gap-2.5">
-                <RotateCw className="w-4 h-4 text-accent animate-spin" />
-                <span className="text-xs font-medium text-foreground">
-                  Synthesizing media assets (storyboard keyframes, thumbnail variants, voiceover, and video preview)...
-                </span>
+            <div className="p-5 rounded-2xl bg-card border border-accent/40 shadow-sm space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <RotateCw className="w-4 h-4 text-accent animate-spin" />
+                  <span className="text-sm font-semibold text-foreground">
+                    {activeProd.generationProgress?.stage ? `Stage: ${activeProd.generationProgress.stage}` : "Synthesizing Media Assets"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-accent bg-accent/20 px-2.5 py-0.5 rounded-full">
+                    {activeProd.generationProgress?.percent ?? 15}%
+                  </span>
+                  <span className="text-[10px] font-mono font-semibold uppercase text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
+                    Pipeline Active
+                  </span>
+                </div>
               </div>
-              <span className="text-[10px] font-mono font-semibold uppercase text-accent bg-accent/20 px-2 py-0.5 rounded">
-                Staged Pipeline Active
-              </span>
+
+              {/* Thin Progress Bar */}
+              <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-accent via-purple-400 to-emerald-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.max(activeProd.generationProgress?.percent ?? 15, 6)}%` }}
+                />
+              </div>
+
+              {/* Stage Message */}
+              <p className="text-xs text-muted-foreground">
+                {activeProd.generationProgress?.message || "Synthesizing multi-scene keyframes, thumbnails, and preview clips..."}
+              </p>
+
+              {/* Compact Stage Checklist */}
+              {activeProd.generationProgress?.stages && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2 border-t border-border/40">
+                  {activeProd.generationProgress.stages.map((stg: any) => (
+                    <div key={stg.id} className="flex items-center gap-2 text-xs">
+                      {stg.status === "done" && <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />}
+                      {stg.status === "active" && <RotateCw className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
+                      {stg.status === "failed" && <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0" />}
+                      {stg.status === "pending" && <div className="w-3.5 h-3.5 rounded-full border border-border flex-shrink-0" />}
+                      <span
+                        className={`truncate ${
+                          stg.status === "active"
+                            ? "text-foreground font-medium"
+                            : stg.status === "done"
+                            ? "text-muted-foreground"
+                            : "text-muted-foreground/60"
+                        }`}
+                      >
+                        {stg.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

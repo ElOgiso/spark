@@ -266,17 +266,34 @@ export function MorePage({ onNavigate }: MorePageProps) {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setEditName(profileName);
-                  setEditEmail(profileEmail || "");
-                  setEditRole(profileRole || "Director");
-                  setShowEditProfile(true);
-                }}
-                className="px-4 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors"
-              >
-                Edit Profile
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const name = prompt("Enter workspace/brand name to switch to:", spark?.brand?.name || "Creative Studio");
+                    if (name && name.trim()) {
+                      if (typeof spark?.updateBrand === "function") {
+                        spark.updateBrand({ ...spark.brand, name: name.trim() });
+                      }
+                      alert(`Successfully switched active workspace to: ${name.trim()}`);
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors flex items-center gap-1.5 text-foreground cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Switch Workspace</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEditName(profileName);
+                    setEditEmail(profileEmail || "");
+                    setEditRole(profileRole || "Director");
+                    setShowEditProfile(true);
+                  }}
+                  className="px-4 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors cursor-pointer"
+                >
+                  Edit Profile
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-4 gap-4 mt-5 pt-5 border-t border-border/50">
               {stats.map((s) => (

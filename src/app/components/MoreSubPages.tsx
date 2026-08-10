@@ -432,9 +432,10 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
         return {
           title: "Production Generation Settings",
           icon: Zap,
-          description: "Configure automatic asset synthesis for new productions.",
+          description: "Configure automatic asset synthesis and default production depth.",
           content: (
             <div className="space-y-6">
+              {/* Production Generation ON/OFF */}
               <div className="rounded-xl border border-border bg-card p-6 space-y-4">
                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
                   <div>
@@ -463,6 +464,45 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <p>
                     When <strong>OFF</strong>, SPARK generates lightweight Production Briefs only, deferring media rendering until you explicitly request asset synthesis.
                   </p>
+                </div>
+              </div>
+
+              {/* Default Production Mode */}
+              <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Default Production Mode</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Controls production depth and media asset generation pipeline (Notion Standard).
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    { id: "express" as const, label: "Narrator", desc: "Images + voice + music/SFX + captions + motion", time: "2–4 hours" },
+                    { id: "standard" as const, label: "Hybrid", desc: "Animated hook + narrator pipeline", time: "6–12 hours" },
+                    { id: "deep" as const, label: "Cinematic", desc: "Storyboard + video generation + consistency + voice + audio", time: "24–48 hours" },
+                  ].map((m) => {
+                    const isActive = spark.productionMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => spark.updateProductionMode?.(m.id)}
+                        className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                          isActive
+                            ? "bg-accent/20 border-accent/40 shadow-sm"
+                            : "bg-background border-border hover:border-accent/30"
+                        }`}
+                      >
+                        <p className={`text-sm font-semibold mb-1 ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+                          {m.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground mb-2 leading-relaxed">{m.desc}</p>
+                        <span className={`text-[11px] font-mono font-medium ${isActive ? "text-accent" : "text-muted-foreground/60"}`}>
+                          {m.time}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
