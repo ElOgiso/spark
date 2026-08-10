@@ -269,7 +269,7 @@ Return JSON matching this exact structure with NO markdown backticks:
         const { ModelRouter } = await import("../runtime/modelRouter");
         for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
           const scene = storyboard[sIdx];
-          const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Brand: ${brand.name}`;
+          const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Hook: "${brief.hook}". Brand: ${brand.name}`;
           try {
             console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} image via ModelRouter ("storyboardImages")...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
@@ -285,7 +285,7 @@ Return JSON matching this exact structure with NO markdown backticks:
                 dataUrlOrBlob: imgUrl,
                 mimeType: "image/png",
                 prompt: imagePrompt,
-                provider: "OpenAI Image / ModelRouter",
+                provider: "OpenAI DALL-E 3 / ModelRouter",
               });
               console.log(`[SPARK Pipeline] Upload to Supabase Storage: Scene ${sIdx + 1} SUCCESS -> ${storedImg.publicUrl}`);
               sceneImages.push(storedImg.publicUrl);
@@ -299,7 +299,53 @@ Return JSON matching this exact structure with NO markdown backticks:
         console.warn("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
       }
 
-      // 2. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
+      // 2. Proposed Thumbnail Variants Real Image Generation Loop via ModelRouter ("storyboardImages")
+      const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
+      try {
+        const { ModelRouter } = await import("../runtime/modelRouter");
+        for (let tIdx = 0; tIdx < thumbnails.length; tIdx++) {
+          const thumb = thumbnails[tIdx];
+          const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
+          const thumbPrompt = `9:16 vertical high-impact YouTube/TikTok thumbnail image for variant ${variantLetter}: ${thumb.concept}. Hook: "${brief.hook}". Brand: ${brand.name}`;
+          let thumbUrl: string | undefined = undefined;
+
+          try {
+            console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
+            const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
+              prompt: thumbPrompt,
+            });
+
+            if (thumbImgData && thumbImgData.length > 20) {
+              const storedThumb = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "thumbnail",
+                storagePath: `${production.id}/thumbnails/variant-${variantLetter.toLowerCase()}.png`,
+                dataUrlOrBlob: thumbImgData,
+                mimeType: "image/png",
+                prompt: thumbPrompt,
+                provider: "OpenAI DALL-E 3 / ModelRouter",
+              });
+              console.log(`[SPARK Pipeline] Upload to Supabase Storage: Thumbnail Variant ${variantLetter} SUCCESS -> ${storedThumb.publicUrl}`);
+              thumbUrl = storedThumb.publicUrl;
+            }
+          } catch (thumbErr) {
+            console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation notice:`, thumbErr);
+          }
+
+          enrichedThumbnails.push({
+            id: thumb.id || `t${tIdx + 1}`,
+            variant: variantLetter,
+            concept: thumb.concept,
+            image: thumbUrl || sceneImages[tIdx],
+            url: thumbUrl || sceneImages[tIdx],
+          });
+        }
+      } catch (tLoopErr) {
+        console.warn("[SPARK Pipeline] Thumbnail generation loop notice:", tLoopErr);
+      }
+
+      // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
       let realVideoUrl: string | undefined = undefined;
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
@@ -318,7 +364,7 @@ Return JSON matching this exact structure with NO markdown backticks:
             dataUrlOrBlob: generatedVideo,
             mimeType: "video/mp4",
             prompt: videoPrompt,
-            provider: "Google Gemini Video / ModelRouter",
+            provider: "Google Veo / ModelRouter",
           });
           console.log(`[SPARK Pipeline] Upload to Supabase Storage: Video SUCCESS -> ${storedVid.publicUrl}`);
           realVideoUrl = storedVid.publicUrl;
@@ -346,7 +392,7 @@ Return JSON matching this exact structure with NO markdown backticks:
         ],
         generatedAssets: {
           sceneClips: realVideoUrl ? [realVideoUrl] : undefined,
-          thumbnails,
+          thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceoverUrl: realVoiceUrl,
           generatedFrames: sceneImages.length > 0 ? sceneImages : undefined,
           generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
@@ -355,7 +401,7 @@ Return JSON matching this exact structure with NO markdown backticks:
             renderStartedAt,
             renderCompletedAt,
             providerUsed: "AIProviderOrchestrator",
-            generationStatus: "Completed",
+            generationStatus: realVideoUrl || sceneImages.length > 0 ? "Completed" : "Failed",
           },
         },
         audioUrl: realVoiceUrl,

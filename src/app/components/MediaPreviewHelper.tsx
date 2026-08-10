@@ -90,11 +90,12 @@ interface ThumbnailVariantCardProps {
   id: string;
   variant: "A" | "B" | "C";
   concept: string;
+  image?: string;
   isSelected: boolean;
   onClick: () => void;
 }
 
-export function ThumbnailVariantCard({ id, variant, concept, isSelected, onClick }: ThumbnailVariantCardProps) {
+export function ThumbnailVariantCard({ id, variant, concept, image, isSelected, onClick }: ThumbnailVariantCardProps) {
   const theme = getMediaTheme(id);
   
   // Custom design configurations per variant
@@ -126,6 +127,7 @@ export function ThumbnailVariantCard({ id, variant, concept, isSelected, onClick
   };
 
   const d = designs[variant];
+  const hasRealImage = Boolean(image && image.length > 20 && (image.startsWith("http") || image.startsWith("data:image/")));
 
   return (
     <button
@@ -138,42 +140,55 @@ export function ThumbnailVariantCard({ id, variant, concept, isSelected, onClick
     >
       {/* Design Poster Preview */}
       <div className="aspect-video relative overflow-hidden bg-background">
-        {/* Colorful Abstract Graphic Backdrops */}
-        <div className={`absolute inset-0 bg-gradient-to-br ${theme.from} ${theme.via} ${theme.to} opacity-40`} />
-        <div className={`absolute inset-0 bg-gradient-to-tr ${d.gradient} mix-blend-multiply opacity-90`} />
-        
-        {/* Aesthetic design patterns */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:16px_16px]" />
+        {hasRealImage ? (
+          <>
+            <img
+              src={image}
+              alt={`Thumbnail Variant ${variant}`}
+              className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          </>
+        ) : (
+          <>
+            {/* Colorful Abstract Graphic Backdrops */}
+            <div className={`absolute inset-0 bg-gradient-to-br ${theme.from} ${theme.via} ${theme.to} opacity-40`} />
+            <div className={`absolute inset-0 bg-gradient-to-tr ${d.gradient} mix-blend-multiply opacity-90`} />
+            
+            {/* Aesthetic design patterns */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:16px_16px]" />
+
+            {/* Floating Host Sticker Mockup */}
+            <div className="absolute right-3 bottom-0 w-20 h-20 opacity-90 group-hover:scale-105 transition-transform duration-300">
+              <div className="w-full h-full rounded-full bg-gradient-to-b from-white/20 to-black/50 border border-white/15 flex items-center justify-center overflow-hidden">
+                <span className="text-3xl filter saturate-100">🧑🏾‍💻</span>
+              </div>
+              {/* Neon speech bubble */}
+              <div className="absolute -top-1 -left-2 bg-accent text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-lg text-white">
+                Host
+              </div>
+            </div>
+
+            {/* Text Overlay Designs */}
+            <div className={`absolute ${d.textLayout} p-1`}>
+              <p className="text-[10px] font-extrabold text-amber-400 tracking-wider uppercase mb-1 drop-shadow-md">
+                {d.accentText}
+              </p>
+              <h4 className="text-xs md:text-sm font-black text-white leading-tight uppercase tracking-tight drop-shadow-lg line-clamp-2">
+                {theme.text}
+              </h4>
+            </div>
+          </>
+        )}
         
         {/* Interactive glow pointer */}
-        <div className="absolute top-4 right-4 px-2 py-0.5 rounded bg-black/80 text-[9px] font-mono font-medium text-white tracking-wider">
+        <div className="absolute top-3 right-3 px-2 py-0.5 rounded bg-black/80 text-[9px] font-mono font-medium text-white tracking-wider z-10 backdrop-blur-sm">
           VARIANT {variant}
         </div>
 
-        {/* Floating Host Sticker Mockup */}
-        <div className="absolute right-3 bottom-0 w-20 h-20 opacity-90 group-hover:scale-105 transition-transform duration-300">
-          <div className="w-full h-full rounded-full bg-gradient-to-b from-white/20 to-black/50 border border-white/15 flex items-center justify-center overflow-hidden">
-            <span className="text-3xl filter saturate-100">🧑🏾‍💻</span>
-          </div>
-          {/* Neon speech bubble */}
-          <div className="absolute -top-1 -left-2 bg-accent text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-lg text-white">
-            Tunde
-          </div>
-        </div>
-
-        {/* Text Overlay Designs */}
-        <div className={`absolute ${d.textLayout} p-1`}>
-          <p className="text-[10px] font-extrabold text-amber-400 tracking-wider uppercase mb-1 drop-shadow-md">
-            {d.accentText}
-          </p>
-          <h4 className="text-xs md:text-sm font-black text-white leading-tight uppercase tracking-tight drop-shadow-lg line-clamp-2">
-            {theme.text}
-          </h4>
-        </div>
-
         {/* Tag Pill */}
-        <div className="absolute top-4 left-4">
-          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${d.tagColor}`}>
+        <div className="absolute top-3 left-3 z-10">
+          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${d.tagColor} shadow-md`}>
             {d.badge}
           </span>
         </div>

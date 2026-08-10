@@ -169,12 +169,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           id: t.id || String(idx + 1),
           concept: t.concept,
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: brief.generatedAssets?.generatedFrames?.[idx] || brief.storyboard?.[idx]?.image,
+          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
       : [
-          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] },
+          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image },
+          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image },
+          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
         ],
     narrative: {
       hook: brief?.hook || activeReview?.scriptSnippet || "Failed marketing campaigns waste time and energy",
@@ -300,6 +300,21 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
+          {/* Active Generation Notice */}
+          {activeProd?.isGeneratingAssets && (
+            <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-between animate-pulse">
+              <div className="flex items-center gap-2.5">
+                <RotateCw className="w-4 h-4 text-accent animate-spin" />
+                <span className="text-xs font-medium text-foreground">
+                  Synthesizing media assets (storyboard keyframes, thumbnail variants, voiceover, and video preview)...
+                </span>
+              </div>
+              <span className="text-[10px] font-mono font-semibold uppercase text-accent bg-accent/20 px-2 py-0.5 rounded">
+                Staged Pipeline Active
+              </span>
+            </div>
+          )}
+
           {/* Interactive Media Preview Section */}
           <div className="space-y-6">
             <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">
@@ -324,6 +339,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                     id={activeReview?.id || "p1"}
                     variant={t.variant as "A" | "B" | "C"}
                     concept={t.concept}
+                    image={t.image}
                     isSelected={selectedVariant === t.variant}
                     onClick={() => setSelectedVariant(t.variant as "A" | "B" | "C")}
                   />

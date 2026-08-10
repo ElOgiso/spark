@@ -448,13 +448,6 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
       timestamp: new Date(),
     };
 
-    // Natural Interruption: stop any ongoing Super Spark speech immediately on user input
-    stopSpeaking();
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current = null;
-    }
-
     addChatMessage(userMessage);
     setInputText("");
 

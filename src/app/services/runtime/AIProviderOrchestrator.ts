@@ -110,7 +110,7 @@ export class AIProviderOrchestrator {
       execute: async (options) => {
         const apiKey = resolveProviderKey("gemini", options.customApiKeys);
 
-        // 1A. Handle Video Generation via Google Veo
+        // 1A. Handle Video Generation via Google Veo (Official 9:16 short-form async pipeline)
         if (options.capability === "Video Generation") {
           const videoPayload = {
             instances: [{ prompt: options.prompt }],
@@ -123,29 +123,59 @@ export class AIProviderOrchestrator {
           let opName = "";
           let finalVideoUrl = "";
 
-          // Direct client call if key present
+          // 1. Direct Google GenAI SDK or REST call
           if (apiKey) {
             try {
-              const videoRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "x-goog-api-key": apiKey,
-                },
-                body: JSON.stringify(videoPayload),
-              });
-
-              if (videoRes.ok) {
-                const vidData = await videoRes.json();
-                opName = vidData.name || "";
-                finalVideoUrl = vidData.response?.video?.uri || vidData.response?.generatedVideos?.[0]?.video?.uri || "";
+              const { GoogleGenAI } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any }));
+              if (GoogleGenAI) {
+                const ai = new GoogleGenAI({ apiKey });
+                try {
+                  const veoRes = await (ai.models as any).generateVideos?.({
+                    model: "veo-3.1-generate-preview",
+                    prompt: options.prompt,
+                    config: { aspectRatio: "9:16" },
+                  });
+                  if (veoRes?.name) opName = veoRes.name;
+                  if (veoRes?.response?.video?.uri) finalVideoUrl = veoRes.response.video.uri;
+                } catch (sdkVeoErr) {
+                  console.warn("[Gemini Provider] SDK Veo 3.1 notice, trying REST predictLongRunning:", sdkVeoErr);
+                }
               }
-            } catch (vErr) {
-              console.warn("[Gemini Provider] Video generation API direct notice:", vErr);
+            } catch (sdkErr) {
+              console.warn("[Gemini Provider] SDK import notice:", sdkErr);
+            }
+
+            if (!opName && !finalVideoUrl) {
+              const veoEndpoints = [
+                "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning",
+                "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
+              ];
+
+              for (const ep of veoEndpoints) {
+                try {
+                  const videoRes = await fetch(ep, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "x-goog-api-key": apiKey,
+                    },
+                    body: JSON.stringify(videoPayload),
+                  });
+
+                  if (videoRes.ok) {
+                    const vidData = await videoRes.json();
+                    opName = vidData.name || "";
+                    finalVideoUrl = vidData.response?.video?.uri || vidData.response?.generatedVideos?.[0]?.video?.uri || "";
+                    if (opName || finalVideoUrl) break;
+                  }
+                } catch (vErr) {
+                  console.warn(`[Gemini Provider] Video generation API direct notice (${ep}):`, vErr);
+                }
+              }
             }
           }
 
-          // Fallback to server proxy if no opName or direct call failed
+          // 2. Server proxy fallback if no opName or direct call failed
           if (!opName && !finalVideoUrl) {
             try {
               const proxyRes = await fetch("/api/runtime/execute", {
@@ -168,11 +198,11 @@ export class AIProviderOrchestrator {
             }
           }
 
-          // Poll operation if returned
+          // 3. Long Poll operation (up to 24 attempts x 15s = ~6 minutes budget)
           if (!finalVideoUrl && opName) {
-            console.log(`[Gemini Provider] Polling Veo video operation: ${opName}`);
-            for (let attempt = 0; attempt < 18; attempt++) {
-              await new Promise((r) => setTimeout(r, 8000));
+            console.log(`[Gemini Provider] Polling Veo video operation: ${opName} (up to 6 min budget)`);
+            for (let attempt = 0; attempt < 24; attempt++) {
+              await new Promise((r) => setTimeout(r, 15000));
               try {
                 let pollData: any = null;
                 if (apiKey) {
@@ -196,7 +226,11 @@ export class AIProviderOrchestrator {
                 }
 
                 if (pollData?.done) {
-                  finalVideoUrl = pollData.response?.video?.uri || pollData.response?.generatedVideos?.[0]?.video?.uri || pollData.response?.videoUrl || "";
+                  finalVideoUrl =
+                    pollData.response?.video?.uri ||
+                    pollData.response?.generatedVideos?.[0]?.video?.uri ||
+                    pollData.response?.videoUrl ||
+                    "";
                   if (finalVideoUrl) break;
                 }
               } catch (pollErr) {
@@ -206,11 +240,15 @@ export class AIProviderOrchestrator {
           }
 
           if (finalVideoUrl) {
+            // If Google video URI requires API key auth, append key or fetch as blob/data URI
+            if (apiKey && finalVideoUrl.includes("generativelanguage.googleapis.com") && !finalVideoUrl.includes("key=")) {
+              finalVideoUrl = `${finalVideoUrl}${finalVideoUrl.includes("?") ? "&" : "?"}key=${apiKey}`;
+            }
             if (options.onChunk) options.onChunk(finalVideoUrl);
             return finalVideoUrl;
           }
 
-          throw new Error("Gemini Video Generation is processing or API key quota exceeded.");
+          throw new Error("Gemini Video Generation is processing or timed out after 6 minutes.");
         }
 
         // 1B. Handle Image Generation via Google Imagen 4.0 / 3.0
@@ -221,7 +259,6 @@ export class AIProviderOrchestrator {
           };
 
           if (apiKey) {
-            // Try Imagen 4.0 first, then Imagen 3.0 fallback
             const endpoints = [
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict",
@@ -351,22 +388,22 @@ export class AIProviderOrchestrator {
       },
     });
 
-    // 2. OpenAI Provider Plugin (GPT-4o / GPT-5.4 / GPT-Image-1.5)
+    // 2. OpenAI Provider Plugin (GPT-4o / GPT-5.4 / DALL-E 3 / GPT-Image-1.5)
     this.registerPlugin({
       id: "openai",
-      name: "OpenAI (GPT-4o / GPT-5.4 / GPT-Image-1.5)",
+      name: "OpenAI (GPT-4o / GPT-5.4 / DALL-E 3 / GPT-Image-1.5)",
       capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Tool Calling", "Image Generation"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("openai", options.customApiKeys);
 
-        // Handle OpenAI Image Generation
+        // Handle OpenAI Image Generation (DALL-E 3 / GPT-Image 9:16 portrait)
         if (options.capability === "Image Generation") {
           const openAiImagePayload = {
             model: "dall-e-3",
             prompt: options.prompt,
             n: 1,
-            size: "1024x1792", // portrait 9:16 for storyboard
+            size: "1024x1792", // portrait 9:16 for storyboard and thumbnails
             response_format: "b64_json",
           };
 
@@ -455,6 +492,17 @@ export class AIProviderOrchestrator {
             }
           } catch (pErr) {
             console.warn("[OpenAI Provider] Image generation proxy notice:", pErr);
+          }
+
+          // 3. Fallback to Gemini Imagen if OpenAI image failed
+          try {
+            const geminiPlugin = AIProviderOrchestrator.plugins.get("gemini");
+            if (geminiPlugin) {
+              const geminiImg = await geminiPlugin.execute({ ...options, capability: "Image Generation" });
+              if (geminiImg) return geminiImg;
+            }
+          } catch (gImgErr) {
+            console.warn("[OpenAI Provider] Gemini Imagen fallback notice:", gImgErr);
           }
 
           throw new Error("OpenAI image generation failed or returned no image bytes.");

@@ -103,7 +103,7 @@ export interface ProductionBrief {
   videoUrl?: string;
   generatedAssets?: {
     sceneClips?: string[];
-    thumbnails?: { id: string; concept: string; variant: string; url?: string }[];
+    thumbnails?: { id: string; concept: string; variant: string; url?: string; image?: string }[];
     voiceoverUrl?: string;
     generatedFrames?: string[];
     generatedVideos?: string[];

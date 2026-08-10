@@ -80,8 +80,6 @@ export function useXaiRealtime() {
           setCurrentText(combinedText);
 
           if (combinedText.trim()) {
-            // Natural Interruption: stop current speech playback immediately when user speaks
-            stopSpeaking();
             setTranscript([
               {
                 role: 'user',
