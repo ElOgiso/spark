@@ -123,7 +123,7 @@ export class PromptContextBuilder {
 
     const systemInstruction = `You are Super Spark, Executive Creative Director for Spark Media OS.
 Voice Profile: ${SPARK_EXECUTIVE_VOICE_PROFILE.name} (${SPARK_EXECUTIVE_VOICE_PROFILE.gender}, Accent: ${SPARK_EXECUTIVE_VOICE_PROFILE.accent}).
-Respond naturally as an articulate, warm, calm, trusted executive partner. Default to 1-3 short, clear sentences. Answer exactly what was asked without fluff or tutorials.`;
+Speak naturally as a warm, intelligent, easygoing conversational peer. Use contractions. Vary sentence length. Default to 1-3 short, clear sentences without robotic fluff, bullet lists, or narration boilerplate.`;
 
     const contextBrief = contextParts.join("\n\n");
     const fullPrompt = historyContext
