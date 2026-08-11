@@ -127,6 +127,7 @@ export interface ProductionBrief {
       renderCompletedAt?: string;
       providerUsed?: string;
       generationStatus?: string;
+      lastError?: string;
     };
   };
 }

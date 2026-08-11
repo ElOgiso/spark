@@ -246,6 +246,7 @@ export class AIProviderOrchestrator {
             if (apiKey && finalVideoUrl.includes("generativelanguage.googleapis.com") && !finalVideoUrl.includes("key=")) {
               finalVideoUrl = `${finalVideoUrl}${finalVideoUrl.includes("?") ? "&" : "?"}key=${apiKey}`;
             }
+            console.log("[Gemini Provider] Veo Video generation SUCCESS:", finalVideoUrl.slice(0, 80));
             if (options.onChunk) options.onChunk(finalVideoUrl);
             return finalVideoUrl;
           }
@@ -253,9 +254,120 @@ export class AIProviderOrchestrator {
           throw new Error("Gemini Video Generation is processing or timed out after 6 minutes.");
         }
 
-        // 1B. Handle Image Generation via Google Imagen 4.0 / 3.0
+        // 1B. Handle Gemini Native Image Generation (gemini-3.1-flash-image / preview / Imagen fallback)
         if (options.capability === "Image Generation") {
-          const imageModel = options.model || "imagen-4.0-generate-001";
+          const requestedModel = options.model || "gemini-3.1-flash-image";
+          const candidateNativeModels = [
+            requestedModel,
+            "gemini-3.1-flash-image",
+            "gemini-3.1-flash-image-preview",
+            "gemini-2.0-flash-exp-image",
+          ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+
+          // 1. Direct SDK generateContent with responseModalities
+          if (apiKey) {
+            try {
+              const { GoogleGenAI } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any }));
+              if (GoogleGenAI) {
+                const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+                for (const modelId of candidateNativeModels) {
+                  try {
+                    const response = await (ai.models as any).generateContent({
+                      model: modelId,
+                      contents: [{ role: "user", parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                      config: { responseModalities: ["IMAGE", "TEXT"] },
+                    });
+
+                    const parts = response.candidates?.[0]?.content?.parts || [];
+                    for (const p of parts) {
+                      if (p.inlineData?.data) {
+                        const mime = p.inlineData.mimeType || "image/png";
+                        const dataUri = `data:${mime};base64,${p.inlineData.data}`;
+                        if (options.onChunk) options.onChunk(dataUri);
+                        return dataUri;
+                      }
+                    }
+                  } catch (sdkImgErr) {
+                    console.warn(`[Gemini Provider] SDK native image notice (${modelId}):`, sdkImgErr);
+                  }
+                }
+              }
+            } catch (sdkErr) {
+              console.warn("[Gemini Provider] SDK native image import notice:", sdkErr);
+            }
+
+            // Direct REST generateContent with responseModalities
+            for (const modelId of candidateNativeModels) {
+              try {
+                const restRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{ parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                    generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+                  }),
+                });
+
+                if (restRes.ok) {
+                  const data = await restRes.json();
+                  const parts = data.candidates?.[0]?.content?.parts || [];
+                  for (const p of parts) {
+                    const b64 = p.inlineData?.data || p.inline_data?.data;
+                    if (b64) {
+                      const mime = p.inlineData?.mimeType || p.inline_data?.mime_type || "image/png";
+                      const dataUri = `data:${mime};base64,${b64}`;
+                      if (options.onChunk) options.onChunk(dataUri);
+                      return dataUri;
+                    }
+                  }
+                } else {
+                  const errTxt = await restRes.text().catch(() => "");
+                  console.warn(`[Gemini Provider] REST native image failed (${modelId} - ${restRes.status}):`, errTxt.slice(0, 300));
+                }
+              } catch (rErr) {
+                console.warn(`[Gemini Provider] REST native image exception (${modelId}):`, rErr);
+              }
+            }
+          }
+
+          // 2. Server proxy fallback for Native Gemini Image
+          for (const modelId of candidateNativeModels) {
+            try {
+              const proxyRes = await fetch("/api/runtime/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  provider: "google",
+                  endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+                  payload: {
+                    contents: [{ parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                    generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+                  },
+                }),
+              });
+
+              if (proxyRes.ok) {
+                const data = await proxyRes.json();
+                const parts = data.candidates?.[0]?.content?.parts || [];
+                for (const p of parts) {
+                  const b64 = p.inlineData?.data || p.inline_data?.data;
+                  if (b64) {
+                    const mime = p.inlineData?.mimeType || p.inline_data?.mime_type || "image/png";
+                    const dataUri = `data:${mime};base64,${b64}`;
+                    if (options.onChunk) options.onChunk(dataUri);
+                    return dataUri;
+                  }
+                }
+              } else {
+                const errTxt = await proxyRes.text().catch(() => "");
+                console.warn(`[Gemini Provider] Proxy native image failed (${modelId} - ${proxyRes.status}):`, errTxt.slice(0, 300));
+              }
+            } catch (pErr) {
+              console.warn(`[Gemini Provider] Proxy native image notice (${modelId}):`, pErr);
+            }
+          }
+
+          // 3. Last-ditch: Imagen :predict fallback
           const imagenPayload = {
             instances: [{ prompt: options.prompt }],
             parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
@@ -263,7 +375,6 @@ export class AIProviderOrchestrator {
 
           if (apiKey) {
             const endpoints = [
-              `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:predict`,
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict",
             ];
@@ -294,30 +405,7 @@ export class AIProviderOrchestrator {
             }
           }
 
-          // Server proxy fallback for Imagen
-          try {
-            const proxyRes = await fetch("/api/runtime/execute", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                provider: "google",
-                endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:predict`,
-                payload: imagenPayload,
-              }),
-            });
-
-            if (proxyRes.ok) {
-              const imgData = await proxyRes.json();
-              const b64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-              if (b64) {
-                const dataUri = `data:image/png;base64,${b64}`;
-                if (options.onChunk) options.onChunk(dataUri);
-                return dataUri;
-              }
-            }
-          } catch (pErr) {
-            console.warn("[Gemini Provider] Imagen proxy notice:", pErr);
-          }
+          throw new Error("Gemini image generation failed across native and Imagen models.");
         }
 
         const chatModel = options.model || "gemini-2.0-flash";
@@ -403,116 +491,122 @@ export class AIProviderOrchestrator {
       execute: async (options) => {
         const apiKey = resolveProviderKey("openai", options.customApiKeys);
 
-        // Handle OpenAI Image Generation (GPT-Image-1.5 / DALL-E 3 portrait 9:16)
+        // Handle OpenAI Image Generation (GPT-Image-1.5 / GPT-Image-1 / DALL-E 3)
         if (options.capability === "Image Generation") {
-          const imageModel = options.model || "gpt-image-1.5";
-          const openAiImagePayload = {
-            model: imageModel,
-            prompt: options.prompt,
-            n: 1,
-            size: "1024x1792", // portrait 9:16 for storyboard and thumbnails
-            response_format: "b64_json",
+          const requestedModel = options.model || "gpt-image-1.5";
+          const candidateModels = [
+            requestedModel,
+            "gpt-image-1.5",
+            "gpt-image-1",
+            "dall-e-3",
+          ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+
+          const buildPayload = (model: string, size = "1024x1536") => {
+            const isGptImage = model.startsWith("gpt-image") || model === "gpt-image-1" || model === "gpt-image-1.5";
+            if (isGptImage) {
+              return {
+                model,
+                prompt: options.prompt,
+                n: 1,
+                size, // portrait 9:16 for GPT Image (no response_format!)
+              };
+            }
+            return {
+              model: "dall-e-3",
+              prompt: options.prompt,
+              n: 1,
+              size: "1024x1792",
+              response_format: "b64_json",
+            };
           };
 
-          // 1. Direct client call
-          if (apiKey) {
-            try {
-              const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${apiKey}`,
-                },
-                body: JSON.stringify(openAiImagePayload),
-              });
+          for (const modelToTry of candidateModels) {
+            const sizesToTry = modelToTry.startsWith("gpt-image") ? ["1024x1536", "1024x1024", "auto"] : ["1024x1792"];
 
-              if (imgRes.ok) {
-                const imgData = await imgRes.json();
-                const b64 = imgData.data?.[0]?.b64_json;
-                if (b64) {
-                  const dataUri = `data:image/png;base64,${b64}`;
-                  if (options.onChunk) options.onChunk(dataUri);
-                  return dataUri;
+            for (const sizeChoice of sizesToTry) {
+              const openAiImagePayload = buildPayload(modelToTry, sizeChoice);
+
+              // 1. Direct client call
+              if (apiKey) {
+                try {
+                  const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${apiKey}`,
+                    },
+                    body: JSON.stringify(openAiImagePayload),
+                  });
+
+                  if (imgRes.ok) {
+                    const imgData = await imgRes.json();
+                    const b64 = imgData.data?.[0]?.b64_json;
+                    if (b64) {
+                      const dataUri = `data:image/png;base64,${b64}`;
+                      if (options.onChunk) options.onChunk(dataUri);
+                      return dataUri;
+                    }
+                    const url = imgData.data?.[0]?.url;
+                    if (url) {
+                      if (options.onChunk) options.onChunk(url);
+                      return url;
+                    }
+                  } else {
+                    const errText = await imgRes.text().catch(() => "");
+                    console.warn(`[OpenAI Provider] Direct image failed (${modelToTry}, ${sizeChoice} - ${imgRes.status}):`, errText.slice(0, 300));
+                  }
+                } catch (dallErr) {
+                  console.warn(`[OpenAI Provider] Direct image call notice (${modelToTry}):`, dallErr);
                 }
-                const url = imgData.data?.[0]?.url;
-                if (url) {
-                  if (options.onChunk) options.onChunk(url);
-                  return url;
-                }
-              } else if (imageModel !== "dall-e-3") {
-                // Fallback to dall-e-3 if new image model is not yet provisioned on this key
-                const dallRes = await fetch("https://api.openai.com/v1/images/generations", {
+              }
+
+              // 2. Server proxy fallback via /api/runtime/execute
+              try {
+                const proxyRes = await fetch("/api/runtime/execute", {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${apiKey}`,
-                  },
+                  headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    model: "dall-e-3",
-                    prompt: options.prompt,
-                    n: 1,
-                    size: "1024x1792",
-                    response_format: "b64_json",
+                    provider: "openai",
+                    endpoint: "https://api.openai.com/v1/images/generations",
+                    payload: openAiImagePayload,
                   }),
-                }).catch(() => null);
+                });
 
-                if (dallRes && dallRes.ok) {
-                  const dallData = await dallRes.json();
-                  const b64 = dallData.data?.[0]?.b64_json;
+                if (proxyRes.ok) {
+                  const imgData = await proxyRes.json();
+                  const b64 = imgData.data?.[0]?.b64_json;
                   if (b64) {
                     const dataUri = `data:image/png;base64,${b64}`;
                     if (options.onChunk) options.onChunk(dataUri);
                     return dataUri;
                   }
+                  const url = imgData.data?.[0]?.url;
+                  if (url) {
+                    if (options.onChunk) options.onChunk(url);
+                    return url;
+                  }
+                } else {
+                  const errText = await proxyRes.text().catch(() => "");
+                  console.warn(`[OpenAI Provider] Proxy image failed (${modelToTry}, ${sizeChoice} - ${proxyRes.status}):`, errText.slice(0, 300));
                 }
+              } catch (pErr) {
+                console.warn(`[OpenAI Provider] Image proxy notice (${modelToTry}):`, pErr);
               }
-            } catch (dallErr) {
-              console.warn("[OpenAI Provider] Direct image generations notice:", dallErr);
             }
           }
 
-          // 2. Server proxy fallback via /api/runtime/execute
-          try {
-            const proxyRes = await fetch("/api/runtime/execute", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                provider: "openai",
-                endpoint: "https://api.openai.com/v1/images/generations",
-                payload: openAiImagePayload,
-              }),
-            });
-
-            if (proxyRes.ok) {
-              const imgData = await proxyRes.json();
-              const b64 = imgData.data?.[0]?.b64_json;
-              if (b64) {
-                const dataUri = `data:image/png;base64,${b64}`;
-                if (options.onChunk) options.onChunk(dataUri);
-                return dataUri;
-              }
-              const url = imgData.data?.[0]?.url;
-              if (url) {
-                if (options.onChunk) options.onChunk(url);
-                return url;
-              }
-            }
-          } catch (pErr) {
-            console.warn("[OpenAI Provider] Image generation proxy notice:", pErr);
-          }
-
-          // 3. Fallback to Gemini Imagen if OpenAI image failed
+          // 3. Fallback to Gemini Image if OpenAI image failed
           try {
             const geminiPlugin = AIProviderOrchestrator.plugins.get("gemini");
             if (geminiPlugin) {
               const geminiImg = await geminiPlugin.execute({ ...options, capability: "Image Generation" });
-              if (geminiImg) return geminiImg;
+              if (geminiImg && geminiImg.length > 20) return geminiImg;
             }
           } catch (gImgErr) {
-            console.warn("[OpenAI Provider] Gemini Imagen fallback notice:", gImgErr);
+            console.warn("[OpenAI Provider] Gemini image fallback notice:", gImgErr);
           }
 
-          throw new Error("OpenAI image generation failed or returned no image bytes.");
+          throw new Error("OpenAI image generation failed across all models (gpt-image-1.5, gpt-image-1, dall-e-3).");
         }
 
         const chatModel = options.model || "gpt-5.6";
@@ -784,6 +878,9 @@ export class AIProviderOrchestrator {
                   if (options.onChunk) options.onChunk(url);
                   return url;
                 }
+              } else {
+                const errText = await imgRes.text().catch(() => "");
+                console.warn(`[Grok Provider] Direct image call failed (${imageModel} - ${imgRes.status}):`, errText.slice(0, 300));
               }
             } catch (gImgErr) {
               console.warn("[Grok Provider] Direct image generation notice:", gImgErr);
@@ -815,6 +912,9 @@ export class AIProviderOrchestrator {
                 if (options.onChunk) options.onChunk(url);
                 return url;
               }
+            } else {
+              const errText = await proxyRes.text().catch(() => "");
+              console.warn(`[Grok Provider] Proxy image call failed (${imageModel} - ${proxyRes.status}):`, errText.slice(0, 300));
             }
           } catch (pErr) {
             console.warn("[Grok Provider] Image generation proxy notice:", pErr);

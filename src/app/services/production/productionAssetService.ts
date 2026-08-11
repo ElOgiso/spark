@@ -295,13 +295,25 @@ Return JSON matching this exact structure with NO markdown backticks:
       stages[1].status = "active";
       emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
 
+      let lastError: string | undefined = undefined;
+
+      const isValidMediaData = (val?: string | null): val is string => {
+        if (!val || typeof val !== "string") return false;
+        const trimmed = val.trim();
+        return trimmed.startsWith("data:image/") || 
+               trimmed.startsWith("data:video/") || 
+               trimmed.startsWith("data:audio/") || 
+               trimmed.startsWith("http://") || 
+               trimmed.startsWith("https://");
+      };
+
       // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline
       let realVoiceUrl: string | undefined = undefined;
       try {
         const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
         const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
         const elevenVoice = await generateElevenLabsVoice(voiceScript);
-        if (elevenVoice && elevenVoice.length > 50) {
+        if (isValidMediaData(elevenVoice)) {
           const storedAudio = await this.uploadAssetToStorage({
             productionId: production.id,
             brandId: (brand as any).id,
@@ -316,7 +328,7 @@ Return JSON matching this exact structure with NO markdown backticks:
         } else {
           const { generateSuperSparkVoice } = await import("../geminiService");
           const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
-          if (synthesizedVoice && synthesizedVoice.length > 50) {
+          if (isValidMediaData(synthesizedVoice)) {
             const storedAudio = await this.uploadAssetToStorage({
               productionId: production.id,
               brandId: (brand as any).id,
@@ -330,8 +342,9 @@ Return JSON matching this exact structure with NO markdown backticks:
             realVoiceUrl = storedAudio.publicUrl;
           }
         }
-      } catch (voiceErr) {
+      } catch (voiceErr: any) {
         console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
+        if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
       }
 
       stages[1].status = realVoiceUrl ? "done" : "failed";
@@ -354,7 +367,7 @@ Return JSON matching this exact structure with NO markdown backticks:
               prompt: imagePrompt,
             });
             console.log(`[SPARK Pipeline] Provider Response: Scene ${sIdx + 1} image received (${imgUrl ? imgUrl.slice(0, 50) + "..." : "none"})`);
-            if (imgUrl && imgUrl.length > 20) {
+            if (isValidMediaData(imgUrl)) {
               const storedImg = await this.uploadAssetToStorage({
                 productionId: production.id,
                 brandId: (brand as any).id,
@@ -363,21 +376,26 @@ Return JSON matching this exact structure with NO markdown backticks:
                 dataUrlOrBlob: imgUrl,
                 mimeType: "image/png",
                 prompt: imagePrompt,
-                provider: "OpenAI DALL-E 3 / ModelRouter",
+                provider: "ModelRouter",
               });
               console.log(`[SPARK Pipeline] Upload to Supabase Storage: Scene ${sIdx + 1} SUCCESS -> ${storedImg.publicUrl}`);
               sceneImages.push(storedImg.publicUrl);
               scene.image = storedImg.publicUrl;
+            } else {
+              console.warn(`[SPARK Pipeline] Scene ${sIdx + 1} returned empty/invalid image data:`, String(imgUrl || "").slice(0, 100));
+              if (!lastError) lastError = `Scene ${sIdx + 1} Keyframe: No image bytes returned by provider`;
             }
-          } catch (sceneErr) {
-            console.warn(`[SPARK Pipeline] Scene ${scene.scene} image generation notice/fallback:`, sceneErr);
+          } catch (sceneErr: any) {
+            console.error(`[SPARK Pipeline] Scene ${scene.scene} image generation failed:`, sceneErr);
+            if (!lastError) lastError = `Scene ${sIdx + 1} Keyframe: ${sceneErr?.message || String(sceneErr)}`;
           }
 
           const currentPct = 20 + Math.round(((sIdx + 1) / totalScenes) * 35);
           emitProgress(currentPct, "Keyframes", `Rendered keyframe ${sIdx + 1} of ${totalScenes}...`);
         }
-      } catch (imgErr) {
-        console.warn("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
+      } catch (imgErr: any) {
+        console.error("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
+        if (!lastError) lastError = `Keyframe Stage: ${imgErr?.message || String(imgErr)}`;
       }
 
       stages[2].status = sceneImages.length > 0 ? "done" : "failed";
@@ -401,7 +419,7 @@ Return JSON matching this exact structure with NO markdown backticks:
               prompt: thumbPrompt,
             });
 
-            if (thumbImgData && thumbImgData.length > 20) {
+            if (isValidMediaData(thumbImgData)) {
               const storedThumb = await this.uploadAssetToStorage({
                 productionId: production.id,
                 brandId: (brand as any).id,
@@ -410,33 +428,38 @@ Return JSON matching this exact structure with NO markdown backticks:
                 dataUrlOrBlob: thumbImgData,
                 mimeType: "image/png",
                 prompt: thumbPrompt,
-                provider: "OpenAI DALL-E 3 / ModelRouter",
+                provider: "ModelRouter",
               });
               console.log(`[SPARK Pipeline] Upload to Supabase Storage: Thumbnail Variant ${variantLetter} SUCCESS -> ${storedThumb.publicUrl}`);
               thumbUrl = storedThumb.publicUrl;
+            } else {
+              console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
+              if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
             }
-          } catch (thumbErr) {
-            console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation notice:`, thumbErr);
+          } catch (thumbErr: any) {
+            console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
+            if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
           }
 
           enrichedThumbnails.push({
             id: thumb.id || `t${tIdx + 1}`,
             variant: variantLetter,
             concept: thumb.concept,
-            image: thumbUrl || sceneImages[tIdx],
-            url: thumbUrl || sceneImages[tIdx],
+            image: thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined),
+            url: thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined),
           });
 
           const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
           emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
         }
-      } catch (tLoopErr) {
-        console.warn("[SPARK Pipeline] Thumbnail generation loop notice:", tLoopErr);
+      } catch (tLoopErr: any) {
+        console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
+        if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
       }
 
-      stages[3].status = enrichedThumbnails.some((t) => t.image) ? "done" : "failed";
+      stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
       stages[4].status = "active";
-      emitProgress(80, "Video", "Rendering 9:16 master video preview via Google Veo...");
+      emitProgress(80, "Video", "Rendering 9:16 master video preview...");
 
       // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
       let realVideoUrl: string | undefined = undefined;
@@ -448,7 +471,7 @@ Return JSON matching this exact structure with NO markdown backticks:
           prompt: videoPrompt,
         });
         console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
-        if (generatedVideo && generatedVideo.length > 20) {
+        if (isValidMediaData(generatedVideo)) {
           const storedVid = await this.uploadAssetToStorage({
             productionId: production.id,
             brandId: (brand as any).id,
@@ -457,13 +480,17 @@ Return JSON matching this exact structure with NO markdown backticks:
             dataUrlOrBlob: generatedVideo,
             mimeType: "video/mp4",
             prompt: videoPrompt,
-            provider: "Google Veo / ModelRouter",
+            provider: "ModelRouter",
           });
           console.log(`[SPARK Pipeline] Upload to Supabase Storage: Video SUCCESS -> ${storedVid.publicUrl}`);
           realVideoUrl = storedVid.publicUrl;
+        } else {
+          console.warn("[SPARK Pipeline] Video generation returned invalid/empty URL or bytes");
+          if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
         }
-      } catch (vidErr) {
-        console.warn("[SPARK Pipeline] Video generation notice/fallback:", vidErr);
+      } catch (vidErr: any) {
+        console.error("[SPARK Pipeline] Video generation failed:", vidErr);
+        if (!lastError) lastError = `Video Generation: ${vidErr?.message || String(vidErr)}`;
       }
 
       stages[4].status = realVideoUrl ? "done" : "failed";
@@ -476,7 +503,9 @@ Return JSON matching this exact structure with NO markdown backticks:
         percent: 100,
         stage: "Complete",
         stages: stages.map((s) => ({ ...s, status: s.status === "active" ? "done" : s.status })),
-        message: "Media assets synthesized and ready for executive review.",
+        message: realVideoUrl || sceneImages.length > 0 
+          ? "Media assets synthesized and ready for executive review."
+          : "Asset synthesis complete. Some media stages failed — review error logs.",
       };
 
       const updatedBrief: ProductionBrief = {
@@ -507,6 +536,7 @@ Return JSON matching this exact structure with NO markdown backticks:
             renderCompletedAt,
             providerUsed: "AIProviderOrchestrator",
             generationStatus: realVideoUrl || sceneImages.length > 0 ? "Completed" : "Failed",
+            lastError,
           },
         },
         audioUrl: realVoiceUrl,

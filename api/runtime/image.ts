@@ -14,31 +14,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       recraft: process.env.RECRAFT_API_KEY || process.env.VITE_RECRAFT_API_KEY
     };
 
-    // 1. OpenAI Images (DALL-E 3)
+    // 1. OpenAI Images (GPT-Image-1.5 / DALL-E 3)
     if (provider === 'openai_images' && keys.openai) {
-      const size = aspectRatio === "9:16" ? "1024x1792" : aspectRatio === "16:9" ? "1792x1024" : "1024x1024";
+      const isGptImage = !model || model.startsWith("gpt-image") || model === "gpt-image-1" || model === "gpt-image-1.5";
+      const imageModel = model || (isGptImage ? "gpt-image-1.5" : "dall-e-3");
+      const size = isGptImage
+        ? (aspectRatio === "9:16" ? "1024x1536" : aspectRatio === "16:9" ? "1536x1024" : "1024x1024")
+        : (aspectRatio === "9:16" ? "1024x1792" : aspectRatio === "16:9" ? "1792x1024" : "1024x1024");
+
+      const reqPayload: any = {
+        model: imageModel,
+        prompt,
+        n: 1,
+        size,
+      };
+
+      if (!isGptImage) {
+        reqPayload.response_format = "b64_json";
+      }
+
       const response = await fetch("https://api.openai.com/v1/images/generations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${keys.openai}`
         },
-        body: JSON.stringify({
-          model: model || "dall-e-3",
-          prompt,
-          n: 1,
-          size
-        })
+        body: JSON.stringify(reqPayload)
       });
       if (response.ok) {
         const data = await response.json();
+        const b64 = data.data?.[0]?.b64_json;
+        const imgUrl = b64 ? `data:image/png;base64,${b64}` : (data.data?.[0]?.url || "");
         return res.status(200).json({
-          images: [{ url: data.data?.[0]?.url || "" }],
+          images: [{ url: imgUrl }],
           costUsd: 0.080
         });
       } else {
         const errText = await response.text();
-        throw new Error(`OpenAI DALL-E error: ${errText}`);
+        throw new Error(`OpenAI Image error (${response.status}): ${errText}`);
       }
     }
 
