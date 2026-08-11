@@ -568,28 +568,73 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const creatorName = data.creatorName || "Creator";
     const niche = data.niche || "Content Creation";
     const vision = data.vision || "To build a leading media brand.";
-    const audience = data.audience || "Tech Enthusiasts & Founders";
-    const goal = data.goal || "Viral Reach & Growth";
+    const audience = data.audience || "General Audience";
+    const goal = data.goal || "Growth & Authority";
     const platforms =
       data.platforms && data.platforms.length > 0
         ? data.platforms
-        : ["YouTube Shorts", "TikTok"];
+        : [];
     const tone = data.tone || "Energetic & Relatable";
     const visualStyle = data.visualStyle || "Realistic / Live-Action";
     const automationMode = data.automationMode || "balanced";
     const reviewRequired = data.reviewRequired !== false;
 
+    // Map Notion production modes to internal storage keys
+    const rawProdMode = data.productionMode || "standard";
+    const productionMode: ProductionMode =
+      rawProdMode === "narrator"
+        ? "express"
+        : rawProdMode === "cinematic"
+        ? "deep"
+        : rawProdMode === "hybrid"
+        ? "standard"
+        : (rawProdMode as ProductionMode);
+
     // Production mode: no fabricated sparks/productions/reviews.
-    // Only real onboarding identity + connected OAuth accounts.
+    // Only real onboarding identity + memory rules.
     const initialMemoryItems: MemoryItem[] = [
       {
         id: `m-brand-${Date.now()}`,
         type: "rule",
-        text: `Brand Identity Rule: Maintain ${tone} tone for ${niche}. Primary audience: ${audience}. Goal: ${goal}.`,
+        text: `Brand Identity Rule: Focus on ${niche}. Tone: ${tone}. Primary audience: ${audience}.`,
         dateAdded: new Date().toISOString().split("T")[0],
         category: "Brand",
       },
+      {
+        id: `m-prod-${Date.now() + 1}`,
+        type: "rule",
+        text: `Production Mode: Configured as ${rawProdMode === "express" ? "Narrator" : rawProdMode === "deep" ? "Cinematic" : rawProdMode === "standard" ? "Hybrid" : rawProdMode.toUpperCase()} pipeline.`,
+        dateAdded: new Date().toISOString().split("T")[0],
+        category: "Publishing behavior",
+      },
+      {
+        id: `m-auto-${Date.now() + 2}`,
+        type: "rule",
+        text: `Governance Rule: Automation mode set to ${automationMode.toUpperCase()}.`,
+        dateAdded: new Date().toISOString().split("T")[0],
+        category: "Publishing behavior",
+      },
     ];
+
+    if (data.voiceProfile) {
+      initialMemoryItems.push({
+        id: `m-voice-${Date.now() + 3}`,
+        type: "rule",
+        text: `Host Voice: ${data.voiceProfile.name} (${data.voiceProfile.accent}, ${data.voiceProfile.language}).`,
+        dateAdded: new Date().toISOString().split("T")[0],
+        category: "Voice",
+      });
+    }
+
+    if (data.audioEnergy) {
+      initialMemoryItems.push({
+        id: `m-audio-${Date.now() + 4}`,
+        type: "rule",
+        text: `Audio Energy: ${data.audioEnergy} soundtrack pacing.`,
+        dateAdded: new Date().toISOString().split("T")[0],
+        category: "Audio",
+      });
+    }
 
     const localTokens = getStoredAccountTokens();
     const connectedFromOAuth: Account[] = Object.values(localTokens).map((t) => ({
@@ -613,7 +658,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {
           id: `gen-final-${Date.now()}`,
           sender: "spark",
-          text: `Welcome to your Executive OS workspace, **${creatorName}**.\n\n• **Brand**: ${brandName} (${niche})\n• **Host**: ${creatorName} (${visualStyle})\n• **Target platforms**: ${platforms.join(", ")}\n• **Connected accounts**: ${connectedFromOAuth.length > 0 ? connectedFromOAuth.map((a) => a.platform).join(", ") : "None yet — connect YouTube or X from Accounts"}\n\nWorkspace starts empty of sample content. Ask Super Spark to surface live opportunities or create a production when ready.`,
+          text: `Welcome to your SPARK workspace, **${creatorName}**.\n\n• **Brand**: ${brandName} (${niche})\n• **Visual Style**: ${visualStyle}\n• **Production Mode**: ${rawProdMode.toUpperCase()}\n• **Automation**: ${automationMode.toUpperCase()}\n• **Connected accounts**: ${connectedFromOAuth.length > 0 ? connectedFromOAuth.map((a) => a.platform).join(", ") : "None yet — connect in Accounts when ready to publish"}\n\nYour SPARK is ready. Ask Super Spark to surface live opportunities or draft a production when ready.`,
           timestamp: new Date(),
         },
       ];
@@ -622,7 +667,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {
           id: `gen-welcome-${Date.now()}`,
           sender: "spark",
-          text: `Welcome, **${creatorName}**. **${brandName}** is configured for **${niche}**.\n\nAudience: ${audience}\nGoal: ${goal}\nMode: ${String(automationMode).toUpperCase()} (review required: ${reviewRequired ? "yes" : "no"})\n\nConnect live channels and start producing — no demo content is seeded.`,
+          text: `Welcome, **${creatorName}**. **${brandName}** is configured for **${niche}**.\n\nMode: ${String(automationMode).toUpperCase()} · Production: ${rawProdMode.toUpperCase()}\n\nYour SPARK is ready to create.`,
           timestamp: new Date(),
         },
       ];
@@ -676,6 +721,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
         accounts: Array.from(byPlatform.values()),
         automationMode: automationMode,
+        productionMode: productionMode,
         chatMessages: finalChatHistory,
         viralSparks: [],
         productions: [],

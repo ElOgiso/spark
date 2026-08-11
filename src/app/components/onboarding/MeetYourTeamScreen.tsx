@@ -45,7 +45,7 @@ export const MeetYourTeamScreen: React.FC<MeetYourTeamScreenProps> = ({ data, on
 
       <div className="max-w-md w-full text-center">
         <Button variant="accent" size="xl" fullWidth icon={<ArrowRight className="w-5 h-5" />} onClick={onContinue}>
-          ⚡ Build Studio Workspace →
+          Enter SPARK Dashboard →
         </Button>
       </div>
     </div>
