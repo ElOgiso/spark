@@ -12,7 +12,8 @@ import { NotificationService } from "../notifications/notificationService";
 import type { MemoryItem } from "../domain/types";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../theme";
 import { ModelRouter } from "../services/runtime/modelRouter";
-import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig } from "../domain/types";
+import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig, AIModelSelectionConfig } from "../domain/types";
+import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../services/runtime/modelCatalog";
 import {
   ArrowLeft,
   Zap,
@@ -343,9 +344,12 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     applyTheme(newTheme);
   };
 
-  // AI Routing Preferences
+  // AI Routing & Model Preferences
   const [aiRoutingConfig, setAiRoutingConfig] = useState<AIModelRoutingConfig>(() =>
     ModelRouter.getUserRoutingConfig()
+  );
+  const [aiModelSelectionConfig, setAiModelSelectionConfig] = useState<AIModelSelectionConfig>(() =>
+    ModelRouter.getUserModelSelectionConfig()
   );
 
   const handleUpdateAIRouting = (category: AIRoutingCategory, provider: AIProviderId) => {
@@ -361,6 +365,11 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     });
   };
 
+  const handleUpdateAIModel = (category: AIRoutingCategory, modelId: string) => {
+    const updated = ModelRouter.setUserModelSelectionConfig({ [category]: modelId });
+    setAiModelSelectionConfig(updated);
+  };
+
   // Map subPath to titles and components
   const getSubPageDetails = () => {
     switch (subPath) {
@@ -368,7 +377,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
         return {
           title: "AI Preferences & Task Routing",
           icon: Sparkles,
-          description: "Configure specific AI models per task. Default remains Best Available, so most users never need to change anything.",
+          description: "Configure specific AI providers and exact models per task. Default remains Best Available, so most users never need to change anything.",
           content: (
             <div className="space-y-6">
               <div className="rounded-xl border border-border bg-card p-6 space-y-4">
@@ -376,7 +385,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <div>
                     <h3 className="text-base font-semibold text-foreground">Task-Based Model Routing</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      SPARK automatically selects the optimal provider via ModelRouter. You can override specific tasks below.
+                      SPARK automatically selects optimal models via ModelRouter. You can override providers and exact models below.
                     </p>
                   </div>
                   <span className="text-xs font-mono bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full border border-purple-500/30 font-semibold">
@@ -387,42 +396,100 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                 <div className="space-y-4 pt-2">
                   {[
                     { key: "superSpark", name: "Super Spark (Executive Chat)", desc: "Primary executive conversational assistant & decision engine", defaultModel: "OpenAI / Claude / Gemini / Grok" },
-                    { key: "research", name: "Research Department & Signal Radar", desc: "Breakout trend discovery, pattern recognition, and hook scoring", defaultModel: "Claude / Gemini" },
+                    { key: "research", name: "Research Department & Signal Radar", desc: "Breakout trend discovery, pattern recognition, and hook scoring", defaultModel: "Claude / Gemini / Grok" },
                     { key: "videoUnderstanding", name: "Video Understanding & Multimodal Vision", desc: "2-tier keyframe visual analysis, transcript parsing, and frame extraction", defaultModel: "xAI Grok / Gemini / OpenAI" },
                     { key: "production", name: "Production & Scripting Engine", desc: "Production Brief generation, 3-scene storyboarding, and captioning", defaultModel: "Claude / OpenAI" },
-                    { key: "storyboardImages", name: "Storyboard Scene Keyframes", desc: "Generates high-contrast vertical 9:16 keyframe images per scene", defaultModel: "OpenAI / Gemini" },
-                    { key: "videoGeneration", name: "Video Generation & Flow", desc: "Renders 9:16 vertical MP4 video preview clips per scene", defaultModel: "Gemini / Runway / Kling / Luma" },
-                    { key: "voice", name: "Voiceover Narration (TTS)", desc: "Synthesizes executive audio voiceover narration", defaultModel: "ElevenLabs / OpenAI / Gemini" },
+                    { key: "storyboardImages", name: "Storyboard Scene Keyframes", desc: "Generates high-contrast vertical 9:16 keyframe images per scene", defaultModel: "OpenAI (GPT-Image-1.5) / Gemini (Imagen 4.0) / Grok" },
+                    { key: "videoGeneration", name: "Video Generation & Flow", desc: "Renders 9:16 vertical MP4 video preview clips per scene", defaultModel: "Google Veo 3.1 / Grok Video" },
+                    { key: "voice", name: "Voiceover Narration (TTS)", desc: "Synthesizes executive audio voiceover narration", defaultModel: "ElevenLabs / OpenAI / Grok TTS" },
                     { key: "automation", name: "Autonomous Media OS Engine", desc: "Background trend monitoring, publishing queue scheduling, and memory formation", defaultModel: "OpenAI / Gemini" },
                     { key: "executive", name: "Executive Briefings & Synthesis", desc: "Return briefing, offline summaries, and strategic directives", defaultModel: "OpenAI / Gemini" },
                     { key: "analytics", name: "Analytics & Virality Predictor", desc: "Audience reach estimation, engagement scoring, and performance attribution", defaultModel: "Gemini / OpenAI" },
                   ].map((task) => {
-                    const currentVal = aiRoutingConfig[task.key as AIRoutingCategory] || "auto";
+                    const categoryKey = task.key as AIRoutingCategory;
+                    const configuredProvider = aiRoutingConfig[categoryKey] || "auto";
+                    const configuredModel = aiModelSelectionConfig[categoryKey] || "";
+                    const capability = ModelRouter.mapCategoryToCapability(categoryKey);
+                    const effectiveProvider = ModelRouter.resolveProvider(categoryKey, aiRoutingConfig);
+                    const effectiveModelId = ModelRouter.resolveModel(categoryKey, effectiveProvider, capability, aiModelSelectionConfig);
+                    const effectiveLabel = getModelLabel(effectiveProvider, effectiveModelId);
+
+                    const availableModels = configuredProvider !== "auto" 
+                      ? getModelsForProviderAndCapability(configuredProvider as AIProviderId, capability)
+                      : [];
+
                     return (
-                      <div key={task.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border/60 bg-background/50 hover:bg-background/80 transition-all">
-                        <div className="space-y-1 max-w-lg">
-                          <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
-                            {task.name}
-                            <span className="text-[10px] font-mono font-normal text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-md border border-border/40">
-                              Default: {task.defaultModel}
-                            </span>
-                          </h4>
-                          <p className="text-[11px] text-muted-foreground">{task.desc}</p>
+                      <div key={task.key} className="flex flex-col gap-2 p-4 rounded-xl border border-border/60 bg-background/50 hover:bg-background/80 transition-all">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          <div className="space-y-1 max-w-md">
+                            <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
+                              {task.name}
+                              <span className="text-[10px] font-mono font-normal text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-md border border-border/40">
+                                Default: {task.defaultModel}
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-muted-foreground">{task.desc}</p>
+                          </div>
+
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+                            {/* Selector 1: Provider */}
+                            <select
+                              value={configuredProvider}
+                              onChange={(e) => handleUpdateAIRouting(categoryKey, e.target.value as AIProviderId)}
+                              className="bg-input-background border border-border text-xs text-foreground font-semibold px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer min-w-[160px]"
+                            >
+                              <option value="auto">Best Available (Auto)</option>
+                              <option value="openai">OpenAI</option>
+                              <option value="claude">Anthropic Claude</option>
+                              <option value="gemini">Google Gemini</option>
+                              <option value="grok">xAI Grok</option>
+                              {categoryKey === "voice" && (
+                                <option value="elevenlabs">ElevenLabs</option>
+                              )}
+                            </select>
+
+                            {/* Selector 2: Specific Model */}
+                            {configuredProvider !== "auto" ? (
+                              <select
+                                value={configuredModel}
+                                onChange={(e) => handleUpdateAIModel(categoryKey, e.target.value)}
+                                className="bg-input-background border border-border text-xs text-foreground px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer min-w-[180px]"
+                              >
+                                <option value="">Recommended default</option>
+                                {availableModels.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.label} {m.recommended ? "★" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div className="px-3 py-2 text-[11px] text-muted-foreground bg-muted/20 border border-border/40 rounded-xl font-mono min-w-[180px] text-center select-none">
+                                Auto Model Managed
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <select
-                          value={currentVal}
-                          onChange={(e) => handleUpdateAIRouting(task.key as AIRoutingCategory, e.target.value as AIProviderId)}
-                          className="bg-input-background border border-border text-xs text-foreground font-semibold px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer shrink-0 min-w-[180px]"
-                        >
-                          <option value="auto">Best Available (Default)</option>
-                          <option value="openai">OpenAI (GPT-4o / GPT-5.4)</option>
-                          <option value="gemini">Google Gemini (2.0 Flash)</option>
-                          <option value="claude">Anthropic Claude 3.5</option>
-                          <option value="grok">xAI Grok 2 Vision</option>
-                        </select>
+
+                        {/* Helper Text Under Row */}
+                        <div className="text-[10px] text-muted-foreground/90 font-mono flex items-center gap-1.5 pt-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 inline-block" />
+                          {configuredProvider === "auto" ? (
+                            <span>Best Available chooses provider & model (currently {effectiveProvider.toUpperCase()} · {effectiveLabel})</span>
+                          ) : (
+                            <span>Uses {effectiveLabel || effectiveModelId}</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Footer Note */}
+                <div className="pt-4 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between text-[11px] text-muted-foreground gap-2">
+                  <p>Models list is maintained in modelCatalog. New provider models appear here after catalog update.</p>
+                  <span className="font-mono text-[10px] bg-muted/40 px-2 py-0.5 rounded border border-border/40">
+                    Catalog v{CATALOG_VERSION}
+                  </span>
                 </div>
               </div>
             </div>

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
+import { ModelRouter } from "../../services/runtime/modelRouter";
+import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../../services/runtime/modelCatalog";
+import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { Button } from "../ds";
 import {
   disconnectConnectedAccount,
@@ -461,53 +464,122 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
               <div className="rounded-xl border border-border bg-card divide-y divide-border/50 overflow-hidden">
                 {[
-                  { id: "superSpark", name: "Super Spark Chat" },
-                  { id: "research", name: "Research Department" },
-                  { id: "videoUnderstanding", name: "Video Understanding" },
-                  { id: "production", name: "Production Pipeline" },
-                  { id: "automation", name: "Autonomous Workflows" },
-                  { id: "executive", name: "Executive Memory & Rules" },
-                  { id: "analytics", name: "Analytics & Performance" },
-                  { id: "publishing", name: "Publishing Dispatcher" },
-                  { id: "scheduling", name: "Calendar Scheduling Brain" },
-                  { id: "memory", name: "Memory Classification" },
+                  { id: "superSpark", name: "Super Spark Chat", desc: "Executive Chat & Decision Engine" },
+                  { id: "research", name: "Research Department", desc: "Signal Discovery & Trend Radar" },
+                  { id: "videoUnderstanding", name: "Video Understanding", desc: "Multimodal Video Parsing" },
+                  { id: "production", name: "Production Pipeline", desc: "Briefs & Storyboarding" },
+                  { id: "storyboardImages", name: "Storyboard Scene Frames", desc: "9:16 Keyframe Synthesis" },
+                  { id: "videoGeneration", name: "Video Generation", desc: "9:16 Preview Rendering" },
+                  { id: "voice", name: "Voiceover Narration", desc: "Executive Audio Narration" },
+                  { id: "automation", name: "Autonomous Workflows", desc: "Background Scheduler" },
+                  { id: "executive", name: "Executive Memory & Rules", desc: "Briefings & Synthesis" },
+                  { id: "analytics", name: "Analytics & Performance", desc: "Virality Attribution" },
                 ].map((item) => {
-                  const currentRouting = aiSettings?.routing || {};
-                  const selectedVal = currentRouting[item.id] || "auto";
+                  const categoryKey = item.id as AIRoutingCategory;
+                  const currentRouting = aiSettings?.routing || ModelRouter.getUserRoutingConfig();
+                  const currentModels = aiSettings?.models || ModelRouter.getUserModelSelectionConfig();
+                  const configuredProvider = currentRouting[categoryKey] || "auto";
+                  const configuredModel = currentModels[categoryKey] || "";
+
+                  const capability = ModelRouter.mapCategoryToCapability(categoryKey);
+                  const effectiveProvider = ModelRouter.resolveProvider(categoryKey, currentRouting);
+                  const effectiveModelId = ModelRouter.resolveModel(categoryKey, effectiveProvider, capability, currentModels);
+                  const effectiveLabel = getModelLabel(effectiveProvider, effectiveModelId);
+
+                  const availableModels = configuredProvider !== "auto"
+                    ? getModelsForProviderAndCapability(configuredProvider as AIProviderId, capability)
+                    : [];
 
                   return (
-                    <div key={item.id} className="p-3.5 space-y-2">
+                    <div key={item.id} className="p-3.5 space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-foreground">{item.name}</span>
+                        <div>
+                          <span className="text-xs font-medium text-foreground block">{item.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{item.desc}</span>
+                        </div>
                         <span className="text-[10px] text-emerald-500 font-mono font-semibold">Active</span>
                       </div>
-                      <select
-                        value={selectedVal}
-                        onChange={(e) => {
-                          const newRouting = {
-                            ...currentRouting,
-                            [item.id]: e.target.value,
-                          };
-                          if (updateAISettings) {
-                            updateAISettings({
-                              ...aiSettings,
-                              routing: newRouting,
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-accent"
-                      >
-                        <option value="auto">Best Available (Auto)</option>
-                        <option value="openai">OpenAI (GPT-4o / GPT-5.5)</option>
-                        <option value="claude">Anthropic Claude (3.5 Sonnet)</option>
-                        <option value="gemini">Google Gemini (2.0 Flash / Pro)</option>
-                        <option value="grok">xAI Grok (Grok-2 / Grok Vision)</option>
-                        <option value="elevenlabs">ElevenLabs (Speech / TTS)</option>
-                        <option value="higgsfield">Higgsfield AI (Video)</option>
-                      </select>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {/* Provider Selector */}
+                        <select
+                          value={configuredProvider}
+                          onChange={(e) => {
+                            const newProv = e.target.value as AIProviderId;
+                            const newRouting = {
+                              ...currentRouting,
+                              [categoryKey]: newProv,
+                            };
+                            ModelRouter.setUserRoutingConfig({ [categoryKey]: newProv });
+                            if (updateAISettings) {
+                              updateAISettings({
+                                ...aiSettings,
+                                routing: newRouting,
+                              });
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs text-foreground font-semibold focus:outline-none focus:border-accent"
+                        >
+                          <option value="auto">Best Available (Auto)</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="claude">Anthropic Claude</option>
+                          <option value="gemini">Google Gemini</option>
+                          <option value="grok">xAI Grok</option>
+                          {categoryKey === "voice" && (
+                            <option value="elevenlabs">ElevenLabs</option>
+                          )}
+                        </select>
+
+                        {/* Model Selector */}
+                        {configuredProvider !== "auto" ? (
+                          <select
+                            value={configuredModel}
+                            onChange={(e) => {
+                              const newMod = e.target.value;
+                              const newModels = {
+                                ...currentModels,
+                                [categoryKey]: newMod,
+                              };
+                              ModelRouter.setUserModelSelectionConfig({ [categoryKey]: newMod });
+                              if (updateAISettings) {
+                                updateAISettings({
+                                  ...aiSettings,
+                                  models: newModels,
+                                });
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-accent"
+                          >
+                            <option value="">Recommended default</option>
+                            {availableModels.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label} {m.recommended ? "★" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="px-3 py-2 text-[10px] text-muted-foreground bg-muted/20 border border-border/40 rounded-lg font-mono flex items-center justify-center select-none">
+                            Auto Model Managed
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Helper text */}
+                      <div className="text-[10px] text-muted-foreground/90 font-mono flex items-center gap-1.5 pt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 inline-block" />
+                        {configuredProvider === "auto" ? (
+                          <span>Best Available ({effectiveProvider.toUpperCase()} · {effectiveLabel})</span>
+                        ) : (
+                          <span>Uses {effectiveLabel || effectiveModelId}</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="p-2 text-center text-[10px] text-muted-foreground font-mono">
+                Models maintained in modelCatalog · Catalog v{CATALOG_VERSION}
               </div>
             </div>
           );

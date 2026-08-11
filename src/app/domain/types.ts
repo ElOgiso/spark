@@ -528,9 +528,11 @@ export type AIRoutingCategory =
   | "voice";
 
 export type AIModelRoutingConfig = Record<AIRoutingCategory, AIProviderId>;
+export type AIModelSelectionConfig = Partial<Record<AIRoutingCategory, string>>;
 
 export interface AISettings {
   routing: AIModelRoutingConfig;
+  models?: AIModelSelectionConfig;
   customApiKeys?: Record<string, string>;
   customBaseUrls?: Record<string, string>;
 }

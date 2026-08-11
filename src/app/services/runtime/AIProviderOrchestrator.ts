@@ -7,6 +7,7 @@ export interface AIExecutionOptions {
   context?: any;
   preferredProvider?: AIProviderId;
   capability?: AICapabilityType;
+  model?: string;
   onThinking?: (thinking: ThinkingState) => void;
   onChunk?: (chunkText: string) => void;
   customApiKeys?: Record<string, string>;
@@ -101,10 +102,10 @@ export class AIProviderOrchestrator {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // 1. Google Gemini Provider Plugin (Gemini 2.0 Flash / Veo / Imagen)
+    // 1. Google Gemini Provider Plugin (Gemini 2.5 Flash / Pro / Veo / Imagen)
     this.registerPlugin({
       id: "gemini",
-      name: "Google Gemini (2.0 Flash / Pro / Veo / Imagen)",
+      name: "Google Gemini (2.5 Flash / Pro / Veo / Imagen)",
       capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Text To Speech", "Video Generation", "Image Generation"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
@@ -112,6 +113,7 @@ export class AIProviderOrchestrator {
 
         // 1A. Handle Video Generation via Google Veo (Official 9:16 short-form async pipeline)
         if (options.capability === "Video Generation") {
+          const videoModel = options.model || "veo-3.1-generate-preview";
           const videoPayload = {
             instances: [{ prompt: options.prompt }],
             parameters: {
@@ -131,14 +133,14 @@ export class AIProviderOrchestrator {
                 const ai = new GoogleGenAI({ apiKey });
                 try {
                   const veoRes = await (ai.models as any).generateVideos?.({
-                    model: "veo-3.1-generate-preview",
+                    model: videoModel,
                     prompt: options.prompt,
                     config: { aspectRatio: "9:16" },
                   });
                   if (veoRes?.name) opName = veoRes.name;
                   if (veoRes?.response?.video?.uri) finalVideoUrl = veoRes.response.video.uri;
                 } catch (sdkVeoErr) {
-                  console.warn("[Gemini Provider] SDK Veo 3.1 notice, trying REST predictLongRunning:", sdkVeoErr);
+                  console.warn("[Gemini Provider] SDK Veo notice, trying REST predictLongRunning:", sdkVeoErr);
                 }
               }
             } catch (sdkErr) {
@@ -147,6 +149,7 @@ export class AIProviderOrchestrator {
 
             if (!opName && !finalVideoUrl) {
               const veoEndpoints = [
+                `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning`,
                 "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning",
                 "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
               ];
@@ -183,7 +186,7 @@ export class AIProviderOrchestrator {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   provider: "google",
-                  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning",
+                  endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning`,
                   payload: videoPayload,
                 }),
               });
@@ -240,7 +243,6 @@ export class AIProviderOrchestrator {
           }
 
           if (finalVideoUrl) {
-            // If Google video URI requires API key auth, append key or fetch as blob/data URI
             if (apiKey && finalVideoUrl.includes("generativelanguage.googleapis.com") && !finalVideoUrl.includes("key=")) {
               finalVideoUrl = `${finalVideoUrl}${finalVideoUrl.includes("?") ? "&" : "?"}key=${apiKey}`;
             }
@@ -253,6 +255,7 @@ export class AIProviderOrchestrator {
 
         // 1B. Handle Image Generation via Google Imagen 4.0 / 3.0
         if (options.capability === "Image Generation") {
+          const imageModel = options.model || "imagen-4.0-generate-001";
           const imagenPayload = {
             instances: [{ prompt: options.prompt }],
             parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
@@ -260,6 +263,7 @@ export class AIProviderOrchestrator {
 
           if (apiKey) {
             const endpoints = [
+              `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:predict`,
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
               "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict",
             ];
@@ -297,7 +301,7 @@ export class AIProviderOrchestrator {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 provider: "google",
-                endpoint: "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
+                endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:predict`,
                 payload: imagenPayload,
               }),
             });
@@ -315,6 +319,8 @@ export class AIProviderOrchestrator {
             console.warn("[Gemini Provider] Imagen proxy notice:", pErr);
           }
         }
+
+        const chatModel = options.model || "gemini-2.0-flash";
 
         if (apiKey) {
           try {
@@ -346,7 +352,7 @@ export class AIProviderOrchestrator {
               contents.push({ role: "user", parts: userParts });
 
               const response = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
+                model: chatModel,
                 contents,
                 config: options.systemInstruction ? { systemInstruction: options.systemInstruction } : undefined,
               });
@@ -361,7 +367,7 @@ export class AIProviderOrchestrator {
         }
 
         // Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY / GOOGLE_AI_API_KEY)
-        const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`;
         const contents = (options.history || []).map((h) => ({ role: h.role, parts: h.parts }));
         contents.push({ role: "user", parts: [{ text: options.prompt }] });
 
@@ -388,19 +394,20 @@ export class AIProviderOrchestrator {
       },
     });
 
-    // 2. OpenAI Provider Plugin (GPT-4o / GPT-5.4 / DALL-E 3 / GPT-Image-1.5)
+    // 2. OpenAI Provider Plugin (GPT-5.6 / GPT-5.6-Sol / GPT-Image-1.5 / DALL-E 3)
     this.registerPlugin({
       id: "openai",
-      name: "OpenAI (GPT-4o / GPT-5.4 / DALL-E 3 / GPT-Image-1.5)",
-      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Tool Calling", "Image Generation"],
+      name: "OpenAI (GPT-5.6 / GPT-5.6-Sol / GPT-Image-1.5)",
+      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Tool Calling", "Image Generation", "Text To Speech"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("openai", options.customApiKeys);
 
-        // Handle OpenAI Image Generation (DALL-E 3 / GPT-Image 9:16 portrait)
+        // Handle OpenAI Image Generation (GPT-Image-1.5 / DALL-E 3 portrait 9:16)
         if (options.capability === "Image Generation") {
+          const imageModel = options.model || "gpt-image-1.5";
           const openAiImagePayload = {
-            model: "dall-e-3",
+            model: imageModel,
             prompt: options.prompt,
             n: 1,
             size: "1024x1792", // portrait 9:16 for storyboard and thumbnails
@@ -432,16 +439,16 @@ export class AIProviderOrchestrator {
                   if (options.onChunk) options.onChunk(url);
                   return url;
                 }
-              } else {
-                // Fallback: try gpt-image-1.5 / gpt-image-1 if dall-e-3 fails
-                const gptImgRes = await fetch("https://api.openai.com/v1/images/generations", {
+              } else if (imageModel !== "dall-e-3") {
+                // Fallback to dall-e-3 if new image model is not yet provisioned on this key
+                const dallRes = await fetch("https://api.openai.com/v1/images/generations", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${apiKey}`,
                   },
                   body: JSON.stringify({
-                    model: "gpt-image-1.5",
+                    model: "dall-e-3",
                     prompt: options.prompt,
                     n: 1,
                     size: "1024x1792",
@@ -449,9 +456,9 @@ export class AIProviderOrchestrator {
                   }),
                 }).catch(() => null);
 
-                if (gptImgRes && gptImgRes.ok) {
-                  const gptData = await gptImgRes.json();
-                  const b64 = gptData.data?.[0]?.b64_json;
+                if (dallRes && dallRes.ok) {
+                  const dallData = await dallRes.json();
+                  const b64 = dallData.data?.[0]?.b64_json;
                   if (b64) {
                     const dataUri = `data:image/png;base64,${b64}`;
                     if (options.onChunk) options.onChunk(dataUri);
@@ -508,6 +515,8 @@ export class AIProviderOrchestrator {
           throw new Error("OpenAI image generation failed or returned no image bytes.");
         }
 
+        const chatModel = options.model || "gpt-5.6";
+
         if (apiKey) {
           try {
             const messages: any[] = [];
@@ -539,7 +548,7 @@ export class AIProviderOrchestrator {
                 Authorization: `Bearer ${apiKey}`,
               },
               body: JSON.stringify({
-                model: "gpt-4o",
+                model: chatModel,
                 messages,
                 temperature: 0.7,
               }),
@@ -550,6 +559,27 @@ export class AIProviderOrchestrator {
               const text = data.choices?.[0]?.message?.content || "";
               if (options.onChunk) options.onChunk(text);
               return text;
+            } else if (chatModel !== "gpt-4o") {
+              // Failover to gpt-4o if newly aliased model returns 404 on legacy key
+              const failoverRes = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                  model: "gpt-4o",
+                  messages,
+                  temperature: 0.7,
+                }),
+              }).catch(() => null);
+
+              if (failoverRes && failoverRes.ok) {
+                const fData = await failoverRes.json();
+                const text = fData.choices?.[0]?.message?.content || "";
+                if (options.onChunk) options.onChunk(text);
+                return text;
+              }
             }
           } catch (err) {
             console.warn("[OpenAI Provider] Direct client execution notice, falling back to server proxy:", err);
@@ -574,7 +604,7 @@ export class AIProviderOrchestrator {
           body: JSON.stringify({
             provider: "openai",
             endpoint: "https://api.openai.com/v1/chat/completions",
-            payload: { model: "gpt-4o", messages, temperature: 0.7 },
+            payload: { model: chatModel, messages, temperature: 0.7 },
           }),
         });
 
@@ -590,14 +620,21 @@ export class AIProviderOrchestrator {
       },
     });
 
-    // 3. Anthropic Claude Provider Plugin (Claude 3.5 Sonnet)
+    // 3. Anthropic Claude Provider Plugin (Claude Sonnet 5 / Opus 5 / Fable 5)
     this.registerPlugin({
       id: "claude",
-      name: "Anthropic Claude (3.5 Sonnet)",
+      name: "Anthropic Claude (Claude Sonnet 5 / Opus 5)",
       capabilities: ["Chat", "Vision", "Reasoning", "Tool Calling"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("claude", options.customApiKeys);
+        const requestedModel = options.model || "claude-sonnet-5";
+        const candidateModels = [
+          requestedModel,
+          "claude-sonnet-5",
+          "claude-3-5-sonnet-20241022",
+          "claude-3-5-haiku-20241022",
+        ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
         if (apiKey) {
           try {
@@ -629,27 +666,33 @@ export class AIProviderOrchestrator {
             }
             messages.push({ role: "user", content: userContent });
 
-            const res = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "anthropic-dangerous-direct-browser-access": "true",
-              },
-              body: JSON.stringify({
-                model: "claude-3-5-sonnet-20241022",
-                max_tokens: 4096,
-                system: options.systemInstruction,
-                messages,
-              }),
-            });
+            for (const modelId of candidateModels) {
+              try {
+                const res = await fetch("https://api.anthropic.com/v1/messages", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": apiKey,
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-dangerous-direct-browser-access": "true",
+                  },
+                  body: JSON.stringify({
+                    model: modelId,
+                    max_tokens: 4096,
+                    system: options.systemInstruction,
+                    messages,
+                  }),
+                });
 
-            if (res.ok) {
-              const data = await res.json();
-              const text = data.content?.[0]?.text || "";
-              if (options.onChunk) options.onChunk(text);
-              return text;
+                if (res.ok) {
+                  const data = await res.json();
+                  const text = data.content?.[0]?.text || "";
+                  if (options.onChunk) options.onChunk(text);
+                  return text;
+                }
+              } catch (tryErr) {
+                console.warn(`[Claude Provider] Attempt with model ${modelId} notice:`, tryErr);
+              }
             }
           } catch (err) {
             console.warn("[Claude Provider] Direct client execution notice, falling back to server proxy:", err);
@@ -665,45 +708,339 @@ export class AIProviderOrchestrator {
         }
         messages.push({ role: "user", content: options.prompt });
 
-        const proxyRes = await fetch("/api/runtime/execute", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider: "anthropic",
-            endpoint: "https://api.anthropic.com/v1/messages",
-            payload: {
-              model: "claude-3-5-sonnet-20241022",
-              max_tokens: 4096,
-              system: options.systemInstruction,
-              messages,
-            },
-          }),
-        });
+        for (const modelId of candidateModels) {
+          try {
+            const proxyRes = await fetch("/api/runtime/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider: "anthropic",
+                endpoint: "https://api.anthropic.com/v1/messages",
+                payload: {
+                  model: modelId,
+                  max_tokens: 4096,
+                  system: options.systemInstruction,
+                  messages,
+                },
+              }),
+            });
 
-        if (!proxyRes.ok) {
-          const errData = await proxyRes.json().catch(() => ({}));
-          throw new Error(errData.error || `Anthropic Claude proxy failed (${proxyRes.status})`);
+            if (proxyRes.ok) {
+              const data = await proxyRes.json();
+              const text = data.content?.[0]?.text || "";
+              if (options.onChunk) options.onChunk(text);
+              return text;
+            }
+          } catch (pErr) {
+            console.warn(`[Claude Provider] Proxy attempt with model ${modelId} notice:`, pErr);
+          }
         }
 
-        const data = await proxyRes.json();
-        const text = data.content?.[0]?.text || "";
-        if (options.onChunk) options.onChunk(text);
-        return text;
+        throw new Error("Anthropic Claude execution failed across all candidate models.");
       },
     });
 
-    // 4. xAI Grok Provider Plugin (Grok Vision / Beta)
+    // 4. xAI Grok Provider Plugin (Grok 4.5 / Grok Imagine / Grok Video / Grok TTS)
     this.registerPlugin({
       id: "grok",
-      name: "xAI Grok (Grok-2 / Grok Vision)",
-      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning"],
+      name: "xAI Grok (Grok 4.5 / Imagine / Video / TTS)",
+      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Image Generation", "Video Generation", "Text To Speech"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("grok", options.customApiKeys);
 
-        if (apiKey) {
+        // 4A. Grok Image Generation (grok-imagine-image-quality 9:16)
+        if (options.capability === "Image Generation") {
+          const imageModel = options.model || "grok-imagine-image-quality";
+          const grokImagePayload = {
+            model: imageModel,
+            prompt: options.prompt,
+            n: 1,
+            response_format: "b64_json",
+          };
+
+          // 1. Direct call
+          if (apiKey) {
+            try {
+              const imgRes = await fetch("https://api.x.ai/v1/images/generations", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(grokImagePayload),
+              });
+
+              if (imgRes.ok) {
+                const imgData = await imgRes.json();
+                const b64 = imgData.data?.[0]?.b64_json;
+                if (b64) {
+                  const dataUri = `data:image/png;base64,${b64}`;
+                  if (options.onChunk) options.onChunk(dataUri);
+                  return dataUri;
+                }
+                const url = imgData.data?.[0]?.url;
+                if (url) {
+                  if (options.onChunk) options.onChunk(url);
+                  return url;
+                }
+              }
+            } catch (gImgErr) {
+              console.warn("[Grok Provider] Direct image generation notice:", gImgErr);
+            }
+          }
+
+          // 2. Server proxy fallback
           try {
-            const messages = [];
+            const proxyRes = await fetch("/api/runtime/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider: "grok",
+                endpoint: "https://api.x.ai/v1/images/generations",
+                payload: grokImagePayload,
+              }),
+            });
+
+            if (proxyRes.ok) {
+              const imgData = await proxyRes.json();
+              const b64 = imgData.data?.[0]?.b64_json;
+              if (b64) {
+                const dataUri = `data:image/png;base64,${b64}`;
+                if (options.onChunk) options.onChunk(dataUri);
+                return dataUri;
+              }
+              const url = imgData.data?.[0]?.url;
+              if (url) {
+                if (options.onChunk) options.onChunk(url);
+                return url;
+              }
+            }
+          } catch (pErr) {
+            console.warn("[Grok Provider] Image generation proxy notice:", pErr);
+          }
+
+          // 3. Fallback to OpenAI / Gemini image generation
+          const openAiPlugin = AIProviderOrchestrator.plugins.get("openai");
+          if (openAiPlugin) {
+            return openAiPlugin.execute({ ...options, capability: "Image Generation" });
+          }
+          throw new Error("Grok image generation failed and no fallback available.");
+        }
+
+        // 4B. Grok Video Generation (grok-imagine-video 9:16 vertical)
+        if (options.capability === "Video Generation") {
+          const videoModel = options.model || "grok-imagine-video";
+          const grokVideoPayload = {
+            model: videoModel,
+            prompt: options.prompt,
+            aspect_ratio: "9:16",
+          };
+
+          let requestId = "";
+          let finalVideoUrl = "";
+
+          if (apiKey) {
+            try {
+              const vRes = await fetch("https://api.x.ai/v1/videos/generations", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(grokVideoPayload),
+              });
+
+              if (vRes.ok) {
+                const vData = await vRes.json();
+                requestId = vData.id || vData.request_id || "";
+                finalVideoUrl = vData.video_url || vData.url || "";
+              }
+            } catch (vErr) {
+              console.warn("[Grok Provider] Direct video generation start notice:", vErr);
+            }
+          }
+
+          if (!requestId && !finalVideoUrl) {
+            try {
+              const proxyRes = await fetch("/api/runtime/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  provider: "grok",
+                  endpoint: "https://api.x.ai/v1/videos/generations",
+                  payload: grokVideoPayload,
+                }),
+              });
+
+              if (proxyRes.ok) {
+                const data = await proxyRes.json();
+                requestId = data.id || data.request_id || "";
+                finalVideoUrl = data.video_url || data.url || "";
+              }
+            } catch (pErr) {
+              console.warn("[Grok Provider] Video generation proxy start notice:", pErr);
+            }
+          }
+
+          // Poll video status if asynchronous request_id returned
+          if (!finalVideoUrl && requestId) {
+            console.log(`[Grok Provider] Polling video generation status for ${requestId}...`);
+            for (let attempt = 0; attempt < 24; attempt++) {
+              await new Promise((r) => setTimeout(r, 10000));
+              try {
+                let pollData: any = null;
+                if (apiKey) {
+                  const pollRes = await fetch(`https://api.x.ai/v1/videos/${requestId}`, {
+                    headers: { Authorization: `Bearer ${apiKey}` },
+                  });
+                  if (pollRes.ok) pollData = await pollRes.json();
+                }
+
+                if (!pollData) {
+                  const proxyPoll = await fetch("/api/runtime/execute", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      provider: "grok",
+                      endpoint: `https://api.x.ai/v1/videos/${requestId}`,
+                      method: "GET",
+                    }),
+                  });
+                  if (proxyPoll.ok) pollData = await proxyPoll.json();
+                }
+
+                if (pollData?.status === "done" || pollData?.status === "completed" || pollData?.status === "ready") {
+                  finalVideoUrl = pollData.video_url || pollData.url || pollData.data?.[0]?.url || "";
+                  if (finalVideoUrl) break;
+                } else if (pollData?.status === "failed") {
+                  throw new Error(`Grok video generation failed: ${pollData.error || "unknown"}`);
+                }
+              } catch (pollErr) {
+                console.warn(`[Grok Provider] Video poll attempt ${attempt + 1} notice:`, pollErr);
+              }
+            }
+          }
+
+          if (finalVideoUrl) {
+            if (options.onChunk) options.onChunk(finalVideoUrl);
+            return finalVideoUrl;
+          }
+
+          // Fallback to Gemini Veo if Grok video timed out
+          const geminiPlugin = AIProviderOrchestrator.plugins.get("gemini");
+          if (geminiPlugin) {
+            return geminiPlugin.execute({ ...options, capability: "Video Generation" });
+          }
+
+          throw new Error("Grok Video Generation is processing or timed out.");
+        }
+
+        // 4C. Grok Voice / TTS (/v1/tts)
+        if (options.capability === "Text To Speech") {
+          const ttsPayload = {
+            text: options.prompt,
+            voice_id: "eve",
+            language: "en",
+          };
+
+          if (apiKey) {
+            try {
+              const ttsRes = await fetch("https://api.x.ai/v1/tts", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(ttsPayload),
+              });
+
+              if (ttsRes.ok) {
+                const blob = await ttsRes.blob();
+                return await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = () => resolve("");
+                  reader.readAsDataURL(blob);
+                });
+              }
+            } catch (tErr) {
+              console.warn("[Grok Provider] Direct TTS notice:", tErr);
+            }
+          }
+
+          // Server proxy fallback for TTS
+          try {
+            const proxyRes = await fetch("/api/runtime/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider: "grok",
+                endpoint: "https://api.x.ai/v1/tts",
+                payload: ttsPayload,
+              }),
+            });
+
+            if (proxyRes.ok) {
+              const data = await proxyRes.json();
+              if (data.dataUrl) return data.dataUrl;
+            }
+          } catch (pErr) {
+            console.warn("[Grok Provider] TTS proxy notice:", pErr);
+          }
+
+          // Fallback to ElevenLabs TTS
+          const elevenPlugin = AIProviderOrchestrator.plugins.get("elevenlabs");
+          if (elevenPlugin) {
+            return elevenPlugin.execute(options);
+          }
+          throw new Error("Grok TTS failed and no fallback available.");
+        }
+
+        // 4D. Grok Chat / Reasoning (/v1/responses preferred, /v1/chat/completions fallback)
+        const chatModel = options.model || "grok-4.5";
+
+        if (apiKey) {
+          // 1. Try official /v1/responses endpoint
+          try {
+            const responseInput: any[] = [];
+            if (options.systemInstruction) {
+              responseInput.push({ role: "system", content: options.systemInstruction });
+            }
+            if (options.history) {
+              options.history.forEach((h) => {
+                responseInput.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+              });
+            }
+            responseInput.push({ role: "user", content: options.prompt });
+
+            const respRes = await fetch("https://api.x.ai/v1/responses", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: chatModel,
+                input: responseInput,
+              }),
+            });
+
+            if (respRes.ok) {
+              const rData = await respRes.json();
+              const text = rData.output_text || rData.choices?.[0]?.message?.content || rData.response || "";
+              if (text) {
+                if (options.onChunk) options.onChunk(text);
+                return text;
+              }
+            }
+          } catch (respErr) {
+            console.warn("[Grok Provider] /v1/responses notice, trying /v1/chat/completions:", respErr);
+          }
+
+          // 2. Fallback to /v1/chat/completions
+          try {
+            const messages: any[] = [];
             if (options.systemInstruction) {
               messages.push({ role: "system", content: options.systemInstruction });
             }
@@ -732,7 +1069,7 @@ export class AIProviderOrchestrator {
                 Authorization: `Bearer ${apiKey}`,
               },
               body: JSON.stringify({
-                model: "grok-beta",
+                model: chatModel,
                 messages,
                 temperature: 0.7,
               }),
@@ -767,7 +1104,7 @@ export class AIProviderOrchestrator {
           body: JSON.stringify({
             provider: "grok",
             endpoint: "https://api.x.ai/v1/chat/completions",
-            payload: { model: "grok-beta", messages, temperature: 0.7 },
+            payload: { model: chatModel, messages, temperature: 0.7 },
           }),
         });
 
@@ -791,7 +1128,7 @@ export class AIProviderOrchestrator {
       isAvailable: (customKeys) => Boolean(resolveProviderKey("elevenlabs", customKeys)),
       execute: async (options) => {
         const { generateElevenLabsVoice } = await import("./providers/elevenLabsTTS");
-        const audioUri = await generateElevenLabsVoice(options.prompt);
+        const audioUri = await generateElevenLabsVoice(options.prompt, undefined, options.model);
         if (!audioUri) {
           throw new Error("ElevenLabs voice synthesis returned null or provider key missing.");
         }

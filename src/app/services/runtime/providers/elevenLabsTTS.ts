@@ -3,7 +3,8 @@ import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../../geminiService";
 
 export async function generateElevenLabsVoice(
   text: string,
-  voiceId?: string
+  voiceId?: string,
+  modelId?: string
 ): Promise<string | null> {
   const apiKey = resolveProviderKey("elevenlabs");
   if (!apiKey || !text?.trim()) return null;
@@ -29,7 +30,7 @@ export async function generateElevenLabsVoice(
       },
       body: JSON.stringify({
         text: clean,
-        model_id: "eleven_multilingual_v2",
+        model_id: modelId || "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.45,
           similarity_boost: 0.75,
