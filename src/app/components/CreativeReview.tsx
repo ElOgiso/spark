@@ -31,6 +31,30 @@ interface CreativeReviewProps {
   onBack?: () => void;
 }
 
+function asText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => (typeof v === "string" ? v : typeof v === "object" && v ? JSON.stringify(v) : String(v)))
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
+function clip(value: unknown, n: number, fallback: string): string {
+  const t = asText(value, fallback);
+  return t ? t.slice(0, n) : fallback;
+}
+
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
 
@@ -149,25 +173,25 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const brief = activeProd?.brief || activeReview?.brief;
 
   const proposal = {
-    title: brief?.title || activeProd?.title || activeReview?.title || "5 Viral Marketing Tactics That Actually Work in 2026",
-    contentType: brief?.productionMode ? `${brief.productionMode} Production` : "Educational Short",
-    series: activeReview?.series || "Viral Concept Series",
-    account: brief?.platformRecommendation || activeReview?.account || "YouTube Shorts",
+    title: asText(brief?.title || activeProd?.title || activeReview?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
+    contentType: brief?.productionMode ? `${asText(brief.productionMode)} Production` : "Educational Short",
+    series: asText(activeReview?.series, "Viral Concept Series"),
+    account: asText(brief?.platformRecommendation || activeReview?.account, "YouTube Shorts"),
     opportunityScore: brief?.brandFitScore || 94,
     aiConfidence: brief?.brandFitScore || 94,
-    concept: brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText || "Reveal proven viral tactics adapted to brand identity",
-    targetAudience: activeProd?.reasoning?.research?.audience || "Target Audience & Brand Followers",
+    concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText, "Reveal proven viral tactics adapted to brand identity"),
+    targetAudience: asText(activeProd?.reasoning?.research?.audience, "Target Audience & Brand Followers"),
     expectedReach: "2.4M – 3.8M views",
-    format: `${brief?.suggestedDuration || "30–60s"} Vertical (${brief?.productionMode || "Narrator"})`,
-    platforms: [brief?.platformRecommendation || "YouTube Shorts", "TikTok", "Instagram Reels"],
-    hook: brief?.hook || activeReview?.scriptSnippet || "Stop wasting money on marketing that doesn't work",
+    format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${asText(brief?.productionMode, "Narrator")})`,
+    platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
+    hook: asText(brief?.hook || activeReview?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
     hookType: "High-curiosity gap angle",
-    openingMoment: brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment || "Vertical 9:16 presenter with text overlays",
-    captionDirection: brief?.caption || "Lead with stat. Use em-dash rhythm. End with open loop question. 3-line max mobile preview.",
+    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment, "Vertical 9:16 presenter with text overlays"),
+    captionDirection: asText(brief?.caption, "Lead with stat. Use em-dash rhythm. End with open loop question. 3-line max mobile preview."),
     thumbnails: brief?.generatedAssets?.thumbnails?.length
       ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
           id: t.id || String(idx + 1),
-          concept: t.concept,
+          concept: asText(t.concept, `Thumbnail Variant ${t.variant || ["A", "B", "C"][idx] || "A"}`),
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
           image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
@@ -177,8 +201,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
         ],
     narrative: {
-      hook: brief?.hook || activeReview?.scriptSnippet || "Failed marketing campaigns waste time and energy",
-      buildUp: brief?.scriptOutline ? brief.scriptOutline.slice(0, 100) : "Modern strategy breakdown",
+      hook: asText(brief?.hook || activeReview?.scriptSnippet, "Failed marketing campaigns waste time and energy"),
+      buildUp: clip(brief?.scriptOutline, 100, "Modern strategy breakdown"),
       conflict: "Most creators don't know these AI strategies exist",
       reveal: "Here's exactly what works",
       payoff: "Implement these and 10× your organic reach",

@@ -88,9 +88,9 @@ export class ProductionService implements IProductionService {
       formats,
       brief,
       scenes: [
-        { scene: 1, description: `Hook Angle: ${brief.hook}`, duration: "0-5s" },
-        { scene: 2, description: `Visual & Script Body: ${brief.visualDirection.slice(0, 100)}...`, duration: "5-25s" },
-        { scene: 3, description: `Call to Action: ${brief.caption}`, duration: "25-30s" },
+        { scene: 1, description: `Hook Angle: ${typeof brief.hook === "string" ? brief.hook : "Hook angle"}`, duration: "0-5s" },
+        { scene: 2, description: `Visual & Script Body: ${typeof brief.visualDirection === "string" ? brief.visualDirection.slice(0, 100) : "Visual breakdown"}...`, duration: "5-25s" },
+        { scene: 3, description: `Call to Action: ${typeof brief.caption === "string" ? brief.caption : "Call to action"}`, duration: "25-30s" },
       ],
     };
 

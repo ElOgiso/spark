@@ -19,6 +19,30 @@ interface MobileCreativeReviewProps {
   item?: any;
 }
 
+function asText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => (typeof v === "string" ? v : typeof v === "object" && v ? JSON.stringify(v) : String(v)))
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
+function clip(value: unknown, n: number, fallback: string): string {
+  const t = asText(value, fallback);
+  return t ? t.slice(0, n) : fallback;
+}
+
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
   const { approveReviewItem, rejectOrRequestEditReviewItem, productions } = useSpark() as any;
   const activeProd = productions?.find((p: any) => p.id === item?.productionId || p.id === item?.id);
@@ -57,18 +81,18 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   };
 
   const proposal = {
-    title: brief?.title || activeProd?.title || item?.title || "5 Viral Marketing Tactics That Actually Work in 2026",
+    title: asText(brief?.title || activeProd?.title || item?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
     opportunityScore: brief?.brandFitScore || 94,
     aiConfidence: brief?.brandFitScore || 94,
-    concept: brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || item?.conceptText || "Reveal proven marketing tactics adapted to brand rules",
+    concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || item?.conceptText, "Reveal proven marketing tactics adapted to brand rules"),
     expectedReach: "2.4M – 3.8M views",
-    platforms: [brief?.platformRecommendation || "YouTube Shorts", "TikTok", "Instagram Reels"],
-    hook: brief?.hook || item?.scriptSnippet || "Stop wasting money on marketing that doesn't work",
-    openingMoment: brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment || "Vertical 9:16 presenter with text overlays",
+    platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
+    hook: asText(brief?.hook || item?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
+    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment, "Vertical 9:16 presenter with text overlays"),
     thumbnails: brief?.generatedAssets?.thumbnails?.length
       ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
           id: t.id || String(idx + 1),
-          concept: t.concept || `Variant ${t.variant || ["A", "B", "C"][idx] || "A"} optimized for CTR`,
+          concept: asText(t.concept, `Variant ${t.variant || ["A", "B", "C"][idx] || "A"} optimized for CTR`),
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
           image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
@@ -78,8 +102,8 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.generatedAssets?.generatedFrames?.[2] },
         ],
     narrative: {
-      hook: brief?.hook || item?.scriptSnippet || "Failed marketing campaigns waste billions annually",
-      buildUp: brief?.scriptOutline ? brief.scriptOutline.slice(0, 100) : "Modern strategy breakdown",
+      hook: asText(brief?.hook || item?.scriptSnippet, "Failed marketing campaigns waste billions annually"),
+      buildUp: clip(brief?.scriptOutline, 100, "Modern strategy breakdown"),
       conflict: "Most creators don't know these AI strategies exist",
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these tactics to 10x your results",

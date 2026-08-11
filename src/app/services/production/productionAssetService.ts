@@ -197,9 +197,9 @@ Return JSON matching this exact structure with NO markdown backticks:
       "shotList": "Vertical 9:16 medium close-up of host with high-contrast text overlay",
       "cameraDirection": "Push-in slow zoom onto face",
       "transitions": "Hard cut on beat",
-      "onScreenText": "ATTENTION: ${brief.hook.slice(0, 30)}",
+      "onScreenText": "ATTENTION: ${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 30)}",
       "pacing": "High urgency, 0.4s clip cadence",
-      "scriptSnippet": "${brief.hook}",
+      "scriptSnippet": "${typeof brief.hook === 'string' ? brief.hook : ''}",
       "visualDescription": "Host standing in modern studio, direct eye contact with high-contrast graphic"
     },
     {
@@ -221,7 +221,7 @@ Return JSON matching this exact structure with NO markdown backticks:
       "transitions": "Fade to black",
       "onScreenText": "SAVE & FOLLOW FOR MORE",
       "pacing": "High impact closing",
-      "scriptSnippet": "${brief.caption.slice(0, 60)}",
+      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
       "visualDescription": "End screen card with brand logo animation and clear conversion prompt"
     }
   ],

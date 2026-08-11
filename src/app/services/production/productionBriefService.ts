@@ -2,6 +2,25 @@ import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief } from "
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 
+function asText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => (typeof v === "string" ? v : typeof v === "object" && v ? JSON.stringify(v) : String(v)))
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
 export class ProductionBriefService {
   /**
    * Single focused function to transform a ViralSpark + Brand/Character Context + ProductionMode
@@ -21,14 +40,14 @@ export class ProductionBriefService {
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
       return {
-        title: spark.title,
-        productionMode,
-        hook: spark.hook,
+        title: asText(spark.title, "Production Draft"),
+        productionMode: asText(productionMode, "Narrator"),
+        hook: asText(spark.hook, "Curiosity hook"),
         scriptOutline: "Production Generation is turned OFF. Enable Production Generation to draft script.",
         visualDirection: "Production Generation is turned OFF. Planning mode active.",
-        caption: spark.title,
-        platformRecommendation: spark.platformFit || "YouTube Shorts",
-        whyThisWorks: spark.whyNow,
+        caption: asText(spark.title, "Production Draft"),
+        platformRecommendation: asText(spark.platformFit, "YouTube Shorts"),
+        whyThisWorks: asText(spark.whyNow, "Strategic angle"),
         brandFitScore: spark.brandFitScore || 90,
         suggestedDuration: "30-60s",
       };
@@ -91,30 +110,35 @@ Return a valid JSON object matching this exact structure with NO surrounding mar
         .trim();
 
       const parsed = JSON.parse(cleanJson);
+      const fallbackScript = `1. Hook: ${spark.hook}\n2. Core Insight: ${spark.whyNow}\n3. Action: Tailored for ${brand.name}`;
+      const fallbackVisual = `Host (${hostStyle}): Clean backdrop, 9:16 vertical composition, dynamic text overlays.`;
+      const fallbackCaption = `Discover how ${brand.name} approaches ${spark.title}. Save and follow for more insights.`;
+      const fallbackWhy = spark.whyNow || "High curiosity gap paired with brand-aligned authority.";
+
       return {
-        title: parsed.title || spark.title,
-        productionMode: parsed.productionMode || productionMode,
-        hook: parsed.hook || spark.hook,
-        scriptOutline: parsed.scriptOutline || `1. Hook: ${spark.hook}\n2. Core Insight: ${spark.whyNow}\n3. Action: Tailored for ${brand.name}`,
-        visualDirection: parsed.visualDirection || `Host (${hostStyle}): Clean backdrop, 9:16 vertical composition, dynamic text overlays.`,
-        caption: parsed.caption || `Discover how ${brand.name} approaches ${spark.title}. Save and follow for more insights.`,
-        platformRecommendation: parsed.platformRecommendation || spark.platformFit || "YouTube Shorts",
-        whyThisWorks: parsed.whyThisWorks || spark.whyNow || "High curiosity gap paired with brand-aligned authority.",
+        title: asText(parsed.title, spark.title),
+        productionMode: asText(parsed.productionMode, productionMode),
+        hook: asText(parsed.hook, spark.hook),
+        scriptOutline: asText(parsed.scriptOutline, fallbackScript),
+        visualDirection: asText(parsed.visualDirection, fallbackVisual),
+        caption: asText(parsed.caption, fallbackCaption),
+        platformRecommendation: asText(parsed.platformRecommendation, spark.platformFit || "YouTube Shorts"),
+        whyThisWorks: asText(parsed.whyThisWorks, fallbackWhy),
         brandFitScore: typeof parsed.brandFitScore === "number" ? parsed.brandFitScore : sparkScore,
-        suggestedDuration: parsed.suggestedDuration || "30-60s",
+        suggestedDuration: asText(parsed.suggestedDuration, "30-60s"),
       };
     } catch (err) {
       console.warn("[ProductionBriefService] AI generation fallback:", err);
 
       return {
-        title: spark.title,
-        productionMode,
-        hook: spark.hook || `How ${brand.name} leverages ${spark.title}`,
+        title: asText(spark.title, "Production Draft"),
+        productionMode: asText(productionMode, "Narrator"),
+        hook: asText(spark.hook, `How ${brand.name} leverages ${spark.title}`),
         scriptOutline: `Scene 1 (0-5s): ${spark.hook}\nScene 2 (5-25s): Deconstruct ${spark.title} in the context of ${brand.niche}.\nScene 3 (25-30s): Call to action for ${brand.name}.`,
         visualDirection: `Vertical 9:16. Presenter (${hostStyle}) with high-contrast text graphics and dynamic scene cuts.`,
         caption: `Top strategy breakdown on ${spark.title}. Learn more with ${brand.name}.`,
-        platformRecommendation: spark.platformFit || "YouTube Shorts",
-        whyThisWorks: spark.whyNow || "Proven viral narrative structure adapted to brand identity.",
+        platformRecommendation: asText(spark.platformFit, "YouTube Shorts"),
+        whyThisWorks: asText(spark.whyNow, "Proven viral narrative structure adapted to brand identity."),
         brandFitScore: sparkScore,
         suggestedDuration: "30-60s",
       };
