@@ -492,32 +492,27 @@ export async function persistProductionAssetCreate(
 ): Promise<void> {
   if (!isSupabaseConfigured()) return;
   try {
-    const { createProductionAsset } = await import("./repositories/productionAssetRepository");
-    await createProductionAsset({
+    const { createMediaAsset } = await import("./repositories/productionAssetRepository");
+    await createMediaAsset({
       id: asset.id,
-      brand_id: brandId,
-      production_id: asset.productionId,
-      asset_type: asset.assetType,
-      provider: asset.provider || "AIProviderOrchestrator",
-      storage_bucket: asset.storageBucket || "production-assets",
+      storage_bucket: asset.storageBucket || "Spark",
       storage_path: asset.storagePath,
       public_url: asset.publicUrl,
-      drive_file_id: asset.driveFileId || null,
-      drive_web_view_link: asset.driveWebViewLink || null,
-      expires_at: asset.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      file_type: asset.assetType,
       mime_type: asset.mimeType,
-      duration: asset.duration,
-      generation_prompt: asset.generationPrompt,
-      generation_settings: asset.generationSettings || {},
-      status: asset.status,
+      source_prompt: asset.generationPrompt || null,
+      source_tool: asset.provider || "AIProviderOrchestrator",
+      is_active: true,
+      uploaded_by: brandId || null,
+      created_at: asset.createdAt || new Date().toISOString(),
     });
   } catch (err) {
-    console.warn("[workspaceSync] Production asset persist notice:", err);
+    console.warn("[workspaceSync] Media asset persist notice:", err);
   }
 }
 
 /**
- * Lifecycle Management: Deletes expired working storage objects from Supabase Storage
+ * Lifecycle Management: Deletes expired working storage objects from Supabase Storage bucket 'Spark'
  * after ~7 days while keeping metadata and Drive references intact.
  */
 export async function cleanupExpiredWorkingStorage(brandId: string): Promise<number> {
@@ -526,11 +521,10 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
     const supabase = getSupabaseClient();
     if (!supabase) return 0;
 
-    const now = new Date().toISOString();
-    const { data: expiredRows, error } = await (supabase.from("production_assets") as any)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: expiredRows, error } = await (supabase.from("media_assets") as any)
       .select("id, storage_path, storage_bucket")
-      .eq("brand_id", brandId)
-      .lt("expires_at", now)
+      .lt("created_at", sevenDaysAgo)
       .not("storage_path", "is", null);
 
     if (error || !expiredRows || (expiredRows as any[]).length === 0) return 0;
@@ -540,8 +534,8 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
       .filter(Boolean) as string[];
 
     if (pathsToRemove.length > 0) {
-      await supabase.storage.from("production-assets").remove(pathsToRemove);
-      console.log(`[workspaceSync] Cleaned up ${pathsToRemove.length} expired working storage objects.`);
+      await supabase.storage.from("Spark").remove(pathsToRemove);
+      console.log(`[workspaceSync] Cleaned up ${pathsToRemove.length} expired working storage objects from bucket "Spark".`);
     }
 
     return pathsToRemove.length;

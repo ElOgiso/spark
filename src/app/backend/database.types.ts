@@ -169,6 +169,25 @@ export interface ProductionAssetRow {
   created_at?: string | null;
 }
 
+export interface MediaAssetRow {
+  id: string;
+  storage_bucket?: string | null;
+  storage_path: string;
+  public_url?: string | null;
+  file_type: string;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration_seconds?: number | null;
+  file_size?: number | null;
+  alt_text?: string | null;
+  source_prompt?: string | null;
+  source_tool?: string | null;
+  uploaded_by?: string | null;
+  is_active?: boolean | null;
+  created_at?: string | null;
+}
+
 export interface ReviewItemRow {
   id: string;
   brand_id: string;
@@ -397,6 +416,7 @@ export interface Database {
       executive_director_summaries: Table<ExecutiveDirectorSummaryRow>;
       executive_timeline: Table<ExecutiveTimelineRow>;
       production_assets: Table<ProductionAssetRow>;
+      media_assets: Table<MediaAssetRow>;
       research_sources: Table<ResearchSourceRow>;
       research_patterns: Table<ResearchPatternRow>;
     };

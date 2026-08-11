@@ -3,6 +3,8 @@ import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 
+export const SPARK_STORAGE_BUCKET = "Spark";
+
 export interface ProductionAssetGenerationResult {
   brief: ProductionBrief;
   scenes: { scene: number; description: string; duration: string }[];
@@ -13,10 +15,11 @@ export interface ProductionAssetGenerationResult {
 export class ProductionAssetService {
   /**
    * Complete Media Asset Pipeline:
-   * 1. Working storage upload (Supabase 'production-assets' default)
-   * 2. Optional parallel / preferred path: Google Drive folder (if user connected Drive)
-   * 3. Saves ONLY metadata in production_assets table (storage_path, public_url, drive_file_id, provider, expires_at)
-   * 4. Lifecycle management: supports deleting working storage objects after 7 days
+   * 1. Working storage upload to verified Supabase bucket "Spark"
+   * 2. Resolves usable signed URLs for private bucket playback (7 days TTL)
+   * 3. Saves metadata in media_assets table
+   * 4. Optional parallel / preferred path: Google Drive folder (if user connected Drive)
+   * 5. Lifecycle management: supports deleting working storage objects after 7 days
    */
   static async uploadAssetToStorage(params: {
     productionId: string;
@@ -27,7 +30,7 @@ export class ProductionAssetService {
     mimeType: string;
     prompt?: string;
     provider?: string;
-  }): Promise<{ publicUrl: string; storagePath: string; assetId: string; driveFileId?: string; driveWebViewLink?: string }> {
+  }): Promise<{ publicUrl: string; storagePath: string; assetId: string; driveFileId?: string; driveWebViewLink?: string; uploadSuccess: boolean }> {
     const { productionId, brandId = "default-brand", assetType, storagePath, dataUrlOrBlob, mimeType, prompt, provider } = params;
     const assetId = `pa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -35,6 +38,7 @@ export class ProductionAssetService {
     let finalPublicUrl = dataUrlOrBlob;
     let driveFileId: string | undefined = undefined;
     let driveWebViewLink: string | undefined = undefined;
+    let uploadSuccess = false;
 
     let uploadBlob: Blob | null = null;
     if (dataUrlOrBlob.startsWith("data:")) {
@@ -59,29 +63,44 @@ export class ProductionAssetService {
       }
     }
 
-    // 1. Working Storage Upload (Supabase default)
+    // 1. Working Storage Upload to Supabase bucket "Spark"
     try {
       const { getSupabaseClient } = await import("../../backend/supabaseClient");
       const supabase = getSupabaseClient();
 
       if (supabase && uploadBlob) {
-        const bucket = "production-assets";
-        const { data, error } = await supabase.storage.from(bucket).upload(storagePath, uploadBlob, {
+        const { data, error } = await supabase.storage.from(SPARK_STORAGE_BUCKET).upload(storagePath, uploadBlob, {
           contentType: mimeType || uploadBlob.type || "image/png",
           upsert: true,
         });
 
         if (!error && data) {
-          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-          if (pubData?.publicUrl) {
-            finalPublicUrl = pubData.publicUrl;
+          uploadSuccess = true;
+          console.log(`[ProductionAssetService] Uploaded binary to bucket "${SPARK_STORAGE_BUCKET}": ${storagePath} (${uploadBlob.size} bytes)`);
+
+          // Bucket 'Spark' is private: create signed URL with 7 days TTL (604800s)
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from(SPARK_STORAGE_BUCKET)
+            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+
+          if (!signedError && signedData?.signedUrl) {
+            finalPublicUrl = signedData.signedUrl;
+          } else {
+            const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
+            if (pubData?.publicUrl) {
+              finalPublicUrl = pubData.publicUrl;
+            }
           }
         } else if (error) {
-          console.warn("[ProductionAssetService] Supabase Storage upload notice:", error);
+          uploadSuccess = false;
+          console.error(`[ProductionAssetService] Supabase Storage upload to bucket "${SPARK_STORAGE_BUCKET}" failed:`, error);
         }
+      } else if (!uploadBlob) {
+        console.warn(`[ProductionAssetService] No binary blob available for upload to "${storagePath}"`);
       }
     } catch (err) {
-      console.warn("[ProductionAssetService] Working storage upload notice:", err);
+      uploadSuccess = false;
+      console.error("[ProductionAssetService] Working storage upload error:", err);
     }
 
     // 2. Optional Parallel / Preferred Path: Google Drive Upload (if user connected Drive)
@@ -103,22 +122,22 @@ export class ProductionAssetService {
       console.log("[ProductionAssetService] Google Drive upload notice (optional path):", driveErr);
     }
 
-    // 3. Save ONLY metadata in production_assets table
+    // 3. Save metadata in media_assets table
     const prodAsset: ProductionAsset = {
       id: assetId,
       brandId,
       productionId,
       assetType,
       provider: provider || "AIProviderOrchestrator",
-      storageBucket: "production-assets",
+      storageBucket: SPARK_STORAGE_BUCKET,
       storagePath,
       publicUrl: finalPublicUrl,
       driveFileId,
       driveWebViewLink,
       expiresAt,
-      mimeType,
+      mimeType: mimeType || uploadBlob?.type || "application/octet-stream",
       generationPrompt: prompt,
-      status: "completed",
+      status: uploadSuccess ? "completed" : "failed",
       createdAt: new Date().toISOString(),
     };
 
@@ -126,10 +145,33 @@ export class ProductionAssetService {
       const { persistProductionAssetCreate } = await import("../../backend/workspaceSync");
       void persistProductionAssetCreate(brandId, prodAsset);
     } catch (dbErr) {
-      console.warn("[ProductionAssetService] Production asset record persist notice:", dbErr);
+      console.warn("[ProductionAssetService] Media asset record persist notice:", dbErr);
     }
 
-    return { publicUrl: finalPublicUrl, storagePath, assetId, driveFileId, driveWebViewLink };
+    return { publicUrl: finalPublicUrl, storagePath, assetId, driveFileId, driveWebViewLink, uploadSuccess };
+  }
+
+  /**
+   * Helper to resolve fresh signed URL from private "Spark" bucket for playback
+   */
+  static async resolveSignedUrl(storagePath: string, expiresIn = 604800): Promise<string | null> {
+    if (!storagePath) return null;
+    try {
+      const { getSupabaseClient } = await import("../../backend/supabaseClient");
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      const { data, error } = await supabase.storage
+        .from(SPARK_STORAGE_BUCKET)
+        .createSignedUrl(storagePath, expiresIn);
+      if (!error && data?.signedUrl) {
+        return data.signedUrl;
+      }
+      const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
+      return pubData?.publicUrl || null;
+    } catch (err) {
+      console.warn("[ProductionAssetService] resolveSignedUrl error:", err);
+      return null;
+    }
   }
 
   /**
