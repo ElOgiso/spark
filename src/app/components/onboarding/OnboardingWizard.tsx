@@ -134,6 +134,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [isLiveVoices, setIsLiveVoices] = useState(false);
   const [voiceDescription, setVoiceDescription] = useState("");
   const [isDesigningVoice, setIsDesigningVoice] = useState(false);
+  const [voiceDesignError, setVoiceDesignError] = useState<string | null>(null);
+  const [platformConnectError, setPlatformConnectError] = useState<string | null>(null);
   const [designedPreviews, setDesignedPreviews] = useState<{ generated_voice_id: string; audio_base_64: string; previewUrl: string }[]>([]);
   const [previewAudioElement, setPreviewAudioElement] = useState<HTMLAudioElement | null>(null);
 
@@ -144,12 +146,56 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Load ElevenLabs Voices on mount
+  // Load ElevenLabs Voices on mount & Restore OAuth Resume State if returning
   useEffect(() => {
     getElevenLabsVoices().then((res) => {
       setVoices(res.voices);
       setIsLiveVoices(res.isLiveApi);
     });
+
+    if (typeof localStorage !== "undefined") {
+      const savedState = localStorage.getItem("spark_onboarding_resume_state");
+      const savedStep = localStorage.getItem("spark_onboarding_step");
+      const storedTokens = socialConnectorFramework.getStoredTokens();
+
+      if (savedState) {
+        try {
+          const parsed = JSON.parse(savedState);
+          const connectedAccountsMap = { ...(parsed.connectedAccounts || {}) };
+
+          if (storedTokens && typeof storedTokens === "object") {
+            Object.values(storedTokens).forEach((tok: any) => {
+              if (tok && tok.platform) {
+                connectedAccountsMap[tok.platform] = {
+                  platform: tok.platform,
+                  connected: true,
+                  handle: tok.accountHandle || "@connected",
+                  connectedAt: tok.connectedAt,
+                };
+              }
+            });
+          }
+
+          setFormData((prev) => ({
+            ...prev,
+            ...parsed,
+            connectedAccounts: connectedAccountsMap,
+            platforms: Array.from(new Set([...(parsed.platforms || []), ...Object.keys(connectedAccountsMap)])),
+          }));
+
+          if (savedStep) {
+            const stepNum = parseInt(savedStep, 10);
+            if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 8) {
+              setCurrentStep(stepNum);
+            }
+          }
+        } catch (e) {
+          console.warn("[Onboarding] Resume state restore notice:", e);
+        } finally {
+          localStorage.removeItem("spark_onboarding_resume_state");
+        }
+      }
+    }
   }, []);
 
   const [messages, setMessages] = useState<ChatTurn[]>([
@@ -185,13 +231,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     reader.readAsDataURL(file);
   };
 
-  // Generate Character Portrait Image via ModelRouter ("storyboardImages")
+  // Generate Character Bible Sheet Image via ModelRouter ("storyboardImages")
   const handleGeneratePortrait = async () => {
     setIsGeneratingPortrait(true);
     setPortraitError(null);
 
     const charDesc = formData.characterDescription || "Executive host in modern high-contrast studio setting";
-    const prompt = `Professional 9:16 vertical character sheet portrait of ${formData.creatorName || "lead host"} for brand "${formData.brandName || "SPARK"}". Presentation aesthetic: ${formData.visualStyle}. Character traits: ${charDesc}. Hyper-detailed, crisp lighting, high resolution production asset.`;
+    const prompt = `Comprehensive character reference sheet bible grid for ${formData.creatorName || "lead host"}, brand "${formData.brandName || "SPARK"}". Presentation aesthetic: ${formData.visualStyle}. Character traits: ${charDesc}. Layout: Multi-view turnaround (front standing pose, 3/4 turn view, side profile detail, close-up facial expressions palette, signature wardrobe costume detail). Neutral studio backdrop, hyper-consistent character design bible, 8k resolution production reference sheet.`;
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
@@ -204,11 +250,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
           characterImageUrl: resultImg,
         }));
       } else {
-        setPortraitError("Could not generate portrait image. You can continue with text description.");
+        setPortraitError("Could not generate character sheet image. You can continue with text description.");
       }
     } catch (err: any) {
-      console.warn("[Onboarding] Portrait generation error:", err);
-      setPortraitError("Image generation timed out. You can retry or proceed with description.");
+      console.warn("[Onboarding] Character sheet generation error:", err);
+      setPortraitError("Character sheet generation timed out. You can retry or proceed with description.");
     } finally {
       setIsGeneratingPortrait(false);
     }
@@ -257,13 +303,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const handleDesignVoice = async () => {
     if (!voiceDescription.trim() || isDesigningVoice) return;
     setIsDesigningVoice(true);
+    setVoiceDesignError(null);
     try {
       const res = await designElevenLabsVoice({ description: voiceDescription });
       if (res?.previews?.length) {
         setDesignedPreviews(res.previews);
+      } else {
+        setVoiceDesignError("Voice design requires a live ElevenLabs API key. You can select any voice from our curated catalog below.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Voice design notice:", err);
+      setVoiceDesignError("Voice design service unavailable. Please select from our curated catalog below.");
     } finally {
       setIsDesigningVoice(false);
     }
@@ -296,6 +346,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       }));
     } catch (err) {
       console.warn("Failed to create designed voice:", err);
+      setVoiceDesignError("Failed to save custom voice; falling back to curated list.");
     }
   };
 
@@ -326,6 +377,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
   const handleConnectPlatform = (platform: string) => {
     setConnectingPlatform(platform);
+    setPlatformConnectError(null);
     const platformName = platform === "YouTube Shorts" || platform === "YouTube" ? "YouTube Shorts" : platform === "Twitter/X" || platform === "X" ? "Twitter/X" : platform;
 
     if (typeof localStorage !== "undefined") {
@@ -334,6 +386,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       localStorage.setItem("spark_oauth_trigger_source", "onboarding");
     }
 
+    // 10s connection timeout safeguard
+    const timeoutTimer = setTimeout(() => {
+      setConnectingPlatform(null);
+      setPlatformConnectError(`Connection request timed out for ${platform}. You can proceed and connect later in My Spark.`);
+    }, 10000);
+
     socialConnectorFramework
       .loadClientConfig()
       .then(() => {
@@ -341,12 +399,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         if (url && url !== "#") {
           window.location.href = url;
         } else {
-          alert(`Failed to connect ${platform}: Client credentials not configured on Vercel environment.`);
+          clearTimeout(timeoutTimer);
+          setPlatformConnectError(`Client credentials for ${platform} are not configured on this environment. You can skip for now.`);
           setConnectingPlatform(null);
         }
       })
       .catch((err) => {
+        clearTimeout(timeoutTimer);
         console.error("Failed to connect platform:", err);
+        setPlatformConnectError(`Failed to initiate ${platform} connection. You can connect later.`);
         setConnectingPlatform(null);
       });
   };
@@ -906,6 +967,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                     ))}
                   </div>
                 )}
+                {voiceDesignError && (
+                  <p className="mt-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg leading-snug">
+                    {voiceDesignError}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1049,6 +1115,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
               <p className="text-[11px] text-muted-foreground mb-2.5 leading-relaxed bg-white/5 p-2 rounded-lg border border-white/10">
                 💡 <em>Research works now. Publishing needs a connected account.</em>
               </p>
+
+              {platformConnectError && (
+                <p className="mb-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg leading-snug">
+                  {platformConnectError}
+                </p>
+              )}
 
               <div className="space-y-1.5">
                 {["YouTube Shorts", "TikTok", "Instagram Reels", "Twitter/X", "LinkedIn"].map((plat) => {

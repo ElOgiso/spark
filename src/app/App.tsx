@@ -183,6 +183,7 @@ function AppContent() {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName);
     initializeBrandGenesis(finalData);
+    void auth.markOnboardingComplete(auth.brand?.id);
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }

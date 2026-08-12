@@ -83,6 +83,8 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [voiceDescription, setVoiceDescription] = useState("");
   const [isDesigningVoice, setIsDesigningVoice] = useState(false);
+  const [voiceDesignError, setVoiceDesignError] = useState<string | null>(null);
+  const [designedPreviews, setDesignedPreviews] = useState<{ generated_voice_id: string; audio_base_64: string; previewUrl: string }[]>([]);
   const [audioEnergy, setAudioEnergy] = useState<"calm" | "energetic" | "bold">("energetic");
 
   // Research sources state
@@ -132,10 +134,10 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     setStep("character");
   };
 
-  // Generate Character Portrait
+  // Generate Character Reference Sheet Image
   const handleGeneratePortrait = async () => {
     setIsGeneratingPortrait(true);
-    const prompt = `Professional 9:16 vertical character sheet portrait of ${creatorName || "lead host"} for brand "${brandName || "SPARK"}". Presentation aesthetic: ${visualStyle}. Character traits: ${characterDescription}. Crisp studio lighting, high resolution production reference.`;
+    const prompt = `Comprehensive character reference sheet bible grid for ${creatorName || "lead host"}, brand "${brandName || "SPARK"}". Presentation aesthetic: ${visualStyle}. Character traits: ${characterDescription}. Layout: Multi-view turnaround (front standing pose, 3/4 turn view, side profile detail, close-up facial expressions palette, signature wardrobe costume detail). Neutral studio backdrop, hyper-consistent character design bible, 8k resolution production reference sheet.`;
 
     try {
       const { ModelRouter } = await import("../../../services/runtime/modelRouter");
@@ -198,23 +200,37 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const handleDesignVoice = async () => {
     if (!voiceDescription.trim() || isDesigningVoice) return;
     setIsDesigningVoice(true);
+    setVoiceDesignError(null);
     try {
       const res = await designElevenLabsVoice({ description: voiceDescription });
-      if (res?.previews?.[0]) {
-        const topPrev = res.previews[0];
-        const created = await createDesignedElevenLabsVoice({
-          voiceName: `${brandName || "Brand"} Voice`,
-          voiceDescription: voiceDescription,
-          generatedVoiceId: topPrev.generated_voice_id,
-        });
-        const vId = created?.voice_id || topPrev.generated_voice_id;
-        setSelectedVoiceId(vId);
-        setSelectedVoiceName(`${brandName || "Custom"} Designed Voice`);
+      if (res?.previews?.length) {
+        setDesignedPreviews(res.previews);
+      } else {
+        setVoiceDesignError("Voice design requires an ElevenLabs API key. You can select any voice from the curated list.");
       }
     } catch (err) {
       console.warn("Mobile voice design notice:", err);
+      setVoiceDesignError("Voice design service unavailable. Please select a voice from the list below.");
     } finally {
       setIsDesigningVoice(false);
+    }
+  };
+
+  const handleSelectDesignedVoicePreview = async (prev: { generated_voice_id: string; previewUrl: string }) => {
+    try {
+      const created = await createDesignedElevenLabsVoice({
+        voiceName: `${brandName || "Brand"} Voice`,
+        voiceDescription: voiceDescription,
+        generatedVoiceId: prev.generated_voice_id,
+      });
+      const vId = created?.voice_id || prev.generated_voice_id;
+      setSelectedVoiceId(vId);
+      setSelectedVoiceName(`${brandName || "Custom"} Designed Voice`);
+      addChatMessage({ sender: "user", text: `Custom Designed Voice Selected: ${voiceDescription}`, timestamp: new Date() });
+      addChatMessage({ sender: "spark", text: `Selected your custom designed AI voice.`, timestamp: new Date() });
+      setStep("audio");
+    } catch (e) {
+      setVoiceDesignError("Could not save custom voice selection; please select a catalog voice.");
     }
   };
 
@@ -683,6 +699,42 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                     Design
                   </button>
                 </div>
+
+                {voiceDesignError && (
+                  <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg leading-snug">
+                    {voiceDesignError}
+                  </p>
+                )}
+
+                {designedPreviews.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] text-purple-300 font-medium block">Voice Previews:</span>
+                    {designedPreviews.map((prev, pIdx) => (
+                      <div key={prev.generated_voice_id} className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/10">
+                        <span className="text-[11px] text-muted-foreground font-mono">Sample {pIdx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const audio = new Audio(prev.previewUrl);
+                              audio.play();
+                            }}
+                            className="p-1 rounded bg-white/10 text-purple-300 hover:bg-purple-500/20 cursor-pointer"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectDesignedVoicePreview(prev)}
+                            className="text-[10px] px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-500 font-semibold cursor-pointer"
+                          >
+                            Use Voice
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button
