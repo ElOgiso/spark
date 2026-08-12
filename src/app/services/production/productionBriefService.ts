@@ -94,13 +94,18 @@ Incorporate this offer as the primary Call to Action (CTA) in the caption and sc
 
     const systemInstruction = `You are SPARK's Executive Creative Director. Your job is to convert a high-performing Viral Spark into a complete, ready-to-produce Production Brief tailored specifically for the brand "${brand.name}". Output MUST be valid JSON only.`;
 
+    const modeKey = productionMode.toLowerCase();
+    const visualGuidance = modeKey === "cinematic" || modeKey === "deep"
+      ? "Scene-by-scene visual direction for continuous one-take staging (studio lighting, host positioning, motivated camera moves, 16:9 cinematic framing, zero montage cuts)"
+      : "Scene-by-scene visual direction (studio lighting, host framing, visual overlays, vertical framing)";
+
     const prompt = `
 Generate a structured Production Brief for the following Viral Spark:
 
 TITLE: "${spark.title}"
 HOOK / ANGLE: "${spark.hook}" (Angle: ${spark.angle})
 WHY NOW: "${spark.whyNow}"
-TARGET PLATFORM: ${spark.platformFit || "YouTube Shorts"}
+TARGET PLATFORM: ${spark.platformFit || (modeKey === "cinematic" || modeKey === "deep" ? "YouTube Long-form / Cinema" : "YouTube Shorts")}
 VIRAL SCORE: ${sparkScore}/100
 
 BRAND CONTEXT:
@@ -121,12 +126,12 @@ Return a valid JSON object matching this exact structure with NO surrounding mar
   "productionMode": "${productionMode}",
   "hook": "Specific curiosity-gap hook tailored for ${brand.name}",
   "scriptOutline": "Complete 3-part script outline (Hook -> Core Value Delivery -> Call to Action)",
-  "visualDirection": "Scene-by-scene visual direction (lighting, host framing, visual overlays, 9:16 cuts)",
+  "visualDirection": "${visualGuidance}",
   "caption": "Platform caption with high-converting CTA for ${brand.name}",
-  "platformRecommendation": "${spark.platformFit || "YouTube Shorts"}",
+  "platformRecommendation": "${spark.platformFit || (modeKey === "cinematic" || modeKey === "deep" ? "YouTube Cinema" : "YouTube Shorts")}",
   "whyThisWorks": "Executive strategic rationale explaining why this concept will perform well for ${brand.name}",
   "brandFitScore": ${Math.min(99, Math.max(80, sparkScore))},
-  "suggestedDuration": "30-60s"
+  "suggestedDuration": "${modeKey === "cinematic" || modeKey === "deep" ? "24-60s" : "15-30s"}"
 }
 `;
 

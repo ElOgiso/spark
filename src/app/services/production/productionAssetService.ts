@@ -12,6 +12,63 @@ export interface ProductionAssetGenerationResult {
   videoUrl?: string;
 }
 
+export interface LockedIdentityPack {
+  characterReferenceImageUrl?: string;
+  identityBlock: string;
+  setBlock: string;
+  styleBlock: string;
+  aspectRatio: string;
+  mode: "express" | "standard" | "deep";
+  combinedPromptPrefix: string;
+}
+
+/**
+ * PART 1 & 4 — Locked Identity Pack Helper
+ * Enforces reference-led identity consistency, locked wardrobe, set continuity,
+ * and format discipline by Production Mode across every visual call.
+ */
+export function buildLockedIdentityPack(params: {
+  brand: Brand;
+  character?: Character;
+  brief: ProductionBrief;
+  production: Production;
+}): LockedIdentityPack {
+  const { brand, character, brief, production } = params;
+  const characterReferenceImageUrl =
+    character?.imageUrl || character?.characterSheetUrl || character?.avatarUrl || undefined;
+
+  const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
+  const mode: "express" | "standard" | "deep" =
+    rawMode === "deep" || rawMode === "cinematic"
+      ? "deep"
+      : rawMode === "express" || rawMode === "narrator"
+      ? "express"
+      : "standard";
+
+  const aspectRatio =
+    mode === "deep" && production.aspectRatio
+      ? production.aspectRatio
+      : production.aspectRatio || (mode === "deep" ? "16:9" : "9:16");
+
+  const identityBlock = `CHARACTER & WARDROBE LOCK: Primary subject is "${character?.name || "Host"}". Persona: ${character?.style || "Executive Presenter"}. Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}. CONTINUITY LAW: Exact same person, consistent facial structure, identical hair and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.`;
+
+  const setBlock = `SET & LIGHTING CONTINUITY: Environment is "${brief.visualDirection || "a high-end executive studio with refined architectural lighting"}". Lighting: Premium cinematic studio lighting, coherent shadows and color temperature aligned with ${brand.name || "Brand"}. Same physical space and atmosphere across all scenes.`;
+
+  const styleBlock = `CINEMATIC DISCIPLINE: Format: ${aspectRatio} aspect ratio. 8K UHD photorealistic render, prime cinema optics, coherent color grade, natural depth of field, realistic skin texture, zero AI distortion.`;
+
+  const combinedPromptPrefix = `${identityBlock}\n${setBlock}\n${styleBlock}`;
+
+  return {
+    characterReferenceImageUrl,
+    identityBlock,
+    setBlock,
+    styleBlock,
+    aspectRatio,
+    mode,
+    combinedPromptPrefix,
+  };
+}
+
 export class ProductionAssetService {
   /**
    * Complete Media Asset Pipeline:
@@ -175,11 +232,7 @@ export class ProductionAssetService {
   }
 
   /**
-   * Generates storyboards, scene clips, voiceover, and thumbnail assets
-   * via Capability Registry -> Model Router -> Provider Adapters.
-   */
-  /**
-   * Generates storyboards, scene clips, voiceover, and thumbnail assets
+   * Generates storyboards, scene keyframes, voiceovers, thumbnails, and video clips
    * via Capability Registry -> Model Router -> Provider Adapters.
    */
   static async generateAssets(params: {
@@ -205,13 +258,16 @@ export class ProductionAssetService {
 
     checkAborted();
 
+    const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
+    const { mode, aspectRatio } = identityPack;
+
     const stages: import("../../domain/types").GenerationProgressStage[] = [
-      { id: "storyboard", label: "Storyboard structure", status: "active" },
+      { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
       { id: "voice", label: "Voiceover synthesis", status: "pending" },
-      { id: "keyframes", label: "Scene keyframes", status: "pending" },
+      { id: "keyframes", label: "Scene keyframes (Hero stills)", status: "pending" },
       { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
-      { id: "video", label: "Master video preview", status: "pending" },
-      { id: "saving", label: "Finalizing media", status: "pending" },
+      { id: "video", label: "Motion synthesis (Image-to-video)", status: "pending" },
+      { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
 
     let currentStoryboard: ProductionScene[] = [];
@@ -251,34 +307,189 @@ export class ProductionAssetService {
       }
     };
 
-    emitProgress(5, "Storyboard", "Generating vertical 9:16 multi-scene structure...");
+    emitProgress(5, "Storyboard", `Synthesizing ${mode.toUpperCase()} (${aspectRatio}) continuous storyboard...`);
 
-    const hostStyle = character?.style || "Executive Presenter";
+    // PART 2 — Mode-Specific Storyboard Generation Prompt
+    let systemInstruction = "";
+    let prompt = "";
 
-    const systemInstruction = `You are SPARK's Senior Production Producer & Visual Asset Synthesizer. Generate a complete 3-scene visual storyboard and thumbnail production assets. Return valid JSON only.`;
+    if (mode === "deep") {
+      systemInstruction = `You are SPARK's Senior Film Director specializing in Continuous One-Take Cinematic Craft. Structure a seamless 3-stage continuous sequence where every stage opens exactly where the previous stage ended, with locked identity, set continuity, and exactly one primary change per stage. Forbid montage cuts, teleportation, or unrelated B-roll cuts. Output valid JSON only.`;
 
-    const prompt = `
-Create a 3-scene vertical (9:16) production storyboard and asset manifest for:
+      prompt = `
+Create a 3-stage continuous one-take cinematic storyboard (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
-TARGET AUDIENCE: "${brand.audience?.primary || "Target audience"}"
-NICHE: "${brand.niche}"
-BRAND NAME: "${brand.name}"
-PRESENTATION STYLE: "${hostStyle}"
-
+BRAND: "${brand.name}" (${brand.niche})
+HOST: "${character?.name || "Host"}" (${character?.style || "Executive Director"})
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
+
+CONTINUITY LAWS FOR DEEP / CINEMATIC MODE:
+- 3 continuous stages:
+  * Stage 1 (0-8s): Opening action establishing host & setting -> explicit endState.
+  * Stage 2 (8-16s): Opens EXACTLY on Stage 1's endState -> introduces ONE primary change -> explicit endState.
+  * Stage 3 (16-24s): Opens EXACTLY on Stage 2's endState -> introduces ONE final primary change -> final resolution endState.
+- Exactly ONE primary change per stage.
+- Locked identity, wardrobe, and studio set across all 3 stages.
+- No unrelated hard-cut montage or stock cutaways.
 
 Return valid JSON with exactly this structure:
 {
   "storyboard": [
     {
       "scene": 1,
-      "duration": "0-5s",
-      "shotList": "Presenter direct-to-camera vertical 9:16 frame",
+      "duration": "0-8s",
+      "shotList": "Presenter direct-to-camera ${aspectRatio} master shot establishing scene",
+      "cameraDirection": "Slow cinematic push-in with subtle lateral glide",
+      "transitions": "Continuous one-take flow",
+      "startState": "Host stands in studio, looking into lens, holding tablet with initial data",
+      "primaryChange": "Host turns slightly as ambient background lighting dims to emphasize key metric",
+      "endState": "Host centered in frame, gesturing right, backlight highlighting focused expression",
+      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
+      "pacing": "Deliberate and cinematic",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "visualDescription": "High contrast executive opening shot with locked lighting and host presence"
+    },
+    {
+      "scene": 2,
+      "duration": "8-16s",
+      "shotList": "Medium-close continuation with subtle camera drift",
+      "cameraDirection": "Motivated lateral tracking following host movement",
+      "transitions": "Seamless continuous motion",
+      "startState": "Host centered in frame, gesturing right from Stage 1 end state",
+      "primaryChange": "Host steps toward camera as holographic analytical breakdown illuminates beside them",
+      "endState": "Host in medium close-up, hand raised near interactive holographic interface",
+      "onScreenText": "CORE STRATEGY BREAKDOWN",
+      "pacing": "Controlled build",
+      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
+      "visualDescription": "Seamless continuation in same studio set, showcasing strategic revelation"
+    },
+    {
+      "scene": 3,
+      "duration": "16-24s",
+      "shotList": "Hero climax resolution and closing authority stance",
+      "cameraDirection": "Lock-off settling into authoritative master composition",
+      "transitions": "Subtle light fade to brand insignia",
+      "startState": "Host in medium close-up beside interactive interface from Stage 2 end state",
+      "primaryChange": "Holographic graphic resolves into clear conversion call to action as host faces camera directly",
+      "endState": "Host firmly addressing viewer with definitive closing expression in balanced studio light",
+      "onScreenText": "TAKE ACTION NOW",
+      "pacing": "Decisive closing impact",
+      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
+      "visualDescription": "Final authoritative delivery in unchanged set with clear brand resolution"
+    }
+  ],
+  "thumbnails": [
+    { "id": "t1", "variant": "A", "concept": "High-contrast cinematic keyframe with host authority expression and curiosity hook" },
+    { "id": "t2", "variant": "B", "concept": "Cinematic split lighting with illuminated metric graphic breakdown" },
+    { "id": "t3", "variant": "C", "concept": "Minimalist premium typography overlay on sharp host portrait in studio" }
+  ]
+}
+`;
+    } else if (mode === "express") {
+      systemInstruction = `You are SPARK's Rapid Short-Form Creative Director. Structure a fast, punchy 2-to-3 stage vertical 9:16 social production with staged continuity and high hook retention. Return valid JSON only.`;
+
+      prompt = `
+Create a rapid short-form production storyboard (9:16 vertical) for:
+
+TITLE: "${brief.title}"
+BRAND: "${brand.name}" (${brand.niche})
+HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
+HOOK: "${brief.hook}"
+SCRIPT OUTLINE: "${brief.scriptOutline}"
+
+CONTINUITY RULES FOR EXPRESS MODE:
+- 2–3 stages (~15–30s total duration).
+- High visual hook energy, immediate engagement, and continuous staged state progression.
+- Exact same host identity and outfit across scenes.
+
+Return valid JSON with exactly this structure:
+{
+  "storyboard": [
+    {
+      "scene": 1,
+      "duration": "0-6s",
+      "shotList": "Presenter direct-to-camera dynamic hook",
+      "cameraDirection": "Quick snap push-in",
+      "transitions": "Continuous flow",
+      "startState": "Host centered looking directly into camera with intense hook expression",
+      "primaryChange": "Host gestures dynamically as bold headline appears",
+      "endState": "Host holding position pointing to key visual",
+      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 45)}",
+      "pacing": "Fast hook",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "visualDescription": "High energy vertical framing with clean studio lighting"
+    },
+    {
+      "scene": 2,
+      "duration": "6-20s",
+      "shotList": "Presenter demonstration in same environment",
+      "cameraDirection": "Steady medium frame",
+      "transitions": "Smooth momentum",
+      "startState": "Host continuing from hook end state",
+      "primaryChange": "Demonstrates the core insight directly to viewer",
+      "endState": "Host delivers the core solution conclusion",
+      "onScreenText": "THE SOLUTION",
+      "pacing": "High retention",
+      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
+      "visualDescription": "Direct demonstration in locked studio set"
+    },
+    {
+      "scene": 3,
+      "duration": "20-30s",
+      "shotList": "Closing CTA and action prompt",
+      "cameraDirection": "Lock-off",
+      "transitions": "Snap to brand insignia",
+      "startState": "Host in delivery position from scene 2",
+      "primaryChange": "Direct conversion call to action",
+      "endState": "Host smiling with definitive closing gesture",
+      "onScreenText": "FOLLOW FOR MORE",
+      "pacing": "Decisive",
+      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
+      "visualDescription": "Crisp closing frame with high contrast brand highlight"
+    }
+  ],
+  "thumbnails": [
+    { "id": "t1", "variant": "A", "concept": "High-energy face reaction with bold hook text overlay" },
+    { "id": "t2", "variant": "B", "concept": "Curiosity gap split graphic in dark mode" },
+    { "id": "t3", "variant": "C", "concept": "Clean bold typography card with brand accent" }
+  ]
+}
+`;
+    } else {
+      // standard mode
+      systemInstruction = `You are SPARK's Senior Production Producer. Structure a balanced 3-stage video production (9:16 vertical) with staged continuity between scenes. Return valid JSON only.`;
+
+      prompt = `
+Create a 3-stage vertical (9:16) production storyboard and asset manifest for:
+
+TITLE: "${brief.title}"
+BRAND: "${brand.name}" (${brand.niche})
+HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
+HOOK: "${brief.hook}"
+SCRIPT OUTLINE: "${brief.scriptOutline}"
+VISUAL DIRECTION: "${brief.visualDirection}"
+
+CONTINUITY RULES FOR STANDARD MODE:
+- Stage 1 (0-8s): Hook & establishing opening state -> endState.
+- Stage 2 (8-18s): Solution delivery continuing from Stage 1 endState -> endState.
+- Stage 3 (18-30s): Resolution & CTA continuing from Stage 2 endState -> final endState.
+- Exact same host identity and studio set throughout.
+
+Return valid JSON with exactly this structure:
+{
+  "storyboard": [
+    {
+      "scene": 1,
+      "duration": "0-8s",
+      "shotList": "Presenter direct-to-camera vertical 9:16 framing",
       "cameraDirection": "Push-in slow zoom",
-      "transitions": "Hard cut on hook conclusion",
+      "transitions": "Continuous flow",
+      "startState": "Host standing in executive studio addressing viewer",
+      "primaryChange": "Host raises tablet presenting the challenge",
+      "endState": "Host centered with focused expression holding visual aid",
       "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
       "pacing": "Fast hook",
       "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
@@ -286,25 +497,31 @@ Return valid JSON with exactly this structure:
     },
     {
       "scene": 2,
-      "duration": "5-25s",
-      "shotList": "B-roll cutaway and infographic breakdown",
-      "cameraDirection": "Dynamic whip pan",
-      "transitions": "Slide transition",
-      "onScreenText": "CORE VALUE BREAKDOWN",
+      "duration": "8-18s",
+      "shotList": "Analytical breakdown in same studio set",
+      "cameraDirection": "Smooth tracking pan",
+      "transitions": "Seamless motion",
+      "startState": "Host established from scene 1 end state",
+      "primaryChange": "Core solution graphics appear beside host",
+      "endState": "Host gestures toward key strategic takeaway",
+      "onScreenText": "THE FORMULA",
       "pacing": "Rhythmic",
       "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
-      "visualDescription": "Visual demonstration of product solution in sleek workspace"
+      "visualDescription": "Visual breakdown in sleek studio setting"
     },
     {
       "scene": 3,
-      "duration": "25-30s",
-      "shotList": "Presenter with bold conversion CTA card",
+      "duration": "18-30s",
+      "shotList": "Presenter conversion CTA card",
       "cameraDirection": "Static lock-off",
-      "transitions": "Cross-dissolve to end card",
-      "onScreenText": "SAVE THIS NOW",
+      "transitions": "Fade to brand logo",
+      "startState": "Host in position from scene 2 end state",
+      "primaryChange": "Host delivers final call to action",
+      "endState": "Host delivering definitive closing statement",
+      "onScreenText": "START TODAY",
       "pacing": "High impact closing",
       "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
-      "visualDescription": "End screen card with brand logo animation and clear conversion prompt"
+      "visualDescription": "End screen card with clear brand resolution"
     }
   ],
   "thumbnails": [
@@ -314,10 +531,11 @@ Return valid JSON with exactly this structure:
   ]
 }
 `;
+    }
 
     try {
       checkAborted();
-      console.log(`[SPARK Pipeline] Provider Request: Storyboard structure via ModelRouter...`);
+      console.log(`[SPARK Pipeline] Provider Request: ${mode.toUpperCase()} Storyboard structure via ModelRouter...`);
       const rawResponse = await ModelRouter.executeCategoryRequest("production", {
         prompt,
         systemInstruction,
@@ -346,11 +564,13 @@ Return valid JSON with exactly this structure:
       const isValidMediaData = (val?: string | null): val is string => {
         if (!val || typeof val !== "string") return false;
         const trimmed = val.trim();
-        return trimmed.startsWith("data:image/") || 
-               trimmed.startsWith("data:video/") || 
-               trimmed.startsWith("data:audio/") || 
-               trimmed.startsWith("http://") || 
-               trimmed.startsWith("https://");
+        return (
+          trimmed.startsWith("data:image/") ||
+          trimmed.startsWith("data:video/") ||
+          trimmed.startsWith("data:audio/") ||
+          trimmed.startsWith("http://") ||
+          trimmed.startsWith("https://")
+        );
       };
 
       // Synthesize real voiceover audio via ElevenLabs (with brand voiceId) -> Provider TTS pipeline (or reuse if present)
@@ -417,9 +637,9 @@ Return valid JSON with exactly this structure:
 
       stages[1].status = realVoiceUrl ? "done" : "failed";
       stages[2].status = "active";
-      emitProgress(20, "Keyframes", "Rendering 9:16 vertical scene keyframes...");
+      emitProgress(20, "Keyframes", `Rendering ${aspectRatio} scene keyframes (Target Hero Frames)...`);
 
-      // 1. Storyboard Scene Keyframe Image Generation via ModelRouter ("storyboardImages")
+      // PART 1 & 4 — Scene Keyframe Image Generation with Locked Identity Pack targeting END FRAME
       const sceneImages: string[] = [];
       const renderStartedAt = new Date().toISOString();
 
@@ -438,12 +658,22 @@ Return valid JSON with exactly this structure:
             continue;
           }
 
-          const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Hook: "${brief.hook}". Brand: ${brand.name}`;
+          const imagePrompt = `
+[${identityPack.aspectRatio} ${mode.toUpperCase()} PRODUCTION KEYFRAME - SCENE ${sIdx + 1} OF ${totalScenes}]
+TARGET HERO / END FRAME: ${scene.endState || scene.visualDescription || scene.shotList}
+SCENE ACTION: ${scene.primaryChange || scene.visualDescription}
+CAMERA FRAMING: ${scene.cameraDirection || "Cinematic framing"}
+${identityPack.combinedPromptPrefix}
+Hook Context: "${brief.hook}". Brand: ${brand.name}
+`.trim();
+
           try {
             checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} image via ModelRouter ("storyboardImages")...`);
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} hero keyframe via ModelRouter ("storyboardImages")...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
+              referenceImageUrl: identityPack.characterReferenceImageUrl,
+              aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
             console.log(`[SPARK Pipeline] Provider Response: Scene ${sIdx + 1} image received (${imgUrl ? imgUrl.slice(0, 50) + "..." : "none"})`);
@@ -489,9 +719,9 @@ Return valid JSON with exactly this structure:
 
       stages[2].status = sceneImages.length > 0 ? "done" : "failed";
       stages[3].status = "active";
-      emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants (A, B, C)...");
+      emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
 
-      // 2. Proposed Thumbnail Variants Real Image Generation Loop via ModelRouter ("storyboardImages")
+      // Thumbnail Variants Image Generation Loop via ModelRouter with Locked Identity Pack
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
@@ -516,7 +746,14 @@ Return valid JSON with exactly this structure:
             continue;
           }
 
-          const thumbPrompt = `9:16 vertical high-impact YouTube/TikTok thumbnail image for variant ${variantLetter}: ${thumb.concept}. Hook: "${brief.hook}". Brand: ${brand.name}`;
+          const thumbPrompt = `
+[${identityPack.aspectRatio} HIGH IMPACT THUMBNAIL VARIANT ${variantLetter}]
+CONCEPT: ${thumb.concept}
+HOOK: "${brief.hook}"
+${identityPack.combinedPromptPrefix}
+Brand: ${brand.name}
+`.trim();
+
           let thumbUrl: string | undefined = undefined;
 
           try {
@@ -524,6 +761,8 @@ Return valid JSON with exactly this structure:
             console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
             const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: thumbPrompt,
+              referenceImageUrl: identityPack.characterReferenceImageUrl,
+              aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
 
@@ -578,9 +817,11 @@ Return valid JSON with exactly this structure:
 
       stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
       stages[4].status = "active";
-      emitProgress(80, "Video", "Rendering 9:16 master video preview...");
+      emitProgress(80, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on scene stills...`);
 
-      // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
+      // PART 3 — Stills Drive Motion: Image-Conditioned Video Generation Loop via ModelRouter ("videoGeneration")
+      const sceneClips: string[] = [];
+
       checkAborted();
       if (!forceRegenerate && isValidMediaData(production.videoUrl || brief.videoUrl)) {
         realVideoUrl = production.videoUrl || brief.videoUrl;
@@ -592,43 +833,114 @@ Return valid JSON with exactly this structure:
         }
       } else {
         try {
-          checkAborted();
           const { ModelRouter } = await import("../runtime/modelRouter");
-          const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
-          console.log(`[SPARK Pipeline] Provider Request: Video generation via ModelRouter ("videoGeneration")...`);
-          const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
-            prompt: videoPrompt,
-          });
-          checkAborted();
-          console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
-          if (isValidMediaData(generatedVideo)) {
-            let finalVid = generatedVideo;
+          const totalVideoStages = currentStoryboard.length || 3;
+
+          for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
+            checkAborted();
+            const scene = currentStoryboard[sIdx];
+            const sceneStill = scene.image || sceneImages[sIdx];
+
+            const stageMotionPrompt = `
+[${identityPack.aspectRatio} CINEMATIC MOTION - STAGE ${sIdx + 1} OF ${totalVideoStages}]
+INITIAL FRAME / START STATE: ${scene.startState || "Host established in framing"}
+PRIMARY ACTION / CHANGE: ${scene.primaryChange || scene.visualDescription}
+CAMERA MOVEMENT: ${scene.cameraDirection || "Motivated smooth camera motion"}
+DESTINATION / END STATE: ${scene.endState || "Target composition reached"}
+${identityPack.combinedPromptPrefix}
+Script snippet: "${scene.scriptSnippet || brief.hook}"
+`.trim();
+
+            console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill)}]...`);
+
             try {
-              const storedVid = await this.uploadAssetToStorage({
-                productionId: production.id,
-                brandId: (brand as any).id,
-                assetType: "video",
-                storagePath: `${production.id}/video/master.mp4`,
-                dataUrlOrBlob: generatedVideo,
-                mimeType: "video/mp4",
-                prompt: videoPrompt,
-                provider: "ModelRouter",
+              checkAborted();
+              const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
+                prompt: stageMotionPrompt,
+                referenceImageUrl: sceneStill || undefined,
+                aspectRatio: identityPack.aspectRatio,
               });
-              if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
-              console.log(`[SPARK Pipeline] Storage Upload: Video SUCCESS -> ${finalVid}`);
-            } catch (storageErr: any) {
-              console.warn("[SPARK Pipeline] Video upload failed, retaining provider URL:", storageErr);
-              if (!lastError) lastError = `Storage (Video): ${storageErr?.message || String(storageErr)}`;
+              checkAborted();
+
+              if (isValidMediaData(generatedClip)) {
+                let finalClip = generatedClip;
+                try {
+                  const storedClip = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "video",
+                    storagePath: `${production.id}/video/scene-0${sIdx + 1}.mp4`,
+                    dataUrlOrBlob: generatedClip,
+                    mimeType: "video/mp4",
+                    prompt: stageMotionPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
+                } catch (storageErr: any) {
+                  console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+                }
+
+                scene.videoUrl = finalClip;
+                sceneClips.push(finalClip);
+                if (!realVideoUrl) realVideoUrl = finalClip;
+              } else {
+                console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} returned empty/invalid video data`);
+              }
+            } catch (stageVidErr: any) {
+              if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
+              console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
+              if (!lastError) lastError = `Video Stage ${sIdx + 1}: ${stageVidErr?.message || String(stageVidErr)}`;
             }
-            realVideoUrl = finalVid;
-            if (currentStoryboard.length > 0) {
+
+            const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
+            emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
+          }
+
+          // If stage clips were generated, set primary video to first clip or master
+          if (sceneClips.length > 0 && !realVideoUrl) {
+            realVideoUrl = sceneClips[0];
+          }
+
+          // If no individual clips succeeded, perform single master fallback video request
+          if (!realVideoUrl) {
+            checkAborted();
+            const masterPrompt = `
+[${identityPack.aspectRatio} ${mode.toUpperCase()} MASTER VIDEO PREVIEW]
+TITLE: "${brief.title}"
+HOOK: "${brief.hook}"
+VISUAL DIRECTION: "${brief.visualDirection}"
+${identityPack.combinedPromptPrefix}
+`.trim();
+            const fallbackMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
+              prompt: masterPrompt,
+              referenceImageUrl: sceneImages[0] || undefined,
+              aspectRatio: identityPack.aspectRatio,
+            });
+            checkAborted();
+            if (isValidMediaData(fallbackMaster)) {
+              let finalVid = fallbackMaster;
+              try {
+                const storedVid = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "video",
+                  storagePath: `${production.id}/video/master.mp4`,
+                  dataUrlOrBlob: fallbackMaster,
+                  mimeType: "video/mp4",
+                  prompt: masterPrompt,
+                  provider: "ModelRouter",
+                });
+                if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
+              } catch (storageErr: any) {
+                console.warn("[SPARK Pipeline] Fallback video upload failed, retaining provider URL:", storageErr);
+              }
+              realVideoUrl = finalVid;
+              sceneClips.push(finalVid);
               currentStoryboard.forEach((s) => {
                 if (!s.videoUrl) s.videoUrl = finalVid;
               });
             }
-          } else {
-            console.warn("[SPARK Pipeline] Video generation returned invalid/empty URL or bytes");
-            if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
           }
         } catch (vidErr: any) {
           if (vidErr?.name === "AbortError" || signal?.aborted) throw vidErr;
@@ -648,8 +960,8 @@ Return valid JSON with exactly this structure:
         percent: 100,
         stage: "Complete",
         stages: stages.map((s) => ({ ...s, status: s.status === "active" ? "done" : s.status })),
-        message: realVideoUrl || sceneImages.length > 0 
-          ? "Media assets synthesized and ready for executive review."
+        message: realVideoUrl || sceneImages.length > 0
+          ? `${mode.toUpperCase()} media assets synthesized with continuous staged craft and ready for executive review.`
           : "Asset synthesis complete. Some media stages failed — review error logs.",
         updatedAt: renderCompletedAt,
         partialAssets: {
@@ -666,10 +978,13 @@ Return valid JSON with exactly this structure:
         storyboard: currentStoryboard.length > 0 ? currentStoryboard : [
           {
             scene: 1,
-            duration: "0-5s",
-            shotList: "Vertical 9:16 host framing",
+            duration: mode === "deep" ? "0-8s" : "0-5s",
+            shotList: `${aspectRatio} host framing`,
             cameraDirection: "Push-in zoom",
-            transitions: "Hard cut",
+            transitions: "Continuous flow",
+            startState: "Host established in framing",
+            primaryChange: "Host presents initial insight",
+            endState: "Host in delivery position",
             onScreenText: brief.hook,
             pacing: "Fast",
             scriptSnippet: brief.hook,
@@ -677,11 +992,11 @@ Return valid JSON with exactly this structure:
           },
         ],
         generatedAssets: {
-          sceneClips: realVideoUrl ? [realVideoUrl] : undefined,
+          sceneClips: sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined),
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceoverUrl: realVoiceUrl,
           generatedFrames: sceneImages.length > 0 ? sceneImages : undefined,
-          generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
+          generatedVideos: sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined),
           generatedAudio: realVoiceUrl ? [realVoiceUrl] : undefined,
           generationProgress: finalProgress,
           generationMetadata: {
@@ -698,13 +1013,15 @@ Return valid JSON with exactly this structure:
 
       const updatedScenes = updatedBrief.storyboard!.map((s) => ({
         scene: s.scene,
-        description: `[${s.duration}] ${s.shotList} — Text: "${s.onScreenText}"`,
+        description: s.startState && s.endState
+          ? `[${s.duration}] ${s.shotList} — Action: ${s.primaryChange || s.visualDescription} (End: ${s.endState})`
+          : `[${s.duration}] ${s.shotList} — Text: "${s.onScreenText}"`,
         duration: s.duration,
         image: s.image,
         videoUrl: s.videoUrl,
       }));
 
-      emitProgress(100, "Complete", "Media assets synthesized and ready for executive review.");
+      emitProgress(100, "Complete", `${mode.toUpperCase()} media assets synthesized and ready for executive review.`);
 
       return {
         brief: updatedBrief,
@@ -722,10 +1039,13 @@ Return valid JSON with exactly this structure:
       const fallbackStoryboard: ProductionScene[] = [
         {
           scene: 1,
-          duration: "0-5s",
-          shotList: "Vertical 9:16 presenter frame",
+          duration: mode === "deep" ? "0-8s" : "0-5s",
+          shotList: `${identityPack.aspectRatio} host master frame`,
           cameraDirection: "Push-in zoom",
-          transitions: "Hard cut",
+          transitions: "Continuous flow",
+          startState: "Host established in framing addressing camera",
+          primaryChange: "Host gestures to introduce core premise",
+          endState: "Host in medium frame with focused authority expression",
           onScreenText: brief.hook,
           pacing: "Fast hook",
           scriptSnippet: brief.hook,
@@ -733,73 +1053,47 @@ Return valid JSON with exactly this structure:
         },
         {
           scene: 2,
-          duration: "5-25s",
-          shotList: "Core narrative body & B-roll",
-          cameraDirection: "Smooth pan",
-          transitions: "Whip pan",
+          duration: mode === "deep" ? "8-16s" : "5-25s",
+          shotList: "Solution delivery and visual demonstration",
+          cameraDirection: "Smooth tracking pan",
+          transitions: "Seamless flow",
+          startState: "Host continuing from opening frame",
+          primaryChange: "Solution breakdown is revealed",
+          endState: "Host positioned beside visual breakdown",
           onScreenText: brief.title,
           pacing: "Rhythmic",
           scriptSnippet: brief.scriptOutline,
-          visualDescription: "Visual breakdown",
+          visualDescription: "Visual breakdown in same studio set",
         },
         {
           scene: 3,
-          duration: "25-30s",
+          duration: mode === "deep" ? "16-24s" : "25-30s",
           shotList: "Branded CTA closing screen",
-          cameraDirection: "Static",
-          transitions: "Fade to black",
-          onScreenText: "SAVE & FOLLOW",
+          cameraDirection: "Lock-off",
+          transitions: "Subtle resolution",
+          startState: "Host completing key insight delivery",
+          primaryChange: "Conversion prompt and brand conclusion",
+          endState: "Definitive closing frame with call to action",
+          onScreenText: "SAVE THIS NOW",
           pacing: "High impact",
-          scriptSnippet: brief.caption,
-          visualDescription: "Call to Action",
+          scriptSnippet: brief.caption || brief.hook,
+          visualDescription: "End frame with clear conversion prompt",
         },
       ];
 
-      // Synthesize real voiceover audio fallback
-      let realVoiceUrl: string | undefined = undefined;
-      try {
-        const { generateSuperSparkVoice } = await import("../geminiService");
-        const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
-        const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
-        if (synthesizedVoice && synthesizedVoice.length > 50) {
-          realVoiceUrl = synthesizedVoice;
-        }
-      } catch {}
-
-      const updatedBrief: ProductionBrief = {
-        ...brief,
-        storyboard: fallbackStoryboard,
-        generatedAssets: {
-          sceneClips: undefined,
-          thumbnails: [
-            { id: "t1", variant: "A", concept: "Presenter contrast thumbnail" },
-            { id: "t2", variant: "B", concept: "Metric graphic thumbnail" },
-          ],
-          voiceoverUrl: realVoiceUrl,
+      const fallbackResult: ProductionAssetGenerationResult = {
+        brief: {
+          ...brief,
+          storyboard: fallbackStoryboard,
         },
-        audioUrl: realVoiceUrl,
-      };
-
-      return {
-        brief: updatedBrief,
         scenes: fallbackStoryboard.map((s) => ({
           scene: s.scene,
-          description: `[${s.duration}] ${s.shotList} — Text: "${s.onScreenText}"`,
+          description: `[${s.duration}] ${s.shotList} — Action: ${s.primaryChange || s.visualDescription}`,
           duration: s.duration,
         })),
-        audioUrl: realVoiceUrl,
-        videoUrl: undefined,
       };
+
+      return fallbackResult;
     }
   }
 }
-
-// Register inside Capability Registry
-CapabilityRegistry.register({
-  id: "production-asset-service",
-  name: "ProductionAssetService",
-  category: "Production",
-  description: "Executive multi-scene storyboard generation, visual shot-list synthesis, and thumbnail rendering.",
-  status: "active",
-  providerClass: ProductionAssetService,
-});

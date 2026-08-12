@@ -88,6 +88,9 @@ export interface ProductionScene {
   pacing: string;
   scriptSnippet: string;
   visualDescription: string;
+  startState?: string;
+  endState?: string;
+  primaryChange?: string;
   mediaUrl?: string;
   thumbnailUrl?: string;
   image?: string;

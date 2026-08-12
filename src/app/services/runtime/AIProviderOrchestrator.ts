@@ -12,6 +12,8 @@ export interface AIExecutionOptions {
   onChunk?: (chunkText: string) => void;
   customApiKeys?: Record<string, string>;
   frames?: string[];
+  referenceImageUrl?: string;
+  aspectRatio?: string;
 }
 
 export interface AIProviderPlugin {
@@ -176,11 +178,22 @@ export class AIProviderOrchestrator {
           let opName = "";
           let finalVideoUrl = "";
 
+          const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
           for (const videoModel of candidateVeoModels) {
+            const instanceObj: any = { prompt: options.prompt };
+            if (options.referenceImageUrl) {
+              if (options.referenceImageUrl.startsWith("data:")) {
+                instanceObj.image = { imageBytes: options.referenceImageUrl.split(",")[1] };
+              } else if (options.referenceImageUrl.startsWith("http")) {
+                instanceObj.image = { gcsUri: options.referenceImageUrl };
+              }
+              console.log(`[Gemini Provider] Conditioning Veo video generation on scene still reference`);
+            }
+
             const videoPayload = {
-              instances: [{ prompt: options.prompt }],
+              instances: [instanceObj],
               parameters: {
-                aspectRatio: "9:16",
+                aspectRatio: targetAspect,
                 sampleCount: 1,
               },
             };
@@ -192,11 +205,15 @@ export class AIProviderOrchestrator {
                 if (GoogleGenAI) {
                   const ai = new GoogleGenAI({ apiKey });
                   try {
-                    const veoRes = await (ai.models as any).generateVideos?.({
+                    const sdkParams: any = {
                       model: videoModel,
                       prompt: options.prompt,
-                      config: { aspectRatio: "9:16" },
-                    });
+                      config: { aspectRatio: targetAspect },
+                    };
+                    if (options.referenceImageUrl) {
+                      sdkParams.image = { uri: options.referenceImageUrl };
+                    }
+                    const veoRes = await (ai.models as any).generateVideos?.(sdkParams);
                     if (veoRes?.name) opName = veoRes.name;
                     const extracted = extractVeoUri(veoRes);
                     if (extracted) finalVideoUrl = extracted;
@@ -1002,12 +1019,17 @@ export class AIProviderOrchestrator {
           let requestId = "";
           let finalVideoUrl = "";
 
+          const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
           for (const videoModel of candidateVideoModels) {
-            const grokVideoPayload = {
+            const grokVideoPayload: any = {
               model: videoModel,
               prompt: options.prompt,
-              aspect_ratio: "9:16",
+              aspect_ratio: targetAspect,
             };
+            if (options.referenceImageUrl) {
+              grokVideoPayload.image_url = options.referenceImageUrl;
+              console.log(`[Grok Provider] Conditioning Grok video generation on scene still reference`);
+            }
 
             if (apiKey) {
               try {
