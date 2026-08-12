@@ -377,9 +377,17 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         <div className="space-y-3">
           {/* Host Profile */}
           <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-foreground shrink-0">
-              {character?.name?.[0] || "S"}
-            </div>
+            {character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl ? (
+              <img
+                src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
+                alt={character.name}
+                className="w-11 h-11 rounded-xl object-cover border border-accent/40 shrink-0"
+              />
+            ) : (
+              <div className="w-11 h-11 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-foreground shrink-0">
+                {character?.name?.[0] || "S"}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">{character?.name || "Host"}</p>
               <p className="text-xs text-muted-foreground">{character?.role || "Lead Presenter"}</p>

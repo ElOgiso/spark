@@ -25,11 +25,18 @@ export interface Character {
   role: string;
   style: string;
   traits: string[];
+  avatarUrl?: string | null;
+  imageUrl?: string | null;
+  characterSheetUrl?: string | null;
   voice: {
     name: string;
     language: string;
     tone: string;
     locked: boolean;
+    voiceId?: string;
+    description?: string;
+    gender?: string;
+    previewUrl?: string;
   };
 }
 

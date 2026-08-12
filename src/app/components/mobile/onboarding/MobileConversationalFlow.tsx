@@ -19,9 +19,25 @@ import {
   Music,
   Film,
   Zap,
+  Globe,
+  Plus,
+  Trash2,
+  Wand2,
+  RefreshCw,
+  Play,
+  Square,
+  Loader2,
 } from "lucide-react";
-import type { BrandGenesisData } from "../../onboarding/OnboardingWizard";
+import type { BrandGenesisData, VoiceProfile } from "../../onboarding/OnboardingWizard";
 import { SparkLogo } from "../../SparkLogo";
+import {
+  getElevenLabsVoices,
+  previewElevenLabsVoice,
+  designElevenLabsVoice,
+  createDesignedElevenLabsVoice,
+  FALLBACK_CURATED_ELEVENLABS_VOICES,
+  type ElevenLabsVoiceSummary,
+} from "../../../services/runtime/providers/elevenLabsTTS";
 
 type FlowStep =
   | "awakens"
@@ -30,6 +46,7 @@ type FlowStep =
   | "character"
   | "voice"
   | "audio"
+  | "research-sources"
   | "publishing"
   | "production-mode"
   | "automation"
@@ -52,16 +69,40 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [brandName, setBrandName] = useState("");
   const [niche, setNicheSelection] = useState("");
   const [customNiche, setCustomNiche] = useState("");
-  const [characterOpt, setCharacterOpt] = useState("I'll appear myself");
+
+  // Character states
+  const [characterDescription, setCharacterDescription] = useState("Executive AI presenter with sharp focus and modern framing");
+  const [characterSheetUrl, setCharacterSheetUrl] = useState<string | undefined>(undefined);
+  const [isGeneratingPortrait, setIsGeneratingPortrait] = useState(false);
   const [visualStyle, setVisualStyle] = useState<"Realistic / Live-Action" | "Cinematic 3D" | "Anime / Stylized Studio">("Realistic / Live-Action");
-  const [voice, setVoiceSelection] = useState("Spark Executive Male");
+
+  // Voice states
+  const [voices, setVoices] = useState<ElevenLabsVoiceSummary[]>(FALLBACK_CURATED_ELEVENLABS_VOICES);
+  const [selectedVoiceId, setSelectedVoiceId] = useState("21m00Tcm4TlvDq8ikWAM");
+  const [selectedVoiceName, setSelectedVoiceName] = useState("Rachel (Calm & Professional)");
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [voiceDescription, setVoiceDescription] = useState("");
+  const [isDesigningVoice, setIsDesigningVoice] = useState(false);
   const [audioEnergy, setAudioEnergy] = useState<"calm" | "energetic" | "bold">("energetic");
+
+  // Research sources state
+  const [researchSourceInput, setResearchSourceInput] = useState("");
+  const [seededSources, setSeededSources] = useState<string[]>([]);
+
+  // Accounts & Governance states
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [productionMode, setProductionModeSelection] = useState<"narrator" | "hybrid" | "cinematic">("hybrid");
   const [automationMode, setAutomationModeSelection] = useState<"manual" | "balanced" | "autonomous">("balanced");
 
   // Initialization progress
   const [initProgress, setInitProgress] = useState(0);
+
+  // Load ElevenLabs voices on mount
+  useEffect(() => {
+    getElevenLabsVoices().then((res) => {
+      setVoices(res.voices);
+    });
+  }, []);
 
   // Auto-advance from "awakens" step
   useEffect(() => {
@@ -91,23 +132,97 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     setStep("character");
   };
 
-  // Character Choice
-  const handleCharacterChoice = (choice: string) => {
-    setCharacterOpt(choice);
-    addChatMessage({ sender: "user", text: `Character choice: ${choice}`, timestamp: new Date() });
+  // Generate Character Portrait
+  const handleGeneratePortrait = async () => {
+    setIsGeneratingPortrait(true);
+    const prompt = `Professional 9:16 vertical character sheet portrait of ${creatorName || "lead host"} for brand "${brandName || "SPARK"}". Presentation aesthetic: ${visualStyle}. Character traits: ${characterDescription}. Crisp studio lighting, high resolution production reference.`;
+
+    try {
+      const { ModelRouter } = await import("../../../services/runtime/modelRouter");
+      const resultImg = await ModelRouter.executeCategoryRequest("storyboardImages", { prompt });
+      if (resultImg && (resultImg.startsWith("data:") || resultImg.startsWith("http"))) {
+        setCharacterSheetUrl(resultImg);
+      }
+    } catch (err) {
+      console.warn("Mobile portrait generation notice:", err);
+    } finally {
+      setIsGeneratingPortrait(false);
+    }
+  };
+
+  const handleCharacterPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (uploadEv) => {
+      const dataUri = uploadEv.target?.result as string;
+      setCharacterSheetUrl(dataUri);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Confirm Character
+  const handleConfirmCharacter = () => {
+    addChatMessage({ sender: "user", text: `Character: ${characterDescription} (${visualStyle})`, timestamp: new Date() });
     addChatMessage({
       sender: "spark",
-      text: `Host character configured as "${choice}" (${visualStyle}).`,
-      timestamp: new Date()
+      text: `Host character configured (${visualStyle}). Let's select your brand voice.`,
+      timestamp: new Date(),
     });
     setStep("voice");
   };
 
-  // Handle Voice Selection
-  const handleVoiceChoice = (choice: string) => {
-    setVoiceSelection(choice);
-    addChatMessage({ sender: "user", text: `Voice: ${choice}`, timestamp: new Date() });
-    addChatMessage({ sender: "spark", text: `Configured voice as ${choice}.`, timestamp: new Date() });
+  // Voice Preview
+  const handlePlayVoicePreview = async (v: ElevenLabsVoiceSummary) => {
+    if (playingVoiceId === v.voiceId) {
+      setPlayingVoiceId(null);
+      return;
+    }
+    setPlayingVoiceId(v.voiceId);
+    try {
+      const url = await previewElevenLabsVoice(v.voiceId);
+      if (url) {
+        const audio = new Audio(url);
+        audio.onended = () => setPlayingVoiceId(null);
+        audio.onerror = () => setPlayingVoiceId(null);
+        await audio.play();
+      } else {
+        setPlayingVoiceId(null);
+      }
+    } catch {
+      setPlayingVoiceId(null);
+    }
+  };
+
+  // Design Voice from text
+  const handleDesignVoice = async () => {
+    if (!voiceDescription.trim() || isDesigningVoice) return;
+    setIsDesigningVoice(true);
+    try {
+      const res = await designElevenLabsVoice({ description: voiceDescription });
+      if (res?.previews?.[0]) {
+        const topPrev = res.previews[0];
+        const created = await createDesignedElevenLabsVoice({
+          voiceName: `${brandName || "Brand"} Voice`,
+          voiceDescription: voiceDescription,
+          generatedVoiceId: topPrev.generated_voice_id,
+        });
+        const vId = created?.voice_id || topPrev.generated_voice_id;
+        setSelectedVoiceId(vId);
+        setSelectedVoiceName(`${brandName || "Custom"} Designed Voice`);
+      }
+    } catch (err) {
+      console.warn("Mobile voice design notice:", err);
+    } finally {
+      setIsDesigningVoice(false);
+    }
+  };
+
+  const handleVoiceChoice = (v: ElevenLabsVoiceSummary) => {
+    setSelectedVoiceId(v.voiceId);
+    setSelectedVoiceName(v.name);
+    addChatMessage({ sender: "user", text: `Voice: ${v.name}`, timestamp: new Date() });
+    addChatMessage({ sender: "spark", text: `Configured narrator voice as ${v.name}.`, timestamp: new Date() });
     setStep("audio");
   };
 
@@ -115,6 +230,29 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const handleAudioChoice = (energy: "calm" | "energetic" | "bold") => {
     setAudioEnergy(energy);
     addChatMessage({ sender: "user", text: `Audio energy: ${energy}`, timestamp: new Date() });
+    setStep("research-sources");
+  };
+
+  // Add Research Source
+  const handleAddResearchSource = () => {
+    const raw = researchSourceInput.trim();
+    if (!raw) return;
+    if (!seededSources.includes(raw)) {
+      setSeededSources([...seededSources, raw]);
+    }
+    setResearchSourceInput("");
+  };
+
+  const handleRemoveResearchSource = (url: string) => {
+    setSeededSources(seededSources.filter((s) => s !== url));
+  };
+
+  const handleConfirmResearchSources = () => {
+    addChatMessage({
+      sender: "user",
+      text: `Research Sources: ${seededSources.length > 0 ? `${seededSources.length} added` : "Deferred"}`,
+      timestamp: new Date(),
+    });
     setStep("publishing");
   };
 
@@ -176,8 +314,21 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       productionMode: productionMode,
       automationMode: automationMode,
       reviewRequired: true,
-      characterChoice: characterOpt === "Upload Image" ? "upload" : "self",
+      characterChoice: "describe",
+      characterDescription: characterDescription,
+      characterSheetUrl: characterSheetUrl,
+      characterImageUrl: characterSheetUrl,
+      voiceProfile: {
+        id: selectedVoiceId,
+        name: selectedVoiceName,
+        accent: "Executive",
+        language: "English",
+        duration: "Sample",
+        sampleText: "Voice profile sample",
+      },
+      voiceId: selectedVoiceId,
       audioEnergy: audioEnergy,
+      researchSources: seededSources,
     };
 
     initializeBrandGenesis(genesisData);
@@ -188,40 +339,38 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   return (
     <div className="fixed inset-0 w-full h-[100dvh] bg-background text-foreground flex flex-col justify-between relative z-50 overflow-y-auto select-none antialiased">
       {/* Background Soft Mesh Glow */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
-      </div>
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
 
-      {/* Non-Blocking Background Email Verification Pill */}
-      <SoftVerificationBanner />
-
-      {/* Top Header Progress Indicator */}
-      <div className="px-6 pt-4 flex items-center justify-between z-10">
+      {/* Top Banner Navigation */}
+      <div className="p-4 flex items-center justify-between z-10">
         <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-md bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <div className="w-6 h-6 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
+            <SparkLogo className="w-3.5 h-3.5" variant="superspark" />
           </div>
-          <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-            SPARK Genesis
-          </span>
+          <span className="text-xs font-bold tracking-wider uppercase text-foreground">SPARK Genesis</span>
         </div>
-        <div className="text-[11px] font-mono text-purple-400/80">
-          {step === "awakens" && "Phase 1 / 8"}
-          {step === "identity" && "Phase 1 / 8"}
-          {step === "niche" && "Phase 2 / 8"}
-          {step === "character" && "Phase 3 / 8"}
-          {step === "voice" && "Phase 4 / 8"}
-          {step === "audio" && "Phase 5 / 8"}
-          {step === "publishing" && "Phase 6 / 8"}
-          {step === "production-mode" && "Phase 7 / 8"}
-          {step === "automation" && "Phase 8 / 8"}
-          {step === "initialization" && "Calibrating..."}
-          {step === "ready" && "Ready"}
-        </div>
+
+        {step !== "awakens" && step !== "initialization" && step !== "ready" && (
+          <button
+            type="button"
+            onClick={handleFinalCompletion}
+            className="text-[11px] font-mono text-muted-foreground hover:text-foreground flex items-center space-x-1 p-1"
+          >
+            <span>Skip</span>
+            <SkipForward className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
-      {/* Main Conversational Area */}
-      <div className="flex-1 flex flex-col justify-center px-6 py-6 z-10 w-full">
+      {/* Soft Verification Prompt */}
+      {step === "awakens" && (
+        <div className="px-4 pb-2">
+          <SoftVerificationBanner />
+        </div>
+      )}
+
+      {/* Dynamic Conversational Content Area */}
+      <div className="flex-1 flex flex-col justify-center px-4 max-w-sm mx-auto w-full z-10 py-4">
         <AnimatePresence mode="wait">
           {/* SCREEN 1: Spark Awakens */}
           {step === "awakens" && (
@@ -229,22 +378,33 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               key="awakens"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 0.6 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}
               className="space-y-6 text-center"
             >
-              <SparkGuide
-                state="speaking"
-                message="Welcome. I'm Super Spark."
-                subtitle="Let's configure your media brand operating system."
-              />
-              <p className="text-xs text-muted-foreground animate-pulse">
-                Initializing Executive Director...
-              </p>
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-purple-900/40">
+                <SparkLogo className="w-8 h-8" variant="superspark" />
+              </div>
+
+              <div className="space-y-2">
+                <h1 className="text-xl font-bold tracking-tight text-foreground">SPARK Media OS</h1>
+                <p className="text-xs text-muted-foreground leading-relaxed px-4">
+                  I am Super Spark, your Executive Creative Director. Let's calibrate your autonomous media company.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setStep("identity")}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+              >
+                <span>Initialize Workspace</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </motion.div>
           )}
 
-          {/* SCREEN 2: Identity */}
+          {/* SCREEN 2: Identity Setup */}
           {step === "identity" && (
             <motion.div
               key="identity"
@@ -255,30 +415,31 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               className="space-y-5"
             >
               <SparkGuide
-                state="speaking"
-                message="Let's set your brand identity."
-                subtitle="What is your name and the name of your brand?"
+                state={guideState}
+                message="What should we name your brand and creator persona?"
+                subtitle="This configures your brand identity across all media generation."
               />
 
-              <div className="space-y-3 pt-2">
+              <div className="space-y-3 pt-1">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Your Name / Creator Persona</label>
+                  <label className="text-[11px] font-medium text-muted-foreground block mb-1">Your Name / Creator Persona</label>
                   <input
                     type="text"
                     value={creatorName}
                     onChange={(e) => setCreatorName(e.target.value)}
-                    placeholder="e.g. Alex"
-                    className="w-full p-3 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:border-purple-500"
+                    placeholder="e.g. Maurice Otabor"
+                    className="w-full p-3 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
                   />
                 </div>
+
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Brand Name</label>
+                  <label className="text-[11px] font-medium text-muted-foreground block mb-1">Brand or Channel Name</label>
                   <input
                     type="text"
                     value={brandName}
                     onChange={(e) => setBrandName(e.target.value)}
-                    placeholder="e.g. Next Wave Media"
-                    className="w-full p-3 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:border-purple-500"
+                    placeholder="e.g. ElOgiso Media"
+                    className="w-full p-3 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
                   />
                 </div>
               </div>
@@ -287,7 +448,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                 type="button"
                 disabled={!creatorName.trim() || !brandName.trim()}
                 onClick={handleIdentitySubmit}
-                className="w-full py-3.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm transition-all disabled:opacity-40 flex items-center justify-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
               >
                 <span>Continue to Niche</span>
                 <ArrowRight className="w-4 h-4" />
@@ -295,7 +456,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 3: Niche */}
+          {/* SCREEN 3: Content Niche */}
           {step === "niche" && (
             <motion.div
               key="niche"
@@ -346,7 +507,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 4: Character & Visual Look */}
+          {/* SCREEN 4: Character & Visual Look (PART B: Portrait Generation) */}
           {step === "character" && (
             <motion.div
               key="character"
@@ -354,53 +515,33 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
               <SparkGuide
                 state="speaking"
-                message="How should the host character appear?"
-                subtitle="Select host format and visual aesthetic."
+                message="Host Character & Visual Style"
+                subtitle="Generate a character portrait or upload a reference."
               />
 
-              <div className="space-y-2 pt-1">
-                {[
-                  { id: "self", label: "I'll appear myself", icon: User, desc: "Direct creator video" },
-                  { id: "photo", label: "Take Photo / Camera", icon: Camera, desc: "Use device camera" },
-                  { id: "upload", label: "Upload Reference Image", icon: Upload, desc: "Custom host photo" },
-                  { id: "describe", label: "Describe Character", icon: Sparkles, desc: "Text persona bible" },
-                ].map((opt) => {
-                  const Icon = opt.icon;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => handleCharacterChoice(opt.label)}
-                      className="w-full p-3 rounded-xl bg-card border border-border hover:border-purple-500 flex items-center justify-between text-left transition-all active:scale-[0.98]"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-foreground">{opt.label}</p>
-                          <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
-                        </div>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40" />
-                    </button>
-                  );
-                })}
-              </div>
+              <div className="space-y-2.5 pt-1">
+                <div>
+                  <label className="text-[11px] text-muted-foreground mb-1 block">Character Persona</label>
+                  <input
+                    type="text"
+                    value={characterDescription}
+                    onChange={(e) => setCharacterDescription(e.target.value)}
+                    placeholder="e.g. Modern executive presenter with crisp lighting..."
+                    className="w-full p-2.5 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
+                  />
+                </div>
 
-              <div className="pt-2 border-t border-border/40">
-                <label className="text-[11px] text-muted-foreground mb-1.5 block">Visual Rendering Style</label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {(["Realistic / Live-Action", "Cinematic 3D", "Anime / Stylized Studio"] as const).map((vs) => (
                     <button
                       key={vs}
                       type="button"
                       onClick={() => setVisualStyle(vs)}
-                      className={`p-2 rounded-lg text-[11px] font-semibold border text-center transition-all ${
+                      className={`p-2 rounded-lg text-[10px] font-semibold border text-center transition-all ${
                         visualStyle === vs
                           ? "bg-purple-600/30 border-purple-400 text-purple-200"
                           : "bg-card border-border text-muted-foreground"
@@ -410,11 +551,64 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                     </button>
                   ))}
                 </div>
+
+                {/* Portrait Generation Preview Card */}
+                <div className="p-3 rounded-xl bg-card border border-border">
+                  {characterSheetUrl ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={characterSheetUrl}
+                        alt="Portrait"
+                        className="w-12 h-12 rounded-lg object-cover border border-purple-400 shrink-0"
+                      />
+                      <div className="flex-1">
+                        <span className="text-xs font-semibold text-purple-200 block">Character Portrait Ready</span>
+                        <span className="text-[10px] text-muted-foreground">Will appear in MY SPARK.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGeneratePortrait}
+                        disabled={isGeneratingPortrait}
+                        className="p-1.5 rounded-lg bg-white/5 text-purple-300 hover:bg-purple-500/20"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Generate portrait sheet</span>
+                      <button
+                        type="button"
+                        onClick={handleGeneratePortrait}
+                        disabled={isGeneratingPortrait}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        {isGeneratingPortrait ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                        Generate
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <label className="text-[11px] text-purple-300 hover:underline cursor-pointer flex items-center justify-center gap-1.5 p-2 rounded-xl bg-card border border-border">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{characterSheetUrl ? "Change Reference Image" : "Upload Reference Image Instead"}</span>
+                  <input type="file" accept="image/*" onChange={handleCharacterPhotoUpload} className="hidden" />
+                </label>
               </div>
+
+              <button
+                type="button"
+                onClick={handleConfirmCharacter}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+              >
+                <span>Confirm Character →</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </motion.div>
           )}
 
-          {/* SCREEN 5: Voice */}
+          {/* SCREEN 5: Voice (PART C: ElevenLabs Live Voices & Design) */}
           {step === "voice" && (
             <motion.div
               key="voice"
@@ -422,39 +616,81 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
               <SparkGuide
                 state="speaking"
-                message="Choose a voice profile for your host."
-                subtitle="Select a voice profile or configure later."
+                message="Brand Narrator Voice"
+                subtitle="Select an ElevenLabs voice for video production."
               />
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {[
-                  { title: "Spark Executive Male", desc: "Global Executive" },
-                  { title: "Spark African Storyteller", desc: "West African English" },
-                  { title: "Spark Energetic Female", desc: "Dynamic Creator" },
-                  { title: "Spark Cinematic Voice", desc: "Deep Cinematic" },
-                ].map((item) => (
+              <div className="space-y-2 pt-1 max-h-56 overflow-y-auto">
+                {voices.slice(0, 5).map((v) => {
+                  const isSel = selectedVoiceId === v.voiceId;
+                  const isPlaying = playingVoiceId === v.voiceId;
+
+                  return (
+                    <div
+                      key={v.voiceId}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                        isSel
+                          ? "bg-purple-600/30 border-purple-400 text-purple-200"
+                          : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      <div className="flex-1 cursor-pointer" onClick={() => handleVoiceChoice(v)}>
+                        <div className="flex items-center gap-1.5">
+                          {isSel && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
+                          <span className="text-xs font-bold text-foreground block">{v.name}</span>
+                        </div>
+                        <span className="text-[10px] opacity-75 block truncate">{v.accent || v.description}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePlayVoicePreview(v)}
+                        className="p-1.5 rounded-lg bg-white/10 text-purple-300 flex items-center justify-center cursor-pointer"
+                      >
+                        {isPlaying ? (
+                          <Square className="w-3.5 h-3.5 text-cyan-300 fill-cyan-300 animate-pulse" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 fill-purple-300" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Describe Custom Voice */}
+              <div className="p-2.5 rounded-xl bg-card border border-border space-y-2">
+                <span className="text-[11px] font-bold text-foreground block">Or Design a Custom Voice</span>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={voiceDescription}
+                    onChange={(e) => setVoiceDescription(e.target.value)}
+                    placeholder="e.g. Deep confident founder voice..."
+                    className="flex-1 p-2 rounded-lg bg-black/40 border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
+                  />
                   <button
-                    key={item.title}
                     type="button"
-                    onClick={() => handleVoiceChoice(item.title)}
-                    className="p-3 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98]"
+                    onClick={handleDesignVoice}
+                    disabled={!voiceDescription.trim() || isDesigningVoice}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                   >
-                    <span className="text-xs font-semibold text-foreground block">{item.title}</span>
-                    <span className="text-[10px] text-muted-foreground">{item.desc}</span>
+                    {isDesigningVoice ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    Design
                   </button>
-                ))}
+                </div>
               </div>
 
               <button
                 type="button"
-                onClick={() => handleVoiceChoice("Deferred")}
-                className="w-full py-2.5 text-xs text-muted-foreground hover:text-purple-300 transition-colors"
+                onClick={() => setStep("audio")}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2"
               >
-                Set voice in MY SPARK later →
+                <span>Continue to Audio Energy →</span>
               </button>
             </motion.div>
           )}
@@ -498,7 +734,67 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 7: Channels & Accounts */}
+          {/* SCREEN 7: Research Source / Inspiration Account (PART D) */}
+          {step === "research-sources" && (
+            <motion.div
+              key="research-sources"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.4 }}
+              className="space-y-4"
+            >
+              <SparkGuide
+                state="speaking"
+                message="Inspiration Accounts / Research Sources"
+                subtitle="Paste YouTube, TikTok, or Instagram URLs to seed Viral Sparks."
+              />
+
+              <div className="space-y-2.5 pt-1">
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={researchSourceInput}
+                    onChange={(e) => setResearchSourceInput(e.target.value)}
+                    placeholder="https://youtube.com/@channel..."
+                    className="flex-1 p-2.5 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddResearchSource}
+                    disabled={!researchSourceInput.trim()}
+                    className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+
+                {seededSources.length > 0 && (
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                    {seededSources.map((sUrl) => (
+                      <div key={sUrl} className="p-2 rounded-lg bg-card border border-purple-500/30 flex items-center justify-between text-xs">
+                        <span className="text-purple-200 truncate flex-1 pr-2">{sUrl}</span>
+                        <button type="button" onClick={() => handleRemoveResearchSource(sUrl)} className="text-muted-foreground hover:text-red-400">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleConfirmResearchSources}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+              >
+                <span>{seededSources.length > 0 ? "Confirm Sources →" : "Skip for now →"}</span>
+              </button>
+            </motion.div>
+          )}
+
+          {/* SCREEN 8: Channels & Accounts */}
           {step === "publishing" && (
             <motion.div
               key="publishing"
@@ -550,7 +846,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 8: Production Mode (REQUIRED) */}
+          {/* SCREEN 9: Production Mode */}
           {step === "production-mode" && (
             <motion.div
               key="production-mode"
@@ -609,7 +905,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 9: Automation Settings (REQUIRED) */}
+          {/* SCREEN 10: Automation Settings */}
           {step === "automation" && (
             <motion.div
               key="automation"
@@ -668,7 +964,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 10: Calibration */}
+          {/* SCREEN 11: Calibration */}
           {step === "initialization" && (
             <motion.div
               key="initialization"
@@ -718,7 +1014,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
             </motion.div>
           )}
 
-          {/* SCREEN 11: Ready */}
+          {/* SCREEN 12: Ready */}
           {step === "ready" && (
             <motion.div
               key="ready"
@@ -743,8 +1039,16 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                   <span className="text-foreground">Brand: <strong>{brandName}</strong> ({niche})</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {characterSheetUrl ? (
+                    <img src={characterSheetUrl} alt="Host" className="w-4 h-4 rounded-full object-cover border border-emerald-400 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  )}
+                  <span className="text-foreground">Character: <strong>{creatorName}</strong> ({visualStyle})</span>
+                </div>
+                <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-foreground">Character: <strong>{characterOpt}</strong> ({visualStyle})</span>
+                  <span className="text-foreground">Narrator: <strong>{selectedVoiceName}</strong></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -754,9 +1058,11 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <span className="text-foreground">Automation: <strong className="capitalize">{automationMode}</strong></span>
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground text-[11px] pt-1 border-t border-border/40">
-                  <span>○ Accounts ({selectedAccounts.length > 0 ? `${selectedAccounts.length} selected` : "Optional — connect later"})</span>
-                </div>
+                {seededSources.length > 0 && (
+                  <div className="flex items-center gap-2 text-purple-300 text-[11px] pt-1 border-t border-border/40">
+                    <span>✓ {seededSources.length} Research Sources Seeded</span>
+                  </div>
+                )}
               </div>
 
               <button

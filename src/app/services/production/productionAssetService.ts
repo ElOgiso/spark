@@ -189,10 +189,21 @@ export class ProductionAssetService {
     character?: Character;
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
+    signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character, onProgress, forceRegenerate } = params;
+    const { production, brief, brand, character, onProgress, forceRegenerate, signal } = params;
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
+
+    const checkAborted = () => {
+      if (signal?.aborted) {
+        const err = new Error("Generation cancelled by executive");
+        err.name = "AbortError";
+        throw err;
+      }
+    };
+
+    checkAborted();
 
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: "Storyboard structure", status: "active" },
@@ -221,6 +232,7 @@ export class ProductionAssetService {
         lastError?: string;
       }
     ) => {
+      if (signal?.aborted) return;
       if (onProgress) {
         onProgress({
           percent: Math.min(100, Math.max(0, percent)),
@@ -304,12 +316,14 @@ Return valid JSON with exactly this structure:
 `;
 
     try {
+      checkAborted();
       console.log(`[SPARK Pipeline] Provider Request: Storyboard structure via ModelRouter...`);
       const rawResponse = await ModelRouter.executeCategoryRequest("production", {
         prompt,
         systemInstruction,
       });
 
+      checkAborted();
       console.log(`[SPARK Pipeline] Provider Response: Storyboard structure received (${rawResponse.length} chars)`);
 
       const cleanJson = rawResponse.replace(/```json/gi, "").replace(/```/g, "").trim();
@@ -339,15 +353,18 @@ Return valid JSON with exactly this structure:
                trimmed.startsWith("https://");
       };
 
-      // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline (or reuse if present)
+      // Synthesize real voiceover audio via ElevenLabs (with brand voiceId) -> Provider TTS pipeline (or reuse if present)
+      checkAborted();
       if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         realVoiceUrl = production.audioUrl || brief.audioUrl;
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
       } else {
         try {
           const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
+          const targetVoiceId = character?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
-          const elevenVoice = await generateElevenLabsVoice(voiceScript);
+          const elevenVoice = await generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal);
+          checkAborted();
           if (isValidMediaData(elevenVoice)) {
             let voiceResult = elevenVoice;
             try {
@@ -367,8 +384,10 @@ Return valid JSON with exactly this structure:
             }
             realVoiceUrl = voiceResult;
           } else {
+            checkAborted();
             const { generateSuperSparkVoice } = await import("../geminiService");
             const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+            checkAborted();
             if (isValidMediaData(synthesizedVoice)) {
               let voiceResult = synthesizedVoice;
               try {
@@ -390,6 +409,7 @@ Return valid JSON with exactly this structure:
             }
           }
         } catch (voiceErr: any) {
+          if (voiceErr?.name === "AbortError" || signal?.aborted) throw voiceErr;
           console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
           if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
         }
@@ -407,6 +427,7 @@ Return valid JSON with exactly this structure:
         const { ModelRouter } = await import("../runtime/modelRouter");
         const totalScenes = storyboard.length || 3;
         for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
+          checkAborted();
           const scene = storyboard[sIdx];
           if (!forceRegenerate && isValidMediaData(scene.image)) {
             console.log(`[SPARK Pipeline] Reusing existing Scene ${sIdx + 1} image -> ${scene.image}`);
@@ -419,10 +440,12 @@ Return valid JSON with exactly this structure:
 
           const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Hook: "${brief.hook}". Brand: ${brand.name}`;
           try {
+            checkAborted();
             console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} image via ModelRouter ("storyboardImages")...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
             });
+            checkAborted();
             console.log(`[SPARK Pipeline] Provider Response: Scene ${sIdx + 1} image received (${imgUrl ? imgUrl.slice(0, 50) + "..." : "none"})`);
             if (isValidMediaData(imgUrl)) {
               let finalImg = imgUrl;
@@ -450,6 +473,7 @@ Return valid JSON with exactly this structure:
               if (!lastError) lastError = `Scene ${sIdx + 1} Keyframe: No image bytes returned by provider`;
             }
           } catch (sceneErr: any) {
+            if (sceneErr?.name === "AbortError" || signal?.aborted) throw sceneErr;
             console.error(`[SPARK Pipeline] Scene ${scene.scene} image generation failed:`, sceneErr);
             if (!lastError) lastError = `Scene ${sIdx + 1} Keyframe: ${sceneErr?.message || String(sceneErr)}`;
           }
@@ -458,6 +482,7 @@ Return valid JSON with exactly this structure:
           emitProgress(currentPct, "Keyframes", `Rendered keyframe ${sIdx + 1} of ${totalScenes}...`);
         }
       } catch (imgErr: any) {
+        if (imgErr?.name === "AbortError" || signal?.aborted) throw imgErr;
         console.error("[SPARK Pipeline] Storyboard image generation notice:", imgErr);
         if (!lastError) lastError = `Keyframe Stage: ${imgErr?.message || String(imgErr)}`;
       }
@@ -472,6 +497,7 @@ Return valid JSON with exactly this structure:
         const { ModelRouter } = await import("../runtime/modelRouter");
         const totalThumbs = thumbnails.length || 3;
         for (let tIdx = 0; tIdx < thumbnails.length; tIdx++) {
+          checkAborted();
           const thumb = thumbnails[tIdx];
           const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
           if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
@@ -494,10 +520,12 @@ Return valid JSON with exactly this structure:
           let thumbUrl: string | undefined = undefined;
 
           try {
+            checkAborted();
             console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
             const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: thumbPrompt,
             });
+            checkAborted();
 
             if (isValidMediaData(thumbImgData)) {
               let finalThumb = thumbImgData;
@@ -523,6 +551,7 @@ Return valid JSON with exactly this structure:
               if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
             }
           } catch (thumbErr: any) {
+            if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
             console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
             if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
           }
@@ -542,6 +571,7 @@ Return valid JSON with exactly this structure:
           emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
         }
       } catch (tLoopErr: any) {
+        if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
         console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
         if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
       }
@@ -551,6 +581,7 @@ Return valid JSON with exactly this structure:
       emitProgress(80, "Video", "Rendering 9:16 master video preview...");
 
       // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
+      checkAborted();
       if (!forceRegenerate && isValidMediaData(production.videoUrl || brief.videoUrl)) {
         realVideoUrl = production.videoUrl || brief.videoUrl;
         console.log(`[SPARK Pipeline] Reusing existing master video -> ${realVideoUrl}`);
@@ -561,12 +592,14 @@ Return valid JSON with exactly this structure:
         }
       } else {
         try {
+          checkAborted();
           const { ModelRouter } = await import("../runtime/modelRouter");
           const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
           console.log(`[SPARK Pipeline] Provider Request: Video generation via ModelRouter ("videoGeneration")...`);
           const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
             prompt: videoPrompt,
           });
+          checkAborted();
           console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
           if (isValidMediaData(generatedVideo)) {
             let finalVid = generatedVideo;
@@ -598,11 +631,13 @@ Return valid JSON with exactly this structure:
             if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
           }
         } catch (vidErr: any) {
+          if (vidErr?.name === "AbortError" || signal?.aborted) throw vidErr;
           console.error("[SPARK Pipeline] Video generation failed:", vidErr);
           if (!lastError) lastError = `Video Generation: ${vidErr?.message || String(vidErr)}`;
         }
       }
 
+      checkAborted();
       stages[4].status = realVideoUrl ? "done" : "failed";
       stages[5].status = "active";
       emitProgress(96, "Saving", "Synchronizing storage assets & metadata...", { videoUrl: realVideoUrl, lastError });
@@ -677,7 +712,11 @@ Return valid JSON with exactly this structure:
         audioUrl: realVoiceUrl,
         videoUrl: realVideoUrl,
       };
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError" || signal?.aborted) {
+        console.log(`[SPARK Pipeline] Asset Generation ABORTED for Production "${production.id}"`);
+        throw err;
+      }
       console.warn("[ProductionAssetService] AI storyboard fallback:", err);
 
       const fallbackStoryboard: ProductionScene[] = [

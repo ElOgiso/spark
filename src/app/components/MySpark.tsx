@@ -518,18 +518,27 @@ export function MySpark({ onNavigate }: MySparkProps) {
               <div className="grid grid-cols-2 gap-8">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-4">Primary Character</p>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-lg font-medium">{character.name}</p>
-                      <p className="text-sm text-muted-foreground">{character.role}</p>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{character.style}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {character.traits.map((trait: any) => (
-                        <span key={trait} className="px-2.5 py-1 rounded-lg bg-accent/20 text-xs font-medium">
-                          {trait}
-                        </span>
-                      ))}
+                  <div className="flex gap-4 items-start">
+                    {(character.imageUrl || character.avatarUrl || character.characterSheetUrl) && (
+                      <img
+                        src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
+                        alt={character.name}
+                        className="w-16 h-16 rounded-xl object-cover border border-accent/40 shrink-0 shadow-md"
+                      />
+                    )}
+                    <div className="space-y-2 flex-1">
+                      <div>
+                        <p className="text-lg font-medium">{character.name}</p>
+                        <p className="text-sm text-muted-foreground">{character.role}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{character.style}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {character.traits?.map((trait: any) => (
+                          <span key={trait} className="px-2.5 py-1 rounded-lg bg-accent/20 text-xs font-medium">
+                            {trait}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

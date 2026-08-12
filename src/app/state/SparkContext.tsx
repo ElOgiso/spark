@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { loadPersistedState, savePersistedState } from "./persistence";
 import { generateSuperSparkResponse, SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import {
@@ -252,6 +252,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
+  const activeGenerationControllers = useRef<Map<string, AbortController>>(new Map());
 
   const updateAISettings = (newSettings: AISettings) => {
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
@@ -723,12 +724,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: creatorName,
           role: "Lead Host",
           style: `${visualStyle} — ${creatorName} representing ${brandName}`,
-          avatarUrl: data.characterSheetUrl || prev.character?.avatarUrl || null,
+          avatarUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.avatarUrl || null,
+          imageUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.imageUrl || null,
+          characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.characterSheetUrl || null,
           voice: {
             name: data.voiceProfile?.name || "Spark_Executive_Male",
             language: data.voiceProfile?.language || "English (Executive Male Accent)",
             tone: tone,
             locked: true,
+            voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
+            description: data.voiceProfile?.accent || data.voiceProfile?.description,
           },
         },
         accounts: Array.from(byPlatform.values()),
@@ -742,6 +747,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         memoryItems: initialMemoryItems,
       };
     });
+
+    // Seed research sources if provided during onboarding
+    if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
+      data.researchSources.filter(Boolean).forEach((url: string) => {
+        void addResearchSource(url);
+      });
+    }
 
     const brandId = getBrandWorkspaceId();
     if (brandId) {
@@ -932,12 +944,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           // Chain asset generation automatically when Production Generation is ON
           if (ProductionGenerationGuard.isEnabled()) {
+            if (activeGenerationControllers.current.has(prodId)) {
+              activeGenerationControllers.current.get(prodId)?.abort();
+            }
+            const controller = new AbortController();
+            activeGenerationControllers.current.set(prodId, controller);
+
             try {
               const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
                 production: stableEnrichedProd,
                 brand: state.brand,
                 character: state.character,
+                signal: controller.signal,
                 onProgress: (progress) => {
+                  if (controller.signal.aborted) return;
                   setState((prev: any) => ({
                     ...prev,
                     productions: prev.productions.map((p: any) => {
@@ -1011,6 +1031,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 },
               });
 
+              if (controller.signal.aborted) return;
+
               setState((prev: any) => ({
                 ...prev,
                 productions: prev.productions.map((p: any) =>
@@ -1032,6 +1054,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
               eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
             } catch (assetErr: any) {
+              if (controller.signal.aborted || assetErr?.name === "AbortError") {
+                console.log(`[SparkContext] Auto generation aborted for prodId ${prodId}`);
+                return;
+              }
               console.warn("[SparkContext] Auto asset generation notice:", assetErr);
               setState((prev: any) => ({
                 ...prev,
@@ -1041,6 +1067,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     : p
                 ),
               }));
+            } finally {
+              if (activeGenerationControllers.current.get(prodId) === controller) {
+                activeGenerationControllers.current.delete(prodId);
+              }
             }
           }
         })
@@ -1089,12 +1119,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const prod = state.productions.find((p: any) => p.id === productionId);
     if (!prod) return;
 
+    if (activeGenerationControllers.current.has(productionId)) {
+      activeGenerationControllers.current.get(productionId)?.abort();
+    }
+    const controller = new AbortController();
+    activeGenerationControllers.current.set(productionId, controller);
+
     eventBus.emit("RENDER_STARTED", { prodId: productionId }, state.brand.name);
 
     setState((prev: any) => ({
       ...prev,
       productions: prev.productions.map((p: any) =>
-        p.id === productionId ? { ...p, isGeneratingAssets: true } : p
+        p.id === productionId ? { ...p, isGeneratingAssets: true, lastError: undefined } : p
       ),
     }));
 
@@ -1105,7 +1141,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         brand: state.brand,
         character: state.character,
         forceRegenerate,
+        signal: controller.signal,
         onProgress: (progress) => {
+          if (controller.signal.aborted) return;
           setState((prev: any) => ({
             ...prev,
             productions: prev.productions.map((p: any) => {
@@ -1175,6 +1213,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
       });
 
+      if (controller.signal.aborted) return;
+
       setState((prev: any) => ({
         ...prev,
         productions: prev.productions.map((p: any) =>
@@ -1194,6 +1234,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       eventBus.emit("STORYBOARD_READY", { prodId: productionId, title: updatedProd.title }, state.brand.name);
     } catch (err: any) {
+      if (controller.signal.aborted || err?.name === "AbortError") {
+        console.log(`[SparkContext] Asset generation aborted for prodId ${productionId}`);
+        return;
+      }
       console.warn("[SparkContext] Asset generation notice:", err);
       setState((prev: any) => ({
         ...prev,
@@ -1203,20 +1247,46 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             : p
         ),
       }));
+    } finally {
+      if (activeGenerationControllers.current.get(productionId) === controller) {
+        activeGenerationControllers.current.delete(productionId);
+      }
     }
   };
 
   const cancelProduction = (productionId: string) => {
+    // 1. Abort in-flight generation controller if running
+    const controller = activeGenerationControllers.current.get(productionId);
+    if (controller) {
+      controller.abort();
+      activeGenerationControllers.current.delete(productionId);
+      console.log(`[SparkContext] Aborted active generation controller for production: ${productionId}`);
+    }
+
+    // 2. Set production state to Cancelled immediately
+    setState((prev: any) => ({
+      ...prev,
+      productions: prev.productions.map((p: any) =>
+        p.id === productionId
+          ? {
+              ...p,
+              status: "Cancelled",
+              isGeneratingAssets: false,
+              lastError: "Cancelled by executive",
+              generationProgress: p.generationProgress
+                ? { ...p.generationProgress, stage: "Cancelled", message: "Generation cancelled by executive" }
+                : undefined,
+            }
+          : p
+      ),
+      reviewItems: prev.reviewItems.map((r: any) =>
+        r.productionId === productionId ? { ...r, status: "Needs Edit" } : r
+      ),
+    }));
+
+    // 3. Persist cancellation to production service
     void import("../services/productionService").then(({ productionService }) => {
-      void productionService.cancelProduction(productionId).then((cancelledProd) => {
-        setState((prev: any) => ({
-          ...prev,
-          productions: prev.productions.map((p: any) => (p.id === productionId ? cancelledProd : p)),
-          reviewItems: prev.reviewItems.map((r: any) =>
-            r.productionId === productionId ? { ...r, status: "Needs Edit" } : r
-          ),
-        }));
-      });
+      void productionService.cancelProduction(productionId);
     });
   };
 
