@@ -202,13 +202,38 @@ export class ProductionAssetService {
       { id: "saving", label: "Finalizing media", status: "pending" },
     ];
 
-    const emitProgress = (percent: number, stage: string, message?: string) => {
+    let currentStoryboard: ProductionScene[] = [];
+    let currentThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
+    let realVoiceUrl: string | undefined = undefined;
+    let realVideoUrl: string | undefined = undefined;
+    let lastError: string | undefined = undefined;
+
+    const emitProgress = (
+      percent: number,
+      stage: string,
+      message?: string,
+      partialOverride?: {
+        storyboard?: ProductionScene[];
+        thumbnails?: { id: string; variant: string; concept: string; image?: string; url?: string }[];
+        voiceUrl?: string;
+        videoUrl?: string;
+        lastError?: string;
+      }
+    ) => {
       if (onProgress) {
         onProgress({
           percent: Math.min(100, Math.max(0, percent)),
           stage,
           stages: stages.map((s) => ({ ...s })),
           message,
+          updatedAt: new Date().toISOString(),
+          partialAssets: {
+            storyboard: partialOverride?.storyboard ?? (currentStoryboard.length > 0 ? currentStoryboard.map((s) => ({ ...s })) : undefined),
+            thumbnails: partialOverride?.thumbnails ?? (currentThumbnails.length > 0 ? currentThumbnails.map((t) => ({ ...t })) : undefined),
+            voiceUrl: partialOverride?.voiceUrl ?? realVoiceUrl,
+            videoUrl: partialOverride?.videoUrl ?? realVideoUrl,
+            lastError: partialOverride?.lastError ?? lastError,
+          },
         });
       }
     };
@@ -291,11 +316,16 @@ Return JSON matching this exact structure with NO markdown backticks:
       const storyboard: ProductionScene[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
+      currentStoryboard = storyboard;
+      currentThumbnails = thumbnails.map((t: any, idx: number) => ({
+        id: t.id || `t${idx + 1}`,
+        variant: t.variant || ["A", "B", "C"][idx] || "A",
+        concept: t.concept || `Variant ${t.variant || "A"}`,
+      }));
+
       stages[0].status = "done";
       stages[1].status = "active";
       emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
-
-      let lastError: string | undefined = undefined;
 
       const isValidMediaData = (val?: string | null): val is string => {
         if (!val || typeof val !== "string") return false;
@@ -308,38 +338,49 @@ Return JSON matching this exact structure with NO markdown backticks:
       };
 
       // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline
-      let realVoiceUrl: string | undefined = undefined;
       try {
         const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
         const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
         const elevenVoice = await generateElevenLabsVoice(voiceScript);
         if (isValidMediaData(elevenVoice)) {
-          const storedAudio = await this.uploadAssetToStorage({
-            productionId: production.id,
-            brandId: (brand as any).id,
-            assetType: "audio",
-            storagePath: `${production.id}/audio/voice.mp3`,
-            dataUrlOrBlob: elevenVoice,
-            mimeType: "audio/mpeg",
-            prompt: voiceScript,
-            provider: "ElevenLabs",
-          });
-          realVoiceUrl = storedAudio.publicUrl;
-        } else {
-          const { generateSuperSparkVoice } = await import("../geminiService");
-          const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
-          if (isValidMediaData(synthesizedVoice)) {
+          let voiceResult = elevenVoice;
+          try {
             const storedAudio = await this.uploadAssetToStorage({
               productionId: production.id,
               brandId: (brand as any).id,
               assetType: "audio",
               storagePath: `${production.id}/audio/voice.mp3`,
-              dataUrlOrBlob: synthesizedVoice,
-              mimeType: "audio/wav",
+              dataUrlOrBlob: elevenVoice,
+              mimeType: "audio/mpeg",
               prompt: voiceScript,
-              provider: "Google Gemini TTS",
+              provider: "ElevenLabs",
             });
-            realVoiceUrl = storedAudio.publicUrl;
+            if (storedAudio?.publicUrl) voiceResult = storedAudio.publicUrl;
+          } catch (storageErr) {
+            console.warn("[ProductionAssetService] Supabase audio upload failed, retaining provider audio URL:", storageErr);
+          }
+          realVoiceUrl = voiceResult;
+        } else {
+          const { generateSuperSparkVoice } = await import("../geminiService");
+          const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+          if (isValidMediaData(synthesizedVoice)) {
+            let voiceResult = synthesizedVoice;
+            try {
+              const storedAudio = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "audio",
+                storagePath: `${production.id}/audio/voice.mp3`,
+                dataUrlOrBlob: synthesizedVoice,
+                mimeType: "audio/wav",
+                prompt: voiceScript,
+                provider: "Google Gemini TTS",
+              });
+              if (storedAudio?.publicUrl) voiceResult = storedAudio.publicUrl;
+            } catch (storageErr) {
+              console.warn("[ProductionAssetService] Supabase audio upload failed, retaining provider audio URL:", storageErr);
+            }
+            realVoiceUrl = voiceResult;
           }
         }
       } catch (voiceErr: any) {
@@ -368,19 +409,26 @@ Return JSON matching this exact structure with NO markdown backticks:
             });
             console.log(`[SPARK Pipeline] Provider Response: Scene ${sIdx + 1} image received (${imgUrl ? imgUrl.slice(0, 50) + "..." : "none"})`);
             if (isValidMediaData(imgUrl)) {
-              const storedImg = await this.uploadAssetToStorage({
-                productionId: production.id,
-                brandId: (brand as any).id,
-                assetType: "frame",
-                storagePath: `${production.id}/frames/scene-0${sIdx + 1}.png`,
-                dataUrlOrBlob: imgUrl,
-                mimeType: "image/png",
-                prompt: imagePrompt,
-                provider: "ModelRouter",
-              });
-              console.log(`[SPARK Pipeline] Upload to Supabase Storage: Scene ${sIdx + 1} SUCCESS -> ${storedImg.publicUrl}`);
-              sceneImages.push(storedImg.publicUrl);
-              scene.image = storedImg.publicUrl;
+              let finalImg = imgUrl;
+              try {
+                const storedImg = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "frame",
+                  storagePath: `${production.id}/frames/scene-0${sIdx + 1}.png`,
+                  dataUrlOrBlob: imgUrl,
+                  mimeType: "image/png",
+                  prompt: imagePrompt,
+                  provider: "ModelRouter",
+                });
+                if (storedImg?.publicUrl) finalImg = storedImg.publicUrl;
+                console.log(`[SPARK Pipeline] Storage Upload: Scene ${sIdx + 1} -> ${finalImg}`);
+              } catch (storageErr) {
+                console.warn(`[SPARK Pipeline] Scene ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+              }
+              sceneImages.push(finalImg);
+              scene.image = finalImg;
+              currentStoryboard[sIdx] = { ...scene, image: finalImg };
             } else {
               console.warn(`[SPARK Pipeline] Scene ${sIdx + 1} returned empty/invalid image data:`, String(imgUrl || "").slice(0, 100));
               if (!lastError) lastError = `Scene ${sIdx + 1} Keyframe: No image bytes returned by provider`;
@@ -420,18 +468,24 @@ Return JSON matching this exact structure with NO markdown backticks:
             });
 
             if (isValidMediaData(thumbImgData)) {
-              const storedThumb = await this.uploadAssetToStorage({
-                productionId: production.id,
-                brandId: (brand as any).id,
-                assetType: "thumbnail",
-                storagePath: `${production.id}/thumbnails/variant-${variantLetter.toLowerCase()}.png`,
-                dataUrlOrBlob: thumbImgData,
-                mimeType: "image/png",
-                prompt: thumbPrompt,
-                provider: "ModelRouter",
-              });
-              console.log(`[SPARK Pipeline] Upload to Supabase Storage: Thumbnail Variant ${variantLetter} SUCCESS -> ${storedThumb.publicUrl}`);
-              thumbUrl = storedThumb.publicUrl;
+              let finalThumb = thumbImgData;
+              try {
+                const storedThumb = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "thumbnail",
+                  storagePath: `${production.id}/thumbnails/variant-${variantLetter.toLowerCase()}.png`,
+                  dataUrlOrBlob: thumbImgData,
+                  mimeType: "image/png",
+                  prompt: thumbPrompt,
+                  provider: "ModelRouter",
+                });
+                if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
+                console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
+              } catch (storageErr) {
+                console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
+              }
+              thumbUrl = finalThumb;
             } else {
               console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
               if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
@@ -441,13 +495,16 @@ Return JSON matching this exact structure with NO markdown backticks:
             if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
           }
 
-          enrichedThumbnails.push({
+          const resolvedThumbImage = thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined);
+          const thumbEntry = {
             id: thumb.id || `t${tIdx + 1}`,
             variant: variantLetter,
             concept: thumb.concept,
-            image: thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined),
-            url: thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined),
-          });
+            image: resolvedThumbImage,
+            url: resolvedThumbImage,
+          };
+          enrichedThumbnails.push(thumbEntry);
+          currentThumbnails = [...enrichedThumbnails];
 
           const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
           emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
@@ -462,7 +519,6 @@ Return JSON matching this exact structure with NO markdown backticks:
       emitProgress(80, "Video", "Rendering 9:16 master video preview...");
 
       // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
-      let realVideoUrl: string | undefined = undefined;
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
         const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
@@ -472,18 +528,30 @@ Return JSON matching this exact structure with NO markdown backticks:
         });
         console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
         if (isValidMediaData(generatedVideo)) {
-          const storedVid = await this.uploadAssetToStorage({
-            productionId: production.id,
-            brandId: (brand as any).id,
-            assetType: "video",
-            storagePath: `${production.id}/video/master.mp4`,
-            dataUrlOrBlob: generatedVideo,
-            mimeType: "video/mp4",
-            prompt: videoPrompt,
-            provider: "ModelRouter",
-          });
-          console.log(`[SPARK Pipeline] Upload to Supabase Storage: Video SUCCESS -> ${storedVid.publicUrl}`);
-          realVideoUrl = storedVid.publicUrl;
+          let finalVid = generatedVideo;
+          try {
+            const storedVid = await this.uploadAssetToStorage({
+              productionId: production.id,
+              brandId: (brand as any).id,
+              assetType: "video",
+              storagePath: `${production.id}/video/master.mp4`,
+              dataUrlOrBlob: generatedVideo,
+              mimeType: "video/mp4",
+              prompt: videoPrompt,
+              provider: "ModelRouter",
+            });
+            if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
+            console.log(`[SPARK Pipeline] Storage Upload: Video SUCCESS -> ${finalVid}`);
+          } catch (storageErr: any) {
+            console.warn("[SPARK Pipeline] Video upload failed, retaining provider URL:", storageErr);
+            if (!lastError) lastError = `Storage (Video): ${storageErr?.message || String(storageErr)}`;
+          }
+          realVideoUrl = finalVid;
+          if (currentStoryboard.length > 0) {
+            currentStoryboard.forEach((s) => {
+              if (!s.videoUrl) s.videoUrl = finalVid;
+            });
+          }
         } else {
           console.warn("[SPARK Pipeline] Video generation returned invalid/empty URL or bytes");
           if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
@@ -506,11 +574,19 @@ Return JSON matching this exact structure with NO markdown backticks:
         message: realVideoUrl || sceneImages.length > 0 
           ? "Media assets synthesized and ready for executive review."
           : "Asset synthesis complete. Some media stages failed — review error logs.",
+        updatedAt: renderCompletedAt,
+        partialAssets: {
+          storyboard: currentStoryboard,
+          thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
+          voiceUrl: realVoiceUrl,
+          videoUrl: realVideoUrl,
+          lastError,
+        },
       };
 
       const updatedBrief: ProductionBrief = {
         ...brief,
-        storyboard: storyboard.length > 0 ? storyboard : [
+        storyboard: currentStoryboard.length > 0 ? currentStoryboard : [
           {
             scene: 1,
             duration: "0-5s",

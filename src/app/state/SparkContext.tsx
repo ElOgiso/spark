@@ -1021,30 +1021,75 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         onProgress: (progress) => {
           setState((prev: any) => ({
             ...prev,
-            productions: prev.productions.map((p: any) =>
-              p.id === productionId ? { ...p, generationProgress: progress } : p
-            ),
-            reviewItems: prev.reviewItems.map((r: any) =>
-              r.productionId === productionId && r.brief
+            productions: prev.productions.map((p: any) => {
+              if (p.id !== productionId) return p;
+              const partial = progress.partialAssets;
+              const updatedScenes = partial?.storyboard?.length
+                ? partial.storyboard.map((s: any, idx: number) => ({
+                    scene: s.scene || idx + 1,
+                    description: s.description || s.visualDescription || `Scene ${s.scene || idx + 1}`,
+                    duration: s.duration || "0-10s",
+                    image: s.image || p.scenes?.[idx]?.image,
+                    videoUrl: s.videoUrl || partial.videoUrl || p.scenes?.[idx]?.videoUrl,
+                  }))
+                : p.scenes;
+
+              const updatedBrief = p.brief
                 ? {
-                    ...r,
-                    brief: {
-                      ...r.brief,
-                      generatedAssets: {
-                        ...r.brief.generatedAssets,
-                        generationProgress: progress,
-                      },
+                    ...p.brief,
+                    storyboard: partial?.storyboard || p.brief.storyboard,
+                    audioUrl: partial?.voiceUrl || p.brief.audioUrl,
+                    videoUrl: partial?.videoUrl || p.brief.videoUrl,
+                    generatedAssets: {
+                      ...p.brief.generatedAssets,
+                      generationProgress: progress,
+                      generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief.generatedAssets?.generatedFrames,
+                      thumbnails: partial?.thumbnails || p.brief.generatedAssets?.thumbnails,
+                      voiceoverUrl: partial?.voiceUrl || p.brief.generatedAssets?.voiceoverUrl,
+                      generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief.generatedAssets?.generatedVideos,
                     },
                   }
-                : r
-            ),
+                : p.brief;
+
+              return {
+                ...p,
+                generationProgress: progress,
+                scenes: updatedScenes,
+                audioUrl: partial?.voiceUrl || p.audioUrl,
+                videoUrl: partial?.videoUrl || p.videoUrl,
+                brief: updatedBrief,
+              };
+            }),
+            reviewItems: prev.reviewItems.map((r: any) => {
+              if (r.productionId !== productionId || !r.brief) return r;
+              const partial = progress.partialAssets;
+              const updatedBrief = {
+                ...r.brief,
+                storyboard: partial?.storyboard || r.brief.storyboard,
+                audioUrl: partial?.voiceUrl || r.brief.audioUrl,
+                videoUrl: partial?.videoUrl || r.brief.videoUrl,
+                generatedAssets: {
+                  ...r.brief.generatedAssets,
+                  generationProgress: progress,
+                  generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || r.brief.generatedAssets?.generatedFrames,
+                  thumbnails: partial?.thumbnails || r.brief.generatedAssets?.thumbnails,
+                  voiceoverUrl: partial?.voiceUrl || r.brief.generatedAssets?.voiceoverUrl,
+                  generatedVideos: partial?.videoUrl ? [partial.videoUrl] : r.brief.generatedAssets?.generatedVideos,
+                },
+              };
+              return {
+                ...r,
+                openingMoment: partial?.storyboard?.[0]?.visualDescription || r.openingMoment,
+                brief: updatedBrief,
+              };
+            }),
           }));
         },
       });
 
       setState((prev: any) => ({
         ...prev,
-        productions: prev.productions.map((p: any) => (p.id === productionId ? updatedProd : p)),
+        productions: prev.productions.map((p: any) => (p.id === productionId ? { ...updatedProd, isGeneratingAssets: false } : p)),
         reviewItems: prev.reviewItems.map((r: any) =>
           r.productionId === productionId
             ? { ...r, brief: updatedBrief, openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment }

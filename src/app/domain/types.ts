@@ -98,6 +98,14 @@ export interface GenerationProgress {
   stage: string;
   stages: GenerationProgressStage[];
   message?: string;
+  updatedAt?: string;
+  partialAssets?: {
+    storyboard?: ProductionScene[];
+    thumbnails?: { id: string; variant: string; concept: string; image?: string; url?: string }[];
+    voiceUrl?: string;
+    videoUrl?: string;
+    lastError?: string;
+  };
 }
 
 export type OfferType = "link" | "product" | "course";
