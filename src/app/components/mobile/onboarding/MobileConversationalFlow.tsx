@@ -137,7 +137,18 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   // Generate Character Reference Sheet Image
   const handleGeneratePortrait = async () => {
     setIsGeneratingPortrait(true);
-    const prompt = `Comprehensive character reference sheet bible grid for ${creatorName || "lead host"}, brand "${brandName || "SPARK"}". Presentation aesthetic: ${visualStyle}. Character traits: ${characterDescription}. Layout: Multi-view turnaround (front standing pose, 3/4 turn view, side profile detail, close-up facial expressions palette, signature wardrobe costume detail). Neutral studio backdrop, hyper-consistent character design bible, 8k resolution production reference sheet.`;
+    const prompt = `Production Character Design Bible Reference Sheet for "${creatorName || "Lead Host"}" representing brand "${brandName || "SPARK"}", niche: "${niche || "Content"}".
+Visual Style: ${visualStyle}.
+Character Bio & Persona: ${characterDescription || "Executive host in modern high-contrast studio setting"}.
+
+LAYOUT & COMPOSITION (One unified model sheet / production bible):
+1. TOP TITLE BLOCK: "${creatorName || "Lead Host"}" - Role/Vibe & core aesthetic guidelines.
+2. TURNAROUND MODEL ROW: Consistent full-body views (Full Front Standing Pose, 3/4 Dynamic View, Side Profile, and Back View) in matching signature wardrobe under neutral studio key lighting.
+3. EXPRESSION PALETTE GRID: 4 to 6 facial detail crops showing key emotions (Confident/Authority, Smiling/Engaging, Serious/Explaining, Inquisitive/Thoughtful).
+4. COLOR SWATCH PALETTE STRIP: Primary costume palette, secondary accent tones, and lighting color swatches at bottom.
+5. WARDROBE & DETAIL VIGNETTES: Signature accessories, props matching niche, and clean neutral studio background.
+
+Hyper-consistent production design bible, sharp focus, master reference quality, 8k resolution.`;
 
     try {
       const { ModelRouter } = await import("../../../services/runtime/modelRouter");
@@ -568,31 +579,36 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                   ))}
                 </div>
 
-                {/* Portrait Generation Preview Card */}
+                {/* Portrait / Character Sheet Generation Preview Card */}
                 <div className="p-3 rounded-xl bg-card border border-border">
                   {characterSheetUrl ? (
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={characterSheetUrl}
-                        alt="Portrait"
-                        className="w-12 h-12 rounded-lg object-cover border border-purple-400 shrink-0"
-                      />
-                      <div className="flex-1">
-                        <span className="text-xs font-semibold text-purple-200 block">Character Portrait Ready</span>
-                        <span className="text-[10px] text-muted-foreground">Will appear in MY SPARK.</span>
+                    <div className="space-y-2">
+                      <div className="w-full h-36 rounded-lg bg-black/60 border border-purple-400/40 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={characterSheetUrl}
+                          alt="Character Reference Bible Sheet"
+                          className="w-full h-full object-contain"
+                        />
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleGeneratePortrait}
-                        disabled={isGeneratingPortrait}
-                        className="p-1.5 rounded-lg bg-white/5 text-purple-300 hover:bg-purple-500/20"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
-                      </button>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-purple-200 block">Reference Sheet Ready</span>
+                          <span className="text-[10px] text-muted-foreground">Multi-angle identity locked.</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGeneratePortrait}
+                          disabled={isGeneratingPortrait}
+                          className="px-2 py-1 rounded-lg bg-white/5 text-purple-300 hover:bg-purple-500/20 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
+                          Regenerate
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Generate portrait sheet</span>
+                      <span className="text-xs text-muted-foreground">Generate model bible sheet</span>
                       <button
                         type="button"
                         onClick={handleGeneratePortrait}
@@ -726,9 +742,13 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
                           <button
                             type="button"
                             onClick={() => handleSelectDesignedVoicePreview(prev)}
-                            className="text-[10px] px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-500 font-semibold cursor-pointer"
+                            className={`text-[10px] px-2 py-1 rounded font-semibold cursor-pointer ${
+                              selectedVoiceId === prev.generated_voice_id
+                                ? "bg-emerald-600 text-white"
+                                : "bg-purple-600 text-white hover:bg-purple-500"
+                            }`}
                           >
-                            Use Voice
+                            {selectedVoiceId === prev.generated_voice_id ? "Selected ✓" : "Use Voice"}
                           </button>
                         </div>
                       </div>

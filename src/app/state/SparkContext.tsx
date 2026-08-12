@@ -807,8 +807,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           },
         });
       });
-      void auth.markOnboardingComplete(brandId);
     }
+
+    // ALWAYS mark onboarding complete — with or without UUID brand ID
+    void auth.markOnboardingComplete(brandId);
   };
 
   const updateAutomationMode = (mode: AutomationMode) => {

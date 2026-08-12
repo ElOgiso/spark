@@ -231,13 +231,24 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     reader.readAsDataURL(file);
   };
 
-  // Generate Character Bible Sheet Image via ModelRouter ("storyboardImages")
+  // Generate Character Production Bible Reference Sheet via ModelRouter ("storyboardImages")
   const handleGeneratePortrait = async () => {
     setIsGeneratingPortrait(true);
     setPortraitError(null);
 
     const charDesc = formData.characterDescription || "Executive host in modern high-contrast studio setting";
-    const prompt = `Comprehensive character reference sheet bible grid for ${formData.creatorName || "lead host"}, brand "${formData.brandName || "SPARK"}". Presentation aesthetic: ${formData.visualStyle}. Character traits: ${charDesc}. Layout: Multi-view turnaround (front standing pose, 3/4 turn view, side profile detail, close-up facial expressions palette, signature wardrobe costume detail). Neutral studio backdrop, hyper-consistent character design bible, 8k resolution production reference sheet.`;
+    const prompt = `Production Character Design Bible Reference Sheet for "${formData.creatorName || "Lead Host"}" representing brand "${formData.brandName || "SPARK"}", niche: "${formData.niche || "Content"}".
+Visual Style: ${formData.visualStyle}.
+Character Bio & Persona: ${charDesc}.
+
+LAYOUT & COMPOSITION (One unified model sheet / production bible):
+1. TOP TITLE BLOCK: "${formData.creatorName || "Lead Host"}" - Role/Vibe & core aesthetic guidelines.
+2. TURNAROUND MODEL ROW: Consistent full-body views (Full Front Standing Pose, 3/4 Dynamic View, Side Profile, and Back View) in matching signature wardrobe under neutral studio key lighting.
+3. EXPRESSION PALETTE GRID: 4 to 6 facial detail crops showing key emotions (Confident/Authority, Smiling/Engaging, Serious/Explaining, Inquisitive/Thoughtful).
+4. COLOR SWATCH PALETTE STRIP: Primary costume palette, secondary accent tones, and lighting color swatches at bottom.
+5. WARDROBE & DETAIL VIGNETTES: Signature accessories, props matching niche, and clean neutral studio background.
+
+Hyper-consistent production design bible, sharp focus, master reference quality, 8k resolution.`;
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
@@ -376,9 +387,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   };
 
   const handleConnectPlatform = (platform: string) => {
+    const isOAuthSupported = platform === "YouTube Shorts" || platform === "Twitter/X" || platform === "YouTube" || platform === "X";
+    if (!isOAuthSupported) {
+      setPlatformConnectError(`${platform} can be connected later in the Accounts center.`);
+      return;
+    }
+
     setConnectingPlatform(platform);
     setPlatformConnectError(null);
-    const platformName = platform === "YouTube Shorts" || platform === "YouTube" ? "YouTube Shorts" : platform === "Twitter/X" || platform === "X" ? "Twitter/X" : platform;
+    const platformName = platform === "YouTube Shorts" || platform === "YouTube" ? "YouTube Shorts" : "Twitter/X";
 
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("spark_onboarding_resume_state", JSON.stringify(formData));
@@ -389,7 +406,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     // 10s connection timeout safeguard
     const timeoutTimer = setTimeout(() => {
       setConnectingPlatform(null);
-      setPlatformConnectError(`Connection request timed out for ${platform}. You can proceed and connect later in My Spark.`);
+      setPlatformConnectError("Connection didn't complete. Try again or skip.");
     }, 10000);
 
     socialConnectorFramework
@@ -407,7 +424,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       .catch((err) => {
         clearTimeout(timeoutTimer);
         console.error("Failed to connect platform:", err);
-        setPlatformConnectError(`Failed to initiate ${platform} connection. You can connect later.`);
+        setPlatformConnectError("Connection didn't complete. Try again or skip.");
         setConnectingPlatform(null);
       });
   };
@@ -778,29 +795,33 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                 </div>
 
                 {formData.characterSheetUrl || formData.characterImageUrl ? (
-                  <div className="flex items-center gap-3 p-2 rounded-lg bg-black/40 border border-purple-500/30">
-                    <img
-                      src={formData.characterSheetUrl || formData.characterImageUrl}
-                      alt="Host Character Preview"
-                      className="w-14 h-14 rounded-lg object-cover border border-purple-400/50"
-                    />
-                    <div className="flex-1">
-                      <span className="text-xs font-semibold text-purple-200 block">Character Portrait Ready</span>
-                      <span className="text-[10px] text-muted-foreground block">Will be displayed across MY SPARK and production assets.</span>
+                  <div className="space-y-2 p-2.5 rounded-lg bg-black/40 border border-purple-500/30">
+                    <div className="w-full h-44 rounded-lg bg-black/60 border border-purple-400/40 flex items-center justify-center overflow-hidden">
+                      <img
+                        src={formData.characterSheetUrl || formData.characterImageUrl}
+                        alt="Character Design Bible Sheet"
+                        className="w-full h-full object-contain"
+                      />
                     </div>
-                    <button
-                      type="button"
-                      disabled={isGeneratingPortrait}
-                      onClick={handleGeneratePortrait}
-                      className="p-2 rounded-lg bg-white/10 hover:bg-purple-500/20 text-purple-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
-                      Regenerate
-                    </button>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-semibold text-purple-200 block">Character Reference Sheet Ready</span>
+                        <span className="text-[10px] text-muted-foreground">Multi-angle turnaround and identity palette locked.</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isGeneratingPortrait}
+                        onClick={handleGeneratePortrait}
+                        className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-purple-500/20 text-purple-300 text-xs font-medium flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
+                        Regenerate Sheet
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">Generate a visual portrait for your brand host.</p>
+                    <p className="text-[11px] text-muted-foreground">Generate a multi-view model sheet bible for your host.</p>
                     <button
                       type="button"
                       disabled={isGeneratingPortrait}
@@ -810,12 +831,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       {isGeneratingPortrait ? (
                         <>
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          Rendering...
+                          Rendering Bible...
                         </>
                       ) : (
                         <>
                           <Wand2 className="w-3 h-3" />
-                          Generate Portrait
+                          Generate Character Sheet
                         </>
                       )}
                     </button>
@@ -859,23 +880,27 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                   {isLiveVoices ? "ElevenLabs API Active" : "Curated Public Voices"}
                 </span>
               </div>
+              <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed bg-white/5 p-2 rounded-lg border border-white/10">
+                💡 <em>SPARK uses ElevenLabs exclusively for high-retention video narration & hooks. Preview or design below.</em>
+              </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                {voices.slice(0, 6).map((v) => {
-                  const isSelected = (formData.voiceProfile?.id || formData.voiceId) === v.voiceId;
+              {/* Curated / Live Voices Grid */}
+              <div className="grid grid-cols-2 gap-1.5 mb-2 max-h-40 overflow-y-auto">
+                {voices.map((v) => {
+                  const isSelected = formData.voiceId === v.voiceId;
                   const isPlaying = playingVoiceId === v.voiceId;
 
                   return (
                     <div
                       key={v.voiceId}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                      className={`p-2 rounded-xl border flex items-center justify-between transition-all ${
                         isSelected
                           ? "bg-purple-600/30 border-purple-400 text-purple-200"
-                          : "bg-white/5 border-white/10 text-muted-foreground"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       <div
-                        className="flex-1 cursor-pointer pr-2"
+                        className="flex-1 min-w-0 cursor-pointer"
                         onClick={() =>
                           setFormData({
                             ...formData,
@@ -894,7 +919,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       >
                         <div className="flex items-center gap-1.5">
                           {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
-                          <span className="text-xs font-bold text-foreground block">{v.name}</span>
+                          <span className="text-xs font-bold text-foreground block truncate">{v.name}</span>
                         </div>
                         <span className="text-[10px] opacity-75 block truncate">{v.accent || v.description}</span>
                       </div>
@@ -902,13 +927,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       <button
                         type="button"
                         onClick={() => playVoicePreview(v)}
-                        className="p-2 rounded-lg bg-white/10 hover:bg-purple-500/30 text-purple-300 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer"
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-purple-500/30 text-purple-300 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer"
                         title="Preview Voice Sample"
                       >
                         {isPlaying ? (
-                          <Square className="w-3.5 h-3.5 text-cyan-300 fill-cyan-300 animate-pulse" />
+                          <Square className="w-3 h-3 text-cyan-300 fill-cyan-300 animate-pulse" />
                         ) : (
-                          <Play className="w-3.5 h-3.5 fill-purple-300" />
+                          <Play className="w-3 h-3 fill-purple-300" />
                         )}
                       </button>
                     </div>
@@ -941,30 +966,35 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                 {designedPreviews.length > 0 && (
                   <div className="mt-2.5 space-y-1.5">
                     <span className="text-[10px] text-purple-300 font-medium block">Voice Previews:</span>
-                    {designedPreviews.map((prev, pIdx) => (
-                      <div key={prev.generated_voice_id} className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/10">
-                        <span className="text-xs text-muted-foreground font-mono">Sample Option {pIdx + 1}</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const audio = new Audio(prev.previewUrl);
-                              audio.play();
-                            }}
-                            className="p-1.5 rounded bg-white/10 text-purple-300 hover:bg-purple-500/20 cursor-pointer"
-                          >
-                            <Play className="w-3 h-3 fill-current" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSelectDesignedVoice(prev)}
-                            className="text-[10px] px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-500 cursor-pointer font-semibold"
-                          >
-                            Use Voice
-                          </button>
+                    {designedPreviews.map((prev, pIdx) => {
+                      const isSelected = formData.voiceId === prev.generated_voice_id;
+                      return (
+                        <div key={prev.generated_voice_id} className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/10">
+                          <span className="text-xs text-muted-foreground font-mono">Sample Option {pIdx + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const audio = new Audio(prev.previewUrl);
+                                audio.play();
+                              }}
+                              className="p-1.5 rounded bg-white/10 text-purple-300 hover:bg-purple-500/20 cursor-pointer"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectDesignedVoice(prev)}
+                              className={`text-[10px] px-2 py-1 rounded cursor-pointer font-semibold ${
+                                isSelected ? "bg-emerald-600 text-white" : "bg-purple-600 text-white hover:bg-purple-500"
+                              }`}
+                            >
+                              {isSelected ? "Selected ✓" : "Use Voice"}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 {voiceDesignError && (
@@ -1123,10 +1153,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
               )}
 
               <div className="space-y-1.5">
-                {["YouTube Shorts", "TikTok", "Instagram Reels", "Twitter/X", "LinkedIn"].map((plat) => {
+                {["YouTube Shorts", "Twitter/X", "TikTok", "Instagram Reels", "LinkedIn"].map((plat) => {
                   const isSelected = formData.platforms.includes(plat);
                   const conn = formData.connectedAccounts?.[plat];
                   const isConnecting = connectingPlatform === plat;
+                  const isOAuthSupported = plat === "YouTube Shorts" || plat === "Twitter/X" || plat === "YouTube" || plat === "X";
 
                   return (
                     <div
@@ -1150,7 +1181,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                             <Check className="w-3 h-3" />
                             {conn.handle} Connected
                           </span>
-                        ) : (
+                        ) : isOAuthSupported ? (
                           <button
                             type="button"
                             disabled={isConnecting}
@@ -1169,6 +1200,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                               </>
                             )}
                           </button>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-muted-foreground/70 font-mono">
+                            Connect later in Accounts
+                          </span>
                         )}
                       </div>
                     </div>
