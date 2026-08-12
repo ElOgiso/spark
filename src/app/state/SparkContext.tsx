@@ -88,8 +88,8 @@ interface SparkContextType {
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
   updateAISettings: (newSettings: AISettings) => void;
-  createProductionFromSpark: (sparkId: string) => void;
-  generateProductionAssets: (productionId: string) => Promise<void>;
+  createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
+  generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   cancelProduction: (productionId: string) => void;
   productionGenerationEnabled?: boolean;
   toggleProductionGeneration?: (enabled?: boolean) => void;
@@ -827,7 +827,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       typeof sparkOrId === "string"
         ? state.viralSparks.find((s: any) => s.id === sparkOrId) || state.viralSparks[0]
         : sparkOrId;
-    if (!spark) return;
+    if (!spark) {
+      console.warn("[SparkContext] createProductionFromSpark: Spark not found for:", sparkOrId);
+      return;
+    }
 
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
@@ -847,6 +850,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       dateCreated: new Date().toISOString().split("T")[0],
       aspectRatio: platformFit.includes("YouTube") && !platformFit.includes("TikTok") ? "16:9" : "9:16",
       formats,
+      isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
       scenes: [
         { scene: 1, description: `Hook Angle: ${spark.angle} (${hostStyle} host presentation)`, duration: "0-5s" },
         { scene: 2, description: `Body Point 1: Deep dive on ${spark.title}`, duration: "5-25s" },
@@ -887,89 +891,171 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     eventBus.emit("REVIEW_REQUIRED", { reviewId, prodId, title: spark.title }, state.brand.name);
 
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
-    if (ProductionGenerationGuard.isEnabled()) {
-      void import("../services/productionService").then(({ productionService }) => {
-        void productionService
-          .createProductionFromSpark({
-            spark,
-            brand: state.brand,
-            character: state.character,
-            niche: state.brand.niche,
-            memoryItems: state.memoryItems || [],
-            productionMode: state.productionMode,
-          })
-          .then(async ({ production: enrichedProd, reviewItem: enrichedReview }) => {
-            setState((prev: any) => ({
-              ...prev,
-              productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...enrichedProd, isGeneratingAssets: ProductionGenerationGuard.isEnabled() } : p)),
-              reviewItems: prev.reviewItems.map((r: any) => (r.id === reviewId ? { ...r, ...enrichedReview } : r)),
-            }));
+    void import("../services/productionService").then(({ productionService }) => {
+      void productionService
+        .createProductionFromSpark({
+          spark,
+          brand: state.brand,
+          character: state.character,
+          niche: state.brand.niche,
+          memoryItems: state.memoryItems || [],
+          productionMode: state.productionMode,
+          productionId: prodId,
+          reviewId: reviewId,
+        })
+        .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
+          const stableEnrichedProd: Production = {
+            ...enrichedProd,
+            id: prodId,
+            sparkId: spark.id,
+            isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
+          };
 
-            eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) =>
+              p.id === prodId ? { ...p, ...stableEnrichedProd, id: prodId, sparkId: spark.id } : p
+            ),
+            reviewItems: prev.reviewItems.map((r: any) =>
+              r.id === reviewId || r.productionId === prodId
+                ? { ...r, ...enrichedReview, id: reviewId, productionId: prodId }
+                : r
+            ),
+          }));
 
-            const brandId = getBrandWorkspaceId();
-            if (isSupabaseConfigured() && brandId) {
-              void persistProductionCreate(brandId, enrichedProd);
+          eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
+
+          const brandId = getBrandWorkspaceId();
+          if (isSupabaseConfigured() && brandId) {
+            void persistProductionCreate(brandId, stableEnrichedProd);
+          }
+
+          // Chain asset generation automatically when Production Generation is ON
+          if (ProductionGenerationGuard.isEnabled()) {
+            try {
+              const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
+                production: stableEnrichedProd,
+                brand: state.brand,
+                character: state.character,
+                onProgress: (progress) => {
+                  setState((prev: any) => ({
+                    ...prev,
+                    productions: prev.productions.map((p: any) => {
+                      if (p.id !== prodId) return p;
+                      const partial = progress.partialAssets;
+                      const updatedScenes = partial?.storyboard?.length
+                        ? partial.storyboard.map((s: any, idx: number) => ({
+                            scene: s.scene || idx + 1,
+                            description: s.description || s.visualDescription || `Scene ${s.scene || idx + 1}`,
+                            duration: s.duration || "0-10s",
+                            image: s.image || p.scenes?.[idx]?.image,
+                            videoUrl: s.videoUrl || partial.videoUrl || p.scenes?.[idx]?.videoUrl,
+                          }))
+                        : p.scenes;
+
+                      const mergedBrief = p.brief
+                        ? {
+                            ...p.brief,
+                            storyboard: partial?.storyboard || p.brief.storyboard,
+                            audioUrl: partial?.voiceUrl || p.brief.audioUrl,
+                            videoUrl: partial?.videoUrl || p.brief.videoUrl,
+                            generatedAssets: {
+                              ...p.brief.generatedAssets,
+                              generationProgress: progress,
+                              generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief.generatedAssets?.generatedFrames,
+                              thumbnails: partial?.thumbnails || p.brief.generatedAssets?.thumbnails,
+                              voiceoverUrl: partial?.voiceUrl || p.brief.generatedAssets?.voiceoverUrl,
+                              generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief.generatedAssets?.generatedVideos,
+                            },
+                          }
+                        : p.brief;
+
+                      return {
+                        ...p,
+                        generationProgress: progress,
+                        scenes: updatedScenes,
+                        audioUrl: partial?.voiceUrl || p.audioUrl,
+                        videoUrl: partial?.videoUrl || p.videoUrl,
+                        brief: mergedBrief,
+                      };
+                    }),
+                    reviewItems: prev.reviewItems.map((r: any) => {
+                      if (r.productionId !== prodId && r.id !== reviewId) return r;
+                      const partial = progress.partialAssets;
+                      const currentBrief = r.brief || enrichedBrief;
+                      const mergedBrief = currentBrief
+                        ? {
+                            ...currentBrief,
+                            storyboard: partial?.storyboard || currentBrief.storyboard,
+                            audioUrl: partial?.voiceUrl || currentBrief.audioUrl,
+                            videoUrl: partial?.videoUrl || currentBrief.videoUrl,
+                            generatedAssets: {
+                              ...currentBrief.generatedAssets,
+                              generationProgress: progress,
+                              generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || currentBrief.generatedAssets?.generatedFrames,
+                              thumbnails: partial?.thumbnails || currentBrief.generatedAssets?.thumbnails,
+                              voiceoverUrl: partial?.voiceUrl || currentBrief.generatedAssets?.voiceoverUrl,
+                              generatedVideos: partial?.videoUrl ? [partial.videoUrl] : currentBrief.generatedAssets?.generatedVideos,
+                            },
+                          }
+                        : currentBrief;
+
+                      return {
+                        ...r,
+                        openingMoment: partial?.storyboard?.[0]?.visualDescription || r.openingMoment,
+                        videoUrl: partial?.videoUrl || r.videoUrl,
+                        brief: mergedBrief,
+                      };
+                    }),
+                  }));
+                },
+              });
+
+              setState((prev: any) => ({
+                ...prev,
+                productions: prev.productions.map((p: any) =>
+                  p.id === prodId
+                    ? { ...p, ...updatedProd, id: prodId, sparkId: spark.id, isGeneratingAssets: false }
+                    : p
+                ),
+                reviewItems: prev.reviewItems.map((r: any) =>
+                  r.productionId === prodId || r.id === reviewId
+                    ? {
+                        ...r,
+                        brief: updatedBrief,
+                        videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || r.videoUrl,
+                        openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
+                      }
+                    : r
+                ),
+              }));
+
+              eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
+            } catch (assetErr: any) {
+              console.warn("[SparkContext] Auto asset generation notice:", assetErr);
+              setState((prev: any) => ({
+                ...prev,
+                productions: prev.productions.map((p: any) =>
+                  p.id === prodId
+                    ? { ...p, isGeneratingAssets: false, lastError: assetErr?.message || String(assetErr) }
+                    : p
+                ),
+              }));
             }
-
-            // Chain asset generation automatically when Production Generation is ON
-            if (ProductionGenerationGuard.isEnabled()) {
-              try {
-                const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
-                  production: enrichedProd,
-                  brand: state.brand,
-                  character: state.character,
-                  onProgress: (progress) => {
-                    setState((prev: any) => ({
-                      ...prev,
-                      productions: prev.productions.map((p: any) =>
-                        p.id === prodId ? { ...p, generationProgress: progress } : p
-                      ),
-                      reviewItems: prev.reviewItems.map((r: any) =>
-                        r.productionId === prodId && r.brief
-                          ? {
-                              ...r,
-                              brief: {
-                                ...r.brief,
-                                generatedAssets: {
-                                  ...r.brief.generatedAssets,
-                                  generationProgress: progress,
-                                },
-                              },
-                            }
-                          : r
-                      ),
-                    }));
-                  },
-                });
-
-                setState((prev: any) => ({
-                  ...prev,
-                  productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, ...updatedProd, isGeneratingAssets: false } : p)),
-                  reviewItems: prev.reviewItems.map((r: any) =>
-                    r.productionId === prodId
-                      ? {
-                          ...r,
-                          brief: updatedBrief,
-                          openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
-                        }
-                      : r
-                  ),
-                }));
-
-                eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
-              } catch (assetErr) {
-                console.warn("[SparkContext] Auto asset generation notice:", assetErr);
-                setState((prev: any) => ({
-                  ...prev,
-                  productions: prev.productions.map((p: any) => (p.id === prodId ? { ...p, isGeneratingAssets: false } : p)),
-                }));
-              }
-            }
-          })
-          .catch((err) => console.warn("[SparkContext] Production brief generation notice:", err));
-      });
-    }
+          }
+        })
+        .catch((err: any) => {
+          console.warn("[SparkContext] Production brief generation notice:", err);
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) =>
+              p.id === prodId
+                ? { ...p, isGeneratingAssets: false, lastError: err?.message || String(err) }
+                : p
+            ),
+          }));
+        });
+    });
 
     return { production: initialProduction, reviewItem: initialReviewItem };
   };
@@ -994,7 +1080,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const generateProductionAssets = async (productionId: string) => {
+  const generateProductionAssets = async (productionId: string, forceRegenerate = true) => {
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[SparkContext] Asset generation blocked: Production Generation is OFF.");
       return;
@@ -1018,6 +1104,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         production: prod,
         brand: state.brand,
         character: state.character,
+        forceRegenerate,
         onProgress: (progress) => {
           setState((prev: any) => ({
             ...prev,
@@ -1034,7 +1121,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   }))
                 : p.scenes;
 
-              const updatedBrief = p.brief
+              const mergedBrief = p.brief
                 ? {
                     ...p.brief,
                     storyboard: partial?.storyboard || p.brief.storyboard,
@@ -1057,13 +1144,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 scenes: updatedScenes,
                 audioUrl: partial?.voiceUrl || p.audioUrl,
                 videoUrl: partial?.videoUrl || p.videoUrl,
-                brief: updatedBrief,
+                brief: mergedBrief,
               };
             }),
             reviewItems: prev.reviewItems.map((r: any) => {
               if (r.productionId !== productionId || !r.brief) return r;
               const partial = progress.partialAssets;
-              const updatedBrief = {
+              const mergedBrief = {
                 ...r.brief,
                 storyboard: partial?.storyboard || r.brief.storyboard,
                 audioUrl: partial?.voiceUrl || r.brief.audioUrl,
@@ -1080,7 +1167,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return {
                 ...r,
                 openingMoment: partial?.storyboard?.[0]?.visualDescription || r.openingMoment,
-                brief: updatedBrief,
+                videoUrl: partial?.videoUrl || r.videoUrl,
+                brief: mergedBrief,
               };
             }),
           }));
@@ -1089,21 +1177,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       setState((prev: any) => ({
         ...prev,
-        productions: prev.productions.map((p: any) => (p.id === productionId ? { ...updatedProd, isGeneratingAssets: false } : p)),
+        productions: prev.productions.map((p: any) =>
+          p.id === productionId ? { ...p, ...updatedProd, id: productionId, isGeneratingAssets: false } : p
+        ),
         reviewItems: prev.reviewItems.map((r: any) =>
           r.productionId === productionId
-            ? { ...r, brief: updatedBrief, openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment }
+            ? {
+                ...r,
+                brief: updatedBrief,
+                videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || r.videoUrl,
+                openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
+              }
             : r
         ),
       }));
 
       eventBus.emit("STORYBOARD_READY", { prodId: productionId, title: updatedProd.title }, state.brand.name);
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[SparkContext] Asset generation notice:", err);
       setState((prev: any) => ({
         ...prev,
         productions: prev.productions.map((p: any) =>
-          p.id === productionId ? { ...p, isGeneratingAssets: false } : p
+          p.id === productionId
+            ? { ...p, isGeneratingAssets: false, lastError: err?.message || String(err) }
+            : p
         ),
       }));
     }

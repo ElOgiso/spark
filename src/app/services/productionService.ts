@@ -67,11 +67,13 @@ export class ProductionService implements IProductionService {
     niche?: string;
     memoryItems?: MemoryItem[];
     productionMode?: string;
+    productionId?: string;
+    reviewId?: string;
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
     const brief = await ProductionBriefService.generateBrief(params);
 
-    const prodId = `p-${Date.now()}`;
-    const reviewId = `r-${Date.now()}`;
+    const prodId = params.productionId || `p-${Date.now()}`;
+    const reviewId = params.reviewId || `r-${Date.now()}`;
     const dateStr = new Date().toISOString().split("T")[0];
 
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
@@ -131,8 +133,9 @@ export class ProductionService implements IProductionService {
     brand: Brand;
     character?: Character;
     onProgress?: (progress: import("../domain/types").GenerationProgress) => void;
+    forceRegenerate?: boolean;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
-    const { production, brand, character, onProgress } = params;
+    const { production, brand, character, onProgress, forceRegenerate } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -143,10 +146,12 @@ export class ProductionService implements IProductionService {
       brand,
       character,
       onProgress,
+      forceRegenerate,
     });
 
     const updatedProd: Production = {
       ...production,
+      id: production.id,
       brief: result.brief,
       scenes: result.scenes,
       audioUrl: result.audioUrl,
@@ -166,6 +171,7 @@ export class ProductionService implements IProductionService {
           ? {
               ...r,
               brief: result.brief,
+              videoUrl: result.videoUrl || r.videoUrl,
               openingMoment: result.brief.storyboard?.[0]?.visualDescription || r.openingMoment,
             }
           : r

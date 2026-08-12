@@ -172,13 +172,14 @@ export interface Production {
   dateCreated: string;
   aspectRatio: string;
   formats: string[];
-  scenes: { scene: number; description: string; duration: string }[];
+  scenes: { scene: number; description: string; duration: string; image?: string; videoUrl?: string }[];
   reasoning?: any;
   brief?: ProductionBrief;
   audioUrl?: string;
   videoUrl?: string;
   isGeneratingAssets?: boolean;
   generationProgress?: GenerationProgress;
+  lastError?: string;
 }
 
 export interface QualityCheck {
@@ -201,6 +202,8 @@ export interface ReviewItem {
   qualityCheck: QualityCheck;
   brief?: ProductionBrief;
   whyThisWorks?: string;
+  videoUrl?: string;
+  audioUrl?: string;
 }
 
 export interface PublishJob {

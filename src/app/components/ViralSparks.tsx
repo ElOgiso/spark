@@ -348,21 +348,38 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
   };
 
   const handleConfirm = () => {
+    if (!selectedSpark) return;
     setDrawerState("creating");
-    setTimeout(() => {
-      setDrawerState("created");
-      if (selectedSpark) {
-        createProductionFromSpark(selectedSpark.id);
-        NotificationService.addNotification({
-          title: "Production Draft Started",
-          description: `Spark is drafting storyboard and resources for "${selectedSpark.title}".`,
-          type: "new_viral_opportunity",
-          priority: "high",
-          actionLabel: "Review Draft",
-          relatedRoute: "/review"
-        });
-      }
-    }, 2000);
+    try {
+      const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
+        id: selectedSpark.id,
+        title: selectedSpark.title,
+        hook: selectedSpark.suggestedHook,
+        angle: selectedSpark.hookAngle,
+        whyNow: selectedSpark.whyNow,
+        platformFit: selectedSpark.platforms.join(", "),
+        format: selectedSpark.suggestedFormat,
+        retentionReason: selectedSpark.expectedRetention,
+      };
+
+      createProductionFromSpark(matchingSpark as any);
+
+      NotificationService.addNotification({
+        title: "Production Draft Started",
+        description: `Spark is drafting storyboard and resources for "${selectedSpark.title}".`,
+        type: "new_viral_opportunity",
+        priority: "high",
+        actionLabel: "Review Draft",
+        relatedRoute: "/review"
+      });
+
+      setTimeout(() => {
+        setDrawerState("created");
+      }, 500);
+    } catch (err) {
+      console.error("[ViralSparks] Failed to create production:", err);
+      setDrawerState("idle");
+    }
   };
 
   const handleGoToReview = () => {

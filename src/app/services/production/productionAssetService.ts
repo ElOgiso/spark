@@ -188,8 +188,9 @@ export class ProductionAssetService {
     brand: Brand;
     character?: Character;
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
+    forceRegenerate?: boolean;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character, onProgress } = params;
+    const { production, brief, brand, character, onProgress, forceRegenerate } = params;
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
@@ -248,45 +249,47 @@ export class ProductionAssetService {
 Create a 3-scene vertical (9:16) production storyboard and asset manifest for:
 
 TITLE: "${brief.title}"
-HOOK: "${brief.hook}"
-NARRATIVE OUTLINE: "${brief.scriptOutline}"
-VISUAL DIRECTION: "${brief.visualDirection}"
-BRAND: "${brand.name}" (${brand.niche})
-HOST STYLE: "${hostStyle}"
-MODE: "${brief.productionMode}"
+TARGET AUDIENCE: "${brand.audience?.primary || "Target audience"}"
+NICHE: "${brand.niche}"
+BRAND NAME: "${brand.name}"
+PRESENTATION STYLE: "${hostStyle}"
 
-Return JSON matching this exact structure with NO markdown backticks:
+HOOK: "${brief.hook}"
+SCRIPT OUTLINE: "${brief.scriptOutline}"
+VISUAL DIRECTION: "${brief.visualDirection}"
+
+Return valid JSON with exactly this structure:
 {
   "storyboard": [
     {
       "scene": 1,
       "duration": "0-5s",
-      "shotList": "Vertical 9:16 medium close-up of host with high-contrast text overlay",
-      "cameraDirection": "Push-in slow zoom onto face",
-      "transitions": "Hard cut on beat",
-      "onScreenText": "ATTENTION: ${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 30)}",
-      "pacing": "High urgency, 0.4s clip cadence",
-      "scriptSnippet": "${typeof brief.hook === 'string' ? brief.hook : ''}",
-      "visualDescription": "Host standing in modern studio, direct eye contact with high-contrast graphic"
+      "shotList": "Presenter direct-to-camera vertical 9:16 frame",
+      "cameraDirection": "Push-in slow zoom",
+      "transitions": "Hard cut on hook conclusion",
+      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
+      "pacing": "Fast hook",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "visualDescription": "High contrast executive presenter opening frame"
     },
     {
       "scene": 2,
       "duration": "5-25s",
-      "shotList": "Split-screen B-roll with dynamic data visualization",
-      "cameraDirection": "Slow pan left across metric graphic",
-      "transitions": "Whip pan right",
-      "onScreenText": "KEY INSIGHT: ${brand.name} Core Method",
-      "pacing": "Rhythmic educational breakdown",
-      "scriptSnippet": "Here is exactly how this works...",
-      "visualDescription": "Screen split showing real-world case study animation and kinetic typography"
+      "shotList": "B-roll cutaway and infographic breakdown",
+      "cameraDirection": "Dynamic whip pan",
+      "transitions": "Slide transition",
+      "onScreenText": "CORE VALUE BREAKDOWN",
+      "pacing": "Rhythmic",
+      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
+      "visualDescription": "Visual demonstration of product solution in sleek workspace"
     },
     {
       "scene": 3,
       "duration": "25-30s",
-      "shotList": "Host framing with branded lower third and save/follow button graphic",
-      "cameraDirection": "Static framing with floating CTA animation",
-      "transitions": "Fade to black",
-      "onScreenText": "SAVE & FOLLOW FOR MORE",
+      "shotList": "Presenter with bold conversion CTA card",
+      "cameraDirection": "Static lock-off",
+      "transitions": "Cross-dissolve to end card",
+      "onScreenText": "SAVE THIS NOW",
       "pacing": "High impact closing",
       "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
       "visualDescription": "End screen card with brand logo animation and clear conversion prompt"
@@ -302,7 +305,6 @@ Return JSON matching this exact structure with NO markdown backticks:
 
     try {
       console.log(`[SPARK Pipeline] Provider Request: Storyboard structure via ModelRouter...`);
-      // Execute through ModelRouter (respecting user AI Preferences)
       const rawResponse = await ModelRouter.executeCategoryRequest("production", {
         prompt,
         systemInstruction,
@@ -337,55 +339,60 @@ Return JSON matching this exact structure with NO markdown backticks:
                trimmed.startsWith("https://");
       };
 
-      // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline
-      try {
-        const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
-        const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
-        const elevenVoice = await generateElevenLabsVoice(voiceScript);
-        if (isValidMediaData(elevenVoice)) {
-          let voiceResult = elevenVoice;
-          try {
-            const storedAudio = await this.uploadAssetToStorage({
-              productionId: production.id,
-              brandId: (brand as any).id,
-              assetType: "audio",
-              storagePath: `${production.id}/audio/voice.mp3`,
-              dataUrlOrBlob: elevenVoice,
-              mimeType: "audio/mpeg",
-              prompt: voiceScript,
-              provider: "ElevenLabs",
-            });
-            if (storedAudio?.publicUrl) voiceResult = storedAudio.publicUrl;
-          } catch (storageErr) {
-            console.warn("[ProductionAssetService] Supabase audio upload failed, retaining provider audio URL:", storageErr);
-          }
-          realVoiceUrl = voiceResult;
-        } else {
-          const { generateSuperSparkVoice } = await import("../geminiService");
-          const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
-          if (isValidMediaData(synthesizedVoice)) {
-            let voiceResult = synthesizedVoice;
+      // Synthesize real voiceover audio via ElevenLabs -> Provider TTS pipeline (or reuse if present)
+      if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
+        realVoiceUrl = production.audioUrl || brief.audioUrl;
+        console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
+      } else {
+        try {
+          const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
+          const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
+          const elevenVoice = await generateElevenLabsVoice(voiceScript);
+          if (isValidMediaData(elevenVoice)) {
+            let voiceResult = elevenVoice;
             try {
               const storedAudio = await this.uploadAssetToStorage({
                 productionId: production.id,
                 brandId: (brand as any).id,
                 assetType: "audio",
                 storagePath: `${production.id}/audio/voice.mp3`,
-                dataUrlOrBlob: synthesizedVoice,
-                mimeType: "audio/wav",
+                dataUrlOrBlob: elevenVoice,
+                mimeType: "audio/mpeg",
                 prompt: voiceScript,
-                provider: "Google Gemini TTS",
+                provider: "ElevenLabs",
               });
               if (storedAudio?.publicUrl) voiceResult = storedAudio.publicUrl;
             } catch (storageErr) {
               console.warn("[ProductionAssetService] Supabase audio upload failed, retaining provider audio URL:", storageErr);
             }
             realVoiceUrl = voiceResult;
+          } else {
+            const { generateSuperSparkVoice } = await import("../geminiService");
+            const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+            if (isValidMediaData(synthesizedVoice)) {
+              let voiceResult = synthesizedVoice;
+              try {
+                const storedAudio = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "audio",
+                  storagePath: `${production.id}/audio/voice.mp3`,
+                  dataUrlOrBlob: synthesizedVoice,
+                  mimeType: "audio/wav",
+                  prompt: voiceScript,
+                  provider: "Google Gemini TTS",
+                });
+                if (storedAudio?.publicUrl) voiceResult = storedAudio.publicUrl;
+              } catch (storageErr) {
+                console.warn("[ProductionAssetService] Supabase audio upload failed, retaining provider audio URL:", storageErr);
+              }
+              realVoiceUrl = voiceResult;
+            }
           }
+        } catch (voiceErr: any) {
+          console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
+          if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
         }
-      } catch (voiceErr: any) {
-        console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
-        if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
       }
 
       stages[1].status = realVoiceUrl ? "done" : "failed";
@@ -401,6 +408,15 @@ Return JSON matching this exact structure with NO markdown backticks:
         const totalScenes = storyboard.length || 3;
         for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
           const scene = storyboard[sIdx];
+          if (!forceRegenerate && isValidMediaData(scene.image)) {
+            console.log(`[SPARK Pipeline] Reusing existing Scene ${sIdx + 1} image -> ${scene.image}`);
+            sceneImages.push(scene.image);
+            currentStoryboard[sIdx] = { ...scene, image: scene.image };
+            const currentPct = 20 + Math.round(((sIdx + 1) / totalScenes) * 35);
+            emitProgress(currentPct, "Keyframes", `Verified keyframe ${sIdx + 1} of ${totalScenes}...`);
+            continue;
+          }
+
           const imagePrompt = `9:16 vertical high-contrast production keyframe image for scene: ${scene.visualDescription || scene.shotList}. Hook: "${brief.hook}". Brand: ${brand.name}`;
           try {
             console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} image via ModelRouter ("storyboardImages")...`);
@@ -458,6 +474,22 @@ Return JSON matching this exact structure with NO markdown backticks:
         for (let tIdx = 0; tIdx < thumbnails.length; tIdx++) {
           const thumb = thumbnails[tIdx];
           const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
+          if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
+            const existingThumbUrl = thumb.image || thumb.url;
+            console.log(`[SPARK Pipeline] Reusing existing Thumbnail Variant ${variantLetter} -> ${existingThumbUrl}`);
+            enrichedThumbnails.push({
+              id: thumb.id || `t${tIdx + 1}`,
+              variant: variantLetter,
+              concept: thumb.concept,
+              image: existingThumbUrl,
+              url: existingThumbUrl,
+            });
+            currentThumbnails = [...enrichedThumbnails];
+            const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
+            emitProgress(currentPct, "Thumbnails", `Verified thumbnail variant ${variantLetter}...`);
+            continue;
+          }
+
           const thumbPrompt = `9:16 vertical high-impact YouTube/TikTok thumbnail image for variant ${variantLetter}: ${thumb.concept}. Hook: "${brief.hook}". Brand: ${brand.name}`;
           let thumbUrl: string | undefined = undefined;
 
@@ -519,46 +551,56 @@ Return JSON matching this exact structure with NO markdown backticks:
       emitProgress(80, "Video", "Rendering 9:16 master video preview...");
 
       // 3. Video Scene Clips / Video Render Generation via ModelRouter ("videoGeneration")
-      try {
-        const { ModelRouter } = await import("../runtime/modelRouter");
-        const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
-        console.log(`[SPARK Pipeline] Provider Request: Video generation via ModelRouter ("videoGeneration")...`);
-        const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
-          prompt: videoPrompt,
-        });
-        console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
-        if (isValidMediaData(generatedVideo)) {
-          let finalVid = generatedVideo;
-          try {
-            const storedVid = await this.uploadAssetToStorage({
-              productionId: production.id,
-              brandId: (brand as any).id,
-              assetType: "video",
-              storagePath: `${production.id}/video/master.mp4`,
-              dataUrlOrBlob: generatedVideo,
-              mimeType: "video/mp4",
-              prompt: videoPrompt,
-              provider: "ModelRouter",
-            });
-            if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
-            console.log(`[SPARK Pipeline] Storage Upload: Video SUCCESS -> ${finalVid}`);
-          } catch (storageErr: any) {
-            console.warn("[SPARK Pipeline] Video upload failed, retaining provider URL:", storageErr);
-            if (!lastError) lastError = `Storage (Video): ${storageErr?.message || String(storageErr)}`;
-          }
-          realVideoUrl = finalVid;
-          if (currentStoryboard.length > 0) {
-            currentStoryboard.forEach((s) => {
-              if (!s.videoUrl) s.videoUrl = finalVid;
-            });
-          }
-        } else {
-          console.warn("[SPARK Pipeline] Video generation returned invalid/empty URL or bytes");
-          if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
+      if (!forceRegenerate && isValidMediaData(production.videoUrl || brief.videoUrl)) {
+        realVideoUrl = production.videoUrl || brief.videoUrl;
+        console.log(`[SPARK Pipeline] Reusing existing master video -> ${realVideoUrl}`);
+        if (currentStoryboard.length > 0) {
+          currentStoryboard.forEach((s) => {
+            if (!s.videoUrl) s.videoUrl = realVideoUrl;
+          });
         }
-      } catch (vidErr: any) {
-        console.error("[SPARK Pipeline] Video generation failed:", vidErr);
-        if (!lastError) lastError = `Video Generation: ${vidErr?.message || String(vidErr)}`;
+      } else {
+        try {
+          const { ModelRouter } = await import("../runtime/modelRouter");
+          const videoPrompt = `9:16 vertical 4K master video preview for "${brief.title}". Script: ${brief.hook}. Visuals: ${brief.visualDirection}`;
+          console.log(`[SPARK Pipeline] Provider Request: Video generation via ModelRouter ("videoGeneration")...`);
+          const generatedVideo = await ModelRouter.executeCategoryRequest("videoGeneration", {
+            prompt: videoPrompt,
+          });
+          console.log(`[SPARK Pipeline] Provider Response: Video generation received (${generatedVideo ? generatedVideo.slice(0, 50) + "..." : "none"})`);
+          if (isValidMediaData(generatedVideo)) {
+            let finalVid = generatedVideo;
+            try {
+              const storedVid = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "video",
+                storagePath: `${production.id}/video/master.mp4`,
+                dataUrlOrBlob: generatedVideo,
+                mimeType: "video/mp4",
+                prompt: videoPrompt,
+                provider: "ModelRouter",
+              });
+              if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
+              console.log(`[SPARK Pipeline] Storage Upload: Video SUCCESS -> ${finalVid}`);
+            } catch (storageErr: any) {
+              console.warn("[SPARK Pipeline] Video upload failed, retaining provider URL:", storageErr);
+              if (!lastError) lastError = `Storage (Video): ${storageErr?.message || String(storageErr)}`;
+            }
+            realVideoUrl = finalVid;
+            if (currentStoryboard.length > 0) {
+              currentStoryboard.forEach((s) => {
+                if (!s.videoUrl) s.videoUrl = finalVid;
+              });
+            }
+          } else {
+            console.warn("[SPARK Pipeline] Video generation returned invalid/empty URL or bytes");
+            if (!lastError) lastError = "Video Generation: No video URL or bytes returned";
+          }
+        } catch (vidErr: any) {
+          console.error("[SPARK Pipeline] Video generation failed:", vidErr);
+          if (!lastError) lastError = `Video Generation: ${vidErr?.message || String(vidErr)}`;
+        }
       }
 
       stages[4].status = realVideoUrl ? "done" : "failed";

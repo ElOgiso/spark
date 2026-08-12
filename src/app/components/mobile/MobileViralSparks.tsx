@@ -79,13 +79,29 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
   };
 
   const handleConfirm = () => {
+    if (!selectedSpark) return;
     setDrawerState("creating");
-    setTimeout(() => {
-      setDrawerState("created");
-      if (selectedSpark) {
-        createProductionFromSpark(selectedSpark.id);
-      }
-    }, 2000);
+    try {
+      const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
+        id: selectedSpark.id,
+        title: selectedSpark.title,
+        hook: selectedSpark.suggestedHook,
+        angle: selectedSpark.hookAngle,
+        whyNow: selectedSpark.timeWindow,
+        platformFit: selectedSpark.suggestedFormat,
+        format: selectedSpark.suggestedFormat,
+        retentionReason: selectedSpark.expectedRetention,
+      };
+
+      createProductionFromSpark(matchingSpark as any);
+
+      setTimeout(() => {
+        setDrawerState("created");
+      }, 500);
+    } catch (err) {
+      console.error("[MobileViralSparks] Failed to create production:", err);
+      setDrawerState("idle");
+    }
   };
 
   const closeDrawer = () => {
