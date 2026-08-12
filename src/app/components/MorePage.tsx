@@ -26,7 +26,8 @@ import {
   X,
   User,
   Palette,
-  Sparkles
+  Sparkles,
+  Tag
 } from "lucide-react";
 
 interface MorePageProps {
@@ -89,6 +90,9 @@ export function MorePage({ onNavigate }: MorePageProps) {
   const memoryCount = Array.isArray(spark?.memoryItems) ? spark.memoryItems.length : 0;
   const productionCount = Array.isArray(spark?.productions) ? spark.productions.length : 0;
   const assetCount = Array.isArray(spark?.assets) ? spark.assets.length : 0;
+  const offersList = Array.isArray(spark?.offers) ? spark.offers : [];
+  const defaultOffer = offersList.find((o: any) => o.active && o.isDefault) || offersList.find((o: any) => o.active);
+  const marketerMeta = offersList.length === 0 ? "No Offers" : defaultOffer ? `${defaultOffer.title}` : `${offersList.length} active`;
 
   const sections = [
     {
@@ -114,6 +118,13 @@ export function MorePage({ onNavigate }: MorePageProps) {
           description: "Learned patterns and brand rules",
           meta: memoryCount === 0 ? "Empty" : `${memoryCount} rule${memoryCount === 1 ? "" : "s"}`,
           action: () => onNavigate("/more/memory"),
+        },
+        {
+          icon: Tag,
+          label: "Marketer",
+          description: "Offers SPARK promotes in content",
+          meta: marketerMeta,
+          action: () => onNavigate("/more/marketer"),
         },
         {
           icon: Link,

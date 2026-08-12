@@ -57,7 +57,8 @@ import {
   Youtube,
   Twitter,
   Facebook,
-  Linkedin
+  Linkedin,
+  Tag
 } from "lucide-react";
 
 import { ServiceRegistry } from "../services/runtime/serviceRegistry";
@@ -66,6 +67,7 @@ import { ServiceDiscovery } from "../services/runtime/serviceDiscovery";
 import { McpManager } from "../services/runtime/mcpManager";
 import { ServiceHealthMonitor } from "../services/runtime/serviceHealthMonitor";
 import { IntegrationManifest } from "../services/runtime/integrationManifest";
+import { MarketerDesktopView } from "./marketer/MarketerDesktopView";
 
 interface SubPageProps {
   onNavigate: (path: string) => void;
@@ -827,6 +829,14 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
               </div>
             </div>
           )
+        };
+
+      case "/more/marketer":
+        return {
+          title: "Marketer",
+          icon: Tag,
+          description: "Offers SPARK can promote when generating scripts, captions, and publishing packages.",
+          content: <MarketerDesktopView />,
         };
 
       case "/more/accounts":

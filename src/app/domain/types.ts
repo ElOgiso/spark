@@ -100,6 +100,21 @@ export interface GenerationProgress {
   message?: string;
 }
 
+export type OfferType = "link" | "product" | "course";
+
+export interface Offer {
+  id: string;
+  type: OfferType;
+  title: string;
+  url: string;
+  priceLabel?: string;       // display only e.g. "₦15,000" | "Free" | "$49"
+  description?: string;      // short CTA support text
+  active: boolean;
+  isDefault?: boolean;       // at most one default active offer recommended
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ProductionBrief {
   title: string;
   productionMode: string;
@@ -114,6 +129,14 @@ export interface ProductionBrief {
   storyboard?: ProductionScene[];
   audioUrl?: string;
   videoUrl?: string;
+  offerCta?: {
+    id?: string;
+    type?: OfferType;
+    title: string;
+    url: string;
+    priceLabel?: string;
+    description?: string;
+  };
   generatedAssets?: {
     sceneClips?: string[];
     thumbnails?: { id: string; concept: string; variant: string; url?: string; image?: string }[];

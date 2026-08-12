@@ -1,6 +1,7 @@
-import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief } from "../../domain/types";
+import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, Offer } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
+import { loadPersistedState } from "../../state/persistence";
 
 function asText(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
@@ -36,6 +37,26 @@ export class ProductionBriefService {
   }): Promise<ProductionBrief> {
     const { spark, brand, character, niche, memoryItems = [], productionMode = "Narrator" } = params;
 
+    // Check for default active Marketer offer
+    const defaultOffer: Offer | undefined = (() => {
+      try {
+        const local = loadPersistedState<any>();
+        const offers: Offer[] = Array.isArray(local?.offers) ? local.offers : [];
+        return offers.find((o) => o.active && o.isDefault) || offers.find((o) => o.active);
+      } catch {
+        return undefined;
+      }
+    })();
+
+    const offerCta = defaultOffer ? {
+      id: defaultOffer.id,
+      type: defaultOffer.type,
+      title: defaultOffer.title,
+      url: defaultOffer.url,
+      priceLabel: defaultOffer.priceLabel,
+      description: defaultOffer.description,
+    } : undefined;
+
     // System-wide guard check: Block AI generation if Production is OFF
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
@@ -50,6 +71,7 @@ export class ProductionBriefService {
         whyThisWorks: asText(spark.whyNow, "Strategic angle"),
         brandFitScore: spark.brandFitScore || 90,
         suggestedDuration: "30-60s",
+        offerCta,
       };
     }
 
@@ -59,6 +81,16 @@ export class ProductionBriefService {
     const pillars = brand.contentPillars ? brand.contentPillars.map((p) => p.label).join(", ") : "Educational, Strategic";
     const tones = brand.tone ? brand.tone.map((t) => t.label).join(", ") : "Professional, direct";
     const sparkScore = spark.brandFitScore || 92;
+
+    const offerPromptSection = defaultOffer ? `
+PROMOTED OFFER (MARKETER BUSINESS LAYER):
+- Title: ${defaultOffer.title}
+- Type: ${defaultOffer.type}
+- URL: ${defaultOffer.url}
+${defaultOffer.priceLabel ? `- Price: ${defaultOffer.priceLabel}` : ""}
+${defaultOffer.description ? `- Offer Summary: ${defaultOffer.description}` : ""}
+Incorporate this offer as the primary Call to Action (CTA) in the caption and script conclusion.
+` : "";
 
     const systemInstruction = `You are SPARK's Executive Creative Director. Your job is to convert a high-performing Viral Spark into a complete, ready-to-produce Production Brief tailored specifically for the brand "${brand.name}". Output MUST be valid JSON only.`;
 
@@ -79,7 +111,7 @@ BRAND CONTEXT:
 - Content Pillars: ${pillars}
 - Character/Host Style: ${hostStyle} (${charTraits})
 - Production Mode: ${productionMode}
-
+${offerPromptSection}
 BRAND MEMORY & RULES:
 ${brandRules || "- Standard executive quality standards apply."}
 
@@ -110,9 +142,12 @@ Return a valid JSON object matching this exact structure with NO surrounding mar
         .trim();
 
       const parsed = JSON.parse(cleanJson);
-      const fallbackScript = `1. Hook: ${spark.hook}\n2. Core Insight: ${spark.whyNow}\n3. Action: Tailored for ${brand.name}`;
+      const fallbackScript = `1. Hook: ${spark.hook}\n2. Core Insight: ${spark.whyNow}\n3. Action: Tailored for ${brand.name}${defaultOffer ? ` (Offer: ${defaultOffer.title})` : ""}`;
       const fallbackVisual = `Host (${hostStyle}): Clean backdrop, 9:16 vertical composition, dynamic text overlays.`;
-      const fallbackCaption = `Discover how ${brand.name} approaches ${spark.title}. Save and follow for more insights.`;
+      const baseCaption = asText(parsed.caption, `Discover how ${brand.name} approaches ${spark.title}. Save and follow for more insights.`);
+      const fallbackCaption = defaultOffer && !baseCaption.includes(defaultOffer.url) 
+        ? `${baseCaption}\n\nGet ${defaultOffer.title} → ${defaultOffer.url}`
+        : baseCaption;
       const fallbackWhy = spark.whyNow || "High curiosity gap paired with brand-aligned authority.";
 
       return {
@@ -121,26 +156,32 @@ Return a valid JSON object matching this exact structure with NO surrounding mar
         hook: asText(parsed.hook, spark.hook),
         scriptOutline: asText(parsed.scriptOutline, fallbackScript),
         visualDirection: asText(parsed.visualDirection, fallbackVisual),
-        caption: asText(parsed.caption, fallbackCaption),
+        caption: fallbackCaption,
         platformRecommendation: asText(parsed.platformRecommendation, spark.platformFit || "YouTube Shorts"),
         whyThisWorks: asText(parsed.whyThisWorks, fallbackWhy),
         brandFitScore: typeof parsed.brandFitScore === "number" ? parsed.brandFitScore : sparkScore,
         suggestedDuration: asText(parsed.suggestedDuration, "30-60s"),
+        offerCta,
       };
     } catch (err) {
       console.warn("[ProductionBriefService] AI generation fallback:", err);
+
+      const defaultCaption = defaultOffer
+        ? `Top strategy breakdown on ${spark.title}. Get ${defaultOffer.title} → ${defaultOffer.url}`
+        : `Top strategy breakdown on ${spark.title}. Learn more with ${brand.name}.`;
 
       return {
         title: asText(spark.title, "Production Draft"),
         productionMode: asText(productionMode, "Narrator"),
         hook: asText(spark.hook, `How ${brand.name} leverages ${spark.title}`),
-        scriptOutline: `Scene 1 (0-5s): ${spark.hook}\nScene 2 (5-25s): Deconstruct ${spark.title} in the context of ${brand.niche}.\nScene 3 (25-30s): Call to action for ${brand.name}.`,
+        scriptOutline: `Scene 1 (0-5s): ${spark.hook}\nScene 2 (5-25s): Deconstruct ${spark.title} in the context of ${brand.niche}.\nScene 3 (25-30s): Call to action for ${brand.name}${defaultOffer ? ` (${defaultOffer.title})` : ""}.`,
         visualDirection: `Vertical 9:16. Presenter (${hostStyle}) with high-contrast text graphics and dynamic scene cuts.`,
-        caption: `Top strategy breakdown on ${spark.title}. Learn more with ${brand.name}.`,
+        caption: defaultCaption,
         platformRecommendation: asText(spark.platformFit, "YouTube Shorts"),
         whyThisWorks: asText(spark.whyNow, "Proven viral narrative structure adapted to brand identity."),
         brandFitScore: sparkScore,
         suggestedDuration: "30-60s",
+        offerCta,
       };
     }
   }

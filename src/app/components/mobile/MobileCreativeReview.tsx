@@ -89,6 +89,8 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
     hook: asText(brief?.hook || item?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
     openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment, "Vertical 9:16 presenter with text overlays"),
+    captionDirection: asText(brief?.caption, "Lead with curiosity hook and clear call to action."),
+    offerCta: brief?.offerCta || activeProd?.brief?.offerCta || item?.brief?.offerCta,
     thumbnails: brief?.generatedAssets?.thumbnails?.length
       ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
           id: t.id || String(idx + 1),
@@ -263,6 +265,32 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             <p className="text-sm text-muted-foreground">{proposal.openingMoment}</p>
           </div>
         </div>
+
+        {/* Promoted Offer CTA */}
+        {proposal.offerCta && (
+          <div className="rounded-xl border border-accent/30 bg-accent/10 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-accent" />
+                <span className="text-xs font-semibold text-accent uppercase tracking-wider">Promoted Offer CTA</span>
+              </div>
+              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-accent/20 text-accent uppercase">
+                {proposal.offerCta.type || "Offer"}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">{proposal.offerCta.title}</p>
+              <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{proposal.offerCta.url}</p>
+            </div>
+            {proposal.offerCta.priceLabel && (
+              <div className="pt-1">
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded bg-background border border-border text-foreground">
+                  {proposal.offerCta.priceLabel}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* High impact cover selection */}
         <div className="space-y-3">

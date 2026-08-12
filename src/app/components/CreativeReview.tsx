@@ -229,6 +229,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     hookType: "High-curiosity gap angle",
     openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment, "Vertical 9:16 presenter with text overlays"),
     captionDirection: asText(brief?.caption, "Lead with stat. Use em-dash rhythm. End with open loop question. 3-line max mobile preview."),
+    offerCta: brief?.offerCta || activeProd?.brief?.offerCta,
     thumbnails: brief?.generatedAssets?.thumbnails?.length
       ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
           id: t.id || String(idx + 1),
@@ -542,6 +543,30 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 <p className="text-xs text-muted-foreground mb-2">Caption Direction</p>
                 <p className="text-sm text-muted-foreground leading-relaxed">{proposal.captionDirection}</p>
               </div>
+              {proposal.offerCta && (
+                <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-accent" />
+                      <p className="text-xs font-semibold text-accent uppercase tracking-wider">Promoted Offer CTA (Marketer)</p>
+                    </div>
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-accent/20 text-accent uppercase">
+                      {proposal.offerCta.type || "Offer"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{proposal.offerCta.title}</p>
+                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{proposal.offerCta.url}</p>
+                    </div>
+                    {proposal.offerCta.priceLabel && (
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-background border border-border text-foreground shrink-0">
+                        {proposal.offerCta.priceLabel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

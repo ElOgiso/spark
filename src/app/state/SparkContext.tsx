@@ -20,6 +20,8 @@ import {
   AISettings,
   ThinkingState,
   ConversationSession,
+  Offer,
+  OfferType,
 } from "../domain/types";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
@@ -70,6 +72,7 @@ interface SparkContextType {
   exportPackages: ExportPackage[];
   analyticsInsights: AnalyticsInsight[];
   assets: Asset[];
+  offers: Offer[];
   researchSources?: ResearchSource[];
   researchPatterns?: ResearchPattern[];
   aiSettings?: AISettings;
@@ -97,6 +100,13 @@ interface SparkContextType {
   updateMemoryItem: (id: string, text: string, type: "learned" | "rule", category?: any) => void;
   pinMemoryItem: (id: string, pinned: boolean) => void;
   archiveMemoryItem: (id: string, archived: boolean) => void;
+  addOffer: (offer: Omit<Offer, "id" | "createdAt" | "updatedAt">) => Offer;
+  updateOffer: (id: string, updates: Partial<Offer>) => void;
+  removeOffer: (id: string) => void;
+  setDefaultOffer: (id: string) => void;
+  toggleOfferActive: (id: string) => void;
+  getDefaultOffer: () => Offer | undefined;
+  getActiveOffers: () => Offer[];
   addResearchSource: (url: string) => Promise<void>;
   removeResearchSource: (id: string) => void;
   syncResearchSource: (id: string) => Promise<void>;
@@ -213,6 +223,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (local) {
       return {
         ...local,
+        offers: Array.isArray(local.offers) ? local.offers : [],
         aiSettings: local.aiSettings || defaultAISettings,
         chatMessages: local.chatMessages && local.chatMessages.length > 0 ? local.chatMessages : defaultChatMessages
       };
@@ -231,6 +242,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       exportPackages: defaultExportPackages,
       analyticsInsights: defaultAnalyticsInsights,
       assets: defaultAssets,
+      offers: [],
       researchSources: [],
       researchPatterns: [],
       aiSettings: defaultAISettings,
@@ -1234,6 +1246,91 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const addOffer = (offerData: Omit<Offer, "id" | "createdAt" | "updatedAt">): Offer => {
+    const newOffer: Offer = {
+      id: `offer_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      ...offerData,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setState((prev: any) => {
+      const existingOffers: Offer[] = Array.isArray(prev.offers) ? prev.offers : [];
+      const updated = newOffer.isDefault
+        ? existingOffers.map((o) => ({ ...o, isDefault: false }))
+        : existingOffers;
+      return {
+        ...prev,
+        offers: [newOffer, ...updated],
+      };
+    });
+    return newOffer;
+  };
+
+  const updateOffer = (id: string, updates: Partial<Offer>) => {
+    setState((prev: any) => {
+      const existingOffers: Offer[] = Array.isArray(prev.offers) ? prev.offers : [];
+      return {
+        ...prev,
+        offers: existingOffers.map((o) => {
+          if (o.id !== id) {
+            return updates.isDefault ? { ...o, isDefault: false } : o;
+          }
+          return {
+            ...o,
+            ...updates,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      };
+    });
+  };
+
+  const removeOffer = (id: string) => {
+    setState((prev: any) => ({
+      ...prev,
+      offers: (prev.offers || []).filter((o: Offer) => o.id !== id),
+    }));
+  };
+
+  const setDefaultOffer = (id: string) => {
+    setState((prev: any) => ({
+      ...prev,
+      offers: (prev.offers || []).map((o: Offer) => ({
+        ...o,
+        isDefault: o.id === id,
+        updatedAt: o.id === id ? new Date().toISOString() : o.updatedAt,
+      })),
+    }));
+  };
+
+  const toggleOfferActive = (id: string) => {
+    setState((prev: any) => ({
+      ...prev,
+      offers: (prev.offers || []).map((o: Offer) => {
+        if (o.id === id) {
+          const nextActive = !o.active;
+          return {
+            ...o,
+            active: nextActive,
+            isDefault: nextActive ? o.isDefault : false,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return o;
+      }),
+    }));
+  };
+
+  const getDefaultOffer = (): Offer | undefined => {
+    const currentOffers: Offer[] = Array.isArray(state.offers) ? state.offers : [];
+    return currentOffers.find((o) => o.active && o.isDefault) || currentOffers.find((o) => o.active);
+  };
+
+  const getActiveOffers = (): Offer[] => {
+    const currentOffers: Offer[] = Array.isArray(state.offers) ? state.offers : [];
+    return currentOffers.filter((o) => o.active);
+  };
+
   const addResearchSource = async (url: string) => {
     const { ResearchSourceService } = await import("../services/research/researchSourceService");
     const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
@@ -1682,6 +1779,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         removeResearchSource,
         syncResearchSource,
         addAsset,
+        addOffer,
+        updateOffer,
+        removeOffer,
+        setDefaultOffer,
+        toggleOfferActive,
+        getDefaultOffer,
+        getActiveOffers,
         toggleContentPillar,
         toggleTone,
         addChatMessage,

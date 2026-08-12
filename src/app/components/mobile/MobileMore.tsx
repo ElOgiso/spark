@@ -39,8 +39,10 @@ import {
   X,
   Mail,
   User,
-  Sparkles
+  Sparkles,
+  Tag
 } from "lucide-react";
+import { MarketerMobileView } from "../marketer/MarketerMobileView";
 
 type AutomationMode = "manual" | "balanced" | "autonomous";
 
@@ -56,6 +58,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     brand,
     character,
     accounts: contextAccounts,
+    offers = [],
     aiSettings,
     updateAISettings,
     updateBrand,
@@ -172,6 +175,9 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     autonomous: { label: "Autonomous", description: "AI makes most decisions", color: "text-success" },
   };
 
+  const defaultOffer = offers.find((o: any) => o.active && o.isDefault) || offers.find((o: any) => o.active);
+  const marketerBadge = offers.length === 0 ? "None" : defaultOffer ? defaultOffer.title : `${offers.length} active`;
+
   const sections = [
     {
       title: "Brand",
@@ -179,6 +185,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         { icon: Sparkles, label: "My Spark", badge: "Brand & Research", path: "/my-spark" },
         { icon: Archive, label: "Assets", badge: `${assets.length} files` },
         { icon: Brain, label: "Memory", badge: `${memoryItems.length} rules` },
+        { icon: Tag, label: "Marketer", badge: marketerBadge },
         {
           icon: LinkIcon,
           label: "Accounts",
@@ -287,6 +294,14 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   // Renders the fullscreen detail views on Mobile
   const renderDetailPanel = () => {
     if (!activeDetail) return null;
+
+    if (activeDetail === "Marketer") {
+      return (
+        <div className="fixed inset-0 bg-background z-50 overflow-y-auto">
+          <MarketerMobileView onBack={() => setActiveDetail(null)} />
+        </div>
+      );
+    }
 
     const renderPanelContent = () => {
       switch (activeDetail) {

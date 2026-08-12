@@ -265,6 +265,7 @@ function AppContent() {
         case "/more/theme":
         case "/more/assets":
         case "/more/memory":
+        case "/more/marketer":
         case "/more/accounts":
         case "/more/billing":
         case "/more/api":
