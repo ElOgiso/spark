@@ -563,7 +563,7 @@ Return JSON matching this exact structure with NO markdown backticks:
 
       stages[4].status = realVideoUrl ? "done" : "failed";
       stages[5].status = "active";
-      emitProgress(96, "Saving", "Synchronizing storage assets & metadata...");
+      emitProgress(96, "Saving", "Synchronizing storage assets & metadata...", { videoUrl: realVideoUrl, lastError });
 
       const renderCompletedAt = new Date().toISOString();
 
