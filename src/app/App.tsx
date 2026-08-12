@@ -172,8 +172,7 @@ function AppContent() {
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
-    if (mode === "signin" || auth.isOnboardingComplete) {
-      auth.markOnboardingComplete();
+    if (auth.isOnboardingComplete || mode === "signin" || Boolean(auth.brand?.id)) {
       setViewState("dashboard");
     } else {
       setViewState("onboarding");
@@ -183,7 +182,6 @@ function AppContent() {
   const handleEnterDashboard = (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName);
-    auth.markOnboardingComplete();
     initializeBrandGenesis(finalData);
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");

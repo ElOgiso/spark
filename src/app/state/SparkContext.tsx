@@ -40,6 +40,7 @@ import {
   persistAISettings,
 } from "../backend/workspaceSync";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
+import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
@@ -47,6 +48,7 @@ import {
   getStoredAccountTokens,
   socialConnectorFramework,
 } from "../services/socialIntegrationService";
+import { useAuth } from "./AuthContext";
 
 export interface ChatMessage {
   id?: string;
@@ -216,6 +218,7 @@ const defaultAISettings: AISettings = {
 };
 
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const auth = useAuth();
   const [thinkingState, setThinkingState] = useState<ThinkingState | null>(null);
 
   const [state, setState] = useState(() => {
@@ -336,9 +339,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  // Hydrate live workspace from Supabase + local OAuth tokens
+  // Reactively hydrate live workspace from Supabase on mount / login / brandId changes
+  const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
   useEffect(() => {
-    const brandId = getBrandWorkspaceId();
     const localTokens = getStoredAccountTokens();
     const tokenAccounts: Account[] = Object.values(localTokens)
       .filter((t) => t.status === "Connected" || t.status === "Refreshing")
@@ -355,11 +358,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { ...prev, accounts: Array.from(byPlatform.values()) };
     });
 
-    if (isSupabaseConfigured() && brandId) {
+    if (isSupabaseConfigured() && activeBrandId && isUuid(activeBrandId)) {
+      let isCancelled = false;
       Promise.all([
-        hydrateWorkspace(brandId),
-        import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(brandId)).catch(() => null),
+        hydrateWorkspace(activeBrandId),
+        import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(activeBrandId)).catch(() => null),
       ]).then(([snap, execContext]) => {
+        if (isCancelled) return;
         setState((prev: any) => {
           const byPlatform = new Map<string, Account>();
           // Hydrate with Supabase accounts that are connected
@@ -377,6 +382,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
+          // CLOUD IS SOURCE OF TRUTH: If cloud data exists, CLOUD WINS
           const merged = {
             ...prev,
             brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
@@ -404,12 +410,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               snap.researchPatterns?.length ? snap.researchPatterns : prev.researchPatterns || [],
           };
 
-          savePersistedState(merged, brandId);
+          savePersistedState(merged, activeBrandId);
           return merged;
         });
+      }).catch((err) => {
+        console.warn("[SparkContext] Workspace hydration notice:", err);
       });
-    }
 
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [activeBrandId, auth.currentUser?.id]);
+
+  useEffect(() => {
     const onAccountConnected = (ev: Event) => {
       const detail = (ev as CustomEvent).detail || {};
       if (!detail.platform) return;
@@ -755,12 +769,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    const brandId = getBrandWorkspaceId();
-    if (brandId) {
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (brandId && isUuid(brandId)) {
       if (initialMemoryItems[0]) {
         void persistMemoryCreate(brandId, initialMemoryItems[0]);
       }
-      void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+      void import("../backend/workspaceSync").then(({ persistBrandUpdate, persistCharacterUpdate }) => {
         void persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
@@ -771,8 +785,29 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
           },
           tone: [{ label: tone, active: true }],
+          automation_mode: automationMode,
+          review_required: reviewRequired,
+        });
+
+        void persistCharacterUpdate(brandId, {
+          name: creatorName,
+          role: "Lead Host",
+          style: `${visualStyle} — ${creatorName} representing ${brandName}`,
+          avatarUrl: data.characterSheetUrl || data.characterImageUrl || null,
+          imageUrl: data.characterSheetUrl || data.characterImageUrl || null,
+          characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || null,
+          traits: ["Visionary", "Charismatic", "Authority"],
+          voice: {
+            name: data.voiceProfile?.name || "Spark_Executive_Male",
+            language: data.voiceProfile?.language || "English (Executive Male Accent)",
+            tone: tone,
+            locked: true,
+            voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
+            description: data.voiceProfile?.accent || data.voiceProfile?.description,
+          },
         });
       });
+      void auth.markOnboardingComplete(brandId);
     }
   };
 

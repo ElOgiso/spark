@@ -20,7 +20,7 @@ export async function getProfile(userId: string): Promise<RepositoryResult<Profi
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
   const { data, error } = await (supabase.from("profiles") as any).select("*").eq("id", userId).maybeSingle();
-  if (error) return repositoryError<ProfileRow>();
+  if (error) return repositoryError<ProfileRow>(error.message);
   return { data, error: null, source: "supabase" };
 }
 
@@ -29,27 +29,98 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
   const supabase = getSupabaseClient();
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
-  const payload: Partial<ProfileRow> & { id: string } = {
-    id: user.id,
-    display_name: displayNameFromUser(user),
-    role: "Director",
-    avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
-    email: user.email ?? null,
-  };
+  try {
+    // Check if profile already exists to preserve onboarding_complete and active_brand_id
+    const { data: existing, error: fetchErr } = await (supabase.from("profiles") as any)
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
 
-  const { data, error } = await (supabase
-    .from("profiles") as any)
-    .upsert(payload, { onConflict: "id" })
-    .select("*")
-    .single();
+    if (existing && !fetchErr) {
+      return { data: existing, error: null, source: "supabase" };
+    }
 
-  if (error) return repositoryError<ProfileRow>(error.message);
-  return { data, error: null, source: "supabase" };
+    const payload: Partial<ProfileRow> & { id: string } = {
+      id: user.id,
+      display_name: displayNameFromUser(user),
+      role: "Director",
+      avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
+      email: user.email ?? null,
+      onboarding_complete: false,
+      active_brand_id: null,
+    };
+
+    const { data, error } = await (supabase
+      .from("profiles") as any)
+      .upsert(payload, { onConflict: "id" })
+      .select("*")
+      .single();
+
+    if (error) return repositoryError<ProfileRow>(error.message);
+    return { data, error: null, source: "supabase" };
+  } catch (err: any) {
+    return repositoryError<ProfileRow>(err?.message || "Profile upsert failed");
+  }
+}
+
+export async function markProfileOnboardingComplete(
+  userId: string,
+  activeBrandId?: string | null
+): Promise<RepositoryResult<ProfileRow>> {
+  if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<ProfileRow>();
+
+  try {
+    const patch: Partial<ProfileRow> = {
+      onboarding_complete: true,
+      updated_at: new Date().toISOString(),
+    };
+    if (activeBrandId) {
+      patch.active_brand_id = activeBrandId;
+    }
+
+    const { data, error } = await (supabase.from("profiles") as any)
+      .update(patch)
+      .eq("id", userId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return repositoryError<ProfileRow>(error.message);
+    return { data, error: null, source: "supabase" };
+  } catch (err: any) {
+    return repositoryError<ProfileRow>(err?.message || "Failed to mark profile onboarding complete");
+  }
+}
+
+export async function setActiveBrand(
+  userId: string,
+  activeBrandId: string
+): Promise<RepositoryResult<ProfileRow>> {
+  if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<ProfileRow>();
+
+  try {
+    const { data, error } = await (supabase.from("profiles") as any)
+      .update({
+        active_brand_id: activeBrandId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return repositoryError<ProfileRow>(error.message);
+    return { data, error: null, source: "supabase" };
+  } catch (err: any) {
+    return repositoryError<ProfileRow>(err?.message || "Failed to set active brand");
+  }
 }
 
 export async function updateProfile(
   userId: string,
-  profilePatch: Partial<Pick<ProfileRow, "display_name" | "role" | "avatar_url">>,
+  profilePatch: Partial<Pick<ProfileRow, "display_name" | "role" | "avatar_url" | "onboarding_complete" | "active_brand_id">>,
 ): Promise<RepositoryResult<ProfileRow>> {
   if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
   const supabase = getSupabaseClient();
@@ -57,11 +128,11 @@ export async function updateProfile(
 
   const { data, error } = await (supabase
     .from("profiles") as any)
-    .update(profilePatch)
+    .update({ ...profilePatch, updated_at: new Date().toISOString() })
     .eq("id", userId)
     .select("*")
     .single();
 
-  if (error) return repositoryError<ProfileRow>();
+  if (error) return repositoryError<ProfileRow>(error.message);
   return { data, error: null, source: "supabase" };
 }

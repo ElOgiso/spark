@@ -9,8 +9,8 @@ import {
   signUpWithEmail,
 } from "./authService";
 import type { BrandRow, ProfileRow } from "./database.types";
-import { ensureDefaultBrand } from "./repositories/brandRepository";
-import { upsertProfile } from "./repositories/profileRepository";
+import { ensureDefaultBrand, listBrandsForOwner } from "./repositories/brandRepository";
+import { upsertProfile, markProfileOnboardingComplete } from "./repositories/profileRepository";
 import type { RepositoryResult } from "./repositories/repositoryTypes";
 import { isSupabaseConfigured } from "./supabaseClient";
 import type { Brand as SparkBrand } from "../domain/types";
@@ -27,6 +27,8 @@ export type AuthSessionState = {
 export type AuthBootstrapResult = {
   profile: ProfileRow | null;
   brand: BrandRow | null;
+  brands: BrandRow[];
+  isOnboardingComplete: boolean;
   error: string | null;
 };
 
@@ -105,28 +107,61 @@ export async function resendVerification(email: string): Promise<{ error: string
   return { error: result.error };
 }
 
+/**
+ * Cloud-First User Bootstrap:
+ * 1) Load / upsert profile by auth user id
+ * 2) Load brands where owner_id = user.id
+ * 3) isOnboardingComplete =
+ *      profile.onboarding_complete === true
+ *      OR (brands.length > 0 AND brand has real genesis data)
+ * 4) If returning user has existing brands but flag is false, automatically repair profile flag.
+ */
 export async function bootstrapUserSession(
   user: User | null,
   localBrand?: Partial<SparkBrand>,
 ): Promise<AuthBootstrapResult> {
   if (!user || !isAuthBackendReady()) {
-    return { profile: null, brand: null, error: null };
+    return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: null };
   }
 
   try {
-    const profile = await upsertProfile(user);
-    if (profile.error || !profile.data) {
-      return { profile: null, brand: null, error: profile.error };
+    const profileRes = await upsertProfile(user);
+    if (profileRes.error || !profileRes.data) {
+      return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: profileRes.error };
+    }
+    const profile = profileRes.data;
+
+    // Query all brands owned by this user
+    const brandsRes = await listBrandsForOwner(user.id);
+    const brands = brandsRes.data || [];
+
+    let activeBrand: BrandRow | null = null;
+    if (profile.active_brand_id) {
+      activeBrand = brands.find((b) => b.id === profile.active_brand_id) || null;
+    }
+    if (!activeBrand && brands.length > 0) {
+      activeBrand = brands[0];
     }
 
-    const brand = await ensureDefaultBrand(profile.data.id, localBrand);
+    // Determine onboarding completeness from CLOUD source of truth
+    const hasCloudBrand = Boolean(activeBrand?.id);
+    const cloudFlag = profile.onboarding_complete === true;
+    const isComplete = cloudFlag || (hasCloudBrand && brands.length > 0);
+
+    // Returning user auto-repair: if brands exist in DB but flag was not set, update cloud profile
+    if (hasCloudBrand && !cloudFlag) {
+      void markProfileOnboardingComplete(user.id, activeBrand?.id);
+    }
+
     return {
-      profile: profile.data,
-      brand: brand.data,
-      error: brand.error,
+      profile,
+      brand: activeBrand,
+      brands,
+      isOnboardingComplete: isComplete,
+      error: null,
     };
   } catch (error) {
-    return { profile: null, brand: null, error: sanitizeAuthError(error) };
+    return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: sanitizeAuthError(error) };
   }
 }
 

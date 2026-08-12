@@ -32,6 +32,8 @@ export interface ProfileRow {
   display_name: string | null;
   role: string | null;
   avatar_url: string | null;
+  onboarding_complete?: boolean | null;
+  active_brand_id?: string | null;
   /** Present on legacy SPARK profiles table */
   email?: string | null;
   full_name?: string | null;

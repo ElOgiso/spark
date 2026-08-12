@@ -128,12 +128,19 @@ function characterRowToDomain(row: CharacterRow): Character {
     name: row.name,
     role: row.role || "Primary Host",
     style: String(appearance.style ?? ""),
+    avatarUrl: typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : null),
+    imageUrl: typeof appearance.imageUrl === "string" ? appearance.imageUrl : (typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : null),
+    characterSheetUrl: typeof appearance.characterSheetUrl === "string" ? appearance.characterSheetUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : null),
     traits: Array.isArray(personality.traits) ? personality.traits.map(String) : [],
     voice: {
       name: String(voice.name ?? "Default"),
       language: String(voice.language ?? "English"),
       tone: String(voice.tone ?? "Neutral"),
       locked: Boolean(voice.locked ?? true),
+      voiceId: typeof voice.voiceId === "string" ? voice.voiceId : undefined,
+      description: typeof voice.description === "string" ? voice.description : undefined,
+      gender: typeof voice.gender === "string" ? voice.gender : undefined,
+      previewUrl: typeof voice.previewUrl === "string" ? voice.previewUrl : undefined,
     },
   };
 }
@@ -456,6 +463,65 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand>)
     await updateBrand(brandId, rowPatch);
   } catch (err) {
     console.warn("[workspaceSync] Brand update persist notice:", err);
+  }
+}
+
+export async function persistCharacterUpdate(brandId: string, character: Character): Promise<void> {
+  if (!isSupabaseConfigured() || !isUuid(brandId)) return;
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  try {
+    const appearancePayload = {
+      style: character.style || "",
+      imageUrl: character.imageUrl || null,
+      avatarUrl: character.avatarUrl || character.imageUrl || null,
+      characterSheetUrl: character.characterSheetUrl || character.imageUrl || null,
+    };
+    const personalityPayload = {
+      traits: character.traits || [],
+    };
+    const voicePayload = {
+      name: character.voice?.name || "Default",
+      language: character.voice?.language || "English",
+      tone: character.voice?.tone || "Neutral",
+      locked: character.voice?.locked ?? true,
+      voiceId: character.voice?.voiceId || null,
+      description: character.voice?.description || null,
+      gender: character.voice?.gender || null,
+      previewUrl: character.voice?.previewUrl || null,
+    };
+
+    const { data: existing } = await (supabase.from("characters") as any)
+      .select("id")
+      .eq("brand_id", brandId)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      await (supabase.from("characters") as any)
+        .update({
+          name: character.name || "Primary Host",
+          role: character.role || "Primary Host",
+          appearance: appearancePayload,
+          personality: personalityPayload,
+          voice: voicePayload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing[0].id);
+    } else {
+      await (supabase.from("characters") as any).insert({
+        brand_id: brandId,
+        name: character.name || "Primary Host",
+        role: character.role || "Primary Host",
+        appearance: appearancePayload,
+        personality: personalityPayload,
+        voice: voicePayload,
+        consistency_rules: {},
+        generation_rules: {},
+      });
+    }
+  } catch (err) {
+    console.warn("[workspaceSync] Character persist notice:", err);
   }
 }
 

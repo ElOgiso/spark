@@ -15,6 +15,20 @@ export async function listBrands(): Promise<RepositoryResult<BrandRow[]>> {
   return { data: data ?? [], error: null, source: "supabase" };
 }
 
+export async function listBrandsForOwner(ownerId: string): Promise<RepositoryResult<BrandRow[]>> {
+  if (!isSupabaseConfigured()) return unconfiguredResult<BrandRow[]>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<BrandRow[]>();
+
+  const { data, error } = await (supabase.from("brands") as any)
+    .select("*")
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: false });
+
+  if (error) return repositoryError<BrandRow[]>(error.message);
+  return { data: data ?? [], error: null, source: "supabase" };
+}
+
 export async function createBrand(values: Partial<BrandRow>): Promise<RepositoryResult<BrandRow>> {
   return insertRow("brands", values);
 }

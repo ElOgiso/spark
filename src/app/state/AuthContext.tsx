@@ -11,7 +11,9 @@ import {
   signUp as sessionSignUp,
   subscribeToAuthState,
 } from "../backend/sessionService";
+import { markProfileOnboardingComplete } from "../backend/repositories/profileRepository";
 import type { BrandRow, ProfileRow } from "../backend/database.types";
+import { getBrandWorkspaceId } from "../services/socialIntegrationService";
 
 type AuthContextValue = {
   currentUser: User | null;
@@ -33,7 +35,7 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<{ error: string | null }>;
   resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
-  markOnboardingComplete: () => void;
+  markOnboardingComplete: (activeBrandId?: string) => Promise<void>;
   updateProfile: (displayName: string, email?: string) => void;
   refreshSession: () => Promise<void>;
   clearError: () => void;
@@ -58,10 +60,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [demoUser, setDemoUser] = useState<User | null>(() => getStoredDemoUser());
 
+  // Cached initial state, immediately overwritten by cloud bootstrap
   const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(() => {
-    const complete = localStorage.getItem("spark_onboarding_complete");
-    // Only return false if explicitly set to "false" (new registration in progress)
-    return complete !== "false";
+    if (typeof localStorage !== "undefined") {
+      return localStorage.getItem("spark_onboarding_complete") === "true";
+    }
+    return false;
   });
 
   const isConfigured = isAuthBackendReady();
@@ -87,7 +91,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBrand(result.brand);
     if (result.brand?.id) {
       localStorage.setItem("spark_current_brand_id", result.brand.id);
-      // Keep brand UUID available for OAuth workspace_id on Connect
       try {
         localStorage.setItem("spark_current_brand_name", result.brand.name || "");
       } catch {
@@ -96,19 +99,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setError(result.error);
 
-    // Cloud-First Workspace Identity:
-    // If user has an existing brand in Supabase, they are a returning user -> onboarding complete!
-    const localFlag = typeof localStorage !== "undefined" ? localStorage.getItem("spark_onboarding_complete") : null;
-    const hasCloudBrand = Boolean(result.brand?.id);
+    // CLOUD IS SOURCE OF TRUTH:
+    // Determine onboarding completeness directly from cloud result
+    const isComplete = Boolean(result.isOnboardingComplete);
+    setIsOnboardingComplete(isComplete);
 
-    if (hasCloudBrand && localFlag !== "false") {
-      setIsOnboardingComplete(true);
-      try {
-        localStorage.setItem("spark_onboarding_complete", "true");
-      } catch {}
-    } else if (!hasCloudBrand || localFlag === "false") {
-      setIsOnboardingComplete(false);
-    }
+    // Mirror to localStorage as cache only
+    try {
+      localStorage.setItem("spark_onboarding_complete", isComplete ? "true" : "false");
+    } catch {}
   }, []);
 
   const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
@@ -201,7 +200,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .then((res) => res.json())
             .then((userInfo) => {
               if (userInfo?.email) {
-                // Only treat as new if spark_onboarding_complete was explicitly set to "false"
                 const isNew = localStorage.getItem("spark_onboarding_complete") === "false";
                 handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], isNew);
               }
@@ -242,8 +240,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn("[Spark Auth] signIn backend error, falling back to demo:", err);
       handleDemoSignIn(targetEmail, undefined, false);
     }
-    localStorage.setItem("spark_onboarding_complete", "true");
-    setIsOnboardingComplete(true);
     setLoading(false);
   }, [handleDemoSignIn, isConfigured, refreshSession]);
 
@@ -270,8 +266,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn("[Spark Auth] signUp backend error, falling back to demo:", err);
       handleDemoSignIn(targetEmail, undefined, true);
     }
-    localStorage.setItem("spark_onboarding_complete", "false");
-    setIsOnboardingComplete(false);
     setLoading(false);
   }, [handleDemoSignIn, isConfigured, refreshSession]);
 
@@ -293,13 +287,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn("[Spark Auth] OAuth backend error, falling back to demo:", err);
       handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, isNew);
-    }
-    const complete = localStorage.getItem("spark_onboarding_complete");
-    if (complete === "false") {
-      setIsOnboardingComplete(false);
-    } else {
-      localStorage.setItem("spark_onboarding_complete", "true");
-      setIsOnboardingComplete(true);
     }
     setLoading(false);
   }, [handleDemoSignIn, isConfigured]);
@@ -340,10 +327,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return resendVerification(email);
   }, []);
 
-  const markOnboardingComplete = useCallback(() => {
+  const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     setIsOnboardingComplete(true);
-    localStorage.setItem("spark_onboarding_complete", "true");
-  }, []);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("spark_onboarding_complete", "true");
+    }
+    const targetUserId = currentUser?.id || session?.user?.id;
+    if (targetUserId && isConfigured) {
+      const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
+      void markProfileOnboardingComplete(targetUserId, targetBrandId);
+    }
+  }, [currentUser, session, isConfigured, brand]);
 
   const updateProfile = useCallback((displayName: string, email?: string) => {
     const targetEmail = email || currentUser?.email || "creator@spark.ai";
@@ -354,6 +348,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: prev?.role || "Director",
       avatar_url: prev?.avatar_url || null,
       email: targetEmail,
+      onboarding_complete: prev?.onboarding_complete ?? true,
+      active_brand_id: prev?.active_brand_id ?? null,
       created_at: prev?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
     }));
