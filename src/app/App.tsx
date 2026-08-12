@@ -239,7 +239,8 @@ function AppContent() {
     }
 
     const renderDesktopPage = () => {
-      switch (currentPage) {
+      const pageBase = currentPage.split("?")[0];
+      switch (pageBase) {
         case "/":
           return <SparkHome onNavigate={setCurrentPage} />;
         case "/my-spark":

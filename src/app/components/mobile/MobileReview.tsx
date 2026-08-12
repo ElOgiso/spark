@@ -331,14 +331,17 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
         <div className="space-y-3">
           {filtered.map((review) => {
             const isDrafting = review.stage === "drafting";
+            const prod = productions.find((p) => p.id === review.id);
+            const progressPct = prod?.generationProgress?.percent ?? prod?.brief?.generatedAssets?.generationProgress?.percent;
+            const progressStage = prod?.generationProgress?.stage ?? prod?.brief?.generatedAssets?.generationProgress?.stage;
+
             return (
               <button
                 key={review.id}
-                onClick={() => !isDrafting && setSelectedReview(review)}
+                onClick={() => setSelectedReview(review)}
                 className={`w-full rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
-                  isDrafting ? "opacity-60 cursor-default" :
                   review.priority === "high" ? "border-destructive/25 bg-destructive/5" :
-                  "border-border bg-card"
+                  "border-border bg-card hover:bg-accent/5"
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -352,20 +355,28 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                     />
                     {isDrafting && (
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
-                        <Loader2 className="w-5 h-5 text-white animate-spin" />
+                        <Loader2 className="w-5 h-5 text-accent animate-spin" />
                       </div>
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
                     {/* Title */}
-                    <p className="text-sm font-medium leading-snug mb-1.5 line-clamp-2">{review.title}</p>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {isDrafting && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
+                      <p className="text-sm font-medium leading-snug truncate">{review.title}</p>
+                    </div>
 
                     {/* Account + type */}
-                    <p className="text-xs text-muted-foreground mb-2.5">
+                    <p className="text-xs text-muted-foreground mb-1.5">
                       {review.account} · {typeLabel[review.type]}
-                      {isDrafting && " · Spark is generating…"}
                     </p>
+
+                    {isDrafting && (
+                      <p className="text-xs text-accent font-mono mb-2">
+                        {progressPct ? `${progressPct}% — ${progressStage || "Generating"}` : "Spark is generating…"}
+                      </p>
+                    )}
 
                     {/* Stage + confidence + time */}
                     <div className="flex items-center gap-3 flex-wrap">
@@ -375,9 +386,7 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                     </div>
                   </div>
 
-                  {!isDrafting && (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
-                  )}
+                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
                 </div>
               </button>
             );

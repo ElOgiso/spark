@@ -58,12 +58,53 @@ function clip(value: unknown, n: number, fallback: string): string {
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
 
-  // Find the first item that is pending review, or default to the first item
-  const activeReview = reviewItems.find((r: any) => r.status === "Pending Review") || reviewItems[0];
-  const reviewId = activeReview?.id || "r1";
+  // 1. Resolve focus target ID from query params or sessionStorage
+  const [focusId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const qId = params.get("productionId") || params.get("id") || params.get("reviewId");
+        if (qId) return qId;
+        const stored = sessionStorage.getItem("spark_review_focus_id");
+        if (stored) {
+          sessionStorage.removeItem("spark_review_focus_id");
+          return stored;
+        }
+      }
+    } catch {}
+    return null;
+  });
 
-  // Fetch active production linked to activeReview
-  const activeProd = productions.find((p: any) => p.id === activeReview?.productionId);
+  // 2. Fetch active production linked to focusId or fallback
+  const activeProd = (() => {
+    if (focusId) {
+      const match = productions.find((p: any) => p.id === focusId);
+      if (match) return match;
+    }
+    const revMatch = reviewItems.find((r: any) => r.id === focusId || r.productionId === focusId);
+    if (revMatch?.productionId) {
+      const match = productions.find((p: any) => p.id === revMatch.productionId);
+      if (match) return match;
+    }
+    return productions.find((p: any) => p.status === "Ready for Review") || productions[0];
+  })();
+
+  // 3. Resolve active review
+  const activeReview = (() => {
+    if (focusId) {
+      const match = reviewItems.find(
+        (r: any) => r.id === focusId || r.productionId === focusId || r.production?.id === focusId
+      );
+      if (match) return match;
+    }
+    if (activeProd?.id) {
+      const match = reviewItems.find((r: any) => r.productionId === activeProd.id);
+      if (match) return match;
+    }
+    return reviewItems.find((r: any) => r.status === "Pending Review") || reviewItems[0];
+  })();
+
+  const reviewId = activeReview?.id || (activeProd ? `r-${activeProd.id}` : "r1");
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["why-this-works", "storyboard"])

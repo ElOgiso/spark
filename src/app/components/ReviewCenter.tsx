@@ -245,11 +245,22 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                   <tbody>
                     {filtered.map((item) => {
                       const isDrafting = item.stage === "drafting";
+                      const prod = productions.find((p) => p.id === item.id);
+                      const progressPct = prod?.generationProgress?.percent ?? prod?.brief?.generatedAssets?.generationProgress?.percent;
+                      const progressStage = prod?.generationProgress?.stage ?? prod?.brief?.generatedAssets?.generationProgress?.stage;
+
                       return (
                         <tr
                           key={item.id}
-                          className={`border-b border-border/50 transition-colors cursor-pointer group ${isDrafting ? "opacity-60" : "hover:bg-accent/5"}`}
-                          onClick={() => !isDrafting && item.reviewType === "creative" && onNavigate?.("/review/creative")}
+                          className="border-b border-border/50 transition-colors cursor-pointer group hover:bg-accent/5"
+                          onClick={() => {
+                            if (item.reviewType === "creative") {
+                              try {
+                                sessionStorage.setItem("spark_review_focus_id", item.id);
+                              } catch {}
+                              onNavigate?.(`/review/creative?productionId=${item.id}`);
+                            }
+                          }}
                         >
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
@@ -260,11 +271,15 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                               />
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  {isDrafting && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />}
+                                  {isDrafting && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
                                   <p className="text-sm font-medium max-w-[220px] truncate">{item.title}</p>
                                 </div>
                                 {item.series && <p className="text-xs text-muted-foreground mt-0.5">{item.series}</p>}
-                                {isDrafting && <p className="text-xs text-muted-foreground/60 mt-0.5">Spark is generating…</p>}
+                                {isDrafting && (
+                                  <p className="text-xs text-accent mt-0.5 font-mono">
+                                    {progressPct ? `${progressPct}% — ${progressStage || "Generating"}` : "Spark is generating…"}
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -292,9 +307,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                             <p className="text-xs text-muted-foreground">{item.timeWaiting}</p>
                           </td>
                           <td className="px-5 py-4">
-                            {!isDrafting && (
-                              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                            )}
+                            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                           </td>
                         </tr>
                       );
