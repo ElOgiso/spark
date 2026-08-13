@@ -105,6 +105,8 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [brandName, setBrandName] = useState("");
   const [niche, setNicheSelection] = useState("");
   const [customNiche, setCustomNiche] = useState("");
+  const [audience, setAudience] = useState("Creators & Founders");
+  const [goal, setGoal] = useState("Viral Reach & Growth");
 
   // Character states
   const [characterDescription, setCharacterDescription] = useState("Executive AI presenter with sharp focus and modern framing");
@@ -374,8 +376,8 @@ Hyper-consistent master reference bible, razor-sharp focus, uniform art directio
       brandName: brandName || "SPARK Brand",
       creatorName: creatorName || "Creator",
       niche: niche || "AI & Technology",
-      audience: "Creators, Tech Founders & Modern Media Operators",
-      goal: "Viral Reach & Growth",
+      audience: audience || "Creators, Tech Founders & Modern Media Operators",
+      goal: goal || "Viral Reach & Growth",
       platforms: selectedAccounts,
       tone: "Energetic & Relatable",
       vision: "Autonomous AI media company scaling high-retention cinematic shorts",
@@ -528,7 +530,7 @@ Hyper-consistent master reference bible, razor-sharp focus, uniform art directio
             </motion.div>
           )}
 
-          {/* SCREEN 3: Content Niche */}
+          {/* SCREEN 3: Content Niche, Audience & Goal */}
           {step === "niche" && (
             <motion.div
               key="niche"
@@ -536,46 +538,101 @@ Hyper-consistent master reference bible, razor-sharp focus, uniform art directio
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-4"
+              className="space-y-3.5"
             >
               <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
                 <p className="text-xs text-foreground">
-                  <strong className="text-purple-300">Content Domain:</strong> Select the primary focus of your media channel.
+                  <strong className="text-purple-300">Content Domain:</strong> Select primary focus, audience, and strategic goal.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {["AI & Technology", "Business & Startups", "Creator Economy", "Personal Finance", "Lifestyle & Culture", "Art & Design"].map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => handleNicheChoice(item)}
-                    className="p-3 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] cursor-pointer"
-                  >
-                    <span className="text-xs font-semibold text-foreground block">{item}</span>
-                  </button>
-                ))}
+              <div>
+                <label className="text-[11px] font-semibold text-foreground block mb-1">Content Niche</label>
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                  {["AI & Technology", "Business & Startups", "Creator Economy", "Personal Finance", "Lifestyle & Culture", "Art & Design"].map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        setNicheSelection(item);
+                        setCustomNiche("");
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                        niche === item
+                          ? "bg-purple-600/30 border-purple-400 text-purple-200"
+                          : "bg-card border-border hover:border-white/20 text-muted-foreground"
+                      }`}
+                    >
+                      <span className="text-xs font-semibold block">{item}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-1.5">
+                  <input
+                    type="text"
+                    value={customNiche}
+                    onChange={(e) => {
+                      setCustomNiche(e.target.value);
+                      setNicheSelection(e.target.value);
+                    }}
+                    placeholder="Or type custom domain niche..."
+                    className="w-full p-2.5 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
+                  />
+                </div>
               </div>
 
-              <div className="pt-1">
-                <input
-                  type="text"
-                  value={customNiche}
-                  onChange={(e) => setCustomNiche(e.target.value)}
-                  placeholder="Or type custom niche..."
-                  className="w-full p-3 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
-                />
+              {/* Target Audience */}
+              <div>
+                <label className="text-[11px] font-semibold text-foreground block mb-1">Target Audience</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Creators & Founders", "Tech Operators", "Consumers", "B2B Decision Makers"].map((aud) => (
+                    <button
+                      key={aud}
+                      type="button"
+                      onClick={() => setAudience(aud)}
+                      className={`px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                        audience === aud
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                          : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      {aud}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {customNiche.trim() && (
-                <button
-                  type="button"
-                  onClick={() => handleNicheChoice(customNiche)}
-                  className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <span>Confirm "{customNiche}" →</span>
-                </button>
-              )}
+              {/* Growth Goal */}
+              <div>
+                <label className="text-[11px] font-semibold text-foreground block mb-1">Primary Growth Goal</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Viral Reach & Growth", "Brand Authority", "Lead Generation", "Community Building"].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGoal(g)}
+                      className={`px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                        goal === g
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                          : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={!niche.trim()}
+                onClick={() => setStep("character")}
+                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2 cursor-pointer mt-1"
+              >
+                <span>Continue to Character Bible</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </motion.div>
           )}
 

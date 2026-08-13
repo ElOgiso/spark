@@ -626,51 +626,106 @@ Hyper-consistent master reference bible, razor-sharp focus, uniform art directio
             </div>
           )}
 
-          {/* STEP 2: Content Niche */}
+          {/* STEP 2: Content Niche, Audience & Goals */}
           {currentStep === 2 && (
-            <div className="space-y-3 pt-1">
-              <label className="text-xs font-semibold text-foreground">Select Primary Content Niche</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  "AI & Technology",
-                  "Business & Startups",
-                  "Creator Economy",
-                  "Personal Finance",
-                  "Lifestyle & Culture",
-                  "Art & Design",
-                  "Health & Fitness",
-                  "Education & Science",
-                ].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, niche: n });
-                      setCustomNicheInput("");
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Select Primary Content Niche</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    "AI & Technology",
+                    "Business & Startups",
+                    "Creator Economy",
+                    "Personal Finance",
+                    "Lifestyle & Culture",
+                    "Art & Design",
+                    "Health & Fitness",
+                    "Education & Science",
+                  ].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, niche: n });
+                        setCustomNicheInput("");
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-medium text-left border transition-all cursor-pointer ${
+                        formData.niche === n
+                          ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/10"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-2 space-y-1">
+                  <label className="text-[11px] text-muted-foreground">Or custom domain niche:</label>
+                  <input
+                    type="text"
+                    value={customNicheInput}
+                    onChange={(e) => {
+                      setCustomNicheInput(e.target.value);
+                      setFormData({ ...formData, niche: e.target.value });
                     }}
-                    className={`p-2.5 rounded-xl text-xs font-medium text-left border transition-all cursor-pointer ${
-                      formData.niche === n
-                        ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/10"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
+                    placeholder="e.g. Deeptech Robotics, Autonomous Systems..."
+                    className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
               </div>
 
-              <div className="pt-2 space-y-1.5">
-                <label className="text-[11px] text-muted-foreground">Or custom domain niche:</label>
-                <input
-                  type="text"
-                  value={customNicheInput}
-                  onChange={(e) => {
-                    setCustomNicheInput(e.target.value);
-                    setFormData({ ...formData, niche: e.target.value });
-                  }}
-                  placeholder="e.g. Deeptech Robotics, Autonomous Systems..."
-                  className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
-                />
+              {/* Target Audience Chips */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Target Audience</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "Creators & Founders",
+                    "Tech Operators & Engineers",
+                    "Mainstream Consumers",
+                    "B2B Decision Makers",
+                    "Lifelong Learners",
+                  ].map((aud) => (
+                    <button
+                      key={aud}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, audience: aud })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                        formData.audience === aud
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200 shadow-sm"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {aud}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Primary Channel Goal Chips */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Primary Growth Goal</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "Viral Reach & Growth",
+                    "Brand Authority",
+                    "Lead Generation",
+                    "Community Building",
+                  ].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, goal: g })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                        formData.goal === g
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200 shadow-sm"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
