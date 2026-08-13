@@ -16,10 +16,8 @@ import { InstallPrompt } from "./components/InstallPrompt";
 import { AuthProvider, useAuth, getStoredDemoUser } from "./state/AuthContext";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthPanel } from "./components/auth/AuthPanel";
-import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
-import { MobileConversationalFlow } from "./components/mobile/onboarding/MobileConversationalFlow";
-import { OnboardingWizard, BrandGenesisData } from "./components/onboarding/OnboardingWizard";
-import { MeetYourTeamScreen } from "./components/onboarding/MeetYourTeamScreen";
+import { BrandGenesisFlow, BrandGenesisData } from "./components/onboarding/BrandGenesisFlow";
+import { SplashReel } from "./components/splash/SplashReel";
 import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
@@ -123,6 +121,33 @@ function AppContent() {
     return null;
   };
 
+  // Splash sequence state: check if already played in session or if on OAuth route
+  const [splashDone, setSplashDone] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+    const params = new URLSearchParams(window.location.search);
+    const flag = (params.get("spark_oauth") || "").toLowerCase();
+    const state = params.get("state") || "";
+    const hasCode = Boolean(params.get("code"));
+    if (
+      pathname.startsWith("/auth/google") ||
+      pathname.startsWith("/auth/x") ||
+      pathname.startsWith("/auth/callback") ||
+      flag === "google" ||
+      flag === "youtube" ||
+      flag === "x" ||
+      flag === "twitter" ||
+      (hasCode && state.startsWith("spark_oauth_"))
+    ) {
+      return true;
+    }
+    try {
+      return sessionStorage.getItem("spark_splash_played") === "true";
+    } catch {
+      return false;
+    }
+  });
+
   // Strict Routing Authority & URL Sync
   useEffect(() => {
     if (!auth.loading) {
@@ -182,7 +207,7 @@ function AppContent() {
 
   const handleEnterDashboard = (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
-    auth.updateProfile(finalData.creatorName);
+    auth.updateProfile(finalData.creatorName || "Creator");
     initializeBrandGenesis(finalData);
     void auth.markOnboardingComplete(auth.brand?.id);
     if (window.history && window.history.replaceState) {
@@ -192,6 +217,20 @@ function AppContent() {
   };
 
   const renderContent = () => {
+    // -1. Cold-start / PWA entry Splash Reel (Exact donor reel with 4s final hold)
+    if (!splashDone) {
+      return (
+        <SplashReel
+          onDone={() => {
+            try {
+              sessionStorage.setItem("spark_splash_played", "true");
+            } catch {}
+            setSplashDone(true);
+          }}
+        />
+      );
+    }
+
     // 0. Hydration State
     if (auth.loading) {
       return <HydrationSplash />;
@@ -217,28 +256,16 @@ function AppContent() {
 
     // 2. Authenticated First-Time Onboarding Flow (ProtectedRoute Guard)
     if (!auth.isOnboardingComplete) {
-      if (deviceType === "mobile") {
-        return (
-          <ProtectedRoute>
-            <MobileConversationalFlow
-              onComplete={(data) => {
-                if (data) {
-                  setGenesisData(data);
-                  handleEnterDashboard(data);
-                } else {
-                  handleEnterDashboard();
-                }
-              }}
-            />
-          </ProtectedRoute>
-        );
-      }
       return (
         <ProtectedRoute>
-          <OnboardingWizard
+          <BrandGenesisFlow
             onComplete={(data) => {
-              setGenesisData(data);
-              handleEnterDashboard(data);
+              if (data) {
+                setGenesisData(data);
+                handleEnterDashboard(data);
+              } else {
+                handleEnterDashboard();
+              }
             }}
           />
         </ProtectedRoute>
