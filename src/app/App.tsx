@@ -17,6 +17,7 @@ import { AuthProvider, useAuth, getStoredDemoUser } from "./state/AuthContext";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthPanel } from "./components/auth/AuthPanel";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
+import { MobileConversationalFlow } from "./components/mobile/onboarding/MobileConversationalFlow";
 import { OnboardingWizard, BrandGenesisData } from "./components/onboarding/OnboardingWizard";
 import { MeetYourTeamScreen } from "./components/onboarding/MeetYourTeamScreen";
 import { SparkLogo } from "./components/SparkLogo";
@@ -216,6 +217,22 @@ function AppContent() {
 
     // 2. Authenticated First-Time Onboarding Flow (ProtectedRoute Guard)
     if (!auth.isOnboardingComplete) {
+      if (deviceType === "mobile") {
+        return (
+          <ProtectedRoute>
+            <MobileConversationalFlow
+              onComplete={(data) => {
+                if (data) {
+                  setGenesisData(data);
+                  handleEnterDashboard(data);
+                } else {
+                  handleEnterDashboard();
+                }
+              }}
+            />
+          </ProtectedRoute>
+        );
+      }
       return (
         <ProtectedRoute>
           <OnboardingWizard

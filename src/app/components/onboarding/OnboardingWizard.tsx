@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   User,
-  Send,
   Loader2,
   CheckCircle2,
   Upload,
@@ -24,11 +24,12 @@ import {
   Trash2,
   Wand2,
   RefreshCw,
+  Maximize2,
 } from "lucide-react";
-import { Button, GlassCard } from "../ds";
+import { Button } from "../ds";
 import { SparkLogo } from "../SparkLogo";
-import { generateSuperSparkResponse } from "../../services/geminiService";
-import { socialConnectorFramework, getStoredAccountTokens, getOAuthAuthorizationUrl } from "../../services/socialIntegrationService";
+import { CharacterSheetLightbox } from "./CharacterSheetLightbox";
+import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../services/socialIntegrationService";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -65,6 +66,11 @@ export interface BrandGenesisData {
   characterDescription?: string;
   characterSheetUrl?: string;
   characterImageUrl?: string;
+  genre?: string;
+  skinTone?: string;
+  hairStyle?: string;
+  wardrobe?: string;
+  personality?: string;
   voiceProfile?: VoiceProfile;
   voiceId?: string;
   audioEnergy?: "calm" | "energetic" | "bold";
@@ -77,13 +83,48 @@ interface OnboardingWizardProps {
   onComplete: (data: BrandGenesisData) => void;
 }
 
-interface ChatTurn {
-  id: string;
-  sender: "spark" | "user";
-  text: string;
-  stepIdx?: number;
-  timestamp?: Date;
-}
+const GENRE_OPTIONS = [
+  "Realistic",
+  "Cinematic",
+  "3D",
+  "Anime",
+  "Cartoon",
+  "Illustration",
+  "Comic",
+  "Art / Stylized",
+  "Clay",
+  "Pixel",
+];
+
+const SKIN_TONE_OPTIONS = ["Fair", "Medium", "Olive", "Rich Brown", "Deep Dark"];
+
+const HAIR_STYLE_OPTIONS = [
+  "Short Crop",
+  "Textured Curls",
+  "Braids/Locs",
+  "Sleek Bob",
+  "Long Waves",
+  "Buzz Cut",
+  "Fade",
+];
+
+const WARDROBE_OPTIONS = [
+  "Executive Tailored Suit",
+  "Smart Casual Blazer",
+  "Minimal Techwear",
+  "Luxury Streetwear",
+  "Studio Denim",
+  "High-Contrast Monochromatic",
+];
+
+const PERSONALITY_OPTIONS = [
+  "Confident",
+  "Warm & Engaging",
+  "High Authority",
+  "Energetic & Viral",
+  "Playful & Witty",
+  "Inquisitive & Analytical",
+];
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }) => {
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -93,11 +134,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     brandName: "",
     creatorName: "",
     niche: "",
-    audience: "",
+    audience: "Creators, Tech Founders & Modern Media Operators",
     goal: "Viral Reach & Growth",
-    platforms: [],
+    platforms: ["YouTube Shorts", "Twitter/X"],
     tone: "Energetic & Relatable",
-    vision: "",
+    vision: "Next-generation autonomous AI media brand",
     visualStyle: "Realistic / Live-Action",
     productionMode: "hybrid",
     automationMode: "balanced",
@@ -106,6 +147,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     characterDescription: "Executive AI presenter with sharp focus and modern framing",
     characterSheetUrl: undefined,
     characterImageUrl: undefined,
+    genre: "Realistic",
+    skinTone: "Rich Brown",
+    hairStyle: "Short Crop",
+    wardrobe: "Executive Tailored Suit",
+    personality: "Confident",
     voiceProfile: {
       id: "21m00Tcm4TlvDq8ikWAM",
       name: "Rachel (Calm & Professional)",
@@ -120,10 +166,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     connectedAccounts: {},
   });
 
-  const [inputMessage, setInputMessage] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Character Image Generation state
   const [isGeneratingPortrait, setIsGeneratingPortrait] = useState(false);
@@ -142,9 +187,6 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   // Research Sources state
   const [researchSourceInput, setResearchSourceInput] = useState("");
   const [seededSources, setSeededSources] = useState<string[]>([]);
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Load ElevenLabs Voices on mount & Restore OAuth Resume State if returning
   useEffect(() => {
@@ -198,22 +240,6 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     }
   }, []);
 
-  const [messages, setMessages] = useState<ChatTurn[]>([
-    {
-      id: "genesis-init",
-      sender: "spark",
-      text: "### Welcome to SPARK Brand Genesis\n\nI am **Super Spark**, your Executive Creative Director. Let's construct your media brand workspace.\n\nFirst, what is your name and the name of your brand?",
-      stepIdx: 1,
-      timestamp: new Date(),
-    },
-  ]);
-
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages, currentStep]);
-
   // Handle Character Sheet Reference Upload
   const handleCharacterSheetUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -236,19 +262,29 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     setIsGeneratingPortrait(true);
     setPortraitError(null);
 
+    const genre = formData.genre || "Realistic";
+    const skin = formData.skinTone || "Rich Brown";
+    const hair = formData.hairStyle || "Short Crop";
+    const wardrobe = formData.wardrobe || "Executive Tailored Suit";
+    const personality = formData.personality || "Confident";
     const charDesc = formData.characterDescription || "Executive host in modern high-contrast studio setting";
+
     const prompt = `Production Character Design Bible Reference Sheet for "${formData.creatorName || "Lead Host"}" representing brand "${formData.brandName || "SPARK"}", niche: "${formData.niche || "Content"}".
-Visual Style: ${formData.visualStyle}.
-Character Bio & Persona: ${charDesc}.
+Visual Style / Genre: ${genre}.
+Skin Tone: ${skin}.
+Hair Style: ${hair}.
+Signature Wardrobe: ${wardrobe}.
+Personality & Emotion: ${personality}.
+Director Notes & Persona: ${charDesc}.
 
-LAYOUT & COMPOSITION (One unified model sheet / production bible):
-1. TOP TITLE BLOCK: "${formData.creatorName || "Lead Host"}" - Role/Vibe & core aesthetic guidelines.
-2. TURNAROUND MODEL ROW: Consistent full-body views (Full Front Standing Pose, 3/4 Dynamic View, Side Profile, and Back View) in matching signature wardrobe under neutral studio key lighting.
-3. EXPRESSION PALETTE GRID: 4 to 6 facial detail crops showing key emotions (Confident/Authority, Smiling/Engaging, Serious/Explaining, Inquisitive/Thoughtful).
-4. COLOR SWATCH PALETTE STRIP: Primary costume palette, secondary accent tones, and lighting color swatches at bottom.
-5. WARDROBE & DETAIL VIGNETTES: Signature accessories, props matching niche, and clean neutral studio background.
+LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
+1. TOP TITLE BLOCK: "${formData.creatorName || "Lead Host"}" - Production Model Bible, Style: ${genre}, Core Aesthetic Guidelines.
+2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe (${wardrobe}) under neutral key studio lighting.
+3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${personality}: Confident, Explaining/Directing, Warm/Smiling, Inquisitive/Thoughtful, Intense Hook).
+4. COLOR SWATCH PALETTE STRIP: Swatches of skin tone (${skin}), primary wardrobe tone (${wardrobe}), accent trim, and lighting rim colors.
+5. WARDROBE & ACCESSORY VIGNETTES: Texture details, signature accessories, and clean studio backdrop.
 
-Hyper-consistent production design bible, sharp focus, master reference quality, 8k resolution.`;
+Hyper-consistent master reference bible, razor-sharp focus, uniform art direction, 8k resolution production sheet.`;
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
@@ -261,7 +297,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
           characterImageUrl: resultImg,
         }));
       } else {
-        setPortraitError("Could not generate character sheet image. You can continue with text description.");
+        setPortraitError("Could not render character sheet image. You can continue with configured attributes.");
       }
     } catch (err: any) {
       console.warn("[Onboarding] Character sheet generation error:", err);
@@ -429,109 +465,6 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
       });
   };
 
-  const advanceToStep = (nextStep: number, updatedData: BrandGenesisData, userText: string) => {
-    const userMsg: ChatTurn = {
-      id: `usr-${Date.now()}`,
-      sender: "user",
-      text: userText,
-      timestamp: new Date(),
-    };
-
-    let sparkReplyText = "";
-    if (nextStep === 2) {
-      sparkReplyText = `### Content Niche & Category\n\nNice to meet you, **${updatedData.creatorName}**! We'll build **"${updatedData.brandName}"** together.\n\nWhat content niche or domain will this brand focus on?`;
-    } else if (nextStep === 3) {
-      sparkReplyText = `### Host Character & Visual Aesthetic\n\nFocusing on **${updatedData.niche}**.\n\nLet's generate your host character portrait or define your visual presentation style.`;
-    } else if (nextStep === 4) {
-      sparkReplyText = `### Brand Narrator Voice & Audio Energy\n\nVisual style set to **${updatedData.visualStyle}**.\n\nChoose an executive ElevenLabs voice profile for video narration, or describe a custom voice.`;
-    } else if (nextStep === 5) {
-      sparkReplyText = `### Research Source / Inspiration Accounts\n\nVoice configured.\n\nPaste URLs of competitor channels or inspiration accounts (YouTube, TikTok, Instagram) so SPARK can extract viral hooks.`;
-    } else if (nextStep === 6) {
-      sparkReplyText = `### Distribution Channels\n\nResearch sources registered.\n\nWhere do you want to publish? You can connect accounts now or skip—research works immediately either way.`;
-    } else if (nextStep === 7) {
-      sparkReplyText = `### Production Mode & Automation\n\nSelect your default production pipeline depth and governance autonomy level.`;
-    } else if (nextStep === 8) {
-      sparkReplyText = `### Your SPARK is Ready!\n\nAll parameters have been configured. Review your setup below and enter your workspace.`;
-    }
-
-    const sparkMsg: ChatTurn = {
-      id: `spk-${Date.now()}`,
-      sender: "spark",
-      text: sparkReplyText,
-      stepIdx: nextStep,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMsg, sparkMsg]);
-    setFormData(updatedData);
-    setCurrentStep(nextStep);
-  };
-
-  const handleTextSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!inputMessage.trim() || isThinking) return;
-
-    const userText = inputMessage.trim();
-    setInputMessage("");
-
-    const lower = userText.toLowerCase();
-    const isQuestion =
-      lower.includes("what") ||
-      lower.includes("explain") ||
-      lower.includes("how") ||
-      lower.includes("why") ||
-      lower.includes("can i") ||
-      lower.includes("which") ||
-      userText.endsWith("?");
-
-    if (isQuestion) {
-      const userMsg: ChatTurn = { id: `usr-${Date.now()}`, sender: "user", text: userText, timestamp: new Date() };
-      setMessages((prev) => [...prev, userMsg]);
-      setIsThinking(true);
-
-      const history = messages.map((m) => ({ sender: m.sender, text: m.text }));
-      let answer = await generateSuperSparkResponse(userText, history);
-
-      if (!answer) {
-        if (lower.includes("production mode")) {
-          answer = "**Production Modes** control your rendering depth: **Narrator** (images + voice + captions), **Hybrid** (animated hook + narrator), and **Cinematic** (full storyboard + video generation + voice).";
-        } else if (lower.includes("automation")) {
-          answer = "**Automation Mode** controls autonomy: **Manual** (all actions need approval), **Balanced** (routine actions handled, strategy approved), **Autonomous** (full autonomous pipeline).";
-        } else {
-          answer = "I've logged your question. You can modify all brand settings inside **MY SPARK** at any time!";
-        }
-      }
-
-      answer += `\n\nShall we continue with **Step ${currentStep}**?`;
-
-      const sparkMsg: ChatTurn = { id: `spk-${Date.now()}`, sender: "spark", text: answer, stepIdx: currentStep, timestamp: new Date() };
-      setIsThinking(false);
-      setMessages((prev) => [...prev, sparkMsg]);
-      return;
-    }
-
-    if (currentStep === 1) {
-      const brandName = formData.brandName || userText;
-      const creatorName = formData.creatorName || "Creator";
-      const updated = { ...formData, brandName, creatorName };
-      advanceToStep(2, updated, `Creator: **${creatorName}**, Brand: **${brandName}**`);
-    } else if (currentStep === 2) {
-      const updated = { ...formData, niche: userText };
-      advanceToStep(3, updated, `Niche: **${userText}**`);
-    } else if (currentStep === 3) {
-      const updated = { ...formData, characterDescription: userText };
-      advanceToStep(4, updated, `Character notes: **${userText}**`);
-    } else if (currentStep === 4) {
-      advanceToStep(5, formData, `Voice & Audio configured`);
-    } else if (currentStep === 5) {
-      advanceToStep(6, formData, `Research sources confirmed`);
-    } else if (currentStep === 6) {
-      advanceToStep(7, formData, `Channels confirmed`);
-    } else if (currentStep === 7) {
-      advanceToStep(8, formData, `Production & Automation confirmed`);
-    }
-  };
-
   const togglePlatform = (p: string) => {
     setFormData((prev) => {
       const exists = prev.platforms.includes(p);
@@ -546,23 +479,26 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
   };
 
   const handleFinish = () => {
-    onComplete({
-      ...formData,
-      chatHistory: messages.map((m) => ({
-        id: m.id,
-        sender: m.sender,
-        text: m.text,
-        timestamp: m.timestamp || new Date(),
-      })),
-    });
+    onComplete(formData);
   };
 
   const connectedAccountsList = Object.keys(formData.connectedAccounts || {}).filter(
     (k) => formData.connectedAccounts?.[k]?.connected
   );
 
+  const stepTitles = [
+    "Identity & Brand",
+    "Content Domain & Niche",
+    "Host Character Design Bible",
+    "Narrator Voice & Audio Cadence",
+    "Research & Viral Sparks Feeds",
+    "Publishing Distribution",
+    "Production Depth & Autonomy",
+    "Ready & Launch",
+  ];
+
   return (
-    <div className="fixed inset-0 h-[100dvh] bg-[#0B0F17] flex flex-col justify-between overflow-x-hidden sm:relative sm:min-h-screen sm:p-6 sm:items-center sm:justify-center select-none">
+    <div className="fixed inset-0 h-[100dvh] bg-[#0B0F17] flex flex-col justify-between overflow-hidden sm:relative sm:min-h-screen sm:p-6 sm:items-center sm:justify-center select-none">
       {/* Background ambient light */}
       <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
         <div className="w-[500px] h-[300px] bg-purple-600/15 rounded-full blur-[140px]" />
@@ -570,15 +506,15 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
       </div>
 
       {/* Header Container */}
-      <div className="w-full max-w-2xl px-4 pt-4 sm:pt-0 sm:px-0 mb-2 sm:mb-4 flex items-center justify-between flex-shrink-0">
+      <header className="w-full max-w-2xl px-4 pt-4 sm:pt-0 sm:px-0 mb-2 sm:mb-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-purple-600/20 border border-purple-500/40 flex items-center justify-center">
-            <SparkLogo className="w-5 h-5" variant="superspark" />
-          </div>
+          <SparkLogo className="w-5 h-5" variant="superspark" />
           <div>
-            <span className="font-bold text-xs sm:text-sm tracking-wide text-foreground uppercase block">SPARK Brand Genesis</span>
+            <span className="font-bold text-xs sm:text-sm tracking-wider text-foreground uppercase block">
+              SPARK Genesis
+            </span>
             <span className="text-[10px] sm:text-[11px] text-muted-foreground font-mono">
-              {currentStep <= 7 ? `Phase ${currentStep} of 7` : "Ready"}
+              {currentStep <= 7 ? `Phase ${currentStep} of 7 • ${stepTitles[currentStep - 1]}` : "Calibration Complete"}
             </span>
           </div>
         </div>
@@ -588,116 +524,123 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               key={s}
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 s === currentStep
-                  ? "w-6 sm:w-8 bg-purple-500"
+                  ? "w-6 sm:w-8 bg-purple-500 shadow-sm shadow-purple-500/50"
                   : s < currentStep
-                  ? "w-2.5 sm:w-3 bg-purple-400/50"
+                  ? "w-2.5 sm:w-3 bg-purple-400/60"
                   : "w-2.5 sm:w-3 bg-white/10"
               }`}
             />
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* Main Conversation Glass Card */}
-      <div className="w-full max-w-2xl flex-1 sm:h-[640px] sm:flex-none flex flex-col bg-white/5 border-t sm:border border-purple-500/30 sm:rounded-2xl overflow-hidden relative shadow-2xl">
-        {/* Messages Stream */}
-        <div ref={chatContainerRef} className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 overflow-x-hidden">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex items-start gap-2.5 sm:gap-3 ${m.sender === "user" ? "flex-row-reverse" : ""}`}
-            >
-              <div
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                  m.sender === "spark"
-                    ? "bg-purple-600/30 border border-purple-400/50 text-purple-300 shadow-sm"
-                    : "bg-cyan-600/30 border border-cyan-400/50 text-cyan-200"
-                }`}
-              >
-                {m.sender === "spark" ? <Sparkles className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+      {/* Main Executive Card Container */}
+      <main className="w-full max-w-2xl flex-1 sm:h-[680px] sm:flex-none flex flex-col bg-card/60 backdrop-blur-xl border-t sm:border border-white/10 sm:rounded-2xl overflow-hidden relative shadow-2xl">
+        {/* Scrollable middle workspace */}
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto overflow-x-hidden space-y-4">
+          {/* Executive Director Guidance Note */}
+          <div className="p-3 sm:p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/25 flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300 shrink-0 mt-0.5">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="flex-1 text-xs sm:text-sm leading-relaxed">
+              {currentStep === 1 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Executive Identity:</strong> Define the creator behind the brand and the primary media channel name.
+                </p>
+              )}
+              {currentStep === 2 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Content Domain:</strong> Choose the core subject area SPARK will research, optimize, and generate stories around.
+                </p>
+              )}
+              {currentStep === 3 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Character Bible:</strong> Lock multi-angle visual identity, genre, skin tone, hair, and wardrobe for consistent AI video rendering.
+                </p>
+              )}
+              {currentStep === 4 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Voice & Audio:</strong> Select your ElevenLabs narrator voice or describe a custom voice tone for story audio pacing.
+                </p>
+              )}
+              {currentStep === 5 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Inspiration Feeds:</strong> Add benchmark channels or creator links to immediately seed high-velocity Viral Sparks.
+                </p>
+              )}
+              {currentStep === 6 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Distribution Channels:</strong> Authorize social pipelines for automated multi-channel publishing.
+                </p>
+              )}
+              {currentStep === 7 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">Operating System:</strong> Configure default production pipeline depth and autonomous review governance.
+                </p>
+              )}
+              {currentStep === 8 && (
+                <p className="text-foreground">
+                  <strong className="text-purple-300">SPARK Calibrated:</strong> All core media engines verified. Enter your executive dashboard to begin production.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* STEP 1: Creator & Brand Name */}
+          {currentStep === 1 && (
+            <div className="space-y-4 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Creator Name / Founder</label>
+                  <input
+                    type="text"
+                    value={formData.creatorName}
+                    onChange={(e) => setFormData({ ...formData, creatorName: e.target.value })}
+                    placeholder="e.g. Maurice Otabor"
+                    className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Brand / Studio Name</label>
+                  <input
+                    type="text"
+                    value={formData.brandName}
+                    onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
+                    placeholder="e.g. ElOgiso Media"
+                    className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
               </div>
-              <div
-                className={`p-3 sm:p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] ${
-                  m.sender === "spark"
-                    ? "bg-white/10 border border-white/15 text-foreground backdrop-blur-md rounded-tl-sm shadow-md"
-                    : "bg-purple-600 text-white rounded-tr-sm shadow-md"
-                }`}
-              >
-                <div
-                  className="prose prose-invert prose-xs leading-normal"
-                  dangerouslySetInnerHTML={{
-                    __html: m.text
-                      .replace(/### (.*)/g, '<h4 class="text-xs sm:text-sm font-bold text-purple-300 mt-0 mb-1">$1</h4>')
-                      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                      .replace(/\n\n/g, '<div class="h-2"></div>')
-                      .replace(/• (.*)/g, '<li class="ml-2 list-disc">$1</li>'),
-                  }}
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Brand Vision / Core Objective</label>
+                <input
+                  type="text"
+                  value={formData.vision}
+                  onChange={(e) => setFormData({ ...formData, vision: e.target.value })}
+                  placeholder="e.g. Autonomous AI media company scaling high-retention cinematic shorts"
+                  className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
                 />
               </div>
-            </div>
-          ))}
-
-          {isThinking && (
-            <div className="flex items-center gap-2 text-xs text-purple-300/80 p-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Super Spark is synthesizing strategy...</span>
             </div>
           )}
-          <div ref={chatEndRef} />
-        </div>
 
-        {/* Step 1: Creator & Brand Name */}
-        {currentStep === 1 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1 font-medium">Your Name / Alias</label>
-                <input
-                  type="text"
-                  value={formData.creatorName}
-                  onChange={(e) => setFormData({ ...formData, creatorName: e.target.value })}
-                  placeholder="Maurice Otabor"
-                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1 font-medium">Brand / Channel Name</label>
-                <input
-                  type="text"
-                  value={formData.brandName}
-                  onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
-                  placeholder="ElOgiso Media"
-                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
-                />
-              </div>
-            </div>
-
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              disabled={!formData.brandName.trim() || !formData.creatorName.trim()}
-              onClick={() =>
-                advanceToStep(
-                  2,
-                  formData,
-                  `Creator: **${formData.creatorName}**, Brand: **${formData.brandName}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Continue to Niche →
-            </Button>
-          </div>
-        )}
-
-        {/* Step 2: Content Niche */}
-        {currentStep === 2 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe">
-            <div>
-              <label className="block text-[11px] text-muted-foreground mb-1.5 font-medium">Select or Type Niche</label>
-              <div className="flex flex-wrap gap-1.5 mb-2.5">
-                {["AI & Technology", "Business & Startups", "Creator Economy", "Personal Finance", "Lifestyle & Culture", "Art & Design", "Health & Fitness", "Education"].map((n) => (
+          {/* STEP 2: Content Niche */}
+          {currentStep === 2 && (
+            <div className="space-y-3 pt-1">
+              <label className="text-xs font-semibold text-foreground">Select Primary Content Niche</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  "AI & Technology",
+                  "Business & Startups",
+                  "Creator Economy",
+                  "Personal Finance",
+                  "Lifestyle & Culture",
+                  "Art & Design",
+                  "Health & Fitness",
+                  "Education & Science",
+                ].map((n) => (
                   <button
                     key={n}
                     type="button"
@@ -705,89 +648,163 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                       setFormData({ ...formData, niche: n });
                       setCustomNicheInput("");
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl text-xs font-medium text-left border transition-all cursor-pointer ${
                       formData.niche === n
-                        ? "bg-purple-600/40 border border-purple-400 text-purple-200 font-semibold"
-                        : "bg-white/5 border border-white/10 text-muted-foreground hover:text-foreground"
+                        ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/10"
                     }`}
                   >
                     {n}
                   </button>
                 ))}
               </div>
-              <input
-                type="text"
-                value={customNicheInput}
-                onChange={(e) => {
-                  setCustomNicheInput(e.target.value);
-                  setFormData({ ...formData, niche: e.target.value });
-                }}
-                placeholder="Or type custom niche (e.g. Autonomous AI Media Systems)..."
-                className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
-              />
+
+              <div className="pt-2 space-y-1.5">
+                <label className="text-[11px] text-muted-foreground">Or custom domain niche:</label>
+                <input
+                  type="text"
+                  value={customNicheInput}
+                  onChange={(e) => {
+                    setCustomNicheInput(e.target.value);
+                    setFormData({ ...formData, niche: e.target.value });
+                  }}
+                  placeholder="e.g. Deeptech Robotics, Autonomous Systems..."
+                  className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
             </div>
+          )}
 
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              disabled={!formData.niche.trim()}
-              onClick={() =>
-                advanceToStep(
-                  3,
-                  formData,
-                  `Niche: **${formData.niche}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Confirm Niche →
-            </Button>
-          </div>
-        )}
-
-        {/* Step 3: Character & Visual Look (PART B: Generate -> Preview -> Approve) */}
-        {currentStep === 3 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe max-h-[380px] overflow-y-auto">
-            <div>
-              <label className="block text-[11px] text-muted-foreground mb-1.5 font-medium">Host Persona Description & Reference</label>
-              <input
-                type="text"
-                value={formData.characterDescription || ""}
-                onChange={(e) => setFormData({ ...formData, characterDescription: e.target.value })}
-                placeholder="Describe host persona (e.g. Modern charismatic tech founder with studio lighting)..."
-                className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-purple-500 mb-2"
-              />
-
-              <div className="grid grid-cols-3 gap-2 mb-2.5">
-                {[
-                  { id: "Realistic / Live-Action" as const, label: "Realistic" },
-                  { id: "Cinematic 3D" as const, label: "Cinematic 3D" },
-                  { id: "Anime / Stylized Studio" as const, label: "Stylized" },
-                ].map((vs) => (
-                  <button
-                    key={vs.id}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, visualStyle: vs.id })}
-                    className={`p-2 rounded-xl text-xs font-semibold border text-center transition-all cursor-pointer ${
-                      formData.visualStyle === vs.id
-                        ? "bg-purple-600/40 border-purple-400 text-purple-200"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {vs.label}
-                  </button>
-                ))}
+          {/* STEP 3: Character Reference Sheet Bible */}
+          {currentStep === 3 && (
+            <div className="space-y-4 pt-1">
+              {/* Genre / Visual Medium */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Visual Genre / Medium</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {GENRE_OPTIONS.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, genre: g })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+                        formData.genre === g
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Character Sheet Portrait Generation Card */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 mb-2">
-                <div className="flex items-center justify-between mb-2">
+              {/* Skin Tone & Hair Style */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Skin Tone Preset</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SKIN_TONE_OPTIONS.map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, skinTone: st })}
+                        className={`px-2 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                          formData.skinTone === st
+                            ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                            : "bg-white/5 border-white/10 text-muted-foreground"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Hair Style</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {HAIR_STYLE_OPTIONS.map((hs) => (
+                      <button
+                        key={hs}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, hairStyle: hs })}
+                        className={`px-2 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                          formData.hairStyle === hs
+                            ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                            : "bg-white/5 border-white/10 text-muted-foreground"
+                        }`}
+                      >
+                        {hs}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Wardrobe & Personality */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Signature Wardrobe</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WARDROBE_OPTIONS.map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, wardrobe: w })}
+                        className={`px-2 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                          formData.wardrobe === w
+                            ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                            : "bg-white/5 border-white/10 text-muted-foreground"
+                        }`}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Host Personality</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PERSONALITY_OPTIONS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, personality: p })}
+                        className={`px-2 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                          formData.personality === p
+                            ? "bg-purple-600/40 border-purple-400 text-purple-200 font-semibold"
+                            : "bg-white/5 border-white/10 text-muted-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Director Notes */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Director Notes / Host Concept</label>
+                <input
+                  type="text"
+                  value={formData.characterDescription || ""}
+                  onChange={(e) => setFormData({ ...formData, characterDescription: e.target.value })}
+                  placeholder="e.g. Sharp executive leader in dark high-contrast studio setting..."
+                  className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {/* Reference Bible Model Sheet Preview Card */}
+              <div className="p-3.5 rounded-xl bg-black/40 border border-purple-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                     <Wand2 className="w-3.5 h-3.5 text-purple-400" />
-                    Host Character Sheet
+                    Host Model Sheet Reference Bible
                   </span>
-                  <label className="text-[10px] text-purple-300 hover:underline cursor-pointer flex items-center gap-1">
+                  <label className="text-[11px] text-purple-300 hover:underline cursor-pointer flex items-center gap-1">
                     <Upload className="w-3 h-3" />
                     <span>Upload Image</span>
                     <input type="file" accept="image/*" onChange={handleCharacterSheetUpload} className="hidden" />
@@ -795,18 +812,25 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                 </div>
 
                 {formData.characterSheetUrl || formData.characterImageUrl ? (
-                  <div className="space-y-2 p-2.5 rounded-lg bg-black/40 border border-purple-500/30">
-                    <div className="w-full h-44 rounded-lg bg-black/60 border border-purple-400/40 flex items-center justify-center overflow-hidden">
+                  <div className="space-y-2">
+                    <div
+                      onClick={() => setLightboxOpen(true)}
+                      className="w-full h-44 rounded-xl bg-black/70 border border-purple-500/40 flex items-center justify-center overflow-hidden relative cursor-pointer group"
+                    >
                       <img
                         src={formData.characterSheetUrl || formData.characterImageUrl}
                         alt="Character Design Bible Sheet"
                         className="w-full h-full object-contain"
                       />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-semibold">
+                        <Maximize2 className="w-4 h-4" />
+                        <span>Tap to View Full Screen</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-xs font-semibold text-purple-200 block">Character Reference Sheet Ready</span>
-                        <span className="text-[10px] text-muted-foreground">Multi-angle turnaround and identity palette locked.</span>
+                        <span className="text-xs font-semibold text-purple-200 block">Character Model Sheet Locked</span>
+                        <span className="text-[10px] text-muted-foreground">Multi-angle turnaround & identity palette ready.</span>
                       </div>
                       <button
                         type="button"
@@ -821,12 +845,12 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">Generate a multi-view model sheet bible for your host.</p>
+                    <p className="text-[11px] text-muted-foreground">Generate a full turnaround bible sheet with your locked attributes.</p>
                     <button
                       type="button"
                       disabled={isGeneratingPortrait}
                       onClick={handleGeneratePortrait}
-                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       {isGeneratingPortrait ? (
                         <>
@@ -835,7 +859,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                         </>
                       ) : (
                         <>
-                          <Wand2 className="w-3 h-3" />
+                          <Wand2 className="w-3.5 h-3.5" />
                           Generate Character Sheet
                         </>
                       )}
@@ -844,573 +868,593 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                 )}
 
                 {portraitError && (
-                  <p className="text-[10px] text-amber-400 mt-1.5">{portraitError}</p>
+                  <p className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">{portraitError}</p>
                 )}
               </div>
             </div>
+          )}
 
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              onClick={() =>
-                advanceToStep(
-                  4,
-                  formData,
-                  `Character: **${formData.characterDescription || "Host"}**, Style: **${formData.visualStyle}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Continue to Voice & Audio →
-            </Button>
-          </div>
-        )}
+          {/* STEP 4: Voice & Audio */}
+          {currentStep === 4 && (
+            <div className="space-y-4 pt-1">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Volume2 className="w-4 h-4 text-cyan-400" />
+                    Narrator Voice Selection (ElevenLabs)
+                  </label>
+                  <span className="text-[10px] text-purple-300">
+                    {isLiveVoices ? "ElevenLabs API Active" : "Curated Public Catalog"}
+                  </span>
+                </div>
 
-        {/* Step 4: ElevenLabs Voices + Voice Design (PART C) */}
-        {currentStep === 4 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe max-h-[380px] overflow-y-auto">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                  <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
-                  Brand Narrator Voice (ElevenLabs)
-                </label>
-                <span className="text-[10px] text-purple-300">
-                  {isLiveVoices ? "ElevenLabs API Active" : "Curated Public Voices"}
-                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto mb-3">
+                  {voices.map((v) => {
+                    const isSelected = formData.voiceId === v.voiceId;
+                    const isPlaying = playingVoiceId === v.voiceId;
+
+                    return (
+                      <div
+                        key={v.voiceId}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                          isSelected
+                            ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
+                            : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              voiceId: v.voiceId,
+                              voiceProfile: {
+                                id: v.voiceId,
+                                name: v.name,
+                                accent: v.accent || "Standard",
+                                language: "English",
+                                duration: "Sample",
+                                sampleText: v.description || "Voice sample",
+                                description: v.description,
+                              },
+                            })
+                          }
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
+                            <span className="text-xs font-bold text-foreground block truncate">{v.name}</span>
+                          </div>
+                          <span className="text-[10px] opacity-75 block truncate">{v.accent || v.description}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => playVoicePreview(v)}
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-purple-500/30 text-purple-300 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer"
+                          title="Preview Voice Sample"
+                        >
+                          {isPlaying ? (
+                            <Square className="w-3 h-3 text-cyan-300 fill-cyan-300 animate-pulse" />
+                          ) : (
+                            <Play className="w-3 h-3 fill-purple-300" />
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Voice Design */}
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 mb-3 space-y-2">
+                  <label className="text-xs font-bold text-foreground block">Or Design a Custom Voice Tone</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={voiceDescription}
+                      onChange={(e) => setVoiceDescription(e.target.value)}
+                      placeholder="e.g. Deep charismatic African executive narrator with quiet confidence..."
+                      className="flex-1 bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={!voiceDescription.trim() || isDesigningVoice}
+                      onClick={handleDesignVoice}
+                      className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isDesigningVoice ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                      Design
+                    </button>
+                  </div>
+
+                  {designedPreviews.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[10px] text-purple-300 font-medium block">Generated Voice Options:</span>
+                      {designedPreviews.map((prev, pIdx) => {
+                        const isSelected = formData.voiceId === prev.generated_voice_id;
+                        return (
+                          <div key={prev.generated_voice_id} className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/10">
+                            <span className="text-xs text-muted-foreground font-mono">Sample Option {pIdx + 1}</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const audio = new Audio(prev.previewUrl);
+                                  audio.play();
+                                }}
+                                className="p-1.5 rounded bg-white/10 text-purple-300 hover:bg-purple-500/20 cursor-pointer"
+                              >
+                                <Play className="w-3 h-3 fill-current" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectDesignedVoice(prev)}
+                                className={`text-[10px] px-2.5 py-1 rounded-lg cursor-pointer font-semibold ${
+                                  isSelected ? "bg-emerald-600 text-white" : "bg-purple-600 text-white hover:bg-purple-500"
+                                }`}
+                              >
+                                {isSelected ? "Selected ✓" : "Use Voice"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {voiceDesignError && (
+                    <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
+                      {voiceDesignError}
+                    </p>
+                  )}
+                </div>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed bg-white/5 p-2 rounded-lg border border-white/10">
-                💡 <em>SPARK uses ElevenLabs exclusively for high-retention video narration & hooks. Preview or design below.</em>
-              </p>
 
-              {/* Curated / Live Voices Grid */}
-              <div className="grid grid-cols-2 gap-1.5 mb-2 max-h-40 overflow-y-auto">
-                {voices.map((v) => {
-                  const isSelected = formData.voiceId === v.voiceId;
-                  const isPlaying = playingVoiceId === v.voiceId;
-
-                  return (
-                    <div
-                      key={v.voiceId}
-                      className={`p-2 rounded-xl border flex items-center justify-between transition-all ${
-                        isSelected
+              {/* Audio Energy */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Music className="w-4 h-4 text-purple-400" />
+                  Soundtrack Cadence & Audio Energy
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "calm" as const, label: "Calm", desc: "Measured & reassuring authority" },
+                    { id: "energetic" as const, label: "Energetic", desc: "High-impact viral pacing" },
+                    { id: "bold" as const, label: "Bold", desc: "Cinematic depth & drive" },
+                  ].map((ae) => (
+                    <button
+                      key={ae.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, audioEnergy: ae.id })}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                        formData.audioEnergy === ae.id
                           ? "bg-purple-600/30 border-purple-400 text-purple-200"
                           : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      <div
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={() =>
-                          setFormData({
-                            ...formData,
-                            voiceId: v.voiceId,
-                            voiceProfile: {
-                              id: v.voiceId,
-                              name: v.name,
-                              accent: v.accent || "Standard",
-                              language: "English",
-                              duration: "Sample",
-                              sampleText: v.description || "Voice sample",
-                              description: v.description,
-                            },
-                          })
-                        }
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
-                          <span className="text-xs font-bold text-foreground block truncate">{v.name}</span>
-                        </div>
-                        <span className="text-[10px] opacity-75 block truncate">{v.accent || v.description}</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => playVoicePreview(v)}
-                        className="p-1.5 rounded-lg bg-white/10 hover:bg-purple-500/30 text-purple-300 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer"
-                        title="Preview Voice Sample"
-                      >
-                        {isPlaying ? (
-                          <Square className="w-3 h-3 text-cyan-300 fill-cyan-300 animate-pulse" />
-                        ) : (
-                          <Play className="w-3 h-3 fill-purple-300" />
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
+                      <span className="text-xs font-bold block">{ae.label}</span>
+                      <span className="text-[10px] opacity-70 block leading-tight mt-0.5">{ae.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+            </div>
+          )}
 
-              {/* ElevenLabs Voice Design Accordion / Input */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 mb-2">
-                <label className="text-xs font-bold text-foreground block mb-1">Describe a Custom Voice (Voice Design)</label>
-                <div className="flex gap-2">
+          {/* STEP 5: Research Sources */}
+          {currentStep === 5 && (
+            <div className="space-y-3.5 pt-1">
+              <div>
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-1">
+                  <Globe className="w-4 h-4 text-purple-400" />
+                  Inspiration Accounts & Research Benchmarks
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Paste URLs of creator channels (YouTube, TikTok, Instagram) or leave empty. SPARK analyzes viral hooks automatically.
+                </p>
+
+                <div className="flex gap-2 mb-3">
                   <input
                     type="text"
-                    value={voiceDescription}
-                    onChange={(e) => setVoiceDescription(e.target.value)}
-                    placeholder="e.g. Deep African executive narrator with calm confidence..."
-                    className="flex-1 bg-black/50 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-purple-500"
+                    value={researchSourceInput}
+                    onChange={(e) => setResearchSourceInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddResearchSource();
+                      }
+                    }}
+                    placeholder="https://youtube.com/@channel or creator URL..."
+                    className="flex-1 bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-purple-500"
                   />
                   <button
                     type="button"
-                    disabled={!voiceDescription.trim() || isDesigningVoice}
-                    onClick={handleDesignVoice}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    onClick={handleAddResearchSource}
+                    disabled={!researchSourceInput.trim()}
+                    className="px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
-                    {isDesigningVoice ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                    Design
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
                   </button>
                 </div>
 
-                {designedPreviews.length > 0 && (
-                  <div className="mt-2.5 space-y-1.5">
-                    <span className="text-[10px] text-purple-300 font-medium block">Voice Previews:</span>
-                    {designedPreviews.map((prev, pIdx) => {
-                      const isSelected = formData.voiceId === prev.generated_voice_id;
-                      return (
-                        <div key={prev.generated_voice_id} className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/10">
-                          <span className="text-xs text-muted-foreground font-mono">Sample Option {pIdx + 1}</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const audio = new Audio(prev.previewUrl);
-                                audio.play();
-                              }}
-                              className="p-1.5 rounded bg-white/10 text-purple-300 hover:bg-purple-500/20 cursor-pointer"
-                            >
-                              <Play className="w-3 h-3 fill-current" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSelectDesignedVoice(prev)}
-                              className={`text-[10px] px-2 py-1 rounded cursor-pointer font-semibold ${
-                                isSelected ? "bg-emerald-600 text-white" : "bg-purple-600 text-white hover:bg-purple-500"
-                              }`}
-                            >
-                              {isSelected ? "Selected ✓" : "Use Voice"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                {seededSources.length > 0 ? (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {seededSources.map((srcUrl) => (
+                      <div
+                        key={srcUrl}
+                        className="p-2.5 rounded-xl bg-white/5 border border-purple-500/30 flex items-center justify-between text-xs"
+                      >
+                        <span className="text-purple-200 truncate flex-1 pr-2">{srcUrl}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveResearchSource(srcUrl)}
+                          className="p-1 text-muted-foreground hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                )}
-                {voiceDesignError && (
-                  <p className="mt-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg leading-snug">
-                    {voiceDesignError}
+                ) : (
+                  <p className="text-xs text-muted-foreground/70 italic p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    No sources added yet. You can paste one now or manage inspiration sources anytime in MY SPARK.
                   </p>
                 )}
               </div>
             </div>
+          )}
 
-            <div>
-              <label className="block text-[11px] text-muted-foreground mb-1.5 font-medium flex items-center gap-1">
-                <Music className="w-3.5 h-3.5 text-purple-400" />
-                Audio Energy & Soundtrack Cadence
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "calm" as const, label: "Calm", desc: "Measured & reassuring" },
-                  { id: "energetic" as const, label: "Energetic", desc: "High-impact viral pacing" },
-                  { id: "bold" as const, label: "Bold", desc: "Cinematic depth & drive" },
-                ].map((ae) => (
-                  <button
-                    key={ae.id}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, audioEnergy: ae.id })}
-                    className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
-                      formData.audioEnergy === ae.id
-                        ? "bg-purple-600/30 border-purple-400 text-purple-200"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <span className="text-xs font-bold block">{ae.label}</span>
-                    <span className="text-[10px] opacity-70 block">{ae.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* STEP 6: Distribution Channels */}
+          {currentStep === 6 && (
+            <div className="space-y-3.5 pt-1">
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">Publishing Channels</label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Select target channels. Connect accounts now for 1-click publishing or complete later in Accounts.
+                </p>
 
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              onClick={() =>
-                advanceToStep(
-                  5,
-                  formData,
-                  `Voice: **${formData.voiceProfile?.name || "ElevenLabs"}**, Audio: **${formData.audioEnergy}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Continue to Research Sources →
-            </Button>
-          </div>
-        )}
+                {platformConnectError && (
+                  <p className="mb-3 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl leading-snug">
+                    {platformConnectError}
+                  </p>
+                )}
 
-        {/* Step 5: Research Source / Inspiration Account (PART D) */}
-        {currentStep === 5 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                  <Globe className="w-3.5 h-3.5 text-purple-400" />
-                  Research Source / Inspiration Account
-                </label>
-                <span className="text-[10px] text-cyan-300/80">Feeds Viral Sparks</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground mb-2.5 leading-relaxed bg-white/5 p-2.5 rounded-xl border border-white/10">
-                💡 <em>Paste YouTube channel, TikTok profile, Instagram, or single video URLs. SPARK will analyze viral hooks to seed your Viral Sparks feed immediately.</em>
-              </p>
+                <div className="space-y-2">
+                  {["YouTube Shorts", "Twitter/X", "TikTok", "Instagram Reels", "LinkedIn"].map((plat) => {
+                    const isSelected = formData.platforms.includes(plat);
+                    const conn = formData.connectedAccounts?.[plat];
+                    const isConnecting = connectingPlatform === plat;
+                    const isOAuthSupported = plat === "YouTube Shorts" || plat === "Twitter/X" || plat === "YouTube" || plat === "X";
 
-              <div className="flex gap-2 mb-2.5">
-                <input
-                  type="text"
-                  value={researchSourceInput}
-                  onChange={(e) => setResearchSourceInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddResearchSource();
-                    }
-                  }}
-                  placeholder="https://youtube.com/@channel or https://tiktok.com/@creator..."
-                  className="flex-1 bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddResearchSource}
-                  disabled={!researchSourceInput.trim()}
-                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </button>
-              </div>
-
-              {seededSources.length > 0 ? (
-                <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                  {seededSources.map((srcUrl) => (
-                    <div
-                      key={srcUrl}
-                      className="p-2 rounded-xl bg-white/5 border border-purple-500/30 flex items-center justify-between text-xs"
-                    >
-                      <span className="text-purple-200 truncate flex-1 pr-2">{srcUrl}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveResearchSource(srcUrl)}
-                        className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
+                    return (
+                      <div
+                        key={plat}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                          isSelected
+                            ? "bg-purple-600/20 border-purple-500/40"
+                            : "bg-white/5 border-white/10 opacity-70 hover:opacity-100"
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => togglePlatform(plat)}>
+                          <div
+                            className={`w-4 h-4 rounded flex items-center justify-center text-[10px] border ${
+                              isSelected ? "bg-purple-500 border-purple-400 text-white font-bold" : "border-white/30"
+                            }`}
+                          >
+                            {isSelected && "✓"}
+                          </div>
+                          <span className="text-xs font-semibold text-foreground">{plat}</span>
+                        </div>
+
+                        <div>
+                          {conn?.connected ? (
+                            <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              {conn.handle} Connected
+                            </span>
+                          ) : isOAuthSupported ? (
+                            <button
+                              type="button"
+                              disabled={isConnecting}
+                              onClick={() => handleConnectPlatform(plat)}
+                              className="text-[10px] px-2.5 py-1 rounded-lg bg-cyan-600/30 hover:bg-cyan-500/40 border border-cyan-500/40 text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              {isConnecting ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Connecting...
+                                </>
+                              ) : (
+                                <>
+                                  <ExternalLink className="w-3 h-3" />
+                                  Connect
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-muted-foreground/70 font-mono">
+                              Connect later in Accounts
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                <p className="text-[10px] text-muted-foreground/70 italic">
-                  No source added yet. You can paste one now or add sources later in MY SPARK.
-                </p>
-              )}
-            </div>
-
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              onClick={() =>
-                advanceToStep(
-                  6,
-                  formData,
-                  `Research Sources: **${seededSources.length > 0 ? `${seededSources.length} Seeded` : "Deferred to MY SPARK"}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              {seededSources.length > 0 ? "Confirm Sources & Continue →" : "Skip for now & Continue →"}
-            </Button>
-          </div>
-        )}
-
-        {/* Step 6: Accounts */}
-        {currentStep === 6 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] text-muted-foreground font-medium">Distribution Channels & Accounts</label>
-                <span className="text-[10px] text-cyan-300/80">Connect optional</span>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-2.5 leading-relaxed bg-white/5 p-2 rounded-lg border border-white/10">
-                💡 <em>Research works now. Publishing needs a connected account.</em>
-              </p>
+            </div>
+          )}
 
-              {platformConnectError && (
-                <p className="mb-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg leading-snug">
-                  {platformConnectError}
-                </p>
-              )}
-
-              <div className="space-y-1.5">
-                {["YouTube Shorts", "Twitter/X", "TikTok", "Instagram Reels", "LinkedIn"].map((plat) => {
-                  const isSelected = formData.platforms.includes(plat);
-                  const conn = formData.connectedAccounts?.[plat];
-                  const isConnecting = connectingPlatform === plat;
-                  const isOAuthSupported = plat === "YouTube Shorts" || plat === "Twitter/X" || plat === "YouTube" || plat === "X";
-
-                  return (
-                    <div
-                      key={plat}
-                      className={`p-2 rounded-xl border flex items-center justify-between transition-all ${
-                        isSelected
-                          ? "bg-purple-600/20 border-purple-500/40"
-                          : "bg-white/5 border-white/10 opacity-70 hover:opacity-100"
+          {/* STEP 7: Production & Autonomy */}
+          {currentStep === 7 && (
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Production Pipeline Depth</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: "narrator" as const, label: "Narrator", desc: "Images + voice narration + motion subtitles" },
+                    { id: "hybrid" as const, label: "Hybrid", desc: "AI video hook + multi-layer narrator engine" },
+                    { id: "cinematic" as const, label: "Cinematic", desc: "Full multi-scene video generation + master audio" },
+                  ].map((pm) => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, productionMode: pm.id })}
+                      className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
+                        formData.productionMode === pm.id
+                          ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      <div className="flex items-center gap-2 cursor-pointer" onClick={() => togglePlatform(plat)}>
-                        <div className={`w-4 h-4 rounded flex items-center justify-center text-[10px] border ${isSelected ? "bg-purple-500 border-purple-400 text-white" : "border-white/30"}`}>
-                          {isSelected && "✓"}
-                        </div>
-                        <span className="text-xs font-semibold text-foreground">{plat}</span>
-                      </div>
-
-                      <div>
-                        {conn?.connected ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            {conn.handle} Connected
-                          </span>
-                        ) : isOAuthSupported ? (
-                          <button
-                            type="button"
-                            disabled={isConnecting}
-                            onClick={() => handleConnectPlatform(plat)}
-                            className="text-[10px] px-2.5 py-1 rounded-lg bg-cyan-600/30 hover:bg-cyan-500/40 border border-cyan-500/40 text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
-                          >
-                            {isConnecting ? (
-                              <>
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Connecting...
-                              </>
-                            ) : (
-                              <>
-                                <ExternalLink className="w-3 h-3" />
-                                Connect
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-muted-foreground/70 font-mono">
-                            Connect later in Accounts
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              onClick={() =>
-                advanceToStep(
-                  7,
-                  formData,
-                  `Channels: **${formData.platforms.length > 0 ? formData.platforms.join(", ") : "Configured later"}**`
-                )
-              }
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Continue to Production Modes →
-            </Button>
-          </div>
-        )}
-
-        {/* Step 7: Production Mode & Automation */}
-        {currentStep === 7 && (
-          <div className="p-3.5 sm:p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/10 space-y-3 sticky bottom-0 pb-safe">
-            <div>
-              <label className="block text-[11px] text-muted-foreground mb-1.5 font-medium">Production Mode (Required)</label>
-              <div className="grid grid-cols-3 gap-2 mb-2.5">
-                {[
-                  { id: "narrator" as const, label: "Narrator", desc: "Images + voice + captions / motion" },
-                  { id: "hybrid" as const, label: "Hybrid", desc: "Animated hook + narrator pipeline" },
-                  { id: "cinematic" as const, label: "Cinematic", desc: "Storyboard + video gen + voice + audio" },
-                ].map((pm) => (
-                  <button
-                    key={pm.id}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, productionMode: pm.id })}
-                    className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                      formData.productionMode === pm.id
-                        ? "bg-purple-600/30 border-purple-400 text-purple-200"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <span className="text-xs font-bold block">{pm.label}</span>
-                    <span className="text-[10px] opacity-70 block leading-tight mt-0.5">{pm.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] text-muted-foreground mb-1.5 font-medium">Automation Level (Required)</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "manual" as const, label: "Manual", desc: "All decisions require approval" },
-                  { id: "balanced" as const, label: "Balanced", desc: "AI routine, you approve strategic" },
-                  { id: "autonomous" as const, label: "Autonomous", desc: "AI operates independently" },
-                ].map((am) => (
-                  <button
-                    key={am.id}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, automationMode: am.id })}
-                    className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                      formData.automationMode === am.id
-                        ? "bg-purple-600/30 border-purple-400 text-purple-200"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <span className="text-xs font-bold block">{am.label}</span>
-                    <span className="text-[10px] opacity-70 block leading-tight mt-0.5">{am.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <Button
-              variant="accent"
-              size="md"
-              fullWidth
-              onClick={() =>
-                advanceToStep(
-                  8,
-                  formData,
-                  `Production: **${formData.productionMode.toUpperCase()}**, Automation: **${formData.automationMode.toUpperCase()}**`
-                )
-              }
-              icon={<Sparkles className="w-4 h-4" />}
-            >
-              Complete Setup →
-            </Button>
-          </div>
-        )}
-
-        {/* Step 8: Ready Screen */}
-        {currentStep === 8 && (
-          <div className="p-4 sm:p-6 bg-[#0B0F17]/95 backdrop-blur-md flex flex-col justify-between space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-                  <SparkLogo className="w-6 h-6" variant="superspark" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-foreground">Your SPARK is ready.</h3>
-                  <p className="text-xs text-muted-foreground">All core systems calibrated and verified.</p>
+                      <span className="text-xs font-bold block">{pm.label}</span>
+                      <span className="text-[11px] opacity-70 block leading-tight mt-1">{pm.desc}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Verified Checklist */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1.5">Automation Autonomy Level</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: "manual" as const, label: "Manual", desc: "All script, assets, and posts require approval" },
+                    { id: "balanced" as const, label: "Balanced", desc: "Autonomous synthesis; you approve final release" },
+                    { id: "autonomous" as const, label: "Autonomous", desc: "SPARK researches, generates, and publishes continuously" },
+                  ].map((am) => (
+                    <button
+                      key={am.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, automationMode: am.id })}
+                      className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
+                        formData.automationMode === am.id
+                          ? "bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span className="text-xs font-bold block">{am.label}</span>
+                      <span className="text-[11px] opacity-70 block leading-tight mt-1">{am.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 8: Ready / Final Summary Review */}
+          {currentStep === 8 && (
+            <div className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                {/* Brand & Niche */}
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-foreground font-semibold block">Brand & Niche</span>
-                    <span className="text-muted-foreground text-[11px]">{formData.brandName} · {formData.niche}</span>
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Brand & Niche</span>
+                    <span className="text-muted-foreground text-[11px] block truncate">{formData.brandName || "Brand"} · {formData.niche || "Niche"}</span>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
+                {/* Character & Style (Tappable thumbnail for fullscreen view) */}
+                <div
+                  onClick={() => {
+                    if (formData.characterSheetUrl || formData.characterImageUrl) {
+                      setLightboxOpen(true);
+                    }
+                  }}
+                  className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5 cursor-pointer hover:bg-white/10 transition-colors"
+                >
                   {formData.characterSheetUrl || formData.characterImageUrl ? (
                     <img
                       src={formData.characterSheetUrl || formData.characterImageUrl}
                       alt="Host Preview"
-                      className="w-5 h-5 rounded-full object-cover border border-emerald-400 shrink-0"
+                      className="w-7 h-7 rounded-lg object-cover border border-purple-400 shrink-0"
                     />
                   ) : (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   )}
-                  <div>
-                    <span className="text-foreground font-semibold block">Character & Style</span>
-                    <span className="text-muted-foreground text-[11px]">{formData.visualStyle}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-foreground font-semibold block">Narrator Voice</span>
-                    <span className="text-muted-foreground text-[11px]">{formData.voiceProfile?.name || "ElevenLabs Voice"}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-foreground font-semibold block">Research Sources</span>
-                    <span className="text-muted-foreground text-[11px]">
-                      {seededSources.length > 0 ? `${seededSources.length} Sources Seeded` : "Add in MY SPARK"}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-foreground font-semibold block truncate">Character Design Bible</span>
+                    <span className="text-purple-300 text-[11px] block truncate">
+                      {formData.genre || "Realistic"} • {formData.personality || "Confident"} (Tap to view sheet)
                     </span>
                   </div>
                 </div>
 
+                {/* Narrator Voice */}
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-foreground font-semibold block">Production & Autonomy</span>
-                    <span className="text-muted-foreground text-[11px] capitalize">{formData.productionMode} · {formData.automationMode}</span>
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Narrator Voice</span>
+                    <span className="text-muted-foreground text-[11px] block truncate">{formData.voiceProfile?.name || "ElevenLabs Voice"}</span>
                   </div>
                 </div>
 
+                {/* Research Sources */}
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Research Inspiration</span>
+                    <span className="text-muted-foreground text-[11px] block truncate">
+                      {seededSources.length > 0 ? `${seededSources.length} Seed Sources` : "Configured in MY SPARK"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Production & Autonomy */}
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Production & Autonomy</span>
+                    <span className="text-muted-foreground text-[11px] block truncate capitalize">{formData.productionMode} · {formData.automationMode}</span>
+                  </div>
+                </div>
+
+                {/* Publishing Accounts */}
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
                   <div className="w-4 h-4 rounded-full border border-white/30 flex items-center justify-center text-[10px] text-muted-foreground">○</div>
-                  <div>
-                    <span className="text-muted-foreground font-semibold block">Publishing Accounts</span>
-                    <span className="text-muted-foreground/70 text-[11px]">
-                      {connectedAccountsList.length > 0 ? `${connectedAccountsList.length} Connected` : "Optional — connect in Accounts"}
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Publishing Channels</span>
+                    <span className="text-muted-foreground text-[11px] block truncate">
+                      {connectedAccountsList.length > 0 ? `${connectedAccountsList.length} Connected` : "Active in Accounts"}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
+          )}
+        </div>
 
-            <Button
-              variant="accent"
-              size="lg"
-              fullWidth
-              onClick={handleFinish}
-              icon={<ArrowRight className="w-4 h-4" />}
-            >
-              Enter SPARK Dashboard →
-            </Button>
-          </div>
-        )}
-
-        {/* General Question Input Row */}
-        {currentStep <= 7 && (
-          <form onSubmit={handleTextSubmit} className="relative flex items-center p-2.5 bg-[#0B0F17] border-t border-white/10">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Ask Super Spark a question or type custom direction..."
-              className="w-full bg-black/60 border border-white/15 rounded-xl pl-3.5 pr-9 py-2 text-xs focus:outline-none focus:border-purple-500"
-            />
+        {/* STICKY FOOTER ACTION BAR — Always on screen, never hidden */}
+        <footer className="p-3.5 sm:p-4 bg-[#0B0F17]/95 backdrop-blur-md border-t border-white/10 flex items-center justify-between gap-3 sticky bottom-0 pb-safe z-10 flex-shrink-0">
+          {currentStep > 1 && currentStep < 8 ? (
             <button
-              type="submit"
-              disabled={!inputMessage.trim() || isThinking}
-              className="absolute right-4 p-1.5 rounded-lg text-purple-400 hover:text-purple-200 disabled:opacity-40 cursor-pointer"
+              type="button"
+              onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
+              className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Send className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back</span>
             </button>
-          </form>
-        )}
-      </div>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex-1 flex justify-end">
+            {currentStep === 1 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                disabled={!formData.brandName.trim() || !formData.creatorName.trim()}
+                onClick={() => setCurrentStep(2)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Continue to Niche →
+              </Button>
+            )}
+
+            {currentStep === 2 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                disabled={!formData.niche.trim()}
+                onClick={() => setCurrentStep(3)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Continue to Character Bible →
+              </Button>
+            )}
+
+            {currentStep === 3 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                onClick={() => setCurrentStep(4)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Continue to Voice & Audio →
+              </Button>
+            )}
+
+            {currentStep === 4 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                onClick={() => setCurrentStep(5)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Continue to Research Sources →
+              </Button>
+            )}
+
+            {currentStep === 5 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                onClick={() => setCurrentStep(6)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                {seededSources.length > 0 ? "Confirm Sources & Continue →" : "Skip Sources & Continue →"}
+              </Button>
+            )}
+
+            {currentStep === 6 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                onClick={() => setCurrentStep(7)}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Continue to Production Modes →
+              </Button>
+            )}
+
+            {currentStep === 7 && (
+              <Button
+                variant="accent"
+                size="md"
+                fullWidth
+                onClick={() => setCurrentStep(8)}
+                icon={<Sparkles className="w-4 h-4" />}
+              >
+                Review & Launch →
+              </Button>
+            )}
+
+            {currentStep === 8 && (
+              <Button
+                variant="accent"
+                size="lg"
+                fullWidth
+                onClick={handleFinish}
+                icon={<ArrowRight className="w-4 h-4" />}
+              >
+                Enter SPARK Dashboard →
+              </Button>
+            )}
+          </div>
+        </footer>
+      </main>
+
+      {/* Fullscreen Character Sheet Lightbox Modal */}
+      <CharacterSheetLightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={formData.characterSheetUrl || formData.characterImageUrl}
+        characterName={formData.creatorName || "Lead Host"}
+        brandName={formData.brandName || "SPARK"}
+        metadata={{
+          genre: formData.genre,
+          personality: formData.personality,
+          wardrobe: formData.wardrobe,
+          skinTone: formData.skinTone,
+          hairStyle: formData.hairStyle,
+        }}
+      />
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../state/AuthContext";
 import { DesktopLandingPage } from "./DesktopLandingPage";
-import { DesktopBrandGenesis } from "./DesktopBrandGenesis";
+import { OnboardingWizard } from "../onboarding/OnboardingWizard";
 import { Sparkles, ArrowRight, ArrowLeft } from "lucide-react";
 import { SparkIntroShowcase } from "../auth/SparkIntroShowcase";
 
@@ -37,7 +37,7 @@ export function DesktopAuthExperience({ onComplete }: DesktopAuthExperienceProps
   }
 
   if (viewState === "onboarding" || (auth.isAuthenticated && !auth.isOnboardingComplete)) {
-    return <DesktopBrandGenesis onComplete={onComplete} />;
+    return <OnboardingWizard onComplete={() => onComplete()} />;
   }
 
   if (viewState === "landing") {

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SparkGuide, type SparkGuideState } from "./SparkGuide";
 import { SoftVerificationBanner } from "./SoftVerificationBanner";
 import { useSpark } from "../../../state/SparkContext";
 import { useAuth } from "../../../state/AuthContext";
@@ -15,6 +14,7 @@ import {
   Shield,
   Layers,
   ArrowRight,
+  ArrowLeft,
   Volume2,
   Music,
   Film,
@@ -27,9 +27,14 @@ import {
   Play,
   Square,
   Loader2,
+  Maximize2,
+  ExternalLink,
+  Check,
 } from "lucide-react";
 import type { BrandGenesisData, VoiceProfile } from "../../onboarding/OnboardingWizard";
 import { SparkLogo } from "../../SparkLogo";
+import { CharacterSheetLightbox } from "../../onboarding/CharacterSheetLightbox";
+import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../../services/socialIntegrationService";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -54,15 +59,46 @@ type FlowStep =
   | "ready";
 
 type MobileConversationalFlowProps = {
-  onComplete: () => void;
+  onComplete: (data?: BrandGenesisData) => void;
 };
+
+const GENRE_OPTIONS = [
+  "Realistic",
+  "Cinematic",
+  "3D",
+  "Anime",
+  "Cartoon",
+  "Illustration",
+  "Comic",
+  "Art / Stylized",
+  "Clay",
+  "Pixel",
+];
+
+const SKIN_TONE_OPTIONS = ["Fair", "Medium", "Olive", "Rich Brown", "Deep Dark"];
+const HAIR_STYLE_OPTIONS = ["Short Crop", "Textured Curls", "Braids/Locs", "Sleek Bob", "Long Waves", "Buzz Cut", "Fade"];
+const WARDROBE_OPTIONS = [
+  "Executive Tailored Suit",
+  "Smart Casual Blazer",
+  "Minimal Techwear",
+  "Luxury Streetwear",
+  "Studio Denim",
+  "High-Contrast Monochromatic",
+];
+const PERSONALITY_OPTIONS = [
+  "Confident",
+  "Warm & Engaging",
+  "High Authority",
+  "Energetic & Viral",
+  "Playful & Witty",
+  "Inquisitive & Analytical",
+];
 
 export function MobileConversationalFlow({ onComplete }: MobileConversationalFlowProps) {
   const auth = useAuth();
   const { initializeBrandGenesis, addChatMessage } = useSpark();
 
   const [step, setStep] = useState<FlowStep>("awakens");
-  const [guideState, setGuideState] = useState<SparkGuideState>("speaking");
 
   // Selection states
   const [creatorName, setCreatorName] = useState(() => auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || "");
@@ -74,7 +110,13 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [characterDescription, setCharacterDescription] = useState("Executive AI presenter with sharp focus and modern framing");
   const [characterSheetUrl, setCharacterSheetUrl] = useState<string | undefined>(undefined);
   const [isGeneratingPortrait, setIsGeneratingPortrait] = useState(false);
-  const [visualStyle, setVisualStyle] = useState<"Realistic / Live-Action" | "Cinematic 3D" | "Anime / Stylized Studio">("Realistic / Live-Action");
+  const [portraitError, setPortraitError] = useState<string | null>(null);
+  const [genre, setGenre] = useState("Realistic");
+  const [skinTone, setSkinTone] = useState("Rich Brown");
+  const [hairStyle, setHairStyle] = useState("Short Crop");
+  const [wardrobe, setWardrobe] = useState("Executive Tailored Suit");
+  const [personality, setPersonality] = useState("Confident");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Voice states
   const [voices, setVoices] = useState<ElevenLabsVoiceSummary[]>(FALLBACK_CURATED_ELEVENLABS_VOICES);
@@ -92,7 +134,9 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [seededSources, setSeededSources] = useState<string[]>([]);
 
   // Accounts & Governance states
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(["YouTube Shorts", "Twitter/X"]);
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [platformConnectError, setPlatformConnectError] = useState<string | null>(null);
   const [productionMode, setProductionModeSelection] = useState<"narrator" | "hybrid" | "cinematic">("hybrid");
   const [automationMode, setAutomationModeSelection] = useState<"manual" | "balanced" | "autonomous">("balanced");
 
@@ -119,8 +163,6 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   // Handle Identity
   const handleIdentitySubmit = () => {
     if (!creatorName.trim() || !brandName.trim()) return;
-    addChatMessage({ sender: "user", text: `Creator: ${creatorName}, Brand: ${brandName}`, timestamp: new Date() });
-    addChatMessage({ sender: "spark", text: `Great to meet you, ${creatorName}. Let's configure ${brandName}.`, timestamp: new Date() });
     setStep("niche");
   };
 
@@ -129,35 +171,42 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     const finalNiche = choice.trim();
     if (!finalNiche) return;
     setNicheSelection(finalNiche);
-    addChatMessage({ sender: "user", text: `Niche: ${finalNiche}`, timestamp: new Date() });
-    addChatMessage({ sender: "spark", text: `Perfect. I'll build around your ${finalNiche} niche.`, timestamp: new Date() });
     setStep("character");
   };
 
   // Generate Character Reference Sheet Image
   const handleGeneratePortrait = async () => {
     setIsGeneratingPortrait(true);
+    setPortraitError(null);
+
     const prompt = `Production Character Design Bible Reference Sheet for "${creatorName || "Lead Host"}" representing brand "${brandName || "SPARK"}", niche: "${niche || "Content"}".
-Visual Style: ${visualStyle}.
-Character Bio & Persona: ${characterDescription || "Executive host in modern high-contrast studio setting"}.
+Visual Style / Genre: ${genre}.
+Skin Tone: ${skinTone}.
+Hair Style: ${hairStyle}.
+Signature Wardrobe: ${wardrobe}.
+Personality & Emotion: ${personality}.
+Director Notes & Persona: ${characterDescription || "Executive host in modern high-contrast studio setting"}.
 
-LAYOUT & COMPOSITION (One unified model sheet / production bible):
-1. TOP TITLE BLOCK: "${creatorName || "Lead Host"}" - Role/Vibe & core aesthetic guidelines.
-2. TURNAROUND MODEL ROW: Consistent full-body views (Full Front Standing Pose, 3/4 Dynamic View, Side Profile, and Back View) in matching signature wardrobe under neutral studio key lighting.
-3. EXPRESSION PALETTE GRID: 4 to 6 facial detail crops showing key emotions (Confident/Authority, Smiling/Engaging, Serious/Explaining, Inquisitive/Thoughtful).
-4. COLOR SWATCH PALETTE STRIP: Primary costume palette, secondary accent tones, and lighting color swatches at bottom.
-5. WARDROBE & DETAIL VIGNETTES: Signature accessories, props matching niche, and clean neutral studio background.
+LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
+1. TOP TITLE BLOCK: "${creatorName || "Lead Host"}" - Production Model Bible, Style: ${genre}, Core Aesthetic Guidelines.
+2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe (${wardrobe}) under neutral key studio lighting.
+3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${personality}: Confident, Explaining/Directing, Warm/Smiling, Inquisitive/Thoughtful, Intense Hook).
+4. COLOR SWATCH PALETTE STRIP: Swatches of skin tone (${skinTone}), primary wardrobe tone (${wardrobe}), accent trim, and lighting rim colors.
+5. WARDROBE & ACCESSORY VIGNETTES: Signature accessories, props matching niche, and clean studio background.
 
-Hyper-consistent production design bible, sharp focus, master reference quality, 8k resolution.`;
+Hyper-consistent master reference bible, razor-sharp focus, uniform art direction, 8k resolution production sheet.`;
 
     try {
       const { ModelRouter } = await import("../../../services/runtime/modelRouter");
-      const resultImg = await ModelRouter.executeCategoryRequest("storyboardImages", { prompt });
-      if (resultImg && (resultImg.startsWith("data:") || resultImg.startsWith("http"))) {
-        setCharacterSheetUrl(resultImg);
+      const result = await ModelRouter.executeCategoryRequest("storyboardImages", { prompt });
+      if (result && (result.startsWith("http") || result.startsWith("data:"))) {
+        setCharacterSheetUrl(result);
+      } else {
+        setPortraitError("Could not generate sheet. You can continue with configured attributes.");
       }
-    } catch (err) {
-      console.warn("Mobile portrait generation notice:", err);
+    } catch (err: any) {
+      console.warn("Character generation notice:", err);
+      setPortraitError("Character generation timed out. You can retry or proceed.");
     } finally {
       setIsGeneratingPortrait(false);
     }
@@ -165,27 +214,17 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
 
   const handleCharacterPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (uploadEv) => {
-      const dataUri = uploadEv.target?.result as string;
-      setCharacterSheetUrl(dataUri);
-    };
-    reader.readAsDataURL(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (uploadEv) => {
+        const dataUri = uploadEv.target?.result as string;
+        setCharacterSheetUrl(dataUri);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  // Confirm Character
-  const handleConfirmCharacter = () => {
-    addChatMessage({ sender: "user", text: `Character: ${characterDescription} (${visualStyle})`, timestamp: new Date() });
-    addChatMessage({
-      sender: "spark",
-      text: `Host character configured (${visualStyle}). Let's select your brand voice.`,
-      timestamp: new Date(),
-    });
-    setStep("voice");
-  };
-
-  // Voice Preview
+  // Voice playback
   const handlePlayVoicePreview = async (v: ElevenLabsVoiceSummary) => {
     if (playingVoiceId === v.voiceId) {
       setPlayingVoiceId(null);
@@ -193,9 +232,9 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
     }
     setPlayingVoiceId(v.voiceId);
     try {
-      const url = await previewElevenLabsVoice(v.voiceId);
-      if (url) {
-        const audio = new Audio(url);
+      const audioUrl = await previewElevenLabsVoice(v.voiceId, "Welcome to SPARK. Let's produce high-retention video content.");
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
         audio.onended = () => setPlayingVoiceId(null);
         audio.onerror = () => setPlayingVoiceId(null);
         await audio.play();
@@ -207,7 +246,13 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
     }
   };
 
-  // Design Voice from text
+  // Voice choice
+  const handleVoiceChoice = (v: ElevenLabsVoiceSummary) => {
+    setSelectedVoiceId(v.voiceId);
+    setSelectedVoiceName(v.name);
+  };
+
+  // Design custom voice
   const handleDesignVoice = async () => {
     if (!voiceDescription.trim() || isDesigningVoice) return;
     setIsDesigningVoice(true);
@@ -217,11 +262,10 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
       if (res?.previews?.length) {
         setDesignedPreviews(res.previews);
       } else {
-        setVoiceDesignError("Voice design requires an ElevenLabs API key. You can select any voice from the curated list.");
+        setVoiceDesignError("Voice design requires an active ElevenLabs API key. You can select any voice from our curated catalog.");
       }
-    } catch (err) {
-      console.warn("Mobile voice design notice:", err);
-      setVoiceDesignError("Voice design service unavailable. Please select a voice from the list below.");
+    } catch {
+      setVoiceDesignError("Voice design unavailable. Please select from our curated catalog.");
     } finally {
       setIsDesigningVoice(false);
     }
@@ -229,38 +273,21 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
 
   const handleSelectDesignedVoicePreview = async (prev: { generated_voice_id: string; previewUrl: string }) => {
     try {
-      const created = await createDesignedElevenLabsVoice({
-        voiceName: `${brandName || "Brand"} Voice`,
-        voiceDescription: voiceDescription,
+      const res = await createDesignedElevenLabsVoice({
+        voiceName: `${brandName || "Brand"} Narrator Voice`,
+        voiceDescription: voiceDescription || "Custom AI voice",
         generatedVoiceId: prev.generated_voice_id,
       });
-      const vId = created?.voice_id || prev.generated_voice_id;
-      setSelectedVoiceId(vId);
+      const finalId = res?.voice_id || prev.generated_voice_id;
+      setSelectedVoiceId(finalId);
       setSelectedVoiceName(`${brandName || "Custom"} Designed Voice`);
-      addChatMessage({ sender: "user", text: `Custom Designed Voice Selected: ${voiceDescription}`, timestamp: new Date() });
-      addChatMessage({ sender: "spark", text: `Selected your custom designed AI voice.`, timestamp: new Date() });
-      setStep("audio");
-    } catch (e) {
-      setVoiceDesignError("Could not save custom voice selection; please select a catalog voice.");
+    } catch {
+      setVoiceDesignError("Failed to save voice; selected as active preview.");
+      setSelectedVoiceId(prev.generated_voice_id);
     }
   };
 
-  const handleVoiceChoice = (v: ElevenLabsVoiceSummary) => {
-    setSelectedVoiceId(v.voiceId);
-    setSelectedVoiceName(v.name);
-    addChatMessage({ sender: "user", text: `Voice: ${v.name}`, timestamp: new Date() });
-    addChatMessage({ sender: "spark", text: `Configured narrator voice as ${v.name}.`, timestamp: new Date() });
-    setStep("audio");
-  };
-
-  // Handle Audio Energy
-  const handleAudioChoice = (energy: "calm" | "energetic" | "bold") => {
-    setAudioEnergy(energy);
-    addChatMessage({ sender: "user", text: `Audio energy: ${energy}`, timestamp: new Date() });
-    setStep("research-sources");
-  };
-
-  // Add Research Source
+  // Handle Research Sources
   const handleAddResearchSource = () => {
     const raw = researchSourceInput.trim();
     if (!raw) return;
@@ -274,77 +301,97 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
     setSeededSources(seededSources.filter((s) => s !== url));
   };
 
-  const handleConfirmResearchSources = () => {
-    addChatMessage({
-      sender: "user",
-      text: `Research Sources: ${seededSources.length > 0 ? `${seededSources.length} added` : "Deferred"}`,
-      timestamp: new Date(),
-    });
-    setStep("publishing");
+  // Handle Connect Platform
+  const handleConnectPlatform = (platform: string) => {
+    const isOAuthSupported = platform === "YouTube Shorts" || platform === "Twitter/X";
+    if (!isOAuthSupported) {
+      setPlatformConnectError(`${platform} can be connected later in the Accounts center.`);
+      return;
+    }
+
+    setConnectingPlatform(platform);
+    setPlatformConnectError(null);
+
+    const timeoutTimer = setTimeout(() => {
+      setConnectingPlatform(null);
+      setPlatformConnectError("Connection didn't complete. Try again or skip.");
+    }, 10000);
+
+    socialConnectorFramework
+      .loadClientConfig()
+      .then(() => {
+        const url = getOAuthAuthorizationUrl(platform);
+        if (url && url !== "#") {
+          window.location.href = url;
+        } else {
+          clearTimeout(timeoutTimer);
+          setPlatformConnectError(`Client credentials for ${platform} are not configured. You can skip for now.`);
+          setConnectingPlatform(null);
+        }
+      })
+      .catch(() => {
+        clearTimeout(timeoutTimer);
+        setPlatformConnectError("Connection didn't complete. Try again or skip.");
+        setConnectingPlatform(null);
+      });
   };
 
-  // Toggle Social Account
   const toggleAccount = (acc: string) => {
-    setSelectedAccounts((prev: string[]) =>
-      prev.includes(acc) ? prev.filter((a: string) => a !== acc) : [...prev, acc]
-    );
+    setSelectedAccounts((prev) => (prev.includes(acc) ? prev.filter((a) => a !== acc) : [...prev, acc]));
   };
 
-  // Handle Production Mode
-  const handleProductionModeChoice = (mode: "narrator" | "hybrid" | "cinematic") => {
+  // Handle Production Mode Choice
+  const handleProductionChoice = (mode: "narrator" | "hybrid" | "cinematic") => {
     setProductionModeSelection(mode);
-    addChatMessage({ sender: "user", text: `Production mode: ${mode}`, timestamp: new Date() });
     setStep("automation");
   };
 
-  // Handle Automation Choice
+  // Handle Automation Choice -> Start Calibration
   const handleAutomationChoice = (mode: "manual" | "balanced" | "autonomous") => {
     setAutomationModeSelection(mode);
-    addChatMessage({ sender: "user", text: `Automation mode: ${mode}`, timestamp: new Date() });
-    addChatMessage({ sender: "spark", text: `Operating autonomy configured as ${mode}. Calibrating SPARK...`, timestamp: new Date() });
     setStep("initialization");
-    setGuideState("thinking");
+    startInitialization();
   };
 
-  // Calibration Progress
-  useEffect(() => {
-    if (step === "initialization") {
-      const interval = setInterval(() => {
-        setInitProgress((prev: number) => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setTimeout(() => {
-              setStep("ready");
-              setGuideState("speaking");
-            }, 800);
-            return 100;
-          }
-          return prev + 15;
-        });
-      }, 250);
-      return () => clearInterval(interval);
-    }
-  }, [step]);
+  // Progress Bar for Calibration
+  const startInitialization = () => {
+    let current = 0;
+    const interval = setInterval(() => {
+      current += 25;
+      setInitProgress(current);
+      if (current >= 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setStep("ready");
+        }, 500);
+      }
+    }, 450);
+  };
 
-  // Complete Genesis
+  // Final Dashboard Entry
   const handleFinalCompletion = () => {
     const genesisData: BrandGenesisData = {
-      brandName: brandName || "My Brand",
+      brandName: brandName || "SPARK Brand",
       creatorName: creatorName || "Creator",
-      niche: niche || "Content Creation",
-      audience: "General Audience",
-      goal: "Growth & Authority",
+      niche: niche || "AI & Technology",
+      audience: "Creators, Tech Founders & Modern Media Operators",
+      goal: "Viral Reach & Growth",
       platforms: selectedAccounts,
       tone: "Energetic & Relatable",
-      vision: "",
-      visualStyle: visualStyle,
+      vision: "Autonomous AI media company scaling high-retention cinematic shorts",
+      visualStyle: genre === "Anime" ? "Anime / Stylized Studio" : genre === "3D" ? "Cinematic 3D" : "Realistic / Live-Action",
       productionMode: productionMode,
       automationMode: automationMode,
-      reviewRequired: true,
+      reviewRequired: automationMode !== "autonomous",
       characterChoice: "describe",
       characterDescription: characterDescription,
       characterSheetUrl: characterSheetUrl,
       characterImageUrl: characterSheetUrl,
+      genre: genre,
+      skinTone: skinTone,
+      hairStyle: hairStyle,
+      wardrobe: wardrobe,
+      personality: personality,
       voiceProfile: {
         id: selectedVoiceId,
         name: selectedVoiceName,
@@ -359,21 +406,19 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
     };
 
     initializeBrandGenesis(genesisData);
-    auth.markOnboardingComplete();
-    onComplete();
+    void auth.markOnboardingComplete();
+    onComplete(genesisData);
   };
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] bg-background text-foreground flex flex-col justify-between relative z-50 overflow-y-auto select-none antialiased">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-[#0B0F17] text-foreground flex flex-col justify-between relative z-50 overflow-hidden select-none antialiased">
       {/* Background Soft Mesh Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
 
-      {/* Top Banner Navigation */}
-      <div className="p-4 flex items-center justify-between z-10">
+      {/* Top Header Bar */}
+      <header className="px-4 py-3 border-b border-white/10 bg-[#0B0F17]/80 flex items-center justify-between z-10 flex-shrink-0">
         <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-            <SparkLogo className="w-3.5 h-3.5" variant="superspark" />
-          </div>
+          <SparkLogo className="w-4 h-4" variant="superspark" />
           <span className="text-xs font-bold tracking-wider uppercase text-foreground">SPARK Genesis</span>
         </div>
 
@@ -381,23 +426,23 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
           <button
             type="button"
             onClick={handleFinalCompletion}
-            className="text-[11px] font-mono text-muted-foreground hover:text-foreground flex items-center space-x-1 p-1"
+            className="text-[11px] font-mono text-muted-foreground hover:text-foreground flex items-center space-x-1 p-1 cursor-pointer"
           >
             <span>Skip</span>
             <SkipForward className="w-3 h-3" />
           </button>
         )}
-      </div>
+      </header>
 
       {/* Soft Verification Prompt */}
       {step === "awakens" && (
-        <div className="px-4 pb-2">
+        <div className="px-4 pt-2 flex-shrink-0">
           <SoftVerificationBanner />
         </div>
       )}
 
-      {/* Dynamic Conversational Content Area */}
-      <div className="flex-1 flex flex-col justify-center px-4 max-w-sm mx-auto w-full z-10 py-4">
+      {/* Scrollable Middle Container */}
+      <main className="flex-1 overflow-y-auto px-4 py-3 max-w-sm mx-auto w-full z-10 space-y-4">
         <AnimatePresence mode="wait">
           {/* SCREEN 1: Spark Awakens */}
           {step === "awakens" && (
@@ -407,7 +452,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5 }}
-              className="space-y-6 text-center"
+              className="space-y-6 text-center pt-8"
             >
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-purple-900/40">
                 <SparkLogo className="w-8 h-8" variant="superspark" />
@@ -415,15 +460,15 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
 
               <div className="space-y-2">
                 <h1 className="text-xl font-bold tracking-tight text-foreground">SPARK Media OS</h1>
-                <p className="text-xs text-muted-foreground leading-relaxed px-4">
-                  I am Super Spark, your Executive Creative Director. Let's calibrate your autonomous media company.
+                <p className="text-xs text-muted-foreground leading-relaxed px-2">
+                  Executive Creative Director initialized. Let's calibrate your autonomous media workspace.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setStep("identity")}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Initialize Workspace</span>
                 <ArrowRight className="w-4 h-4" />
@@ -439,17 +484,17 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <SparkGuide
-                state={guideState}
-                message="What should we name your brand and creator persona?"
-                subtitle="This configures your brand identity across all media generation."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Identity:</strong> Enter your creator persona and brand channel name.
+                </p>
+              </div>
 
               <div className="space-y-3 pt-1">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground block mb-1">Your Name / Creator Persona</label>
+                  <label className="text-[11px] font-semibold text-foreground block mb-1">Your Name / Creator Persona</label>
                   <input
                     type="text"
                     value={creatorName}
@@ -460,7 +505,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground block mb-1">Brand or Channel Name</label>
+                  <label className="text-[11px] font-semibold text-foreground block mb-1">Brand or Channel Name</label>
                   <input
                     type="text"
                     value={brandName}
@@ -475,7 +520,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                 type="button"
                 disabled={!creatorName.trim() || !brandName.trim()}
                 onClick={handleIdentitySubmit}
-                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Continue to Niche</span>
                 <ArrowRight className="w-4 h-4" />
@@ -491,13 +536,13 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <SparkGuide
-                state="speaking"
-                message="What content niche will you focus on?"
-                subtitle="Select a suggested niche or enter your custom domain."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Content Domain:</strong> Select the primary focus of your media channel.
+                </p>
+              </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 {["AI & Technology", "Business & Startups", "Creator Economy", "Personal Finance", "Lifestyle & Culture", "Art & Design"].map((item) => (
@@ -505,14 +550,14 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                     key={item}
                     type="button"
                     onClick={() => handleNicheChoice(item)}
-                    className="p-3 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98]"
+                    className="p-3 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] cursor-pointer"
                   >
                     <span className="text-xs font-semibold text-foreground block">{item}</span>
                   </button>
                 ))}
               </div>
 
-              <div className="pt-2">
+              <div className="pt-1">
                 <input
                   type="text"
                   value={customNiche}
@@ -526,7 +571,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                 <button
                   type="button"
                   onClick={() => handleNicheChoice(customNiche)}
-                  className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs transition-all flex items-center justify-center space-x-2"
+                  className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   <span>Confirm "{customNiche}" →</span>
                 </button>
@@ -534,7 +579,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
             </motion.div>
           )}
 
-          {/* SCREEN 4: Character & Visual Look (PART B: Portrait Generation) */}
+          {/* SCREEN 4: Character & Visual Look */}
           {step === "character" && (
             <motion.div
               key="character"
@@ -542,105 +587,148 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-4"
+              className="space-y-3.5"
             >
-              <SparkGuide
-                state="speaking"
-                message="Host Character & Visual Style"
-                subtitle="Generate a character portrait or upload a reference."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Character Bible:</strong> Lock genre, appearance, wardrobe, and personality attributes.
+                </p>
+              </div>
 
-              <div className="space-y-2.5 pt-1">
-                <div>
-                  <label className="text-[11px] text-muted-foreground mb-1 block">Character Persona</label>
-                  <input
-                    type="text"
-                    value={characterDescription}
-                    onChange={(e) => setCharacterDescription(e.target.value)}
-                    placeholder="e.g. Modern executive presenter with crisp lighting..."
-                    className="w-full p-2.5 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(["Realistic / Live-Action", "Cinematic 3D", "Anime / Stylized Studio"] as const).map((vs) => (
+              {/* Genre Chips */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-foreground block">Visual Genre</label>
+                <div className="flex flex-wrap gap-1">
+                  {GENRE_OPTIONS.slice(0, 6).map((g) => (
                     <button
-                      key={vs}
+                      key={g}
                       type="button"
-                      onClick={() => setVisualStyle(vs)}
-                      className={`p-2 rounded-lg text-[10px] font-semibold border text-center transition-all ${
-                        visualStyle === vs
-                          ? "bg-purple-600/30 border-purple-400 text-purple-200"
+                      onClick={() => setGenre(g)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all cursor-pointer ${
+                        genre === g
+                          ? "bg-purple-600/40 border-purple-400 text-purple-200"
                           : "bg-card border-border text-muted-foreground"
                       }`}
                     >
-                      {vs.split(" ")[0]}
+                      {g}
                     </button>
                   ))}
                 </div>
+              </div>
 
-                {/* Portrait / Character Sheet Generation Preview Card */}
-                <div className="p-3 rounded-xl bg-card border border-border">
-                  {characterSheetUrl ? (
-                    <div className="space-y-2">
-                      <div className="w-full h-36 rounded-lg bg-black/60 border border-purple-400/40 flex items-center justify-center overflow-hidden">
-                        <img
-                          src={characterSheetUrl}
-                          alt="Character Reference Bible Sheet"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-semibold text-purple-200 block">Reference Sheet Ready</span>
-                          <span className="text-[10px] text-muted-foreground">Multi-angle identity locked.</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleGeneratePortrait}
-                          disabled={isGeneratingPortrait}
-                          className="px-2 py-1 rounded-lg bg-white/5 text-purple-300 hover:bg-purple-500/20 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
-                          Regenerate
-                        </button>
+              {/* Skin Tone & Wardrobe */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-foreground block">Skin Tone</label>
+                  <select
+                    value={skinTone}
+                    onChange={(e) => setSkinTone(e.target.value)}
+                    className="w-full p-2 rounded-lg bg-card border border-border text-xs text-foreground"
+                  >
+                    {SKIN_TONE_OPTIONS.map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-foreground block">Personality</label>
+                  <select
+                    value={personality}
+                    onChange={(e) => setPersonality(e.target.value)}
+                    className="w-full p-2 rounded-lg bg-card border border-border text-xs text-foreground"
+                  >
+                    {PERSONALITY_OPTIONS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Wardrobe */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-foreground block">Signature Wardrobe</label>
+                <select
+                  value={wardrobe}
+                  onChange={(e) => setWardrobe(e.target.value)}
+                  className="w-full p-2 rounded-lg bg-card border border-border text-xs text-foreground"
+                >
+                  {WARDROBE_OPTIONS.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Character Sheet Generation Preview Card */}
+              <div className="p-3 rounded-xl bg-card border border-border">
+                {characterSheetUrl ? (
+                  <div className="space-y-2">
+                    <div
+                      onClick={() => setLightboxOpen(true)}
+                      className="w-full h-36 rounded-lg bg-black/60 border border-purple-400/40 flex items-center justify-center overflow-hidden relative cursor-pointer group"
+                    >
+                      <img
+                        src={characterSheetUrl}
+                        alt="Character Reference Bible Sheet"
+                        className="w-full h-full object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-[11px] font-semibold">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Tap for Full Screen</span>
                       </div>
                     </div>
-                  ) : (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Generate model bible sheet</span>
+                      <div>
+                        <span className="text-xs font-semibold text-purple-200 block">Reference Sheet Ready</span>
+                        <span className="text-[10px] text-muted-foreground">Multi-angle turnaround locked.</span>
+                      </div>
                       <button
                         type="button"
                         onClick={handleGeneratePortrait}
                         disabled={isGeneratingPortrait}
-                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        className="px-2 py-1 rounded-lg bg-white/5 text-purple-300 hover:bg-purple-500/20 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
                       >
-                        {isGeneratingPortrait ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                        Generate
+                        <RefreshCw className={`w-3 h-3 ${isGeneratingPortrait ? "animate-spin" : ""}`} />
+                        Regenerate
                       </button>
                     </div>
-                  )}
-                </div>
-
-                <label className="text-[11px] text-purple-300 hover:underline cursor-pointer flex items-center justify-center gap-1.5 p-2 rounded-xl bg-card border border-border">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{characterSheetUrl ? "Change Reference Image" : "Upload Reference Image Instead"}</span>
-                  <input type="file" accept="image/*" onChange={handleCharacterPhotoUpload} className="hidden" />
-                </label>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Generate model bible sheet</span>
+                    <button
+                      type="button"
+                      onClick={handleGeneratePortrait}
+                      disabled={isGeneratingPortrait}
+                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isGeneratingPortrait ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                      Generate
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {portraitError && (
+                <p className="text-[10px] text-amber-400">{portraitError}</p>
+              )}
+
+              <label className="text-[11px] text-purple-300 hover:underline cursor-pointer flex items-center justify-center gap-1.5 p-2 rounded-xl bg-card border border-border">
+                <Upload className="w-3.5 h-3.5" />
+                <span>{characterSheetUrl ? "Change Reference Image" : "Upload Reference Image Instead"}</span>
+                <input type="file" accept="image/*" onChange={handleCharacterPhotoUpload} className="hidden" />
+              </label>
 
               <button
                 type="button"
-                onClick={handleConfirmCharacter}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+                onClick={() => setStep("voice")}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3.5 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
-                <span>Confirm Character →</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Continue to Narrator Voice →</span>
               </button>
             </motion.div>
           )}
 
-          {/* SCREEN 5: Voice (PART C: ElevenLabs Live Voices & Design) */}
+          {/* SCREEN 5: Voice Selection */}
           {step === "voice" && (
             <motion.div
               key="voice"
@@ -648,15 +736,15 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-4"
+              className="space-y-3.5"
             >
-              <SparkGuide
-                state="speaking"
-                message="Brand Narrator Voice"
-                subtitle="Select an ElevenLabs voice for video production."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Narrator Voice:</strong> Choose an ElevenLabs voice for video production.
+                </p>
+              </div>
 
-              <div className="space-y-2 pt-1 max-h-56 overflow-y-auto">
+              <div className="space-y-2 pt-1 max-h-48 overflow-y-auto">
                 {voices.slice(0, 5).map((v) => {
                   const isSel = selectedVoiceId === v.voiceId;
                   const isPlaying = playingVoiceId === v.voiceId;
@@ -760,7 +848,7 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               <button
                 type="button"
                 onClick={() => setStep("audio")}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
                 <span>Continue to Audio Energy →</span>
               </button>
@@ -775,38 +863,40 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <SparkGuide
-                state="speaking"
-                message="What soundtrack cadence fits your brand?"
-                subtitle="SPARK synchronizes pacing to your audio energy."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Audio Cadence:</strong> Select your preferred soundtrack rhythm.
+                </p>
+              </div>
 
-              <div className="space-y-2.5 pt-1">
+              <div className="space-y-2 pt-1">
                 {[
-                  { id: "calm" as const, label: "Calm & Measured", desc: "Reassuring, informative, thoughtful" },
-                  { id: "energetic" as const, label: "Energetic & Fast", desc: "High-impact hooks and rapid pacing" },
-                  { id: "bold" as const, label: "Bold & Cinematic", desc: "Deep bass, driving rhythm, authority" },
-                ].map((ae) => (
+                  { id: "calm" as const, title: "Calm & Focused", desc: "Ambient textures and measured tones." },
+                  { id: "energetic" as const, title: "High-Energy Modern", desc: "Upbeat electronic beats and rhythmic drive." },
+                  { id: "bold" as const, title: "Bold & Dramatic", desc: "Orchestral hybrid and deep sub-bass." },
+                ].map((item) => (
                   <button
-                    key={ae.id}
+                    key={item.id}
                     type="button"
-                    onClick={() => handleAudioChoice(ae.id)}
-                    className="w-full p-3.5 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] flex items-center justify-between"
+                    onClick={() => {
+                      setAudioEnergy(item.id);
+                      setStep("research-sources");
+                    }}
+                    className={`w-full p-3.5 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer ${
+                      audioEnergy === item.id ? "bg-purple-600/30 border-purple-400 text-purple-200" : "bg-card border-border text-muted-foreground"
+                    }`}
                   >
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{ae.label}</p>
-                      <p className="text-[11px] text-muted-foreground">{ae.desc}</p>
-                    </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40" />
+                    <span className="text-xs font-semibold text-foreground block">{item.title}</span>
+                    <span className="text-[11px] opacity-75 block pt-0.5">{item.desc}</span>
                   </button>
                 ))}
               </div>
             </motion.div>
           )}
 
-          {/* SCREEN 7: Research Source / Inspiration Account (PART D) */}
+          {/* SCREEN 7: Research Sources */}
           {step === "research-sources" && (
             <motion.div
               key="research-sources"
@@ -816,57 +906,61 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               transition={{ duration: 0.4 }}
               className="space-y-4"
             >
-              <SparkGuide
-                state="speaking"
-                message="Inspiration Accounts / Research Sources"
-                subtitle="Paste YouTube, TikTok, or Instagram URLs to seed Viral Sparks."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Inspiration Feeds:</strong> Seed benchmark channels for viral spark intelligence.
+                </p>
+              </div>
 
-              <div className="space-y-2.5 pt-1">
-                <div className="flex gap-1.5">
+              <div className="space-y-2">
+                <div className="flex gap-2">
                   <input
                     type="text"
                     value={researchSourceInput}
                     onChange={(e) => setResearchSourceInput(e.target.value)}
-                    placeholder="https://youtube.com/@channel..."
+                    placeholder="https://youtube.com/@channel or creator URL"
                     className="flex-1 p-2.5 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-purple-500"
                   />
                   <button
                     type="button"
                     onClick={handleAddResearchSource}
                     disabled={!researchSourceInput.trim()}
-                    className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Add
                   </button>
                 </div>
 
-                {seededSources.length > 0 && (
-                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                    {seededSources.map((sUrl) => (
-                      <div key={sUrl} className="p-2 rounded-lg bg-card border border-purple-500/30 flex items-center justify-between text-xs">
-                        <span className="text-purple-200 truncate flex-1 pr-2">{sUrl}</span>
-                        <button type="button" onClick={() => handleRemoveResearchSource(sUrl)} className="text-muted-foreground hover:text-red-400">
+                {seededSources.length > 0 ? (
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {seededSources.map((url) => (
+                      <div key={url} className="p-2 rounded-lg bg-card border border-border flex items-center justify-between text-[11px]">
+                        <span className="text-foreground truncate flex-1 pr-2">{url}</span>
+                        <button type="button" onClick={() => handleRemoveResearchSource(url)} className="text-muted-foreground hover:text-red-400 p-1">
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground italic p-2 rounded-lg bg-white/[0.02]">
+                    Optional — you can add research feeds later in MY SPARK.
+                  </p>
                 )}
               </div>
 
               <button
                 type="button"
-                onClick={handleConfirmResearchSources}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+                onClick={() => setStep("publishing")}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
-                <span>{seededSources.length > 0 ? "Confirm Sources →" : "Skip for now →"}</span>
+                <span>Continue to Distribution →</span>
               </button>
             </motion.div>
           )}
 
-          {/* SCREEN 8: Channels & Accounts */}
+          {/* SCREEN 8: Publishing Channels */}
           {step === "publishing" && (
             <motion.div
               key="publishing"
@@ -874,35 +968,69 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-3.5"
             >
-              <SparkGuide
-                state="speaking"
-                message="Where do you distribute content?"
-                subtitle="Select target channels. Connect now or later."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Distribution:</strong> Authorize publishing channels for automated distribution.
+                </p>
+              </div>
 
-              <p className="text-[11px] text-muted-foreground p-2.5 rounded-xl bg-card border border-border">
-                💡 <em>Research works now. Publishing needs a connected account.</em>
-              </p>
+              {platformConnectError && (
+                <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
+                  {platformConnectError}
+                </p>
+              )}
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {["YouTube Shorts", "TikTok", "Instagram Reels", "Twitter/X", "LinkedIn"].map((acc) => {
-                  const isSel = selectedAccounts.includes(acc);
+              <div className="space-y-2 pt-1">
+                {["YouTube Shorts", "Twitter/X", "TikTok", "Instagram Reels", "LinkedIn"].map((platform) => {
+                  const isSel = selectedAccounts.includes(platform);
+                  const isOAuthSupported = platform === "YouTube Shorts" || platform === "Twitter/X";
+                  const isConnecting = connectingPlatform === platform;
+
                   return (
-                    <button
-                      key={acc}
-                      type="button"
-                      onClick={() => toggleAccount(acc)}
-                      className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between ${
-                        isSel
-                          ? "bg-purple-950/40 border-purple-500/60 text-purple-300"
-                          : "bg-card border-border text-foreground hover:bg-card/80"
+                    <div
+                      key={platform}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                        isSel ? "bg-card border-purple-500/40" : "bg-card/50 border-border"
                       }`}
                     >
-                      <span className="text-xs font-medium">{acc}</span>
-                      {isSel && <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />}
-                    </button>
+                      <div className="flex items-center space-x-2.5 cursor-pointer" onClick={() => toggleAccount(platform)}>
+                        <div
+                          className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                            isSel ? "bg-purple-600 border-purple-500 text-white font-bold" : "border-muted-foreground/40"
+                          }`}
+                        >
+                          {isSel && "✓"}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground">{platform}</span>
+                      </div>
+
+                      {isOAuthSupported ? (
+                        <button
+                          type="button"
+                          disabled={isConnecting}
+                          onClick={() => handleConnectPlatform(platform)}
+                          className="text-[10px] px-2.5 py-1 rounded bg-cyan-600/30 hover:bg-cyan-500/40 border border-cyan-500/40 text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          {isConnecting ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="w-3 h-3" />
+                              Connect
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-muted-foreground/70 font-mono">
+                          Connect in Accounts
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -910,10 +1038,9 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               <button
                 type="button"
                 onClick={() => setStep("production-mode")}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer"
               >
-                <span>Continue to Production Mode</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Continue to Production Mode →</span>
               </button>
             </motion.div>
           )}
@@ -926,53 +1053,30 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <SparkGuide
-                state="speaking"
-                message="Choose your default production mode."
-                subtitle="Controls asset synthesis depth and rendering pipeline."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Production Engine:</strong> Select default video generation pipeline depth.
+                </p>
+              </div>
 
               <div className="space-y-2.5 pt-1">
                 {[
-                  {
-                    id: "narrator" as const,
-                    title: "Narrator",
-                    desc: "Images + voice + captions + motion pipeline.",
-                    icon: Volume2,
-                  },
-                  {
-                    id: "hybrid" as const,
-                    title: "Hybrid",
-                    desc: "Animated hook + narrator pipeline.",
-                    icon: Zap,
-                  },
-                  {
-                    id: "cinematic" as const,
-                    title: "Cinematic",
-                    desc: "Storyboard + video gen + consistency + audio.",
-                    icon: Film,
-                  },
-                ].map((m) => {
-                  const Icon = m.icon;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => handleProductionModeChoice(m.id)}
-                      className="w-full p-3.5 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] flex items-start space-x-3"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0 mt-0.5">
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">{m.title}</p>
-                        <p className="text-[11px] text-muted-foreground pt-0.5 leading-relaxed">{m.desc}</p>
-                      </div>
-                    </button>
-                  );
-                })}
+                  { id: "narrator" as const, title: "Narrator Pipeline", desc: "Images + voice narration + dynamic captions." },
+                  { id: "hybrid" as const, title: "Hybrid Engine", desc: "AI video hook + multi-layer narrator sequence." },
+                  { id: "cinematic" as const, title: "Cinematic Mode", desc: "Multi-scene video generation + master audio." },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => handleProductionChoice(mode.id)}
+                    className="w-full p-3.5 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    <p className="text-xs font-semibold text-foreground">{mode.title}</p>
+                    <p className="text-[11px] text-muted-foreground pt-0.5 leading-relaxed">{mode.desc}</p>
+                  </button>
+                ))}
               </div>
             </motion.div>
           )}
@@ -985,58 +1089,35 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <SparkGuide
-                state="speaking"
-                message="How involved do you want to be?"
-                subtitle="Choose your operating autonomy level."
-              />
+              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25">
+                <p className="text-xs text-foreground">
+                  <strong className="text-purple-300">Governance:</strong> Select your autonomy and review level.
+                </p>
+              </div>
 
               <div className="space-y-2.5 pt-1">
                 {[
-                  {
-                    id: "manual" as const,
-                    title: "Manual",
-                    desc: "All decisions require your explicit sign-off.",
-                    icon: Sliders,
-                  },
-                  {
-                    id: "balanced" as const,
-                    title: "Balanced",
-                    desc: "AI handles routine actions, you approve strategy.",
-                    icon: Shield,
-                  },
-                  {
-                    id: "autonomous" as const,
-                    title: "Autonomous",
-                    desc: "AI operates independently across all loops.",
-                    icon: Layers,
-                  },
-                ].map((mode) => {
-                  const Icon = mode.icon;
-                  return (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => handleAutomationChoice(mode.id)}
-                      className="w-full p-3.5 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] flex items-start space-x-3"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0 mt-0.5">
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">{mode.title}</p>
-                        <p className="text-[11px] text-muted-foreground pt-0.5 leading-relaxed">{mode.desc}</p>
-                      </div>
-                    </button>
-                  );
-                })}
+                  { id: "manual" as const, title: "Manual", desc: "All decisions require your sign-off." },
+                  { id: "balanced" as const, title: "Balanced", desc: "AI synthesizes; you approve final releases." },
+                  { id: "autonomous" as const, title: "Autonomous", desc: "AI operates independently across all loops." },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => handleAutomationChoice(mode.id)}
+                    className="w-full p-3.5 rounded-xl bg-card border border-border hover:border-purple-500 text-left transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    <p className="text-xs font-semibold text-foreground">{mode.title}</p>
+                    <p className="text-[11px] text-muted-foreground pt-0.5 leading-relaxed">{mode.desc}</p>
+                  </button>
+                ))}
               </div>
             </motion.div>
           )}
 
-          {/* SCREEN 11: Calibration */}
+          {/* SCREEN 11: Calibration Progress */}
           {step === "initialization" && (
             <motion.div
               key="initialization"
@@ -1044,13 +1125,12 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
               transition={{ duration: 0.5 }}
-              className="space-y-6 text-center"
+              className="space-y-6 text-center pt-8"
             >
-              <SparkGuide
-                state="thinking"
-                message="Building Your Creative OS..."
-                subtitle="Initializing Executive Director, Brand Memory & Pipelines..."
-              />
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-foreground">Calibrating Creative OS...</h3>
+                <p className="text-xs text-muted-foreground">Initializing Executive Director, Brand Memory & Pipelines</p>
+              </div>
 
               <div className="bg-card border border-border p-4 rounded-2xl space-y-2 w-full text-left text-xs">
                 {[
@@ -1079,14 +1159,12 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
                     style={{ width: `${initProgress}%` }}
                   />
                 </div>
-                <p className="text-[11px] font-mono text-muted-foreground">
-                  {initProgress}% Calibrated
-                </p>
+                <p className="text-[11px] font-mono text-muted-foreground">{initProgress}% Calibrated</p>
               </div>
             </motion.div>
           )}
 
-          {/* SCREEN 12: Ready */}
+          {/* SCREEN 12: Ready (Compact Summary Cards) */}
           {step === "ready" && (
             <motion.div
               key="ready"
@@ -1094,66 +1172,103 @@ Hyper-consistent production design bible, sharp focus, master reference quality,
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4 }}
-              className="space-y-5 text-center"
+              className="space-y-3"
             >
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-purple-900/30">
-                <SparkLogo className="w-7 h-7" variant="superspark" />
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-foreground">Your SPARK is ready.</h2>
-                <p className="text-xs text-muted-foreground mt-1">Ready to create, research, and produce.</p>
-              </div>
-
-              <div className="bg-card border border-border p-3.5 rounded-2xl text-left space-y-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-foreground">Brand: <strong>{brandName}</strong> ({niche})</span>
+              <div className="flex items-center gap-2.5 pb-1">
+                <SparkLogo className="w-5 h-5" variant="superspark" />
+                <div className="text-left">
+                  <h2 className="text-sm font-bold text-foreground">Your SPARK is Ready</h2>
+                  <p className="text-[11px] text-muted-foreground">All systems calibrated and verified.</p>
                 </div>
-                <div className="flex items-center gap-2">
+              </div>
+
+              {/* Compact 2-Line Summary Cards */}
+              <div className="space-y-2 text-xs text-left">
+                <div className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">{brandName || "Brand"}</span>
+                    <span className="text-[11px] text-muted-foreground block truncate">{niche || "Content"}</span>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    if (characterSheetUrl) setLightboxOpen(true);
+                  }}
+                  className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2 cursor-pointer hover:border-purple-400 transition-colors"
+                >
                   {characterSheetUrl ? (
-                    <img src={characterSheetUrl} alt="Host" className="w-4 h-4 rounded-full object-cover border border-emerald-400 shrink-0" />
+                    <img src={characterSheetUrl} alt="Host" className="w-6 h-6 rounded-lg object-cover border border-purple-400 shrink-0" />
                   ) : (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   )}
-                  <span className="text-foreground">Character: <strong>{creatorName}</strong> ({visualStyle})</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-foreground font-semibold block truncate">Character Design Bible</span>
+                    <span className="text-[11px] text-purple-300 block truncate">{genre} • {personality} (Tap to view)</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-foreground">Narrator: <strong>{selectedVoiceName}</strong></span>
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Narrator Voice</span>
+                    <span className="text-[11px] text-muted-foreground block truncate">{selectedVoiceName}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-foreground">Mode: <strong className="capitalize">{productionMode}</strong></span>
+                  <div className="min-w-0">
+                    <span className="text-foreground font-semibold block truncate">Pipeline & Autonomy</span>
+                    <span className="text-[11px] text-muted-foreground block truncate capitalize">{productionMode} · {automationMode}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-foreground">Automation: <strong className="capitalize">{automationMode}</strong></span>
-                </div>
+
                 {seededSources.length > 0 && (
-                  <div className="flex items-center gap-2 text-purple-300 text-[11px] pt-1 border-t border-border/40">
-                    <span>✓ {seededSources.length} Research Sources Seeded</span>
+                  <div className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-foreground font-semibold block truncate">Research Feeds</span>
+                      <span className="text-[11px] text-muted-foreground block truncate">{seededSources.length} Seeded</span>
+                    </div>
                   </div>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={handleFinalCompletion}
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-sm flex items-center justify-center space-x-2"
-              >
-                <span>Enter SPARK Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </main>
 
-      {/* Footer Branding */}
-      <div className="pb-6 text-center text-[11px] text-muted-foreground/50 z-10">
-        SPARK Media OS • Executive Director
-      </div>
+      {/* STICKY FOOTER ON READY STEP — Always on screen, never below the fold */}
+      {step === "ready" && (
+        <footer className="p-4 bg-[#0B0F17]/95 backdrop-blur-md border-t border-white/10 z-20 pb-safe flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleFinalCompletion}
+            className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer"
+          >
+            <span>Enter SPARK Dashboard</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </footer>
+      )}
+
+      {/* Fullscreen Character Sheet Lightbox Modal */}
+      <CharacterSheetLightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={characterSheetUrl}
+        characterName={creatorName || "Lead Host"}
+        brandName={brandName || "SPARK"}
+        metadata={{
+          genre: genre,
+          personality: personality,
+          wardrobe: wardrobe,
+          skinTone: skinTone,
+          hairStyle: hairStyle,
+        }}
+      />
     </div>
   );
 }
