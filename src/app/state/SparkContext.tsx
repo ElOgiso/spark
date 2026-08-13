@@ -86,7 +86,7 @@ interface SparkContextType {
   
   // Actions
   updateBrand: (data: Partial<Brand>) => void;
-  initializeBrandGenesis: (data: any) => void;
+  initializeBrandGenesis: (data: any) => Promise<void> | void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
   updateAISettings: (newSettings: AISettings) => void;
@@ -386,7 +386,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const merged = {
             ...prev,
             brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
-            character: snap.character || prev.character,
+            character: snap.character
+              ? {
+                  ...prev.character,
+                  ...snap.character,
+                  avatarUrl: snap.character.avatarUrl || snap.character.imageUrl || prev.character?.avatarUrl || null,
+                  imageUrl: snap.character.imageUrl || snap.character.avatarUrl || prev.character?.imageUrl || null,
+                  characterSheetUrl: snap.character.characterSheetUrl || snap.character.imageUrl || prev.character?.characterSheetUrl || null,
+                  voice: {
+                    ...prev.character?.voice,
+                    ...snap.character.voice,
+                  },
+                }
+              : prev.character,
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,

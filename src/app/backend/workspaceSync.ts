@@ -466,6 +466,77 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand>)
   }
 }
 
+export async function uploadCharacterSheetToStorage(brandId: string, imageUri: string): Promise<string> {
+  if (!isSupabaseConfigured() || !brandId || !imageUri) return imageUri;
+  // If already a persistent remote URL, skip upload
+  if ((imageUri.startsWith("http://") || imageUri.startsWith("https://")) && !imageUri.startsWith("blob:")) {
+    return imageUri;
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return imageUri;
+
+  try {
+    let uploadBlob: Blob | null = null;
+    let mimeType = "image/png";
+
+    if (imageUri.startsWith("data:")) {
+      const match = imageUri.match(/^data:([^;]+);base64,(.*)$/);
+      if (match) {
+        mimeType = match[1] || "image/png";
+        const base64Data = match[2];
+        const binaryStr = atob(base64Data);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        uploadBlob = new Blob([bytes], { type: mimeType });
+      }
+    } else if (imageUri.startsWith("blob:") || typeof fetch !== "undefined") {
+      const res = await fetch(imageUri);
+      if (res.ok) {
+        uploadBlob = await res.blob();
+        mimeType = uploadBlob.type || "image/png";
+      }
+    }
+
+    if (!uploadBlob) return imageUri;
+
+    const ext = mimeType.includes("webp") ? "webp" : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
+    const storagePath = `brands/${brandId}/character/sheet.${ext}`;
+
+    const { error: uploadError } = await supabase.storage.from("Spark").upload(storagePath, uploadBlob, {
+      contentType: mimeType,
+      upsert: true,
+    });
+
+    if (uploadError) {
+      console.warn("[workspaceSync] Storage upload for character sheet notice:", uploadError);
+      return imageUri;
+    }
+
+    // Try creating signed URL with 1 year TTL (31536000s)
+    const { data: signedData, error: signedError } = await supabase.storage
+      .from("Spark")
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+    if (!signedError && signedData?.signedUrl) {
+      return signedData.signedUrl;
+    }
+
+    const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
+    if (pubData?.publicUrl) {
+      return pubData.publicUrl;
+    }
+
+    return imageUri;
+  } catch (err) {
+    console.warn("[workspaceSync] uploadCharacterSheetToStorage notice:", err);
+    return imageUri;
+  }
+}
+
 export async function persistCharacterUpdate(brandId: string, character: Character): Promise<void> {
   if (!isSupabaseConfigured() || !isUuid(brandId)) return;
   const supabase = getSupabaseClient();

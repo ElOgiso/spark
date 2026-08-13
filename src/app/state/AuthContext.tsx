@@ -328,14 +328,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
+    const targetUserId = currentUser?.id || session?.user?.id;
+    const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
+
+    if (targetUserId && isConfigured) {
+      try {
+        await markProfileOnboardingComplete(targetUserId, targetBrandId);
+      } catch (err) {
+        console.warn("[Spark Auth] markProfileOnboardingComplete notice:", err);
+      }
+    }
+
     setIsOnboardingComplete(true);
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("spark_onboarding_complete", "true");
-    }
-    const targetUserId = currentUser?.id || session?.user?.id;
-    if (targetUserId && isConfigured) {
-      const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
-      void markProfileOnboardingComplete(targetUserId, targetBrandId);
     }
   }, [currentUser, session, isConfigured, brand]);
 
