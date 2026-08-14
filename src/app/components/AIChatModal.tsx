@@ -569,8 +569,19 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
           }
           const audio = new Audio(audioUrl);
           activeAudioRef.current = audio;
-          await audio.play().catch((playErr) => {
-            console.log("[AIChatModal] Audio play deferred:", playErr?.message || playErr);
+          await audio.play().catch(async (playErr) => {
+            console.log("[AIChatModal] Primary audio playback notice:", playErr?.message || playErr);
+            if (!isMuted && providerId === "gemini") {
+              try {
+                const { generateSuperSparkVoice } = await import("../services/geminiService");
+                const fallbackUrl = await generateSuperSparkVoice(finalText, "openai");
+                if (fallbackUrl) {
+                  const fallbackAudio = new Audio(fallbackUrl);
+                  activeAudioRef.current = fallbackAudio;
+                  await fallbackAudio.play().catch(() => {});
+                }
+              } catch {}
+            }
           });
         } catch (audioErr) {
           console.warn("[AIChatModal] Audio playback notice:", audioErr);
