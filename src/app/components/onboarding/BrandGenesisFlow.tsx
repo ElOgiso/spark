@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   ChevronLeft, Play, Pause, Plus, X, Check,
-  Volume2, Link2, RefreshCw, Upload, Mic, Shuffle,
+  Volume2, VolumeX, Link2, RefreshCw, Upload, Mic, Shuffle,
   CheckCircle2, Send, AlertCircle, ZoomIn, ZoomOut,
   ChevronDown, ChevronUp, Zap, MessageSquare,
 } from "lucide-react";
@@ -19,6 +19,7 @@ import {
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
+import { onboardDirectorVoiceService } from "../../services/onboarding/onboardDirectorVoiceService";
 import type { ProductionMode, AutomationMode } from "../../domain/types";
 
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
@@ -514,8 +515,22 @@ function ChatPanel({ history, thinking, expanded, onToggle }: ChatPanelProps) {
 }
 
 // ─── Neon Ask Field ────────────────────────────────────────────────────────────
-function NeonAskField({ value, onChange, onSend, disabled }: {
-  value: string; onChange: (v: string) => void; onSend: () => void; disabled?: boolean;
+function NeonAskField({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  isMuted,
+  onToggleMute,
+  isSpeaking,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  disabled?: boolean;
+  isMuted: boolean;
+  onToggleMute: () => void;
+  isSpeaking?: boolean;
 }) {
   return (
     <div className="neon-ask-wrap">
@@ -528,11 +543,28 @@ function NeonAskField({ value, onChange, onSend, disabled }: {
           placeholder="Ask Super Spark or type a custom answer…"
           disabled={disabled}
         />
-        {value.trim() && !disabled && (
-          <button type="button" onClick={onSend}>
-            <Send className="w-3.5 h-3.5" style={{ color: "rgba(240,24,255,0.85)" }} />
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className={`p-1.5 rounded-lg transition-all ${
+              isMuted
+                ? "text-white/25 hover:text-white/55 hover:bg-white/5"
+                : isSpeaking
+                ? "text-purple-300 animate-pulse bg-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+                : "text-purple-300 hover:text-purple-200 hover:bg-white/5"
+            }`}
+            title={isMuted ? "Unmute guide voice" : "Mute guide voice"}
+            aria-label={isMuted ? "Unmute guide voice" : "Mute guide voice"}
+          >
+            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
-        )}
+          {value.trim() && !disabled && (
+            <button type="button" onClick={onSend} className="p-1 hover:opacity-80 transition-opacity">
+              <Send className="w-3.5 h-3.5" style={{ color: "rgba(240,24,255,0.85)" }} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -772,13 +804,39 @@ const DIRECTORS: Record<number, string> = {
 };
 
 // ─── Frame Components ──────────────────────────────────────────────────────────
-function FrameEntry({ onBegin }: { onBegin: () => void }) {
+function FrameEntry({
+  onBegin,
+  isMuted,
+  onToggleMute,
+  isSpeaking,
+}: {
+  onBegin: () => void;
+  isMuted: boolean;
+  onToggleMute: () => void;
+  isSpeaking?: boolean;
+}) {
   const { displayed, done } = useTypewriter(
     "Welcome. I'm Super Spark, your executive creative director.\nLet's build the brand SPARK will run.", 24, 400
   );
   return (
-    <div className="flex flex-col items-center justify-between h-full px-8 py-8 text-center overflow-hidden">
-      <div />
+    <div className="relative flex flex-col items-center justify-between h-full px-8 py-8 text-center overflow-hidden">
+      <div className="w-full flex justify-end">
+        <button
+          type="button"
+          onClick={onToggleMute}
+          className={`p-2 rounded-full border transition-all ${
+            isMuted
+              ? "bg-white/4 border-white/8 text-white/28 hover:text-white/60"
+              : isSpeaking
+              ? "bg-purple-600/20 border-purple-500/50 text-purple-300 animate-pulse shadow-[0_0_12px_rgba(168,85,247,0.3)]"
+              : "bg-white/8 border-white/12 text-purple-300 hover:text-purple-200"
+          }`}
+          title={isMuted ? "Unmute guide voice" : "Mute guide voice"}
+          aria-label={isMuted ? "Unmute guide voice" : "Mute guide voice"}
+        >
+          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
+      </div>
       <div className="flex flex-col items-center gap-8">
         <MainLogoAnimated size={96} />
         <div className="space-y-3 max-w-xs">
@@ -1463,7 +1521,37 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
   const [voicesList, setVoicesList] = useState<ElevenLabsVoiceSummary[]>([]);
   const [syncStatuses, setSyncStatuses] = useState<Record<string, "syncing" | "ready">>({});
 
+  // Onboard Director Gemini Voice state
+  const [voiceMuted, setVoiceMuted] = useState(() => onboardDirectorVoiceService.isMuted());
+  const [voiceSpeaking, setVoiceSpeaking] = useState(() => onboardDirectorVoiceService.isSpeaking());
+
   const update = (partial: Partial<GenesisInternalState>) => setData((d) => ({ ...d, ...partial }));
+
+  // Subscribe to onboard director voice updates & cleanup on unmount
+  useEffect(() => {
+    const unsubscribe = onboardDirectorVoiceService.subscribe((state) => {
+      setVoiceMuted(state.isMuted);
+      setVoiceSpeaking(state.isSpeaking);
+    });
+    return () => {
+      unsubscribe();
+      onboardDirectorVoiceService.stop();
+    };
+  }, []);
+
+  // Auto-speak director lines when entering frames
+  useEffect(() => {
+    if (legalMode) {
+      onboardDirectorVoiceService.stop();
+      return;
+    }
+
+    if (frame === 0) {
+      void onboardDirectorVoiceService.speak("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.");
+    } else if (DIRECTORS[frame]) {
+      void onboardDirectorVoiceService.speak(DIRECTORS[frame]);
+    }
+  }, [frame, legalMode]);
 
   // Load ElevenLabs voices & restore OAuth state on mount
   useEffect(() => {
@@ -1692,9 +1780,11 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
     const msgIndex = chatHistory.filter((m) => m.role === "spark").length;
     setTimeout(() => {
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: getSparkReply(frame, msgIndex) };
+      const replyText = getSparkReply(frame, msgIndex);
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: replyText };
       setChatHistory((h) => [...h, reply]);
       setChatThinking(false);
+      void onboardDirectorVoiceService.speak(replyText);
     }, 1200);
   };
 
@@ -1817,7 +1907,12 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           {/* Frame 0 */}
           {frame === 0 && (
             <div key="f0" style={slideStyle} className="relative z-10 flex-1 flex flex-col overflow-hidden">
-              <FrameEntry onBegin={() => go(1)} />
+              <FrameEntry
+                onBegin={() => go(1)}
+                isMuted={voiceMuted}
+                onToggleMute={() => onboardDirectorVoiceService.toggleMute()}
+                isSpeaking={voiceSpeaking}
+              />
             </div>
           )}
 
@@ -1886,7 +1981,15 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
                       Don't know what to do? Feel free to ask me. I'm Super Spark.
                     </p>
 
-                    <NeonAskField value={askValue} onChange={setAskValue} onSend={sendChat} disabled={chatThinking} />
+                    <NeonAskField
+                      value={askValue}
+                      onChange={setAskValue}
+                      onSend={sendChat}
+                      disabled={chatThinking}
+                      isMuted={voiceMuted}
+                      onToggleMute={() => onboardDirectorVoiceService.toggleMute()}
+                      isSpeaking={voiceSpeaking}
+                    />
 
                     <div className="space-y-1.5">
                       <button
