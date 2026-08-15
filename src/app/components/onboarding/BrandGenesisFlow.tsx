@@ -1822,7 +1822,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
   };
 
   // Final Completion Handler
-  const handleFinalCompletion = () => {
+  const handleFinalCompletion = async () => {
     const connectedAccounts = data.connectedPlatforms.map((pid) => ({
       platform: pid === "youtube" ? "YouTube Shorts" : pid === "x" ? "Twitter/X" : pid,
       username: data.connectedHandles[pid] || "@connected",
@@ -1857,8 +1857,12 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       connectedAccounts,
     };
 
-    void initializeBrandGenesis(genesisData);
-    void auth.markOnboardingComplete(auth.brand?.id);
+    try {
+      initializeBrandGenesis(genesisData);
+      await auth.markOnboardingComplete(auth.brand?.id);
+    } catch (persistErr) {
+      console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);
+    }
     onComplete(genesisData);
   };
 

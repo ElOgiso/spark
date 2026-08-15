@@ -205,19 +205,124 @@ function AppContent() {
     }
   };
 
-  const handleEnterDashboard = (data?: BrandGenesisData) => {
+  const handleEnterDashboard = async (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName || "Creator");
     initializeBrandGenesis(finalData);
-    void auth.markOnboardingComplete(auth.brand?.id);
+    await auth.markOnboardingComplete(auth.brand?.id);
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
     setViewState("dashboard");
   };
 
+  const renderDesktopPage = () => {
+    const pageBase = currentPage.split("?")[0];
+    switch (pageBase) {
+      case "/":
+        return <SparkHome onNavigate={setCurrentPage} />;
+      case "/my-spark":
+        return <MySpark onNavigate={setCurrentPage} />;
+      case "/viral-sparks":
+        return <ViralSparks onNavigate={setCurrentPage} />;
+      case "/review":
+        return <ReviewCenter onNavigate={setCurrentPage} />;
+      case "/review/creative":
+        return (
+          <CreativeReview
+            onNavigate={setCurrentPage}
+            onBack={() => setCurrentPage("/review")}
+          />
+        );
+      case "/calendar":
+        return <Calendar onNavigate={setCurrentPage} />;
+      case "/analytics":
+        return <Analytics onNavigate={setCurrentPage} />;
+      case "/more":
+        return <MorePage onNavigate={setCurrentPage} />;
+      case "/more/theme":
+      case "/more/assets":
+      case "/more/memory":
+      case "/more/marketer":
+      case "/more/accounts":
+      case "/more/billing":
+      case "/more/api":
+      case "/more/integrations":
+      case "/more/ai-preferences":
+      case "/more/production-settings":
+      case "/more/team":
+      case "/more/legal":
+      case "/more/support":
+      case "/more/notifications":
+      case "/more/privacy":
+        return <MoreSubPages onNavigate={setCurrentPage} subPath={currentPage} />;
+      case "/terms":
+        return <FullLegalPage onNavigate={setCurrentPage} type="terms" />;
+      case "/privacy":
+        return <FullLegalPage onNavigate={setCurrentPage} type="privacy" />;
+      default:
+        return <SparkHome onNavigate={setCurrentPage} />;
+    }
+  };
+
   const renderContent = () => {
-    // -1. Cold-start / PWA entry Splash Reel (Exact donor reel with 4s final hold)
+    // 0. OAuth completion screens: never block on marketing splash or anything else
+    const oauthProvider = getOAuthProvider();
+    if (oauthProvider === "google") {
+      return <GoogleCallbackPage />;
+    }
+    if (oauthProvider === "x") {
+      return <XCallbackPage />;
+    }
+
+    // 1. Session Restoration / Hydration State (Minimal HydrationSplash only)
+    if (auth.loading) {
+      return <HydrationSplash />;
+    }
+
+    // 2. Authenticated Session Exists
+    if (isUserAuthenticated) {
+      // Returning user whose onboarding is complete in cloud -> straight to dashboard (no marketing splash)
+      if (auth.isOnboardingComplete) {
+        if (deviceType === "mobile") {
+          return (
+            <ProtectedRoute>
+              <MobileApp />
+            </ProtectedRoute>
+          );
+        }
+
+        return (
+          <ProtectedRoute>
+            <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
+              <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
+              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {renderDesktopPage()}
+              </div>
+            </div>
+          </ProtectedRoute>
+        );
+      }
+
+      // First-time authenticated user whose onboarding is incomplete in cloud -> Brand Genesis
+      return (
+        <ProtectedRoute>
+          <BrandGenesisFlow
+            onComplete={(data) => {
+              if (data) {
+                setGenesisData(data);
+                void handleEnterDashboard(data);
+              } else {
+                void handleEnterDashboard();
+              }
+            }}
+          />
+        </ProtectedRoute>
+      );
+    }
+
+    // 3. Unauthenticated / No Session (Logged out / strangers)
+    // Optional donor marketing splash reel once per cold start (sessionStorage), then Login
     if (!splashDone) {
       return (
         <SplashReel
@@ -231,114 +336,11 @@ function AppContent() {
       );
     }
 
-    // 0. Hydration State
-    if (auth.loading) {
-      return <HydrationSplash />;
-    }
-
-    // OAuth completion screens (path callback or root bounce from static HTML)
-    const oauthProvider = getOAuthProvider();
-    if (oauthProvider === "google") {
-      return <GoogleCallbackPage />;
-    }
-    if (oauthProvider === "x") {
-      return <XCallbackPage />;
-    }
-
-    // 1. Unauthenticated Route (/auth)
-    if (!isUserAuthenticated) {
-      return (
-        <PublicRoute>
-          <AuthPanel isFullScreen onSuccess={handleAuthSuccess} />
-        </PublicRoute>
-      );
-    }
-
-    // 2. Authenticated First-Time Onboarding Flow (ProtectedRoute Guard)
-    if (!auth.isOnboardingComplete) {
-      return (
-        <ProtectedRoute>
-          <BrandGenesisFlow
-            onComplete={(data) => {
-              if (data) {
-                setGenesisData(data);
-                handleEnterDashboard(data);
-              } else {
-                handleEnterDashboard();
-              }
-            }}
-          />
-        </ProtectedRoute>
-      );
-    }
-
-    // 3. Authenticated Dashboard Views (ProtectedRoute Guard)
-    if (deviceType === "mobile") {
-      return (
-        <ProtectedRoute>
-          <MobileApp />
-        </ProtectedRoute>
-      );
-    }
-
-    const renderDesktopPage = () => {
-      const pageBase = currentPage.split("?")[0];
-      switch (pageBase) {
-        case "/":
-          return <SparkHome onNavigate={setCurrentPage} />;
-        case "/my-spark":
-          return <MySpark onNavigate={setCurrentPage} />;
-        case "/viral-sparks":
-          return <ViralSparks onNavigate={setCurrentPage} />;
-        case "/review":
-          return <ReviewCenter onNavigate={setCurrentPage} />;
-        case "/review/creative":
-          return (
-            <CreativeReview
-              onNavigate={setCurrentPage}
-              onBack={() => setCurrentPage("/review")}
-            />
-          );
-        case "/calendar":
-          return <Calendar onNavigate={setCurrentPage} />;
-        case "/analytics":
-          return <Analytics onNavigate={setCurrentPage} />;
-        case "/more":
-          return <MorePage onNavigate={setCurrentPage} />;
-        case "/more/theme":
-        case "/more/assets":
-        case "/more/memory":
-        case "/more/marketer":
-        case "/more/accounts":
-        case "/more/billing":
-        case "/more/api":
-        case "/more/integrations":
-        case "/more/ai-preferences":
-        case "/more/production-settings":
-        case "/more/team":
-        case "/more/legal":
-        case "/more/support":
-        case "/more/notifications":
-        case "/more/privacy":
-          return <MoreSubPages onNavigate={setCurrentPage} subPath={currentPage} />;
-        case "/terms":
-          return <FullLegalPage onNavigate={setCurrentPage} type="terms" />;
-        case "/privacy":
-          return <FullLegalPage onNavigate={setCurrentPage} type="privacy" />;
-        default:
-          return <SparkHome onNavigate={setCurrentPage} />;
-      }
-    };
-
+    // Unauthenticated -> AuthPanel / Login only (never onboard while logged out)
     return (
-      <ProtectedRoute>
-        <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
-          <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {renderDesktopPage()}
-          </div>
-        </div>
-      </ProtectedRoute>
+      <PublicRoute>
+        <AuthPanel isFullScreen onSuccess={handleAuthSuccess} />
+      </PublicRoute>
     );
   };
 

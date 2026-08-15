@@ -160,8 +160,21 @@ export async function bootstrapUserSession(
       }
     }
 
-    // Determine onboarding completeness from CLOUD source of truth
-    const isComplete = profile.onboarding_complete === true;
+    // 5) Determine onboarding completeness from CLOUD source of truth
+    let isComplete = profile.onboarding_complete === true;
+
+    // Cloud auto-repair: if user already has an existing configured brand but profile flag was false
+    if (!isComplete && brands.length > 0) {
+      const hasConfiguredBrand = brands.some((b) => {
+        const name = (b.name || "").trim().toLowerCase();
+        return name !== "" && name !== "my brand" && name !== "spark";
+      });
+      if (hasConfiguredBrand) {
+        isComplete = true;
+        profile.onboarding_complete = true;
+        void markProfileOnboardingComplete(user.id, activeBrand?.id);
+      }
+    }
 
     return {
       profile,

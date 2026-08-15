@@ -60,13 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [demoUser, setDemoUser] = useState<User | null>(() => getStoredDemoUser());
 
-  // Cached initial state, immediately overwritten by cloud bootstrap
-  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(() => {
-    if (typeof localStorage !== "undefined") {
-      return localStorage.getItem("spark_onboarding_complete") === "true";
-    }
-    return false;
-  });
+  // Cloud bootstrap is the single source of truth for onboarding completeness
+  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(false);
 
   const isConfigured = isAuthBackendReady();
   const requireAuth = isAuthRequired();
@@ -200,8 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .then((res) => res.json())
             .then((userInfo) => {
               if (userInfo?.email) {
-                const isNew = localStorage.getItem("spark_onboarding_complete") === "false";
-                handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], isNew);
+                handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], false);
               }
             })
             .catch((err) => console.warn("[Spark Auth] OAuth userinfo fetch error:", err))
@@ -273,20 +267,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setLoading(true);
     const fallbackEmail = `creator_${provider}@spark.ai`;
-    const isNew = localStorage.getItem("spark_onboarding_complete") === "false";
     if (!isConfigured) {
-      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, isNew);
+      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
       setLoading(false);
       return;
     }
     try {
       const result = await sessionSignInWithOAuth(provider);
       if (result.error) {
-        handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, isNew);
+        handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
       }
     } catch (err) {
       console.warn("[Spark Auth] OAuth backend error, falling back to demo:", err);
-      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, isNew);
+      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
     }
     setLoading(false);
   }, [handleDemoSignIn, isConfigured]);
