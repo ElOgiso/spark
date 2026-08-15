@@ -277,7 +277,7 @@ class OnboardDirectorVoiceService {
       return `data:${mimeType || "audio/mp3"};base64,${base64Data}`;
     }
 
-    // Convert raw PCM (typically 24000Hz 16-bit Mono) to standard WAV blob data URL
+    // Convert raw PCM (typically 24000Hz 16-bit Mono) to standard WAV base64 data URL
     try {
       const binaryString = atob(base64Data);
       const len = binaryString.length;
@@ -292,37 +292,43 @@ class OnboardDirectorVoiceService {
         sampleRate = parseInt(rateMatch[1], 10) || 24000;
       }
 
-      const wavBlob = this.createWavBlob(bytes, sampleRate, 1);
-      return URL.createObjectURL(wavBlob);
-    } catch {
-      return `data:${mimeType || "audio/pcm"};base64,${base64Data}`;
+      const header = new ArrayBuffer(44);
+      const view = new DataView(header);
+
+      // "RIFF" chunk
+      view.setUint32(0, 0x52494646, false);
+      view.setUint32(4, 36 + len, true);
+      view.setUint32(8, 0x57415645, false); // "WAVE"
+
+      // "fmt " chunk
+      view.setUint32(12, 0x666d7420, false);
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM format
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true); // 16 bits
+
+      // "data" chunk
+      view.setUint32(36, 0x64617461, false);
+      view.setUint32(40, len, true);
+
+      const wavBytes = new Uint8Array(44 + len);
+      wavBytes.set(new Uint8Array(header), 0);
+      wavBytes.set(bytes, 44);
+
+      let wavBinary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < wavBytes.length; i += chunkSize) {
+        wavBinary += String.fromCharCode.apply(null, Array.from(wavBytes.subarray(i, i + chunkSize)));
+      }
+      const wavBase64 = btoa(wavBinary);
+      return `data:audio/wav;base64,${wavBase64}`;
+    } catch (err) {
+      console.warn("[OnboardDirectorVoice] Failed to wrap PCM in WAV header:", err);
+      return `data:audio/wav;base64,${base64Data}`;
     }
-  }
-
-  private createWavBlob(pcmData: Uint8Array, sampleRate: number, numChannels: number): Blob {
-    const header = new ArrayBuffer(44);
-    const view = new DataView(header);
-
-    // "RIFF" chunk
-    view.setUint32(0, 0x52494646, false);
-    view.setUint32(4, 36 + pcmData.byteLength, true);
-    view.setUint32(8, 0x57415645, false); // "WAVE"
-
-    // "fmt " chunk
-    view.setUint32(12, 0x666d7420, false);
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM format
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numChannels * 2, true);
-    view.setUint16(32, numChannels * 2, true);
-    view.setUint16(34, 16, true); // 16 bits
-
-    // "data" chunk
-    view.setUint32(36, 0x64617461, false);
-    view.setUint32(40, pcmData.byteLength, true);
-
-    return new Blob([header, pcmData], { type: "audio/wav" });
   }
 
   private playAudioUrl(url: string, signal: AbortSignal): Promise<void> {

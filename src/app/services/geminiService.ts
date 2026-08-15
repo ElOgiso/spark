@@ -183,6 +183,92 @@ function generateSmartFallbackResponse(
 }
 
 /**
+ * Generates live Super Spark AI responses specifically for Onboarding / Brand Genesis.
+ * Defaults strictly to Gemini (using env keys via resolveProviderKey) without altering global user AI preferences.
+ */
+export async function generateOnboardAssistantResponse(params: {
+  prompt: string;
+  stepName: string;
+  stepNumber: number;
+  brandData?: {
+    brandName?: string;
+    creatorName?: string;
+    niche?: string;
+    goal?: string;
+    characterGenre?: string;
+    selectedVoice?: string;
+    connectedPlatforms?: string[];
+  };
+  history?: { role: "user" | "spark" | "model"; text: string }[];
+}): Promise<string> {
+  const { prompt, stepName, stepNumber, brandData, history = [] } = params;
+  const geminiKey = resolveProviderKey("gemini");
+
+  const brandSummary = [
+    brandData?.brandName ? `Brand Name: "${brandData.brandName}"` : null,
+    brandData?.niche ? `Niche: "${brandData.niche}"` : null,
+    brandData?.goal ? `Goal: "${brandData.goal}"` : null,
+    brandData?.characterGenre ? `Visual Style: "${brandData.characterGenre}"` : null,
+    brandData?.selectedVoice ? `Selected Voice: "${brandData.selectedVoice}"` : null,
+    brandData?.connectedPlatforms?.length ? `Connected Platforms: ${brandData.connectedPlatforms.join(", ")}` : null,
+  ].filter(Boolean).join(" | ");
+
+  const systemInstruction = `${SUPER_SPARK_SYSTEM_INSTRUCTION}
+
+ONBOARDING EXECUTIVE CONTEXT:
+You are acting as the Executive Creative Director guiding the creator through Brand Genesis onboarding (Step ${stepNumber}: "${stepName}").
+${brandSummary ? `Current Brand Setup: ${brandSummary}` : ""}
+
+GUIDANCE RULES FOR ONBOARDING CHAT:
+1. Keep replies concise, helpful, friendly, leisure, relaxed, laid-back, and calm (1-3 sentences maximum).
+2. Answer the user's specific question or comment about this step, their brand, or creative strategy directly.
+3. If they ask for recommendations (e.g. brand names, niche ideas, styles, hooks), give 2-3 sharp, modern creator suggestions.
+4. If they indicate readiness or tell you their choice (e.g. "I want comedy", "Let's continue", "Call it Apex Studio"), validate and encourage them.
+5. Sound like a human creative director, never like a corporate robot.`;
+
+  const chatHistory = history.map((msg) => ({
+    role: (msg.role === "user" ? "user" : "model") as "user" | "model",
+    parts: [{ text: msg.text }],
+  }));
+
+  // Force onboard routing to Gemini only (does not alter global user AI settings)
+  const forcedGeminiRouting = {
+    superSpark: "gemini" as AIProviderId,
+  };
+
+  try {
+    const text = await ModelRouter.executeCategoryRequest(
+      "superSpark",
+      {
+        prompt,
+        systemInstruction,
+        history: chatHistory,
+        customApiKeys: geminiKey ? { gemini: geminiKey } : undefined,
+      },
+      forcedGeminiRouting
+    );
+
+    const cleaned = cleanEchoingPrefix(text, prompt);
+    if (cleaned && cleaned.length > 0) return cleaned;
+  } catch (err: any) {
+    console.warn("[OnboardAI] Live Gemini generation notice:", err?.message || err);
+  }
+
+  // Fallback if live AI call fails
+  const stepFallbacks: Record<number, string> = {
+    1: "Connect any account that's live — YouTube and X are ready now. The rest are coming soon.",
+    2: "Your brand name sets the tone for everything. Pick something punchy that fits your niche.",
+    3: "Lock in a signature host style you want to keep consistent across all your videos.",
+    4: "Voice is identity. Choose the cadence that matches your channel's energy.",
+    5: "Paste channels or profiles SPARK should learn from to calibrate your production style.",
+    6: "Production mode sets the visual depth, while automation sets how much I handle autonomously.",
+    7: "Everything looks set. When you're ready, tap to launch into your executive dashboard.",
+  };
+
+  return stepFallbacks[stepNumber] || "Got it — I'll factor that into your brand setup as we move forward.";
+}
+
+/**
  * Generate Executive Provider-Native TTS Voice Audio for Super Spark
  * Stack: OpenAI 'nova' (primary) -> Gemini 'Aoede' (secondary).
  * ElevenLabs is reserved exclusively for production content voiceover (ProductionAssetService).

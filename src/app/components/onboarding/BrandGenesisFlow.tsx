@@ -431,6 +431,17 @@ function ModeCard({ label, desc, selected, onSelect }: { label: string; desc: st
 // ─── Persistent Chat Panel ─────────────────────────────────────────────────────
 interface ChatMessage { id: number; role: "user" | "spark"; text: string; }
 
+const FRAME_NAMES: Record<number, string> = {
+  0: "Welcome & Introduction",
+  1: "Connect Social Platforms",
+  2: "Brand Name & Niche Strategy",
+  3: "Host Character & Visual Style",
+  4: "Narrator Voice & Cadence",
+  5: "Research Sources & Calibration",
+  6: "Production & Automation Modes",
+  7: "Review & Launch",
+};
+
 const SPARK_REPLIES: Record<number, string[]> = {
   1: ["Connect any account that's live — YouTube and X are ready now. The rest are coming soon.", "Once connected, I'll pull your handle and start building your identity layer."],
   2: ["Your brand name sets the tone for everything. Make it memorable.", "I'll auto-detect your niche from your connected account — you can always override it."],
@@ -1778,14 +1789,36 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       }
     }
 
-    const msgIndex = chatHistory.filter((m) => m.role === "spark").length;
-    setTimeout(() => {
-      const replyText = getSparkReply(frame, msgIndex);
+    try {
+      const { generateOnboardAssistantResponse } = await import("../../services/geminiService");
+      const replyText = await generateOnboardAssistantResponse({
+        prompt: msg,
+        stepName: FRAME_NAMES[frame] || `Step ${frame}`,
+        stepNumber: frame,
+        brandData: {
+          brandName: data.brandName,
+          creatorName: data.creatorName,
+          niche: data.niche,
+          goal: data.goal,
+          characterGenre: data.characterGenre,
+          selectedVoice: data.selectedVoice,
+          connectedPlatforms: data.connectedPlatforms,
+        },
+        history: chatHistory.map((m) => ({ role: m.role, text: m.text })),
+      });
+
       const reply: ChatMessage = { id: ++_msgId, role: "spark", text: replyText };
       setChatHistory((h) => [...h, reply]);
       setChatThinking(false);
       void onboardDirectorVoiceService.speak(replyText);
-    }, 1200);
+    } catch (chatErr) {
+      console.warn("[BrandGenesisFlow] Live Chat generation error:", chatErr);
+      const fallbackText = getSparkReply(frame, chatHistory.filter((m) => m.role === "spark").length);
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: fallbackText };
+      setChatHistory((h) => [...h, reply]);
+      setChatThinking(false);
+      void onboardDirectorVoiceService.speak(fallbackText);
+    }
   };
 
   // Final Completion Handler
