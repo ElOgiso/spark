@@ -113,10 +113,6 @@ class OnboardDirectorVoiceService {
     this.stop();
 
     const apiKey = resolveProviderKey("gemini");
-    if (!apiKey) {
-      console.warn("[OnboardDirectorVoice] Gemini API key not found. Skipping auto-speech.");
-      return;
-    }
 
     const cleanText = text
       .replace(/^#+\s*/gm, "")
@@ -136,7 +132,7 @@ class OnboardDirectorVoiceService {
       this.isSpeakingState = true;
       this.notify();
 
-      const audioDataUrl = await this.generateTtsAudio(cleanText, apiKey, signal);
+      const audioDataUrl = await this.generateTtsAudio(cleanText, apiKey || undefined, signal);
 
       if (signal.aborted) return;
 
@@ -159,7 +155,7 @@ class OnboardDirectorVoiceService {
 
   private async generateTtsAudio(
     text: string,
-    apiKey: string,
+    apiKey: string | undefined,
     signal: AbortSignal
   ): Promise<string | null> {
     const modelsToTry = [
@@ -221,48 +217,97 @@ class OnboardDirectorVoiceService {
     }
 
     // 2. Direct REST API Fallback
+    if (apiKey) {
+      for (const model of modelsToTry) {
+        if (signal.aborted) return null;
+        try {
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const res = await fetch(endpoint, {
+            method: "POST",
+            signal,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: "Zephyr" },
+                  },
+                },
+              },
+            }),
+          });
+
+          if (!res.ok) continue;
+
+          const json = await res.json();
+          const candidate = json?.candidates?.[0];
+          const part = candidate?.content?.parts?.[0];
+
+          if (part && part.inlineData?.data) {
+            return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
+          }
+        } catch (restErr: any) {
+          if (restErr?.name === "AbortError") throw restErr;
+        }
+      }
+    }
+
+    // 3. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY)
     for (const model of modelsToTry) {
       if (signal.aborted) return null;
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await fetch(endpoint, {
+        const proxyRes = await fetch("/api/runtime/execute", {
           method: "POST",
           signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
+            provider: "google",
+            endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            payload: {
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: "Zephyr" },
                   },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: "Zephyr" },
                 },
               },
             },
           }),
         });
 
-        if (!res.ok) continue;
+        if (!proxyRes.ok) continue;
 
-        const json = await res.json();
+        const json = await proxyRes.json();
         const candidate = json?.candidates?.[0];
         const part = candidate?.content?.parts?.[0];
 
         if (part && part.inlineData?.data) {
           return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
         }
-      } catch (restErr: any) {
-        if (restErr?.name === "AbortError") throw restErr;
+      } catch (pErr: any) {
+        if (pErr?.name === "AbortError") throw pErr;
       }
     }
 

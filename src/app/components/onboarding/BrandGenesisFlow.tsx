@@ -1572,6 +1572,26 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
       }
     });
 
+    // Check if brand already has a custom saved voice
+    if (auth.brand?.id) {
+      void import("../../backend/workspaceSync").then(({ hydrateWorkspace }) => {
+        void hydrateWorkspace(auth.brand!.id).then((snap) => {
+          if (snap?.character?.voice?.voiceId) {
+            const savedVoice = snap.character.voice;
+            const customVoiceSummary: ElevenLabsVoiceSummary = {
+              voiceId: savedVoice.voiceId || "",
+              name: savedVoice.name || "Custom Voice",
+              category: "custom",
+              description: savedVoice.description || "Custom brand narrator",
+              accent: savedVoice.name,
+              gender: "custom",
+            };
+            setVoicesList((prev) => [customVoiceSummary, ...prev.filter((v) => v.voiceId !== savedVoice.voiceId)]);
+          }
+        });
+      });
+    }
+
     if (typeof localStorage !== "undefined") {
       const savedState = localStorage.getItem("spark_onboarding_resume_state");
       const storedTokens = socialConnectorFramework.getStoredTokens();
@@ -1745,8 +1765,11 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
   // Real ElevenLabs Audio Sample Play Handler
   const handlePlayVoice = async (voiceId: string) => {
     if (previewAudio) {
-      previewAudio.pause();
-      previewAudio.currentTime = 0;
+      try {
+        previewAudio.pause();
+        previewAudio.currentTime = 0;
+      } catch {}
+      setPreviewAudio(null);
     }
 
     if (playingVoiceId === voiceId) {
@@ -1754,21 +1777,42 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       return;
     }
 
+    setPlayingVoiceId(voiceId);
+
     try {
-      const audioUrl = await previewElevenLabsVoice(voiceId);
+      const voiceObj = voicesList.find((v) => v.voiceId === voiceId);
+      let audioUrl = voiceObj?.previewUrl;
+
+      if (!audioUrl) {
+        audioUrl = (await previewElevenLabsVoice(voiceId)) || undefined;
+      }
+
       if (!audioUrl) {
         setPlayingVoiceId(null);
         return;
       }
+
       const audio = new Audio(audioUrl);
       setPreviewAudio(audio);
-      setPlayingVoiceId(voiceId);
 
-      audio.onended = () => setPlayingVoiceId(null);
-      audio.onerror = () => setPlayingVoiceId(null);
-      audio.play().catch(() => setPlayingVoiceId(null));
-    } catch {
+      audio.onended = () => {
+        setPlayingVoiceId(null);
+        setPreviewAudio(null);
+      };
+      audio.onerror = () => {
+        setPlayingVoiceId(null);
+        setPreviewAudio(null);
+      };
+
+      await audio.play().catch((playErr) => {
+        console.warn("[BrandGenesisFlow] Audio playback error:", playErr);
+        setPlayingVoiceId(null);
+        setPreviewAudio(null);
+      });
+    } catch (err) {
+      console.warn("[BrandGenesisFlow] handlePlayVoice error:", err);
       setPlayingVoiceId(null);
+      setPreviewAudio(null);
     }
   };
 
@@ -1795,7 +1839,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
     setChatThinking(true);
 
     // If user describes a custom voice on frame 4
-    if (frame === 4 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound"))) {
+    if (frame === 4 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound") || msg.toLowerCase().includes("narrator") || msg.toLowerCase().includes("tone") || msg.toLowerCase().includes("accent"))) {
       try {
         const preview = await designElevenLabsVoice({
           description: msg,
@@ -1808,8 +1852,43 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
             voiceDescription: msg,
             generatedVoiceId: first.generated_voice_id,
           });
-          if (created && created.voice_id) {
-            update({ selectedVoice: "Custom Voice", selectedVoiceId: created.voice_id });
+          const customVoiceId = created?.voice_id || first.generated_voice_id;
+          if (customVoiceId) {
+            const customVoiceObj = {
+              voiceId: customVoiceId,
+              name: "Custom " + (data.brandName || "Voice"),
+              category: "custom",
+              description: msg,
+              previewUrl: first.previewUrl,
+              accent: "Custom Designed",
+              gender: "custom",
+            };
+            setVoicesList((prev) => [customVoiceObj, ...prev.filter((v) => v.voiceId !== customVoiceId)]);
+            update({
+              selectedVoice: customVoiceObj.name,
+              selectedVoiceId: customVoiceId,
+            });
+            if (auth.brand?.id) {
+              void import("../../backend/workspaceSync").then(({ persistCharacterUpdate }) => {
+                void persistCharacterUpdate(auth.brand!.id, {
+                  name: data.creatorName || "Lead Host",
+                  role: "Lead Host",
+                  style: `${data.characterGenre || "Realistic"} — representing ${data.brandName || "SPARK"}`,
+                  avatarUrl: data.characterSheetUrl || null,
+                  imageUrl: data.characterSheetUrl || null,
+                  characterSheetUrl: data.characterSheetUrl || null,
+                  traits: ["Visionary", "Charismatic", "Authority"],
+                  voice: {
+                    name: customVoiceObj.name,
+                    language: "English",
+                    tone: "Custom",
+                    locked: true,
+                    voiceId: customVoiceId,
+                    description: msg,
+                  },
+                });
+              });
+            }
           }
         }
       } catch (e) {
@@ -2061,7 +2140,22 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
                     <div className="space-y-1.5">
                       <button
-                        onClick={() => go(frame + 1)}
+                        onClick={() => {
+                          if (frame === 1) {
+                            const firstPlatform = data.connectedPlatforms[0];
+                            let nextBrand = data.brandName;
+                            let nextCreator = data.creatorName;
+                            if (firstPlatform && data.connectedHandles[firstPlatform]) {
+                              const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
+                              if (!nextCreator) nextCreator = handleClean;
+                              if (!nextBrand) nextBrand = handleClean.toLowerCase().endsWith("media") || handleClean.toLowerCase().endsWith("studio") ? handleClean : `${handleClean} Studio`;
+                            }
+                            if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
+                              update({ brandName: nextBrand, creatorName: nextCreator });
+                            }
+                          }
+                          go(frame + 1);
+                        }}
                         type="button"
                         disabled={!canContinue()}
                         className="w-full py-4 rounded-2xl bg-purple-600 text-white text-sm font-bold tracking-wide hover:bg-purple-500 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_24px_rgba(168,85,247,0.3)]"
@@ -2071,7 +2165,22 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
                       {[1, 3, 4, 5].includes(frame) && (
                         <button
                           type="button"
-                          onClick={() => go(frame + 1)}
+                          onClick={() => {
+                            if (frame === 1) {
+                              const firstPlatform = data.connectedPlatforms[0];
+                              let nextBrand = data.brandName;
+                              let nextCreator = data.creatorName;
+                              if (firstPlatform && data.connectedHandles[firstPlatform]) {
+                                const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
+                                if (!nextCreator) nextCreator = handleClean;
+                                if (!nextBrand) nextBrand = handleClean.toLowerCase().endsWith("media") || handleClean.toLowerCase().endsWith("studio") ? handleClean : `${handleClean} Studio`;
+                              }
+                              if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
+                                update({ brandName: nextBrand, creatorName: nextCreator });
+                              }
+                            }
+                            go(frame + 1);
+                          }}
                           className="w-full py-2.5 text-xs text-white/28 hover:text-white/50 transition-colors text-center"
                         >
                           {frame === 1 ? "Continue without connecting" : "Skip"}

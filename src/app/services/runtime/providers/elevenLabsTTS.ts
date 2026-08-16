@@ -88,49 +88,80 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
 ];
 
 /**
- * Fetch available voices from ElevenLabs API or fallback to curated list
+ * Fetch available voices from ElevenLabs API (direct or server proxy) or fallback to curated list
  */
 export async function getElevenLabsVoices(customKey?: string): Promise<{ voices: ElevenLabsVoiceSummary[]; isLiveApi: boolean }> {
   const apiKey = customKey || resolveProviderKey("elevenlabs");
-  if (!apiKey) {
-    return { voices: FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: false };
+
+  // 1. Direct client fetch if key is present
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.elevenlabs.io/v1/voices", {
+        method: "GET",
+        headers: {
+          "xi-api-key": apiKey,
+          Accept: "application/json",
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.voices && Array.isArray(data.voices)) {
+          const mapped: ElevenLabsVoiceSummary[] = data.voices.map((v: any) => ({
+            voiceId: v.voice_id,
+            name: v.name,
+            category: v.category || "library",
+            labels: v.labels || {},
+            description: v.description || (v.labels ? Object.values(v.labels).join(" · ") : "Narrator Voice"),
+            previewUrl: v.preview_url || undefined,
+            accent: v.labels?.accent ? `${v.labels.accent} (${v.labels?.gender || "Voice"})` : v.name,
+            gender: v.labels?.gender || "neutral",
+          }));
+          if (mapped.length > 0) {
+            return { voices: mapped, isLiveApi: true };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[ElevenLabs] Direct voices fetch error:", err);
+    }
   }
 
+  // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side ELEVENLABS_API_KEY)
   try {
-    const res = await fetch("https://api.elevenlabs.io/v1/voices", {
-      method: "GET",
-      headers: {
-        "xi-api-key": apiKey,
-        Accept: "application/json",
-      },
+    const proxyRes = await fetch("/api/runtime/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "elevenlabs",
+        endpoint: "https://api.elevenlabs.io/v1/voices",
+        method: "GET",
+      }),
     });
 
-    if (!res.ok) {
-      console.warn("[ElevenLabs] Voices fetch notice:", res.status);
-      return { voices: FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: false };
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      if (data?.voices && Array.isArray(data.voices)) {
+        const mapped: ElevenLabsVoiceSummary[] = data.voices.map((v: any) => ({
+          voiceId: v.voice_id,
+          name: v.name,
+          category: v.category || "library",
+          labels: v.labels || {},
+          description: v.description || (v.labels ? Object.values(v.labels).join(" · ") : "Narrator Voice"),
+          previewUrl: v.preview_url || undefined,
+          accent: v.labels?.accent ? `${v.labels.accent} (${v.labels?.gender || "Voice"})` : v.name,
+          gender: v.labels?.gender || "neutral",
+        }));
+        if (mapped.length > 0) {
+          return { voices: mapped, isLiveApi: true };
+        }
+      }
     }
-
-    const data = await res.json();
-    if (!data?.voices || !Array.isArray(data.voices)) {
-      return { voices: FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: false };
-    }
-
-    const mapped: ElevenLabsVoiceSummary[] = data.voices.map((v: any) => ({
-      voiceId: v.voice_id,
-      name: v.name,
-      category: v.category || "library",
-      labels: v.labels || {},
-      description: v.description || (v.labels ? Object.values(v.labels).join(" · ") : "Custom Voice"),
-      previewUrl: v.preview_url || undefined,
-      accent: v.labels?.accent ? `${v.labels.accent} (${v.labels?.gender || "Voice"})` : v.name,
-      gender: v.labels?.gender || "neutral",
-    }));
-
-    return { voices: mapped.length > 0 ? mapped : FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: true };
-  } catch (err) {
-    console.warn("[ElevenLabs] Voices listing error:", err);
-    return { voices: FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: false };
+  } catch (proxyErr) {
+    console.warn("[ElevenLabs] Server proxy voices listing error:", proxyErr);
   }
+
+  return { voices: FALLBACK_CURATED_ELEVENLABS_VOICES, isLiveApi: false };
 }
 
 /**
@@ -252,7 +283,6 @@ export async function generateElevenLabsVoice(
   customKey?: string
 ): Promise<string | null> {
   const apiKey = customKey || resolveProviderKey("elevenlabs");
-  if (!apiKey || !text?.trim()) return null;
 
   const id = voiceId || SPARK_EXECUTIVE_VOICE_PROFILE.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM";
   const clean = text
@@ -265,48 +295,83 @@ export async function generateElevenLabsVoice(
 
   if (!clean) return null;
 
-  try {
-    if (signal?.aborted) {
-      const err = new Error("Generation cancelled by executive");
-      err.name = "AbortError";
-      throw err;
-    }
+  if (signal?.aborted) {
+    const err = new Error("Generation cancelled by executive");
+    err.name = "AbortError";
+    throw err;
+  }
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}`, {
+  // 1. Direct client call if key available
+  if (apiKey) {
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}`, {
+        method: "POST",
+        signal,
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: clean,
+          model_id: modelId || "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.45,
+            similarity_boost: 0.75,
+            style: 0.35,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        console.warn("[ElevenLabsTTS] Direct API notice:", res.status);
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") throw err;
+      console.warn("[ElevenLabsTTS] Direct fetch notice:", err);
+    }
+  }
+
+  // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side ELEVENLABS_API_KEY)
+  try {
+    const proxyRes = await fetch("/api/runtime/execute", {
       method: "POST",
       signal,
-      headers: {
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-        Accept: "audio/mpeg",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: clean,
-        model_id: modelId || "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.75,
-          style: 0.35,
-          use_speaker_boost: true,
+        provider: "elevenlabs",
+        endpoint: `https://api.elevenlabs.io/v1/text-to-speech/${id}`,
+        payload: {
+          text: clean,
+          model_id: modelId || "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.45,
+            similarity_boost: 0.75,
+            style: 0.35,
+            use_speaker_boost: true,
+          },
         },
       }),
     });
 
-    if (!res.ok) {
-      console.warn("[ElevenLabsTTS] API notice:", res.status, await res.text().catch(() => ""));
-      return null;
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      if (data.dataUrl) return data.dataUrl;
+      if (data.audioBase64) return `data:audio/mpeg;base64,${data.audioBase64}`;
     }
-
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch (err) {
-    if ((err as any)?.name === "AbortError") throw err;
-    console.warn("[ElevenLabsTTS] Provider notice:", err);
-    return null;
+  } catch (proxyErr: any) {
+    if (proxyErr?.name === "AbortError") throw proxyErr;
+    console.warn("[ElevenLabsTTS] Server proxy notice:", proxyErr);
   }
+
+  return null;
 }

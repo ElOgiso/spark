@@ -1523,7 +1523,24 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
                 variant="accent"
                 size="md"
                 fullWidth
-                onClick={() => setCurrentStep(2)}
+                onClick={() => {
+                  setFormData((prev) => {
+                    let nextBrand = prev.brandName;
+                    let nextCreator = prev.creatorName;
+                    const firstConnected = Object.values(prev.connectedAccounts || {})[0];
+                    if (firstConnected && firstConnected.handle) {
+                      const cleanHandle = firstConnected.handle.replace(/^@/, "");
+                      if (!nextCreator) nextCreator = cleanHandle;
+                      if (!nextBrand) nextBrand = cleanHandle.toLowerCase().endsWith("media") ? cleanHandle : `${cleanHandle} Media`;
+                    }
+                    return {
+                      ...prev,
+                      brandName: nextBrand,
+                      creatorName: nextCreator,
+                    };
+                  });
+                  setCurrentStep(2);
+                }}
                 icon={<ArrowRight className="w-4 h-4" />}
               >
                 {connectedAccountsList.length > 0 ? "Continue to Brand & Niche →" : "Continue to Brand Setup →"}

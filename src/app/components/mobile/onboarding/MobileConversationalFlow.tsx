@@ -711,7 +711,17 @@ Masterclass character turnaround sheet, ultra-crisp studio lighting, high consis
               <div className="text-center pt-1">
                 <button
                   type="button"
-                  onClick={() => setStep("brand")}
+                  onClick={() => {
+                    if (!brandName || !creatorName) {
+                      const firstConnected = Object.values(connectedAccounts)[0];
+                      if (firstConnected && firstConnected.handle) {
+                        const cleanHandle = firstConnected.handle.replace(/^@/, "");
+                        if (!creatorName) setCreatorName(cleanHandle);
+                        if (!brandName) setBrandName(cleanHandle.toLowerCase().endsWith("media") ? cleanHandle : `${cleanHandle} Media`);
+                      }
+                    }
+                    setStep("brand");
+                  }}
                   className="text-xs text-muted-foreground underline underline-offset-4"
                 >
                   Set up brand without connecting →
@@ -1329,7 +1339,17 @@ Masterclass character turnaround sheet, ultra-crisp studio lighting, high consis
           {step === "connect" && (
             <button
               type="button"
-              onClick={() => setStep("brand")}
+              onClick={() => {
+                if (!brandName || !creatorName) {
+                  const firstConnected = Object.values(connectedAccounts)[0];
+                  if (firstConnected && firstConnected.handle) {
+                    const cleanHandle = firstConnected.handle.replace(/^@/, "");
+                    if (!creatorName) setCreatorName(cleanHandle);
+                    if (!brandName) setBrandName(cleanHandle.toLowerCase().endsWith("media") ? cleanHandle : `${cleanHandle} Media`);
+                  }
+                }
+                setStep("brand");
+              }}
               className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-purple-600/25 active:scale-[0.98] transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer"
             >
               <span>{Object.keys(connectedAccounts).length > 0 ? "Continue to Brand →" : "Continue without Connecting →"}</span>
