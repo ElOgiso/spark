@@ -159,15 +159,26 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       if (storedTokens && typeof storedTokens === "object") {
         Object.values(storedTokens).forEach((tok: any) => {
           if (tok && tok.platform) {
+            let realHandle = (tok.handle || tok.accountHandle || "").trim();
+            if (realHandle === "@connected" || realHandle === "connected") {
+              realHandle = "";
+            }
+            if (!realHandle && tok.displayName) {
+              realHandle = `@${tok.displayName.replace(/\s+/g, "").toLowerCase()}`;
+            }
+            if (realHandle && !realHandle.startsWith("@")) {
+              realHandle = `@${realHandle}`;
+            }
+
             connectedAccountsMap[tok.platform] = {
-              handle: tok.accountHandle || "@connected",
+              handle: realHandle || (tok.platform.toLowerCase().includes("youtube") ? "@youtube" : "@x"),
               connected: true,
             };
-            if (tok.accountHandle && !hydratedCreatorName) {
-              hydratedCreatorName = tok.accountHandle.replace(/^@/, "");
+            if (!hydratedCreatorName && (tok.displayName || realHandle)) {
+              hydratedCreatorName = tok.displayName || realHandle.replace(/^@/, "");
             }
-            if (tok.accountHandle && !hydratedBrandName) {
-              const base = tok.accountHandle.replace(/^@/, "");
+            if (!hydratedBrandName && (tok.displayName || realHandle)) {
+              const base = tok.displayName || realHandle.replace(/^@/, "");
               hydratedBrandName = base.toLowerCase().endsWith("media") ? base : `${base} Media`;
             }
           }

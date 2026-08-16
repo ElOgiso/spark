@@ -163,11 +163,11 @@ export async function bootstrapUserSession(
     // 5) Determine onboarding completeness from CLOUD source of truth
     let isComplete = profile.onboarding_complete === true;
 
-    // Cloud auto-repair: if user already has an existing configured brand but profile flag was false
+    // Cloud auto-repair: if user already has an existing configured brand in Supabase but profile flag was false
     if (!isComplete && brands.length > 0) {
       const hasConfiguredBrand = brands.some((b) => {
         const name = (b.name || "").trim().toLowerCase();
-        return name !== "" && name !== "my brand" && name !== "spark";
+        return name !== "" && name !== "spark" && (profile.active_brand_id === b.id || name !== "my brand");
       });
       if (hasConfiguredBrand) {
         isComplete = true;

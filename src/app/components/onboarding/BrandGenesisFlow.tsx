@@ -919,7 +919,7 @@ function FrameConnect({
                   {!live && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/8 text-white/32 border border-white/10">Soon</span>}
                 </div>
                 <p className="text-[11px] text-white/30 mt-0.5">
-                  {connected ? `Connected · ${data.connectedHandles[id] || "@connected"}` : isConnecting ? "Connecting…" : live ? "Tap to connect" : "Available soon in Accounts"}
+                  {connected ? `Connected · ${data.connectedHandles[id] || "Account linked"}` : isConnecting ? "Connecting…" : live ? "Tap to connect" : "Available soon in Accounts"}
                 </p>
               </div>
               {connected && <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />}
@@ -1576,12 +1576,36 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
       const savedState = localStorage.getItem("spark_onboarding_resume_state");
       const storedTokens = socialConnectorFramework.getStoredTokens();
       const connectedAccountsMap: Record<string, string> = {};
+      let autoBrandName = "";
+      let autoCreatorName = "";
 
       if (storedTokens && typeof storedTokens === "object") {
         Object.values(storedTokens).forEach((tok: any) => {
           if (tok && tok.platform) {
-            const pid = tok.platform.toLowerCase().includes("youtube") ? "youtube" : "x";
-            connectedAccountsMap[pid] = tok.accountHandle || "@connected";
+            const isYt = tok.platform.toLowerCase().includes("youtube");
+            const pid = isYt ? "youtube" : "x";
+
+            let realHandle = (tok.handle || tok.accountHandle || "").trim();
+            if (realHandle === "@connected" || realHandle === "connected") {
+              realHandle = "";
+            }
+            if (!realHandle && tok.displayName) {
+              realHandle = `@${tok.displayName.replace(/\s+/g, "").toLowerCase()}`;
+            }
+            if (realHandle && !realHandle.startsWith("@")) {
+              realHandle = `@${realHandle}`;
+            }
+
+            if (realHandle) {
+              connectedAccountsMap[pid] = realHandle;
+            }
+
+            if (!autoCreatorName && (tok.displayName || realHandle)) {
+              autoCreatorName = tok.displayName || realHandle.replace(/^@/, "");
+            }
+            if (!autoBrandName && (tok.displayName || realHandle)) {
+              autoBrandName = tok.displayName || realHandle.replace(/^@/, "");
+            }
           }
         });
       }
@@ -1592,6 +1616,8 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
           setData((prev) => ({
             ...prev,
             ...parsed,
+            brandName: parsed.brandName || prev.brandName || autoBrandName,
+            creatorName: parsed.creatorName || prev.creatorName || autoCreatorName,
             connectedPlatforms: Array.from(new Set([...(parsed.connectedPlatforms || []), ...Object.keys(connectedAccountsMap)])),
             connectedHandles: { ...(parsed.connectedHandles || {}), ...connectedAccountsMap },
           }));
@@ -1604,6 +1630,8 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
       } else if (Object.keys(connectedAccountsMap).length > 0) {
         setData((prev) => ({
           ...prev,
+          brandName: prev.brandName || autoBrandName,
+          creatorName: prev.creatorName || autoCreatorName,
           connectedPlatforms: Array.from(new Set([...prev.connectedPlatforms, ...Object.keys(connectedAccountsMap)])),
           connectedHandles: { ...prev.connectedHandles, ...connectedAccountsMap },
         }));
@@ -1823,11 +1851,14 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
   // Final Completion Handler
   const handleFinalCompletion = async () => {
-    const connectedAccounts = data.connectedPlatforms.map((pid) => ({
-      platform: pid === "youtube" ? "YouTube Shorts" : pid === "x" ? "Twitter/X" : pid,
-      username: data.connectedHandles[pid] || "@connected",
-      connected: true,
-    }));
+    const connectedAccounts = data.connectedPlatforms.map((pid) => {
+      const realHandle = data.connectedHandles[pid] || (pid === "youtube" ? "@youtube" : "@x");
+      return {
+        platform: pid === "youtube" ? "YouTube Shorts" : pid === "x" ? "Twitter/X" : pid,
+        username: realHandle,
+        connected: true,
+      };
+    });
 
     const prodModeMapped: ProductionMode =
       data.productionMode === "Cinematic" ? "deep" : data.productionMode === "Narrator" ? "express" : "standard";
@@ -1858,7 +1889,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
     };
 
     try {
-      initializeBrandGenesis(genesisData);
+      await initializeBrandGenesis(genesisData);
       await auth.markOnboardingComplete(auth.brand?.id);
     } catch (persistErr) {
       console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);

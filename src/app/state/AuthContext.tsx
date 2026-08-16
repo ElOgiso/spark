@@ -68,8 +68,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Synchronously evaluate active user from session, demoUser state, or localStorage
   const currentUser = useMemo(() => {
-    return session?.user ?? demoUser ?? getStoredDemoUser();
-  }, [session, demoUser]);
+    if (session?.user) return session.user;
+    if (!isConfigured) return demoUser ?? getStoredDemoUser();
+    return null;
+  }, [session, demoUser, isConfigured]);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -78,7 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!nextSession?.user) {
       setProfile(null);
       setBrand(null);
-      return;
+      setIsOnboardingComplete(false);
+      return null;
     }
 
     const result = await bootstrapUserSession(nextSession.user);
@@ -99,10 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isComplete = Boolean(result.isOnboardingComplete);
     setIsOnboardingComplete(isComplete);
 
-    // Mirror to localStorage as cache only
-    try {
-      localStorage.setItem("spark_onboarding_complete", isComplete ? "true" : "false");
-    } catch {}
+    return result;
   }, []);
 
   const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
@@ -326,16 +326,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (targetUserId && isConfigured) {
       try {
-        await markProfileOnboardingComplete(targetUserId, targetBrandId);
+        const res = await markProfileOnboardingComplete(targetUserId, targetBrandId);
+        if (res.data) {
+          setProfile(res.data);
+        }
       } catch (err) {
         console.warn("[Spark Auth] markProfileOnboardingComplete notice:", err);
       }
     }
 
     setIsOnboardingComplete(true);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("spark_onboarding_complete", "true");
-    }
   }, [currentUser, session, isConfigured, brand]);
 
   const updateProfile = useCallback((displayName: string, email?: string) => {

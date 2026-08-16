@@ -21,6 +21,7 @@ import { SplashReel } from "./components/splash/SplashReel";
 import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
+import { getBrandWorkspaceId } from "./services/socialIntegrationService";
 
 const requireAuth = import.meta.env.VITE_REQUIRE_AUTH === "true";
 
@@ -38,9 +39,8 @@ export type ViewState =
  */
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
-  const hasUser = auth.isAuthenticated || Boolean(getStoredDemoUser());
   if (auth.loading) return <HydrationSplash />;
-  if (hasUser) return null; // Authority check: never render public auth view if authenticated!
+  if (auth.isAuthenticated) return null; // Authority check: never render public auth view if authenticated!
   return <>{children}</>;
 }
 
@@ -49,9 +49,8 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
  */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
-  const hasUser = auth.isAuthenticated || Boolean(getStoredDemoUser());
   if (auth.loading) return <HydrationSplash />;
-  if (!hasUser) return null; // Authority check: never render protected view if unauthenticated!
+  if (!auth.isAuthenticated) return null; // Authority check: never render protected view if unauthenticated!
   return <>{children}</>;
 }
 
@@ -186,7 +185,7 @@ function AppContent() {
     }
   }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete]);
 
-  const handleAuthSuccess = (email?: string, name?: string, mode?: "signin" | "signup") => {
+  const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
     if (email || name) {
       const creatorName = name || email?.split("@")[0] || "Creator";
       setGenesisData((prev) => ({
@@ -198,18 +197,22 @@ function AppContent() {
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
-    if (auth.isOnboardingComplete || mode === "signin" || Boolean(auth.brand?.id)) {
+    if (auth.loading) {
+      await auth.refreshSession();
+    }
+    if (auth.isOnboardingComplete || mode === "signin" || Boolean(auth.brand?.id && auth.brand.name && auth.brand.name !== "My Brand")) {
       setViewState("dashboard");
     } else {
-      setViewState("onboarding");
+      setViewState(auth.isOnboardingComplete ? "dashboard" : "onboarding");
     }
   };
 
   const handleEnterDashboard = async (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName || "Creator");
-    initializeBrandGenesis(finalData);
-    await auth.markOnboardingComplete(auth.brand?.id);
+    await initializeBrandGenesis(finalData);
+    const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
+    await auth.markOnboardingComplete(targetBrandId);
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }

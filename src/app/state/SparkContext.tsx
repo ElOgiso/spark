@@ -403,23 +403,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
             memoryItems:
-              snap.memoryItems && snap.memoryItems.length > 0 ? snap.memoryItems : prev.memoryItems,
+              snap.brand ? (snap.memoryItems || []) : (snap.memoryItems?.length ? snap.memoryItems : prev.memoryItems),
             viralSparks:
-              snap.viralSparks && snap.viralSparks.length > 0 ? snap.viralSparks : prev.viralSparks,
+              snap.brand ? (snap.viralSparks || []) : (snap.viralSparks?.length ? snap.viralSparks : prev.viralSparks),
             productions:
-              snap.productions && snap.productions.length > 0 ? snap.productions : prev.productions,
+              snap.brand ? (snap.productions || []) : (snap.productions?.length ? snap.productions : prev.productions),
             reviewItems:
-              snap.reviewItems && snap.reviewItems.length > 0 ? snap.reviewItems : prev.reviewItems,
+              snap.brand ? (snap.reviewItems || []) : (snap.reviewItems?.length ? snap.reviewItems : prev.reviewItems),
             publishJobs:
-              snap.publishJobs && snap.publishJobs.length > 0 ? snap.publishJobs : prev.publishJobs,
+              snap.brand ? (snap.publishJobs || []) : (snap.publishJobs?.length ? snap.publishJobs : prev.publishJobs),
             analyticsInsights:
-              snap.analyticsInsights && snap.analyticsInsights.length > 0
-                ? snap.analyticsInsights
-                : prev.analyticsInsights,
+              snap.brand ? (snap.analyticsInsights || []) : (snap.analyticsInsights?.length ? snap.analyticsInsights : prev.analyticsInsights),
             researchSources:
-              snap.researchSources?.length ? snap.researchSources : prev.researchSources || [],
+              snap.brand ? (snap.researchSources || []) : (snap.researchSources?.length ? snap.researchSources : prev.researchSources || []),
             researchPatterns:
-              snap.researchPatterns?.length ? snap.researchPatterns : prev.researchPatterns || [],
+              snap.brand ? (snap.researchPatterns || []) : (snap.researchPatterns?.length ? snap.researchPatterns : prev.researchPatterns || []),
           };
 
           savePersistedState(merged, activeBrandId);
@@ -602,7 +600,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const initializeBrandGenesis = (data: any) => {
+  const initializeBrandGenesis = async (data: any) => {
     const brandName = data.brandName || "My Brand";
     const creatorName = data.creatorName || "Creator";
     const niche = data.niche || "Content Creation";
@@ -781,13 +779,31 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    let brandId = auth.brand?.id || getBrandWorkspaceId();
+    if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
+      try {
+        const { ensureDefaultBrand } = await import("../backend/repositories/brandRepository");
+        const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
+          name: brandName,
+          niche: niche,
+          purpose: vision,
+        });
+        if (defaultBrandRes.data?.id) {
+          brandId = defaultBrandRes.data.id;
+          localStorage.setItem("spark_current_brand_id", brandId);
+        }
+      } catch (err) {
+        console.warn("[SparkContext] ensureDefaultBrand fallback notice:", err);
+      }
+    }
+
     if (brandId && isUuid(brandId)) {
       if (initialMemoryItems[0]) {
         void persistMemoryCreate(brandId, initialMemoryItems[0]);
       }
-      void import("../backend/workspaceSync").then(({ persistBrandUpdate, persistCharacterUpdate }) => {
-        void persistBrandUpdate(brandId, {
+      try {
+        const { persistBrandUpdate, persistCharacterUpdate } = await import("../backend/workspaceSync");
+        await persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
           purpose: vision,
@@ -801,7 +817,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           review_required: reviewRequired,
         });
 
-        void persistCharacterUpdate(brandId, {
+        await persistCharacterUpdate(brandId, {
           name: creatorName,
           role: "Lead Host",
           style: `${visualStyle} — ${creatorName} representing ${brandName}`,
@@ -818,11 +834,26 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             description: data.voiceProfile?.accent || data.voiceProfile?.description,
           },
         });
-      });
+
+        // Persist connected accounts to cloud
+        if (data.connectedAccounts && Array.isArray(data.connectedAccounts)) {
+          for (const acc of data.connectedAccounts) {
+            if (acc && acc.connected && acc.username) {
+              void persistAccountToken(brandId, {
+                platform: acc.platform,
+                handle: acc.username,
+                status: "connected",
+              });
+            }
+          }
+        }
+      } catch (persistErr) {
+        console.warn("[SparkContext] initializeBrandGenesis persist error:", persistErr);
+      }
     }
 
-    // ALWAYS mark onboarding complete — with or without UUID brand ID
-    void auth.markOnboardingComplete(brandId);
+    // ALWAYS mark onboarding complete in Supabase profiles
+    await auth.markOnboardingComplete(brandId);
   };
 
   const updateAutomationMode = (mode: AutomationMode) => {

@@ -1,5 +1,0 @@
-User-agent: *
-# SPARK private operating surface — index only public legal pages when published
-Disallow: /
-Allow: /terms
-Allow: /privacy
