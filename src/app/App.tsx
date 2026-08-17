@@ -40,7 +40,7 @@ export type ViewState =
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   if (auth.loading) return <HydrationSplash />;
-  if (auth.isAuthenticated) return null; // Authority check: never render public auth view if authenticated!
+  if (auth.isAuthenticated) return <HydrationSplash />; // Transition safely to dashboard without flashing blank
   return <>{children}</>;
 }
 
@@ -50,7 +50,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   if (auth.loading) return <HydrationSplash />;
-  if (!auth.isAuthenticated) return null; // Authority check: never render protected view if unauthenticated!
+  if (!auth.isAuthenticated) return <HydrationSplash />; // Transition safely to auth view without flashing blank
   return <>{children}</>;
 }
 

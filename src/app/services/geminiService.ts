@@ -490,87 +490,142 @@ function pcmToWavDataUrl(base64Pcm: string, sampleRate: number = 24000, numChann
 
 async function generateGeminiVoice(text: string, voiceName: string = SPARK_EXECUTIVE_VOICE_PROFILE.voiceId): Promise<string | null> {
   const apiKey = resolveProviderKey("gemini");
-  if (!apiKey || !text?.trim()) return null;
-
   const cleanedText = text.slice(0, 600).trim();
   if (!cleanedText) return null;
 
-  // 1. Try @google/genai SDK
-  try {
-    const { GoogleGenAI, Modality } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any, Modality: null as any }));
-    if (GoogleGenAI) {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
+  // 1. Direct client call if key is available in localStorage / environment
+  if (apiKey) {
+    // 1a. Try @google/genai SDK
+    try {
+      const { GoogleGenAI, Modality } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any, Modality: null as any }));
+      if (GoogleGenAI) {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+        });
 
-      const response = await ai.models.generateContent({
-        model: SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel,
-        contents: [{ parts: [{ text: `Speak as Super Spark in a relaxed natural conversational female voice — warm, easygoing, not rushed, not formal narrator (${voiceName}): ${cleanedText}` }] }],
-        config: {
-          responseModalities: [Modality?.AUDIO || "AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
+        const response = await ai.models.generateContent({
+          model: SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel,
+          contents: [{ parts: [{ text: `Speak as Super Spark in a relaxed natural conversational female voice — warm, easygoing, not rushed, not formal narrator (${voiceName}): ${cleanedText}` }] }],
+          config: {
+            responseModalities: [Modality?.AUDIO || "AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
             },
           },
-        },
+        });
+
+        const candidate = response?.candidates?.[0];
+        const part = candidate?.content?.parts?.[0];
+
+        if (part && "inlineData" in part && part.inlineData?.data) {
+          const mime = (part.inlineData.mimeType || "").toLowerCase();
+          const rawData = part.inlineData.data;
+
+          if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3") || mime.includes("ogg")) {
+            return `data:${part.inlineData.mimeType || "audio/wav"};base64,${rawData}`;
+          }
+
+          let sampleRate = 24000;
+          const rateMatch = mime.match(/rate=(\d+)/);
+          if (rateMatch && rateMatch[1]) {
+            sampleRate = parseInt(rateMatch[1], 10) || 24000;
+          }
+
+          return pcmToWavDataUrl(rawData, sampleRate, 1);
+        }
+      }
+    } catch (err) {
+      console.warn("[GeminiVoice] Super Spark SDK TTS notice:", err);
+    }
+
+    // 1b. Direct REST API fallback for gemini-3.1-flash-tts-preview
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Speak as Super Spark in a relaxed natural conversational female voice — warm, easygoing, not rushed, not formal narrator (${voiceName}): ${cleanedText}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
+            },
+          },
+        }),
       });
 
-      const candidate = response?.candidates?.[0];
-      const part = candidate?.content?.parts?.[0];
-
-      if (part && "inlineData" in part && part.inlineData?.data) {
-        const mime = (part.inlineData.mimeType || "").toLowerCase();
-        const rawData = part.inlineData.data;
-
-        if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3") || mime.includes("ogg")) {
-          return `data:${part.inlineData.mimeType || "audio/wav"};base64,${rawData}`;
+      if (res.ok) {
+        const json = await res.json();
+        const candidate = json?.candidates?.[0];
+        const part = candidate?.content?.parts?.[0];
+        if (part && part.inlineData?.data) {
+          const mime = (part.inlineData.mimeType || "").toLowerCase();
+          const rawData = part.inlineData.data;
+          if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3") || mime.includes("ogg")) {
+            return `data:${part.inlineData.mimeType || "audio/wav"};base64,${rawData}`;
+          }
+          let sampleRate = 24000;
+          const rateMatch = mime.match(/rate=(\d+)/);
+          if (rateMatch && rateMatch[1]) {
+            sampleRate = parseInt(rateMatch[1], 10) || 24000;
+          }
+          return pcmToWavDataUrl(rawData, sampleRate, 1);
         }
-
-        let sampleRate = 24000;
-        const rateMatch = mime.match(/rate=(\d+)/);
-        if (rateMatch && rateMatch[1]) {
-          sampleRate = parseInt(rateMatch[1], 10) || 24000;
-        }
-
-        return pcmToWavDataUrl(rawData, sampleRate, 1);
       }
+    } catch (restErr) {
+      console.warn("[GeminiVoice] Super Spark REST TTS notice:", restErr);
     }
-  } catch (err) {
-    console.warn("[GeminiVoice] Super Spark SDK TTS notice:", err);
   }
 
-  // 2. Direct REST API fallback for gemini-3.1-flash-tts-preview
+  // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY)
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(endpoint, {
+    const proxyRes = await fetch("/api/runtime/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `Speak as Super Spark in a relaxed natural conversational female voice — warm, easygoing, not rushed, not formal narrator (${voiceName}): ${cleanedText}`,
+        provider: "gemini",
+        endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel}:generateContent`,
+        payload: {
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Speak as Super Spark in a relaxed natural conversational female voice — warm, easygoing, not rushed, not formal narrator (${voiceName}): ${cleanedText}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
               },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
             },
           },
         },
       }),
     });
 
-    if (res.ok) {
-      const json = await res.json();
-      const candidate = json?.candidates?.[0];
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      if (data.dataUrl) return data.dataUrl;
+      if (data.audioBase64) return `data:audio/wav;base64,${data.audioBase64}`;
+      const candidate = data?.candidates?.[0];
       const part = candidate?.content?.parts?.[0];
       if (part && part.inlineData?.data) {
         const mime = (part.inlineData.mimeType || "").toLowerCase();
@@ -586,8 +641,8 @@ async function generateGeminiVoice(text: string, voiceName: string = SPARK_EXECU
         return pcmToWavDataUrl(rawData, sampleRate, 1);
       }
     }
-  } catch (restErr) {
-    console.warn("[GeminiVoice] Super Spark REST TTS notice:", restErr);
+  } catch (proxyErr) {
+    console.warn("[GeminiVoice] Server proxy TTS notice:", proxyErr);
   }
 
   return null;

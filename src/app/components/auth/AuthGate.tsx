@@ -15,6 +15,14 @@ export function AuthGate({ children, requireAuth = false, fallback = null }: Aut
   const deviceType = useDeviceType();
   const [complete, setComplete] = useState(false);
 
+  if (auth.loading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <p className="text-sm text-muted-foreground font-mono animate-pulse">Restoring Executive Spark Session...</p>
+      </div>
+    );
+  }
+
   if (!requireAuth) {
     return <>{children}</>;
   }
@@ -31,14 +39,6 @@ export function AuthGate({ children, requireAuth = false, fallback = null }: Aut
         return <DesktopAuthExperience onComplete={() => setComplete(true)} />;
       }
     }
-  }
-
-  if (auth.loading) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground font-mono animate-pulse">Restoring Executive Spark Session...</p>
-      </div>
-    );
   }
 
   return <>{children}</>;
