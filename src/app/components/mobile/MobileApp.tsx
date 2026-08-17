@@ -19,21 +19,22 @@ export function MobileApp() {
   const pendingReviewsCount = productions.filter((p) => p.status === "Ready for Review").length;
 
   const handleMobileNavigate = (path: string) => {
-    if (path.startsWith("/more/")) {
-      setSubPath(path);
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    if (cleanPath.startsWith("/more/")) {
+      setSubPath(cleanPath);
       setActiveTab("more");
       return;
     }
     setSubPath(null);
-    if (path === "/review") {
+    if (cleanPath === "/review") {
       setActiveTab("review");
-    } else if (path === "/viral-sparks") {
+    } else if (cleanPath === "/viral-sparks") {
       setActiveTab("viral-sparks");
-    } else if (path === "/analytics") {
+    } else if (cleanPath === "/analytics") {
       setActiveTab("analytics");
-    } else if (path === "/my-spark") {
+    } else if (cleanPath === "/my-spark") {
       setActiveTab("my-spark");
-    } else if (path === "/more") {
+    } else if (cleanPath === "/more") {
       setActiveTab("more");
     } else {
       setActiveTab("spark");

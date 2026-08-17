@@ -1,16 +1,4 @@
-/**
- * SPARK Onboard Director Voice Service
- * 
- * Generates and speaks director speech during Brand Genesis / onboard using Gemini TTS.
- * Model: gemini-3.1-flash-tts-preview (with fail-soft fallback to 2.5-flash / 2.0-flash)
- * Voice: Zephyr (fixed default)
- * Personality: friendly, leisure, relaxed, laid-back, calm, helpful onboard guide.
- * 
- * Mute control:
- * - Persisted in localStorage ('spark_onboard_voice_muted')
- * - Immediately stops active playback and suppresses further auto-speech until unmuted.
- */
-
+import { generateElevenLabsVoice } from "../runtime/providers/elevenLabsTTS";
 import { resolveProviderKey } from "../runtime/AIProviderOrchestrator";
 
 export interface DirectorVoiceState {
@@ -26,6 +14,11 @@ class OnboardDirectorVoiceService {
   private currentAudio: HTMLAudioElement | null = null;
   private activeAbortController: AbortController | null = null;
   private listeners: Set<VoiceListener> = new Set();
+  private preloadCache: Map<string, string> = new Map();
+  private preloadingPromises: Map<string, Promise<string | null>> = new Map();
+
+  // Primary ElevenLabs guide voice ID (Rachel: calm, warm, relaxed onboard director)
+  private readonly defaultGuideVoiceId = "21m00Tcm4TlvDq8ikWAM";
 
   constructor() {
     if (typeof window !== "undefined" && window.localStorage) {
@@ -102,7 +95,32 @@ class OnboardDirectorVoiceService {
   }
 
   /**
-   * Generates and speaks director speech using Gemini TTS (model: gemini-3.1-flash-tts-preview, voice: Zephyr).
+   * Pre-fetches / warms up audio synthesis so step entry speech starts instantly
+   */
+  public async preload(text: string): Promise<void> {
+    if (!text || !text.trim()) return;
+    const cleanText = this.cleanseText(text);
+    if (!cleanText || this.preloadCache.has(cleanText)) return;
+
+    if (this.preloadingPromises.has(cleanText)) {
+      await this.preloadingPromises.get(cleanText);
+      return;
+    }
+
+    const promise = this.synthesizeAudio(cleanText).then((url) => {
+      if (url) {
+        this.preloadCache.set(cleanText, url);
+      }
+      this.preloadingPromises.delete(cleanText);
+      return url;
+    });
+
+    this.preloadingPromises.set(cleanText, promise);
+    await promise;
+  }
+
+  /**
+   * Generates and speaks director speech using ElevenLabs primary TTS with preloading cache
    */
   public async speak(text: string): Promise<void> {
     if (this.isMutedState || !text || !text.trim()) {
@@ -112,17 +130,7 @@ class OnboardDirectorVoiceService {
     // Stop any existing playback or pending generation
     this.stop();
 
-    const apiKey = resolveProviderKey("gemini");
-
-    const cleanText = text
-      .replace(/^#+\s*/gm, "")
-      .replace(/\*\*/g, "")
-      .replace(/^[-*•]\s+/gm, "")
-      .replace(/```[\s\S]*?```/g, "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/\n+/g, " ")
-      .trim();
-
+    const cleanText = this.cleanseText(text);
     if (!cleanText) return;
 
     this.activeAbortController = new AbortController();
@@ -132,7 +140,14 @@ class OnboardDirectorVoiceService {
       this.isSpeakingState = true;
       this.notify();
 
-      const audioDataUrl = await this.generateTtsAudio(cleanText, apiKey || undefined, signal);
+      let audioDataUrl: string | null = this.preloadCache.get(cleanText) || null;
+
+      if (!audioDataUrl) {
+        audioDataUrl = await this.synthesizeAudio(cleanText, signal);
+        if (audioDataUrl) {
+          this.preloadCache.set(cleanText, audioDataUrl);
+        }
+      }
 
       if (signal.aborted) return;
 
@@ -153,162 +168,106 @@ class OnboardDirectorVoiceService {
     }
   }
 
-  private async generateTtsAudio(
-    text: string,
-    apiKey: string | undefined,
-    signal: AbortSignal
-  ): Promise<string | null> {
-    const modelsToTry = [
-      "gemini-3.1-flash-tts-preview",
-      "gemini-2.5-flash-tts-preview",
-      "gemini-2.0-flash",
-    ];
+  private cleanseText(text: string): string {
+    return text
+      .replace(/^#+\s*/gm, "")
+      .replace(/\*\*/g, "")
+      .replace(/^[-*•]\s+/gm, "")
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\n+/g, " ")
+      .trim();
+  }
 
-    // 1. Try @google/genai SDK
+  private async synthesizeAudio(text: string, signal?: AbortSignal): Promise<string | null> {
+    // 1. Primary: ElevenLabs TTS (via direct key or server proxy /api/runtime/execute)
     try {
-      const { GoogleGenAI, Modality } = await import("@google/genai").catch(() => ({
-        GoogleGenAI: null as any,
-        Modality: null as any,
-      }));
+      const elevenAudio = await generateElevenLabsVoice(
+        text,
+        this.defaultGuideVoiceId,
+        "eleven_multilingual_v2",
+        signal
+      );
+      if (elevenAudio) return elevenAudio;
+    } catch (elevenErr: any) {
+      if (elevenErr?.name === "AbortError") throw elevenErr;
+      console.warn("[OnboardDirectorVoice] ElevenLabs TTS notice, trying fallback:", elevenErr);
+    }
 
-      if (GoogleGenAI) {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-        });
+    if (signal?.aborted) return null;
 
+    // 2. Fail-soft Fallback: Gemini TTS via server proxy or direct key
+    try {
+      const apiKey = resolveProviderKey("gemini");
+      const modelsToTry = ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-tts-preview", "gemini-2.0-flash"];
+
+      // 2a. Direct REST
+      if (apiKey) {
         for (const model of modelsToTry) {
-          if (signal.aborted) return null;
+          if (signal?.aborted) return null;
           try {
-            const response = await ai.models.generateContent({
-              model,
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
-                    },
-                  ],
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+            const res = await fetch(endpoint, {
+              method: "POST",
+              signal,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `Speak as the onboard guide in a friendly, relaxed, calm, helpful tone: ${text.slice(0, 500)}` }] }],
+                generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
                 },
-              ],
-              config: {
-                responseModalities: [Modality?.AUDIO || "AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Zephyr" },
-                  },
-                },
-              },
+              }),
             });
-
-            const candidate = response?.candidates?.[0];
-            const part = candidate?.content?.parts?.[0];
-
-            if (part && "inlineData" in part && part.inlineData?.data) {
-              return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
+            if (res.ok) {
+              const json = await res.json();
+              const candidate = json?.candidates?.[0];
+              const part = candidate?.content?.parts?.[0];
+              if (part && part.inlineData?.data) {
+                return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
+              }
             }
-          } catch (modelErr) {
-            console.warn(`[OnboardDirectorVoice] Model ${model} try notice:`, modelErr);
+          } catch (rErr: any) {
+            if (rErr?.name === "AbortError") throw rErr;
           }
         }
       }
-    } catch (sdkErr) {
-      console.warn("[OnboardDirectorVoice] SDK init notice:", sdkErr);
-    }
 
-    // 2. Direct REST API Fallback
-    if (apiKey) {
+      // 2b. Server Proxy
       for (const model of modelsToTry) {
-        if (signal.aborted) return null;
+        if (signal?.aborted) return null;
         try {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-          const res = await fetch(endpoint, {
+          const proxyRes = await fetch("/api/runtime/execute", {
             method: "POST",
             signal,
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Zephyr" },
-                  },
+              provider: "google",
+              endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+              payload: {
+                contents: [{ parts: [{ text: `Speak as the onboard guide in a friendly, relaxed, calm, helpful tone: ${text.slice(0, 500)}` }] }],
+                generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
                 },
               },
             }),
           });
-
-          if (!res.ok) continue;
-
-          const json = await res.json();
-          const candidate = json?.candidates?.[0];
-          const part = candidate?.content?.parts?.[0];
-
-          if (part && part.inlineData?.data) {
-            return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
+          if (proxyRes.ok) {
+            const json = await proxyRes.json();
+            const candidate = json?.candidates?.[0];
+            const part = candidate?.content?.parts?.[0];
+            if (part && part.inlineData?.data) {
+              return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
+            }
           }
-        } catch (restErr: any) {
-          if (restErr?.name === "AbortError") throw restErr;
+        } catch (pErr: any) {
+          if (pErr?.name === "AbortError") throw pErr;
         }
       }
-    }
-
-    // 3. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY)
-    for (const model of modelsToTry) {
-      if (signal.aborted) return null;
-      try {
-        const proxyRes = await fetch("/api/runtime/execute", {
-          method: "POST",
-          signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider: "google",
-            endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-            payload: {
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Speak as the onboard guide in a friendly, leisure, relaxed, laid-back, calm, helpful tone (Zephyr): ${text.slice(0, 600)}`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Zephyr" },
-                  },
-                },
-              },
-            },
-          }),
-        });
-
-        if (!proxyRes.ok) continue;
-
-        const json = await proxyRes.json();
-        const candidate = json?.candidates?.[0];
-        const part = candidate?.content?.parts?.[0];
-
-        if (part && part.inlineData?.data) {
-          return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
-        }
-      } catch (pErr: any) {
-        if (pErr?.name === "AbortError") throw pErr;
-      }
+    } catch (fallbackErr: any) {
+      if (fallbackErr?.name === "AbortError") throw fallbackErr;
+      console.warn("[OnboardDirectorVoice] Fallback audio notice:", fallbackErr);
     }
 
     return null;
@@ -316,13 +275,11 @@ class OnboardDirectorVoiceService {
 
   private formatInlineAudio(base64Data: string, mimeType?: string): string {
     const mime = (mimeType || "").toLowerCase();
-
-    // If containerized (mp3, standard wav, ogg), return base64 data URL
     if (mime.includes("mp3") || mime.includes("mpeg") || mime.includes("ogg") || mime.includes("wav")) {
       return `data:${mimeType || "audio/mp3"};base64,${base64Data}`;
     }
 
-    // Convert raw PCM (typically 24000Hz 16-bit Mono) to standard WAV base64 data URL
+    // Convert raw PCM to standard 44-byte RIFF WAV
     try {
       const binaryString = atob(base64Data);
       const len = binaryString.length;
@@ -339,14 +296,10 @@ class OnboardDirectorVoiceService {
 
       const header = new ArrayBuffer(44);
       const view = new DataView(header);
-
-      // "RIFF" chunk
-      view.setUint32(0, 0x52494646, false);
+      view.setUint32(0, 0x52494646, false); // "RIFF"
       view.setUint32(4, 36 + len, true);
       view.setUint32(8, 0x57415645, false); // "WAVE"
-
-      // "fmt " chunk
-      view.setUint32(12, 0x666d7420, false);
+      view.setUint32(12, 0x666d7420, false); // "fmt "
       view.setUint32(16, 16, true);
       view.setUint16(20, 1, true); // PCM format
       view.setUint16(22, 1, true); // Mono
@@ -354,9 +307,7 @@ class OnboardDirectorVoiceService {
       view.setUint32(28, sampleRate * 2, true);
       view.setUint16(32, 2, true);
       view.setUint16(34, 16, true); // 16 bits
-
-      // "data" chunk
-      view.setUint32(36, 0x64617461, false);
+      view.setUint32(36, 0x64617461, false); // "data"
       view.setUint32(40, len, true);
 
       const wavBytes = new Uint8Array(44 + len);
@@ -368,8 +319,7 @@ class OnboardDirectorVoiceService {
       for (let i = 0; i < wavBytes.length; i += chunkSize) {
         wavBinary += String.fromCharCode.apply(null, Array.from(wavBytes.subarray(i, i + chunkSize)));
       }
-      const wavBase64 = btoa(wavBinary);
-      return `data:audio/wav;base64,${wavBase64}`;
+      return `data:audio/wav;base64,${btoa(wavBinary)}`;
     } catch (err) {
       console.warn("[OnboardDirectorVoice] Failed to wrap PCM in WAV header:", err);
       return `data:audio/wav;base64,${base64Data}`;

@@ -225,10 +225,13 @@ function AppContent() {
       case "/":
         return <SparkHome onNavigate={setCurrentPage} />;
       case "/my-spark":
+      case "my-spark":
         return <MySpark onNavigate={setCurrentPage} />;
       case "/viral-sparks":
+      case "viral-sparks":
         return <ViralSparks onNavigate={setCurrentPage} />;
       case "/review":
+      case "review":
         return <ReviewCenter onNavigate={setCurrentPage} />;
       case "/review/creative":
         return (

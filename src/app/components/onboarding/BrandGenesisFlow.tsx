@@ -1538,12 +1538,19 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
 
   const update = (partial: Partial<GenesisInternalState>) => setData((d) => ({ ...d, ...partial }));
 
-  // Subscribe to onboard director voice updates & cleanup on unmount
+  // Subscribe to onboard director voice updates & cleanup on unmount; warm up initial speech
   useEffect(() => {
     const unsubscribe = onboardDirectorVoiceService.subscribe((state) => {
       setVoiceMuted(state.isMuted);
       setVoiceSpeaking(state.isSpeaking);
     });
+
+    // Preload first step director speech immediately on mount
+    void onboardDirectorVoiceService.preload("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.");
+    if (DIRECTORS[1]) {
+      void onboardDirectorVoiceService.preload(DIRECTORS[1]);
+    }
+
     return () => {
       unsubscribe();
       onboardDirectorVoiceService.stop();
@@ -1561,6 +1568,10 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
       void onboardDirectorVoiceService.speak("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.");
     } else if (DIRECTORS[frame]) {
       void onboardDirectorVoiceService.speak(DIRECTORS[frame]);
+      // Preload next step line
+      if (DIRECTORS[frame + 1]) {
+        void onboardDirectorVoiceService.preload(DIRECTORS[frame + 1]);
+      }
     }
   }, [frame, legalMode]);
 
