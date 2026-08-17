@@ -9,6 +9,9 @@ import { AIChatPill } from "../AIChatPill";
 import { AIChatModal } from "../AIChatModal";
 import { useState } from "react";
 
+import { getStoredTheme } from "../../theme";
+import { DonorSparkMediaHome } from "./DonorSparkMediaHome";
+
 interface ActivityItem {
   id: string;
   type: "opportunity" | "approved" | "completed" | "published" | "analytics";
@@ -21,6 +24,15 @@ interface MobileHomeProps {
 }
 
 export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
+  const currentTheme = getStoredTheme();
+  if (currentTheme === "spark_media") {
+    return <DonorSparkMediaHome onNavigate={onNavigate} />;
+  }
+
+  return <DefaultMobileHome onNavigate={onNavigate} />;
+}
+
+function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const auth = useAuth();
   const { productions, reviewItems, viralSparks, character, brand, accounts } = useSpark() as any;

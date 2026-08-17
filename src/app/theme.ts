@@ -1,4 +1,4 @@
-export type ThemeMode = "system" | "violet" | "slate" | "light";
+export type ThemeMode = "system" | "violet" | "slate" | "light" | "spark_media";
 
 export const THEME_KEY = "spark_app_theme";
 
@@ -27,13 +27,19 @@ export const THEME_OPTIONS: { id: ThemeMode; name: string; desc: string; preview
     desc: "Clean off-white studio layout with dark crisp typography and subtle borders",
     previewColor: "bg-gradient-to-r from-neutral-100 via-stone-200 to-zinc-300",
   },
+  {
+    id: "spark_media",
+    name: "Spark Media",
+    desc: "Mobile Home uses the Spark Media layout.",
+    previewColor: "bg-gradient-to-r from-fuchsia-600 via-purple-700 to-cyan-500",
+  },
 ];
 
 export function getStoredTheme(): ThemeMode {
   if (typeof window === "undefined") return "violet";
   try {
     const stored = localStorage.getItem(THEME_KEY) as ThemeMode | null;
-    if (stored && ["system", "violet", "slate", "light"].includes(stored)) {
+    if (stored && ["system", "violet", "slate", "light", "spark_media"].includes(stored)) {
       return stored;
     }
   } catch (e) {
@@ -56,7 +62,7 @@ export function applyTheme(theme: ThemeMode) {
     } else {
       root.classList.add("theme-light", "light");
     }
-  } else if (theme === "violet") {
+  } else if (theme === "violet" || theme === "spark_media") {
     root.classList.add("theme-violet", "dark");
   } else if (theme === "slate") {
     root.classList.add("theme-slate", "dark");

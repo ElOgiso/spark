@@ -218,12 +218,6 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       title: "Preferences",
       items: [
         {
-          icon: Zap,
-          label: "Production Settings",
-          badge: productionGenerationEnabled !== false ? "ON" : "OFF",
-          path: "/more/production-settings",
-        },
-        {
           icon: Palette,
           label: "Appearance & Theme",
           badge: THEME_OPTIONS.find((t) => t.id === currentTheme)?.name || "Obsidian Violet",
@@ -1185,42 +1179,6 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             </div>
           );
 
-        case "Production Settings":
-          return (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-                <div className="flex items-center justify-between border-b border-border/40 pb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">Production Generation</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Autonomous multi-scene storyboard, voiceover, and visual asset synthesis.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => toggleProductionGeneration?.()}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                      productionGenerationEnabled !== false
-                        ? "bg-success/20 text-success border-success/40"
-                        : "bg-muted/20 text-muted-foreground border-border/50"
-                    }`}
-                  >
-                    {productionGenerationEnabled !== false ? "ON" : "OFF"}
-                  </button>
-                </div>
-
-                <div className="p-3 rounded-lg border border-border/50 bg-background/50 space-y-1.5 text-xs text-muted-foreground">
-                  <p className="font-semibold text-foreground">Executive Workflow Rule:</p>
-                  <p>
-                    When <strong>ON</strong> (Default), SPARK synthesizes full multi-scene keyframes, thumbnails, and preview clips.
-                  </p>
-                  <p>
-                    When <strong>OFF</strong>, SPARK generates lightweight Production Briefs only, deferring media rendering until requested.
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-
         default:
           return null;
       }
@@ -1293,6 +1251,43 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                 ? "Demo/local mode. Sign in when backend data is needed."
                 : "Local demo mode. Supabase is not configured yet."}
           </p>
+        </div>
+      </div>
+
+      {/* Production */}
+      <div>
+        <h3 className="text-xs font-medium tracking-wide text-muted-foreground mb-3 px-1">Production</h3>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (productionGenerationEnabled) toggleProductionGeneration?.();
+              }}
+              className={`py-3 px-3.5 rounded-lg text-left transition-all ${
+                !productionGenerationEnabled
+                  ? "bg-accent text-foreground border border-accent shadow-sm"
+                  : "bg-background border border-border text-muted-foreground hover:border-border/80"
+              }`}
+            >
+              <div className="text-xs font-semibold">Off</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">no media generation</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!productionGenerationEnabled) toggleProductionGeneration?.();
+              }}
+              className={`py-3 px-3.5 rounded-lg text-left transition-all ${
+                productionGenerationEnabled
+                  ? "bg-accent text-foreground border border-accent shadow-sm"
+                  : "bg-background border border-border text-muted-foreground hover:border-border/80"
+              }`}
+            >
+              <div className="text-xs font-semibold">On</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">production generation allowed</div>
+            </button>
+          </div>
         </div>
       </div>
 

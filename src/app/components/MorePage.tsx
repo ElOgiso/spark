@@ -179,13 +179,6 @@ export function MorePage({ onNavigate }: MorePageProps) {
       title: "Preferences",
       items: [
         {
-          icon: Zap,
-          label: "Production Settings",
-          description: "Production Generation toggle (ON / OFF)",
-          meta: spark?.productionGenerationEnabled !== false ? "ON" : "OFF",
-          action: () => onNavigate("/more/production-settings"),
-        },
-        {
           icon: Bell,
           label: "Notifications",
           description: "Alert types and delivery settings",
@@ -345,6 +338,44 @@ export function MorePage({ onNavigate }: MorePageProps) {
                 Sign In
               </button>
             )}
+          </div>
+
+          {/* Production */}
+          <div>
+            <h2 className="text-xs font-medium tracking-wide text-muted-foreground mb-3">Production</h2>
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="text-sm text-muted-foreground mb-4">Controls media rendering and autonomous generation</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (spark?.productionGenerationEnabled) spark?.toggleProductionGeneration?.();
+                  }}
+                  className={`p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                    !spark?.productionGenerationEnabled
+                      ? "bg-accent/15 border-accent border-2 text-foreground shadow-sm"
+                      : "border-border hover:bg-accent/10 text-muted-foreground"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-foreground">Off</p>
+                  <p className="text-xs text-muted-foreground mt-1">no media generation</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!spark?.productionGenerationEnabled) spark?.toggleProductionGeneration?.();
+                  }}
+                  className={`p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                    spark?.productionGenerationEnabled
+                      ? "bg-accent/15 border-accent border-2 text-foreground shadow-sm"
+                      : "border-border hover:bg-accent/10 text-muted-foreground"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-foreground">On</p>
+                  <p className="text-xs text-muted-foreground mt-1">production generation allowed</p>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Automation Mode */}
