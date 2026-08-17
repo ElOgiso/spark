@@ -75,34 +75,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = Boolean(currentUser);
 
+  const inFlightBootstrapRef = React.useRef<Promise<any> | null>(null);
+
   const bootstrap = useCallback(async (nextSession: Session | null) => {
-    setSession(nextSession);
-    if (!nextSession?.user) {
-      setProfile(null);
-      setBrand(null);
-      setIsOnboardingComplete(false);
-      return null;
+    if (inFlightBootstrapRef.current) {
+      return inFlightBootstrapRef.current;
     }
 
-    const result = await bootstrapUserSession(nextSession.user);
-    setProfile(result.profile);
-    setBrand(result.brand);
-    if (result.brand?.id) {
-      localStorage.setItem("spark_current_brand_id", result.brand.id);
-      try {
-        localStorage.setItem("spark_current_brand_name", result.brand.name || "");
-      } catch {
-        /* ignore */
+    const task = (async () => {
+      setSession(nextSession);
+      if (!nextSession?.user) {
+        setProfile(null);
+        setBrand(null);
+        setIsOnboardingComplete(false);
+        return null;
       }
+
+      try {
+        const result = await bootstrapUserSession(nextSession.user);
+        setProfile(result.profile);
+        setBrand(result.brand);
+        if (result.brand?.id) {
+          localStorage.setItem("spark_current_brand_id", result.brand.id);
+          try {
+            localStorage.setItem("spark_current_brand_name", result.brand.name || "");
+          } catch {
+            /* ignore */
+          }
+        }
+        setError(result.error);
+
+        // CLOUD IS SOURCE OF TRUTH:
+        const isComplete = Boolean(result.isOnboardingComplete);
+        setIsOnboardingComplete(isComplete);
+
+        return result;
+      } catch (err: any) {
+        console.warn("[Spark Auth] bootstrap error:", err);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    inFlightBootstrapRef.current = task;
+    try {
+      return await task;
+    } finally {
+      inFlightBootstrapRef.current = null;
     }
-    setError(result.error);
-
-    // CLOUD IS SOURCE OF TRUTH:
-    // Determine onboarding completeness directly from cloud result
-    const isComplete = Boolean(result.isOnboardingComplete);
-    setIsOnboardingComplete(isComplete);
-
-    return result;
   }, []);
 
   const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
@@ -124,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("spark_onboarding_complete", "true");
       setIsOnboardingComplete(true);
     }
+    setLoading(false);
   }, []);
 
   const refreshSession = useCallback(async () => {
@@ -176,19 +198,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [bootstrap, isConfigured]);
 
   useEffect(() => {
-    void refreshSession();
-  }, [refreshSession]);
+    if (!isConfigured) {
+      setLoading(false);
+      return () => {};
+    }
 
-  useEffect(() => {
-    if (!isConfigured) return () => {};
-    return subscribeToAuthState((nextSession) => {
-      if (nextSession) {
-        void bootstrap(nextSession).finally(() => setLoading(false));
-      } else {
+    const unsubscribe = subscribeToAuthState((event, nextSession) => {
+      if (event === "SIGNED_OUT" || !nextSession) {
+        setSession(null);
+        setProfile(null);
+        setBrand(null);
+        setIsOnboardingComplete(false);
         setLoading(false);
+        return;
       }
+
+      // Schedule bootstrap asynchronously outside the callback body
+      setTimeout(() => {
+        void bootstrap(nextSession).finally(() => setLoading(false));
+      }, 0);
     });
-  }, [bootstrap, isConfigured]);
+
+    // Initial session restore
+    void refreshSession();
+
+    return () => {
+      unsubscribe();
+    };
+  }, [bootstrap, isConfigured, refreshSession]);
 
   // OAuth hash token listener for Google OAuth callback
   useEffect(() => {

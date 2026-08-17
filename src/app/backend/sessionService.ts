@@ -123,79 +123,106 @@ export async function bootstrapUserSession(
     return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: null };
   }
 
-  try {
-    const profileRes = await upsertProfile(user);
-    if (profileRes.error || !profileRes.data) {
-      return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: profileRes.error };
-    }
-    let profile = profileRes.data;
-
-    // 1) Ensure user has a default brand if none exists yet
-    const defaultBrandRes = await ensureDefaultBrand(user.id, localBrand);
-    let activeBrand: BrandRow | null = defaultBrandRes.data || null;
-
-    // 2) Query all brands owned by this user
-    const brandsRes = await listBrandsForOwner(user.id);
-    let brands = brandsRes.data || [];
-    if (brands.length === 0 && activeBrand) {
-      brands = [activeBrand];
-    }
-
-    // 3) Resolve active brand based on profile pointer or first brand
-    if (profile.active_brand_id) {
-      const matched = brands.find((b) => b.id === profile.active_brand_id);
-      if (matched) {
-        activeBrand = matched;
+  const runBootstrap = async (): Promise<AuthBootstrapResult> => {
+    try {
+      const profileRes = await upsertProfile(user);
+      if (profileRes.error || !profileRes.data) {
+        return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: profileRes.error };
       }
-    }
-    if (!activeBrand && brands.length > 0) {
-      activeBrand = brands[0];
-    }
+      let profile = profileRes.data;
 
-    // 4) Ensure profile.active_brand_id in Supabase points to the active brand
-    if (activeBrand?.id && profile.active_brand_id !== activeBrand.id) {
-      const setBrandRes = await setActiveBrand(user.id, activeBrand.id);
-      if (setBrandRes.data) {
-        profile = setBrandRes.data;
+      // 1) Ensure user has a default brand if none exists yet
+      const defaultBrandRes = await ensureDefaultBrand(user.id, localBrand);
+      let activeBrand: BrandRow | null = defaultBrandRes.data || null;
+
+      // 2) Query all brands owned by this user
+      const brandsRes = await listBrandsForOwner(user.id);
+      let brands = brandsRes.data || [];
+      if (brands.length === 0 && activeBrand) {
+        brands = [activeBrand];
       }
+
+      // 3) Resolve active brand based on profile pointer or first brand
+      if (profile.active_brand_id) {
+        const matched = brands.find((b) => b.id === profile.active_brand_id);
+        if (matched) {
+          activeBrand = matched;
+        }
+      }
+      if (!activeBrand && brands.length > 0) {
+        activeBrand = brands[0];
+      }
+
+      // 4) Ensure profile.active_brand_id in Supabase points to the active brand
+      if (activeBrand?.id && profile.active_brand_id !== activeBrand.id) {
+        const setBrandRes = await setActiveBrand(user.id, activeBrand.id);
+        if (setBrandRes.data) {
+          profile = setBrandRes.data;
+        }
+      }
+
+      // 5) Determine onboarding completeness from CLOUD source of truth
+      let isComplete = profile.onboarding_complete === true;
+
+      // Cloud auto-repair: if user already has an existing configured brand in Supabase but profile flag was false
+      if (!isComplete && brands.length > 0) {
+        const hasConfiguredBrand = brands.some((b) => {
+          const name = (b.name || "").trim().toLowerCase();
+          return name !== "" && name !== "spark" && (profile.active_brand_id === b.id || name !== "my brand");
+        });
+        if (hasConfiguredBrand) {
+          isComplete = true;
+          profile.onboarding_complete = true;
+          void markProfileOnboardingComplete(user.id, activeBrand?.id);
+        }
+      }
+
+      return {
+        profile,
+        brand: activeBrand,
+        brands,
+        isOnboardingComplete: isComplete,
+        error: null,
+      };
+    } catch (error) {
+      return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: sanitizeAuthError(error) };
     }
+  };
 
-    // 5) Determine onboarding completeness from CLOUD source of truth
-    let isComplete = profile.onboarding_complete === true;
-
-    // Cloud auto-repair: if user already has an existing configured brand in Supabase but profile flag was false
-    if (!isComplete && brands.length > 0) {
-      const hasConfiguredBrand = brands.some((b) => {
-        const name = (b.name || "").trim().toLowerCase();
-        return name !== "" && name !== "spark" && (profile.active_brand_id === b.id || name !== "my brand");
+  const timeoutPromise = new Promise<AuthBootstrapResult>((resolve) => {
+    setTimeout(() => {
+      resolve({
+        profile: {
+          id: user.id,
+          email: user.email || "creator@spark.ai",
+          display_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Creator",
+          full_name: user.user_metadata?.full_name || "Creator",
+          role: "Director",
+          avatar_url: null,
+          onboarding_complete: false,
+          active_brand_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        brand: null,
+        brands: [],
+        isOnboardingComplete: false,
+        error: "Session bootstrap timeout — loaded default profile.",
       });
-      if (hasConfiguredBrand) {
-        isComplete = true;
-        profile.onboarding_complete = true;
-        void markProfileOnboardingComplete(user.id, activeBrand?.id);
-      }
-    }
+    }, 8000);
+  });
 
-    return {
-      profile,
-      brand: activeBrand,
-      brands,
-      isOnboardingComplete: isComplete,
-      error: null,
-    };
-  } catch (error) {
-    return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: sanitizeAuthError(error) };
-  }
+  return Promise.race([runBootstrap(), timeoutPromise]);
 }
 
 export function subscribeToAuthState(
-  callback: (session: Session | null) => void,
+  callback: (event: any, session: Session | null) => void,
 ): () => void {
   if (!isAuthBackendReady()) {
     return () => {};
   }
 
-  return onAuthStateChange((_event, session) => callback(session));
+  return onAuthStateChange((event, session) => callback(event, session));
 }
 
 export function resultFromRepository<T>(result: RepositoryResult<T>): T | null {
