@@ -98,7 +98,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState("/");
   const deviceType = useDeviceType();
 
-  // OAuth social connection detection (strictly for YouTube / X publishing accounts):
+  // OAuth detection: path-based callbacks OR root bounce (?spark_oauth=google|x&code=...)
   const getOAuthProvider = (): "google" | "x" | null => {
     if (typeof window === "undefined") return null;
     const pathname = window.location.pathname.replace(/\/$/, "") || "/";
@@ -107,16 +107,15 @@ function AppContent() {
     const state = params.get("state") || "";
     const hasCode = Boolean(params.get("code"));
 
-    // Explicit YouTube Shorts Connect route & states
-    if (pathname === "/auth/google/callback") return "google";
-    if (hasCode && state.startsWith("spark_oauth_youtube")) return "google";
-    if (hasCode && flag === "youtube") return "google";
-
-    // Explicit X / Twitter Connect route & states
+    if (pathname === "/auth/google/callback" || pathname === "/auth/callback") return "google";
     if (pathname === "/auth/x/callback" || pathname === "/auth/callback/x") return "x";
+    if (flag === "google" || flag === "youtube") return "google";
+    if (flag === "x" || flag === "twitter") return "x";
+    // Root bounce with code + spark state (static HTML redirects here)
+    if (hasCode && state.startsWith("spark_oauth_youtube")) return "google";
     if (hasCode && state.startsWith("spark_oauth_x")) return "x";
-    if (hasCode && (flag === "x" || flag === "twitter")) return "x";
-
+    if (hasCode && state.startsWith("spark_oauth_") && /youtube|google/i.test(state)) return "google";
+    if (hasCode && state.startsWith("spark_oauth_") && /x|twitter/i.test(state)) return "x";
     return null;
   };
 
@@ -131,6 +130,8 @@ function AppContent() {
     if (
       pathname.startsWith("/auth/google") ||
       pathname.startsWith("/auth/x") ||
+      pathname.startsWith("/auth/callback") ||
+      flag === "google" ||
       flag === "youtube" ||
       flag === "x" ||
       flag === "twitter" ||
@@ -152,10 +153,11 @@ function AppContent() {
         typeof window !== "undefined" ? window.location.pathname : "";
       const search =
         typeof window !== "undefined" ? window.location.search : "";
-      // Never rewrite social connect callback URLs
+      // Never rewrite OAuth callback URLs or in-flight OAuth query bounces
       if (
         pathname.startsWith("/auth/google") ||
         pathname.startsWith("/auth/x") ||
+        pathname.startsWith("/auth/callback") ||
         search.includes("spark_oauth=") ||
         (search.includes("code=") && search.includes("spark_oauth_"))
       ) {
@@ -169,11 +171,14 @@ function AppContent() {
           }
         }
         if (!auth.isOnboardingComplete) {
+          console.log("[SPARK AUTH] routing → Brand Genesis (onboarding_complete = false)");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
         } else {
+          console.log("[SPARK AUTH] routing → Spark Dashboard (onboarding_complete = true)");
           setViewState((prev) => (prev === "auth" ? "dashboard" : prev));
         }
       } else {
+        console.log("[SPARK AUTH] routing → AuthPanel (unauthenticated)");
         if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
           window.history.replaceState({}, "", "/auth");
         }
@@ -182,7 +187,8 @@ function AppContent() {
     }
   }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete]);
 
-  const handleAuthSuccess = async (email?: string, name?: string) => {
+  const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
+    console.log("[SPARK AUTH] handleAuthSuccess called for:", email, "mode:", mode);
     if (email || name) {
       const creatorName = name || email?.split("@")[0] || "Creator";
       setGenesisData((prev) => ({
@@ -194,9 +200,9 @@ function AppContent() {
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
-    await auth.refreshSession();
-    // Cloud is the single authority
-    setViewState(auth.isOnboardingComplete ? "dashboard" : "onboarding");
+    const isComplete = auth.isOnboardingComplete;
+    console.log("[SPARK AUTH] routing →", isComplete ? "Spark Dashboard" : "Brand Genesis");
+    setViewState(isComplete ? "dashboard" : "onboarding");
   };
 
   const handleEnterDashboard = async (data?: BrandGenesisData) => {

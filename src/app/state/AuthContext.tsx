@@ -78,26 +78,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const inFlightBootstrapRef = React.useRef<Promise<any> | null>(null);
 
   const bootstrap = useCallback(async (nextSession: Session | null) => {
+    if (!nextSession?.user) {
+      console.log("[SPARK AUTH] bootstrap: no session user -> resetting auth state");
+      setSession(null);
+      setProfile(null);
+      setBrand(null);
+      setIsOnboardingComplete(false);
+      setLoading(false);
+      return null;
+    }
+
     if (inFlightBootstrapRef.current) {
       return inFlightBootstrapRef.current;
     }
 
     const task = (async () => {
+      console.log("[SPARK AUTH] session present: user id =", nextSession.user.id);
       setSession(nextSession);
-      if (!nextSession?.user) {
-        setProfile(null);
-        setBrand(null);
-        setIsOnboardingComplete(false);
-        return null;
-      }
 
       try {
+        console.log("[SPARK AUTH] profile bootstrap starting for user:", nextSession.user.id);
         const result = await bootstrapUserSession(nextSession.user);
+        console.log(
+          "[SPARK AUTH] profile loaded:",
+          Boolean(result.profile),
+          "| onboarding_complete =",
+          result.isOnboardingComplete,
+          "| brands loaded count =",
+          result.brands?.length || 0
+        );
+
         setProfile(result.profile);
         setBrand(result.brand);
         if (result.brand?.id) {
-          localStorage.setItem("spark_current_brand_id", result.brand.id);
           try {
+            localStorage.setItem("spark_current_brand_id", result.brand.id);
             localStorage.setItem("spark_current_brand_name", result.brand.name || "");
           } catch {
             /* ignore */
@@ -108,10 +123,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // CLOUD IS SOURCE OF TRUTH:
         const isComplete = Boolean(result.isOnboardingComplete);
         setIsOnboardingComplete(isComplete);
+        console.log("[SPARK AUTH] routing decision: onboarding_complete =", isComplete);
 
         return result;
       } catch (err: any) {
-        console.warn("[Spark Auth] bootstrap error:", err);
+        console.warn("[SPARK AUTH] bootstrap error:", err);
         return null;
       } finally {
         setLoading(false);
@@ -134,17 +150,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: "authenticated",
       user_metadata: { full_name: name },
     };
-    localStorage.setItem("spark_demo_user", JSON.stringify(mockUser));
+    try {
+      localStorage.setItem("spark_demo_user", JSON.stringify(mockUser));
+    } catch {}
     setDemoUser(mockUser);
     setError(null);
-
-    if (isNewUser) {
-      localStorage.setItem("spark_onboarding_complete", "false");
-      setIsOnboardingComplete(false);
-    } else {
-      localStorage.setItem("spark_onboarding_complete", "true");
-      setIsOnboardingComplete(true);
-    }
+    setIsOnboardingComplete(!isNewUser);
     setLoading(false);
   }, []);
 
@@ -164,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     try {
+      console.log("[SPARK AUTH] refreshSession: restoring session from Supabase client storage");
       const restorePromise = restoreSession();
       const timeoutPromise = new Promise<{ session: null; error: string }>((resolve) =>
         setTimeout(() => resolve({ session: null, error: "timeout" }), 5000)
@@ -171,27 +183,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const result = await Promise.race([restorePromise, timeoutPromise]);
       if (result.session) {
+        console.log("[SPARK AUTH] refreshSession: valid session restored for:", result.session.user?.id);
         await bootstrap(result.session);
       } else {
-        const storedDemo = getStoredDemoUser();
-        if (storedDemo) {
-          setDemoUser(storedDemo);
-        } else {
-          setSession(null);
-          setProfile(null);
-          setBrand(null);
-        }
-      }
-    } catch (err) {
-      console.warn("[Spark Auth] Session restore failed, preserving stored user if available:", err);
-      const storedDemo = getStoredDemoUser();
-      if (storedDemo) {
-        setDemoUser(storedDemo);
-      } else {
+        console.log("[SPARK AUTH] refreshSession: no active session found");
         setSession(null);
         setProfile(null);
         setBrand(null);
+        setIsOnboardingComplete(false);
       }
+    } catch (err) {
+      console.warn("[SPARK AUTH] Session restore error:", err);
+      setSession(null);
+      setProfile(null);
+      setBrand(null);
+      setIsOnboardingComplete(false);
     } finally {
       setLoading(false);
     }
@@ -203,7 +209,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return () => {};
     }
 
+    console.log("[SPARK AUTH] Subscribing to Supabase auth state changes");
     const unsubscribe = subscribeToAuthState((event, nextSession) => {
+      console.log("[SPARK AUTH] onAuthStateChange event:", event, "| session exists:", Boolean(nextSession));
       if (event === "SIGNED_OUT" || !nextSession) {
         setSession(null);
         setProfile(null);
@@ -213,13 +221,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Schedule bootstrap asynchronously outside the callback body
-      setTimeout(() => {
-        void bootstrap(nextSession).finally(() => setLoading(false));
-      }, 0);
+      // Immediately set the session in state so user is immediately authenticated
+      setSession(nextSession);
+
+      // Trigger cloud bootstrap asynchronously
+      void bootstrap(nextSession).finally(() => setLoading(false));
     });
 
-    // Initial session restore
+    // Initial session restore on mount
     void refreshSession();
 
     return () => {
@@ -227,11 +236,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [bootstrap, isConfigured, refreshSession]);
 
-  // OAuth hash/code token listener: let Supabase client exchange session
+  // OAuth hash token listener for Google OAuth callback
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token")) {
-      if (isConfigured) {
-        void refreshSession();
+      try {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get("access_token");
+        if (accessToken) {
+          console.log("[SPARK AUTH] Hash access_token detected in URL");
+          if (isConfigured) {
+            void refreshSession();
+          }
+        }
+      } catch (err) {
+        console.warn("[SPARK AUTH] Hash token parse notice:", err);
       }
     }
   }, [isConfigured, refreshSession]);
@@ -239,6 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
     setLoading(true);
+    console.log("[SPARK AUTH] sign-in started for:", email);
     const targetEmail = email.trim() || "creator@spark.ai";
     if (!isConfigured) {
       handleDemoSignIn(targetEmail, undefined, false);
@@ -247,22 +266,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const result = await sessionSignIn(targetEmail, password);
-      if (result.error || !result.user) {
-        setError(result.error || "Invalid credentials. Please check your email and password.");
-      } else {
-        await refreshSession();
+      console.log("[SPARK AUTH] sign-in result:", result.user ? "success" : "failed", result.error || "");
+      if (result.error) {
+        setError(result.error);
+        throw new Error(result.error);
+      }
+      if (result.user) {
+        const restoreRes = await restoreSession();
+        if (restoreRes.session) {
+          await bootstrap(restoreRes.session);
+        }
       }
     } catch (err: any) {
-      console.warn("[Spark Auth] signIn backend error:", err);
-      setError(err?.message || "Sign in failed. Please try again.");
+      console.warn("[SPARK AUTH] signIn error:", err);
+      setError(err?.message || "Sign in failed");
+      throw err;
     } finally {
       setLoading(false);
     }
-  }, [handleDemoSignIn, isConfigured, refreshSession]);
+  }, [handleDemoSignIn, isConfigured, bootstrap]);
 
   const signUp = useCallback(async (email: string, password: string) => {
     setError(null);
     setLoading(true);
+    console.log("[SPARK AUTH] sign-up started for:", email);
     const targetEmail = email.trim() || "creator@spark.ai";
     if (!isConfigured) {
       handleDemoSignIn(targetEmail, undefined, true);
@@ -271,24 +298,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const result = await sessionSignUp(targetEmail, password);
-      if (result.error || !result.user) {
-        setError(result.error || "Could not create account. Please check your email and password.");
-      } else {
-        await refreshSession();
+      console.log("[SPARK AUTH] sign-up result:", result.user ? "success" : "failed", result.error || "");
+      if (result.error) {
+        setError(result.error);
+        throw new Error(result.error);
+      }
+      if (result.user) {
+        const restoreRes = await restoreSession();
+        if (restoreRes.session) {
+          await bootstrap(restoreRes.session);
+        }
       }
     } catch (err: any) {
-      console.warn("[Spark Auth] signUp backend error:", err);
-      setError(err?.message || "Sign up failed. Please try again.");
+      console.warn("[SPARK AUTH] signUp error:", err);
+      setError(err?.message || "Sign up failed");
+      throw err;
     } finally {
       setLoading(false);
     }
-  }, [handleDemoSignIn, isConfigured, refreshSession]);
+  }, [handleDemoSignIn, isConfigured, bootstrap]);
 
   const signInWithOAuth = useCallback(async (provider: "google" | "apple") => {
     setError(null);
     setLoading(true);
+    console.log("[SPARK AUTH] signInWithOAuth started for provider:", provider);
     if (!isConfigured) {
-      setError("Spark cloud authentication is not configured yet.");
+      handleDemoSignIn(`creator_${provider}@spark.ai`, `${provider.toUpperCase()} Creator`, false);
       setLoading(false);
       return;
     }
@@ -296,15 +331,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await sessionSignInWithOAuth(provider);
       if (result.error) {
         setError(result.error);
-        setLoading(false);
+        throw new Error(result.error);
       }
-      // On success, browser redirects to provider
     } catch (err: any) {
-      console.warn("[Spark Auth] OAuth backend error:", err);
-      setError(err?.message || `${provider} Sign-In failed. Please try again.`);
+      console.warn("[SPARK AUTH] OAuth error:", err);
+      setError(err?.message || "OAuth sign in failed");
+      throw err;
+    } finally {
       setLoading(false);
     }
-  }, [isConfigured]);
+  }, [handleDemoSignIn, isConfigured]);
 
   const signOut = useCallback(async () => {
     setError(null);
