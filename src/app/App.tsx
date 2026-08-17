@@ -70,9 +70,8 @@ function AppContent() {
   const auth = useAuth();
   const { updateBrand, initializeBrandGenesis } = useSpark();
 
-  // Synchronously evaluate user existence from auth context or stored session
-  const storedUser = getStoredDemoUser();
-  const isUserAuthenticated = auth.isAuthenticated || Boolean(storedUser);
+  // Evaluate user existence strictly from auth context
+  const isUserAuthenticated = auth.isAuthenticated;
 
   // Initialize viewState directly: authenticated -> dashboard, unauthenticated -> auth
   const [viewState, setViewState] = useState<ViewState>(() => {

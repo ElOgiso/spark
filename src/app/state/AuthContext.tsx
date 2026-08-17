@@ -69,8 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Synchronously evaluate active user from session, demoUser state, or localStorage
   const currentUser = useMemo(() => {
     if (session?.user) return session.user;
-    return demoUser ?? getStoredDemoUser();
-  }, [session, demoUser]);
+    if (!isConfigured) return demoUser ?? getStoredDemoUser();
+    return null;
+  }, [session, demoUser, isConfigured]);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -104,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
+  const handleDemoSignIn = useCallback(async (email: string, fullName?: string, explicitIsNewUser?: boolean) => {
     const name = fullName || email.split("@")[0] || "Creator";
     const mockUser: any = {
       id: `user-${Date.now()}`,
@@ -116,6 +117,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDemoUser(mockUser);
     setError(null);
 
+    let isNewUser = explicitIsNewUser;
+    if (isNewUser === undefined && isConfigured) {
+      try {
+        const { getSupabaseClient } = await import("../backend/supabaseClient");
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data: existingProfile } = await (supabase.from("profiles") as any)
+            .select("id, onboarding_complete")
+            .eq("email", email)
+            .maybeSingle();
+
+          if (existingProfile) {
+            isNewUser = !existingProfile.onboarding_complete;
+          }
+        }
+      } catch (err) {
+        console.warn("[Spark Auth] Email profile lookup error:", err);
+      }
+    }
+
     if (isNewUser) {
       localStorage.setItem("spark_onboarding_complete", "false");
       setIsOnboardingComplete(false);
@@ -123,15 +144,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("spark_onboarding_complete", "true");
       setIsOnboardingComplete(true);
     }
-  }, []);
+  }, [isConfigured]);
 
   const refreshSession = useCallback(async () => {
     if (!isConfigured) {
       const storedDemo = getStoredDemoUser();
       if (storedDemo) {
         setDemoUser(storedDemo);
-        const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
-        setIsOnboardingComplete(isComplete);
       }
       setSession(null);
       setProfile(null);
@@ -142,35 +161,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setLoading(true);
+    const timeoutPromise = new Promise<{ session: null; error: string }>((resolve) =>
+      setTimeout(() => resolve({ session: null, error: "timeout" }), 3500)
+    );
+
     try {
-      const result = await restoreSession();
+      const result = await Promise.race([restoreSession(), timeoutPromise]);
       if (result.session) {
         await bootstrap(result.session);
       } else {
         const storedDemo = getStoredDemoUser();
         if (storedDemo) {
           setDemoUser(storedDemo);
-          const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
-          setIsOnboardingComplete(isComplete);
         } else {
           setSession(null);
           setProfile(null);
           setBrand(null);
-          setIsOnboardingComplete(false);
         }
       }
     } catch (err) {
-      console.warn("[Spark Auth] Session restore failed, preserving stored user if available:", err);
+      console.warn("[Spark Auth] Session restore notice:", err);
       const storedDemo = getStoredDemoUser();
       if (storedDemo) {
         setDemoUser(storedDemo);
-        const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
-        setIsOnboardingComplete(isComplete);
       } else {
         setSession(null);
         setProfile(null);
         setBrand(null);
-        setIsOnboardingComplete(false);
       }
     } finally {
       setLoading(false);
@@ -179,11 +196,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void refreshSession();
-    // Safety watchdog: ensure hydration splash never hangs indefinitely
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 2000);
-    return () => clearTimeout(timer);
   }, [refreshSession]);
 
   useEffect(() => {

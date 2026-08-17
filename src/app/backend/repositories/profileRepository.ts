@@ -30,14 +30,26 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
   try {
-    // Check if profile already exists to preserve onboarding_complete and active_brand_id
-    const { data: existing, error: fetchErr } = await (supabase.from("profiles") as any)
+    // 1. Check if profile already exists by user.id
+    const { data: existingById, error: fetchErr } = await (supabase.from("profiles") as any)
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (existing && !fetchErr) {
-      return { data: existing, error: null, source: "supabase" };
+    if (existingById && !fetchErr) {
+      return { data: existingById, error: null, source: "supabase" };
+    }
+
+    // 2. Check if profile already exists by email (e.g. Gmail login with same email)
+    if (user.email) {
+      const { data: existingByEmail } = await (supabase.from("profiles") as any)
+        .select("*")
+        .eq("email", user.email)
+        .maybeSingle();
+
+      if (existingByEmail) {
+        return { data: existingByEmail, error: null, source: "supabase" };
+      }
     }
 
     const payload: Partial<ProfileRow> & { id: string } = {
