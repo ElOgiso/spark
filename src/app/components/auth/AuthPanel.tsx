@@ -227,10 +227,9 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({
     // Demo Mode fallback for local environments without Supabase
     const googleAuthUrl =
       `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
-      `&redirect_uri=${encodeURIComponent(window.location.origin)}` +
       `&response_type=token` +
-      `&scope=${encodeURIComponent("openid email profile")}`;
+      `&scope=${encodeURIComponent("openid email profile")}` +
+      `&prompt=${encodeURIComponent("select_account")}`;
 
     window.location.href = googleAuthUrl;
   };
