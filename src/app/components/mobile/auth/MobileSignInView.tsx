@@ -22,9 +22,12 @@ export function MobileSignInView({
     await auth.signIn(email, password);
   };
 
-  const handleSocialClick = (provider: string) => {
-    setEmail(`creator@${provider.toLowerCase()}.com`);
-    setPassword("password123");
+  const handleSocialClick = async (provider: "google" | "apple") => {
+    try {
+      await auth.signInWithOAuth(provider);
+    } catch (err: any) {
+      console.error(`[MobileSignInView] ${provider} OAuth error:`, err);
+    }
   };
 
   return (

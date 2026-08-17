@@ -48,10 +48,13 @@ export function MobileCreateAccountView({
     }
   };
 
-  const handleSocialClick = (provider: string) => {
-    setEmail(`creator@${provider.toLowerCase()}.com`);
-    setPassword("password123");
-    setConfirmPassword("password123");
+  const handleSocialClick = async (provider: "google" | "apple") => {
+    setLocalError(null);
+    try {
+      await auth.signInWithOAuth(provider);
+    } catch (err: any) {
+      setLocalError(err?.message || `${provider} sign-in failed.`);
+    }
   };
 
   return (

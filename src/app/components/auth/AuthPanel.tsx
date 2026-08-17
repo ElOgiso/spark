@@ -201,7 +201,7 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({
         return;
       }
       setLoading(false);
-      onSuccess(email, email.split("@")[0], mode);
+      onSuccess(email, email.split("@")[0], mode === "signup" ? "signup" : "signin");
     } catch (err: any) {
       setErrorMsg(err?.message || "Authentication error. Please check your credentials.");
       setLoading(false);
@@ -238,17 +238,20 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({
   const handleAppleClick = async () => {
     setErrorMsg("");
     setLoading(true);
-    try {
-      if (mode === "signup") {
-        await auth.signUp("apple.creator@icloud.com", "apple-oauth-pass");
-      } else {
-        await auth.signIn("apple.creator@icloud.com", "apple-oauth-pass");
+    if (auth.isConfigured) {
+      try {
+        console.log("[SPARK AUTH] Initiating Supabase Apple OAuth");
+        await auth.signInWithOAuth("apple");
+      } catch (err: any) {
+        console.error("[SPARK AUTH] Apple OAuth error:", err);
+        setErrorMsg(err?.message || "Apple Sign-In failed. Please try again.");
+        setLoading(false);
       }
-      setLoading(false);
-      onSuccess("apple.creator@icloud.com", "Apple Creator");
-    } catch {
-      setLoading(false);
+      return;
     }
+    await auth.signIn("apple.creator@icloud.com", "password123");
+    setLoading(false);
+    onSuccess("apple.creator@icloud.com", "Apple Creator", mode === "signup" ? "signup" : "signin");
   };
 
   if (showIntro) {

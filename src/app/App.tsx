@@ -98,8 +98,8 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState("/");
   const deviceType = useDeviceType();
 
-  // OAuth detection: path-based callbacks OR root bounce (?spark_oauth=google|x&code=...)
-  const getOAuthProvider = (): "google" | "x" | null => {
+  // Social Media OAuth detection (YouTube Shorts / X publishing connect ONLY — NOT Supabase Login)
+  const getSocialOAuthProvider = (): "google" | "x" | null => {
     if (typeof window === "undefined") return null;
     const pathname = window.location.pathname.replace(/\/$/, "") || "/";
     const params = new URLSearchParams(window.location.search);
@@ -107,15 +107,16 @@ function AppContent() {
     const state = params.get("state") || "";
     const hasCode = Boolean(params.get("code"));
 
-    if (pathname === "/auth/google/callback" || pathname === "/auth/callback") return "google";
-    if (pathname === "/auth/x/callback" || pathname === "/auth/callback/x") return "x";
-    if (flag === "google" || flag === "youtube") return "google";
-    if (flag === "x" || flag === "twitter") return "x";
-    // Root bounce with code + spark state (static HTML redirects here)
-    if (hasCode && state.startsWith("spark_oauth_youtube")) return "google";
-    if (hasCode && state.startsWith("spark_oauth_x")) return "x";
-    if (hasCode && state.startsWith("spark_oauth_") && /youtube|google/i.test(state)) return "google";
-    if (hasCode && state.startsWith("spark_oauth_") && /x|twitter/i.test(state)) return "x";
+    // 1. Dedicated YouTube Shorts publishing connector callback
+    if (pathname === "/auth/google/callback" || flag === "youtube" || (hasCode && state.startsWith("spark_oauth_youtube"))) {
+      return "google";
+    }
+
+    // 2. Dedicated Twitter / X publishing connector callback
+    if (pathname === "/auth/x/callback" || flag === "x" || flag === "twitter" || (hasCode && state.startsWith("spark_oauth_x"))) {
+      return "x";
+    }
+
     return null;
   };
 
@@ -270,12 +271,12 @@ function AppContent() {
   };
 
   const renderContent = () => {
-    // 0. OAuth completion screens: never block on marketing splash or anything else
-    const oauthProvider = getOAuthProvider();
-    if (oauthProvider === "google") {
+    // 0. Social platform OAuth callbacks (YouTube Shorts / X account connect ONLY)
+    const socialOAuthProvider = getSocialOAuthProvider();
+    if (socialOAuthProvider === "google") {
       return <GoogleCallbackPage />;
     }
-    if (oauthProvider === "x") {
+    if (socialOAuthProvider === "x") {
       return <XCallbackPage />;
     }
 
