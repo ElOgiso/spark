@@ -20,6 +20,7 @@ export function getSupabaseClient(): SupabaseClient<Database> | null {
   }
 
   if (!client) {
+    console.log("[SPARK AUTH] Supabase initialization started");
     client = createClient<Database>(supabaseUrl, supabasePublishableKey, {
       auth: {
         persistSession: true,

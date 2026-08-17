@@ -52,13 +52,23 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   return { data: data.user, error: error ? sanitizeAuthError(error) : null };
 }
 
+export function getEnvironmentAwareRedirectUrl(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin.replace(/\/$/, "")}/`;
+  }
+  return "https://spark-media-os-v1-test-20260701.vercel.app/";
+}
+
 export async function signInWithOAuth(provider: "google" | "apple"): Promise<AuthResult<true>> {
   const supabase = getSupabaseClient();
   if (!supabase) return unavailable<true>();
 
+  const redirectTo = getEnvironmentAwareRedirectUrl();
+  console.log(`[SPARK AUTH] Initiating ${provider} OAuth with redirectTo:`, redirectTo);
+
   const { error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo },
   });
   return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }

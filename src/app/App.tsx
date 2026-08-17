@@ -154,13 +154,17 @@ function AppContent() {
         typeof window !== "undefined" ? window.location.pathname : "";
       const search =
         typeof window !== "undefined" ? window.location.search : "";
-      // Never rewrite OAuth callback URLs or in-flight OAuth query bounces
+      const hash =
+        typeof window !== "undefined" ? window.location.hash : "";
+
+      // Never rewrite OAuth callback URLs or in-flight OAuth token hashes / query bounces
       if (
         pathname.startsWith("/auth/google") ||
         pathname.startsWith("/auth/x") ||
         pathname.startsWith("/auth/callback") ||
         search.includes("spark_oauth=") ||
-        (search.includes("code=") && search.includes("spark_oauth_"))
+        search.includes("code=") ||
+        hash.includes("access_token")
       ) {
         return;
       }
@@ -172,14 +176,14 @@ function AppContent() {
           }
         }
         if (!auth.isOnboardingComplete) {
-          console.log("[SPARK AUTH] routing → Brand Genesis (onboarding_complete = false)");
+          console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
         } else {
-          console.log("[SPARK AUTH] routing → Spark Dashboard (onboarding_complete = true)");
+          console.log("[SPARK AUTH] routing: DASHBOARD");
           setViewState((prev) => (prev === "auth" ? "dashboard" : prev));
         }
       } else {
-        console.log("[SPARK AUTH] routing → AuthPanel (unauthenticated)");
+        console.log("[SPARK AUTH] routing: AUTH");
         if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
           window.history.replaceState({}, "", "/auth");
         }

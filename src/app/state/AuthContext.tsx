@@ -93,20 +93,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const task = (async () => {
-      console.log("[SPARK AUTH] session present: user id =", nextSession.user.id);
+      console.log("[SPARK AUTH] session exists: true");
+      console.log("[SPARK AUTH] user id:", nextSession.user.id);
       setSession(nextSession);
 
       try {
         console.log("[SPARK AUTH] profile bootstrap starting for user:", nextSession.user.id);
         const result = await bootstrapUserSession(nextSession.user);
-        console.log(
-          "[SPARK AUTH] profile loaded:",
-          Boolean(result.profile),
-          "| onboarding_complete =",
-          result.isOnboardingComplete,
-          "| brands loaded count =",
-          result.brands?.length || 0
-        );
+        const profileLoaded = Boolean(result.profile);
+        const isComplete = Boolean(result.isOnboardingComplete);
+
+        console.log("[SPARK AUTH] profile loaded:", profileLoaded);
+        console.log("[SPARK AUTH] onboarding_complete:", isComplete);
 
         setProfile(result.profile);
         setBrand(result.brand);
@@ -119,11 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         setError(result.error);
-
-        // CLOUD IS SOURCE OF TRUTH:
-        const isComplete = Boolean(result.isOnboardingComplete);
         setIsOnboardingComplete(isComplete);
-        console.log("[SPARK AUTH] routing decision: onboarding_complete =", isComplete);
 
         return result;
       } catch (err: any) {
@@ -173,6 +167,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // If an OAuth hash token is actively present in URL, let onAuthStateChange process it
+    const hasOAuthHash = typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token");
+    if (hasOAuthHash) {
+      console.log("[SPARK AUTH] OAuth redirect detected (hash token in URL) -> awaiting Supabase auth state change");
+      setLoading(true);
+      return;
+    }
+
     setLoading(true);
     try {
       console.log("[SPARK AUTH] refreshSession: restoring session from Supabase client storage");
@@ -183,10 +185,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const result = await Promise.race([restorePromise, timeoutPromise]);
       if (result.session) {
-        console.log("[SPARK AUTH] refreshSession: valid session restored for:", result.session.user?.id);
+        console.log("[SPARK AUTH] session exists: true");
+        console.log("[SPARK AUTH] user id:", result.session.user?.id);
         await bootstrap(result.session);
       } else {
-        console.log("[SPARK AUTH] refreshSession: no active session found");
+        console.log("[SPARK AUTH] session exists: false");
         setSession(null);
         setProfile(null);
         setBrand(null);
@@ -209,9 +212,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return () => {};
     }
 
+    // Check for incoming OAuth redirect hash/query
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash || "";
+      const search = window.location.search || "";
+      if (hash.includes("access_token") || search.includes("code=")) {
+        console.log("[SPARK AUTH] OAuth redirect detected");
+        setLoading(true);
+      }
+    }
+
     console.log("[SPARK AUTH] Subscribing to Supabase auth state changes");
     const unsubscribe = subscribeToAuthState((event, nextSession) => {
-      console.log("[SPARK AUTH] onAuthStateChange event:", event, "| session exists:", Boolean(nextSession));
+      console.log(`[SPARK AUTH] ${event}`);
+      console.log("[SPARK AUTH] session exists:", Boolean(nextSession));
+      if (nextSession?.user?.id) {
+        console.log("[SPARK AUTH] user id:", nextSession.user.id);
+      }
+
       if (event === "SIGNED_OUT" || !nextSession) {
         setSession(null);
         setProfile(null);
@@ -225,7 +243,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(nextSession);
 
       // Trigger cloud bootstrap asynchronously
-      void bootstrap(nextSession).finally(() => setLoading(false));
+      void bootstrap(nextSession).finally(() => {
+        // Clean up hash from URL cleanly without page reload once session is consumed
+        if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
+          try {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          } catch {}
+        }
+        setLoading(false);
+      });
     });
 
     // Initial session restore on mount
@@ -235,24 +261,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
     };
   }, [bootstrap, isConfigured, refreshSession]);
-
-  // OAuth hash token listener for Google OAuth callback
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token")) {
-      try {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get("access_token");
-        if (accessToken) {
-          console.log("[SPARK AUTH] Hash access_token detected in URL");
-          if (isConfigured) {
-            void refreshSession();
-          }
-        }
-      } catch (err) {
-        console.warn("[SPARK AUTH] Hash token parse notice:", err);
-      }
-    }
-  }, [isConfigured, refreshSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
