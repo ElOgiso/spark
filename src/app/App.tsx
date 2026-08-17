@@ -98,7 +98,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState("/");
   const deviceType = useDeviceType();
 
-  // OAuth detection: path-based callbacks OR root bounce (?spark_oauth=google|x&code=...)
+  // OAuth social connection detection (strictly for YouTube / X publishing accounts):
   const getOAuthProvider = (): "google" | "x" | null => {
     if (typeof window === "undefined") return null;
     const pathname = window.location.pathname.replace(/\/$/, "") || "/";
@@ -107,15 +107,16 @@ function AppContent() {
     const state = params.get("state") || "";
     const hasCode = Boolean(params.get("code"));
 
-    if (pathname === "/auth/google/callback" || pathname === "/auth/callback") return "google";
-    if (pathname === "/auth/x/callback" || pathname === "/auth/callback/x") return "x";
-    if (flag === "google" || flag === "youtube") return "google";
-    if (flag === "x" || flag === "twitter") return "x";
-    // Root bounce with code + spark state (static HTML redirects here)
+    // Explicit YouTube Shorts Connect route & states
+    if (pathname === "/auth/google/callback") return "google";
     if (hasCode && state.startsWith("spark_oauth_youtube")) return "google";
+    if (hasCode && flag === "youtube") return "google";
+
+    // Explicit X / Twitter Connect route & states
+    if (pathname === "/auth/x/callback" || pathname === "/auth/callback/x") return "x";
     if (hasCode && state.startsWith("spark_oauth_x")) return "x";
-    if (hasCode && state.startsWith("spark_oauth_") && /youtube|google/i.test(state)) return "google";
-    if (hasCode && state.startsWith("spark_oauth_") && /x|twitter/i.test(state)) return "x";
+    if (hasCode && (flag === "x" || flag === "twitter")) return "x";
+
     return null;
   };
 
@@ -130,8 +131,6 @@ function AppContent() {
     if (
       pathname.startsWith("/auth/google") ||
       pathname.startsWith("/auth/x") ||
-      pathname.startsWith("/auth/callback") ||
-      flag === "google" ||
       flag === "youtube" ||
       flag === "x" ||
       flag === "twitter" ||
@@ -153,11 +152,10 @@ function AppContent() {
         typeof window !== "undefined" ? window.location.pathname : "";
       const search =
         typeof window !== "undefined" ? window.location.search : "";
-      // Never rewrite OAuth callback URLs or in-flight OAuth query bounces
+      // Never rewrite social connect callback URLs
       if (
         pathname.startsWith("/auth/google") ||
         pathname.startsWith("/auth/x") ||
-        pathname.startsWith("/auth/callback") ||
         search.includes("spark_oauth=") ||
         (search.includes("code=") && search.includes("spark_oauth_"))
       ) {

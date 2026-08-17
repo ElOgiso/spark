@@ -227,40 +227,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [bootstrap, isConfigured, refreshSession]);
 
-  // OAuth hash token listener for Google OAuth callback
+  // OAuth hash/code token listener: let Supabase client exchange session
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token")) {
-      try {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get("access_token");
-        if (accessToken) {
-          fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          })
-            .then((res) => res.json())
-            .then((userInfo) => {
-              if (userInfo?.email) {
-                if (isConfigured) {
-                  void refreshSession();
-                } else {
-                  handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], false);
-                }
-              }
-            })
-            .catch((err) => console.warn("[Spark Auth] OAuth userinfo fetch error:", err))
-            .finally(() => {
-              setLoading(false);
-              if (window.history && window.history.replaceState) {
-                window.history.replaceState(null, "", window.location.pathname);
-              }
-            });
-        }
-      } catch (err) {
-        console.warn("[Spark Auth] Hash token parse error:", err);
-        setLoading(false);
+      if (isConfigured) {
+        void refreshSession();
       }
     }
-  }, [handleDemoSignIn, isConfigured, refreshSession]);
+  }, [isConfigured, refreshSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
@@ -274,16 +248,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await sessionSignIn(targetEmail, password);
       if (result.error || !result.user) {
-        handleDemoSignIn(targetEmail, undefined, false);
+        setError(result.error || "Invalid credentials. Please check your email and password.");
       } else {
         await refreshSession();
-        if (!getStoredDemoUser()) {
-          handleDemoSignIn(targetEmail, result.user.user_metadata?.full_name || result.user.email, false);
-        }
       }
-    } catch (err) {
-      console.warn("[Spark Auth] signIn backend error, falling back to demo:", err);
-      handleDemoSignIn(targetEmail, undefined, false);
+    } catch (err: any) {
+      console.warn("[Spark Auth] signIn backend error:", err);
+      setError(err?.message || "Sign in failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -301,16 +272,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await sessionSignUp(targetEmail, password);
       if (result.error || !result.user) {
-        handleDemoSignIn(targetEmail, undefined, true);
+        setError(result.error || "Could not create account. Please check your email and password.");
       } else {
         await refreshSession();
-        if (!getStoredDemoUser()) {
-          handleDemoSignIn(targetEmail, result.user.user_metadata?.full_name || result.user.email, true);
-        }
       }
-    } catch (err) {
-      console.warn("[Spark Auth] signUp backend error, falling back to demo:", err);
-      handleDemoSignIn(targetEmail, undefined, true);
+    } catch (err: any) {
+      console.warn("[Spark Auth] signUp backend error:", err);
+      setError(err?.message || "Sign up failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -319,24 +287,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithOAuth = useCallback(async (provider: "google" | "apple") => {
     setError(null);
     setLoading(true);
-    const fallbackEmail = `creator_${provider}@spark.ai`;
     if (!isConfigured) {
-      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
+      setError("Spark cloud authentication is not configured yet.");
       setLoading(false);
       return;
     }
     try {
       const result = await sessionSignInWithOAuth(provider);
       if (result.error) {
-        handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
+        setError(result.error);
+        setLoading(false);
       }
-    } catch (err) {
-      console.warn("[Spark Auth] OAuth backend error, falling back to demo:", err);
-      handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
-    } finally {
+      // On success, browser redirects to provider
+    } catch (err: any) {
+      console.warn("[Spark Auth] OAuth backend error:", err);
+      setError(err?.message || `${provider} Sign-In failed. Please try again.`);
       setLoading(false);
     }
-  }, [handleDemoSignIn, isConfigured]);
+  }, [isConfigured]);
 
   const signOut = useCallback(async () => {
     setError(null);
