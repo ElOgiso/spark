@@ -142,7 +142,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     try {
-      const result = await restoreSession();
+      const restorePromise = restoreSession();
+      const timeoutPromise = new Promise<{ session: null; error: string }>((resolve) =>
+        setTimeout(() => resolve({ session: null, error: "timeout" }), 5000)
+      );
+
+      const result = await Promise.race([restorePromise, timeoutPromise]);
       if (result.session) {
         await bootstrap(result.session);
       } else {
@@ -165,8 +170,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setBrand(null);
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [bootstrap, isConfigured]);
 
   useEffect(() => {
@@ -177,7 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isConfigured) return () => {};
     return subscribeToAuthState((nextSession) => {
       if (nextSession) {
-        void bootstrap(nextSession);
+        void bootstrap(nextSession).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
     });
   }, [bootstrap, isConfigured]);
@@ -195,11 +203,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .then((res) => res.json())
             .then((userInfo) => {
               if (userInfo?.email) {
-                handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], false);
+                if (isConfigured) {
+                  void refreshSession();
+                } else {
+                  handleDemoSignIn(userInfo.email, userInfo.name || userInfo.email.split("@")[0], false);
+                }
               }
             })
             .catch((err) => console.warn("[Spark Auth] OAuth userinfo fetch error:", err))
             .finally(() => {
+              setLoading(false);
               if (window.history && window.history.replaceState) {
                 window.history.replaceState(null, "", window.location.pathname);
               }
@@ -207,9 +220,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.warn("[Spark Auth] Hash token parse error:", err);
+        setLoading(false);
       }
     }
-  }, [handleDemoSignIn]);
+  }, [handleDemoSignIn, isConfigured, refreshSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
@@ -233,8 +247,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn("[Spark Auth] signIn backend error, falling back to demo:", err);
       handleDemoSignIn(targetEmail, undefined, false);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [handleDemoSignIn, isConfigured, refreshSession]);
 
   const signUp = useCallback(async (email: string, password: string) => {
@@ -259,8 +274,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn("[Spark Auth] signUp backend error, falling back to demo:", err);
       handleDemoSignIn(targetEmail, undefined, true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [handleDemoSignIn, isConfigured, refreshSession]);
 
   const signInWithOAuth = useCallback(async (provider: "google" | "apple") => {
@@ -280,34 +296,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn("[Spark Auth] OAuth backend error, falling back to demo:", err);
       handleDemoSignIn(fallbackEmail, `${provider.toUpperCase()} Creator`, false);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [handleDemoSignIn, isConfigured]);
 
   const signOut = useCallback(async () => {
     setError(null);
     setLoading(true);
-    if (isConfigured) {
-      await sessionSignOut();
+    try {
+      if (isConfigured) {
+        await sessionSignOut();
+      }
+      const { clearAllStoredAccountTokens } = await import("../services/socialIntegrationService");
+      clearAllStoredAccountTokens();
+      const { clearPersistedState } = await import("./persistence");
+      clearPersistedState();
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.removeItem("spark_current_brand_id");
+          localStorage.removeItem("spark_current_brand_name");
+          localStorage.removeItem("spark_onboarding_complete");
+          localStorage.removeItem("spark_demo_user");
+        } catch {}
+      }
+      setDemoUser(null);
+      setSession(null);
+      setProfile(null);
+      setBrand(null);
+      setIsOnboardingComplete(false);
+    } catch (err) {
+      console.warn("[Spark Auth] signOut notice:", err);
+    } finally {
+      setLoading(false);
     }
-    const { clearAllStoredAccountTokens } = await import("../services/socialIntegrationService");
-    clearAllStoredAccountTokens();
-    const { clearPersistedState } = await import("./persistence");
-    clearPersistedState();
-    if (typeof localStorage !== "undefined") {
-      try {
-        localStorage.removeItem("spark_current_brand_id");
-        localStorage.removeItem("spark_current_brand_name");
-        localStorage.removeItem("spark_onboarding_complete");
-        localStorage.removeItem("spark_demo_user");
-      } catch {}
-    }
-    setDemoUser(null);
-    setSession(null);
-    setProfile(null);
-    setBrand(null);
-    setIsOnboardingComplete(false);
-    setLoading(false);
   }, [isConfigured]);
 
   const sendReset = useCallback(async (email: string) => {

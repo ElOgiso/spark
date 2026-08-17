@@ -185,7 +185,7 @@ function AppContent() {
     }
   }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete]);
 
-  const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
+  const handleAuthSuccess = async (email?: string, name?: string) => {
     if (email || name) {
       const creatorName = name || email?.split("@")[0] || "Creator";
       setGenesisData((prev) => ({
@@ -197,14 +197,9 @@ function AppContent() {
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
-    if (auth.loading) {
-      await auth.refreshSession();
-    }
-    if (auth.isOnboardingComplete || mode === "signin" || Boolean(auth.brand?.id && auth.brand.name && auth.brand.name !== "My Brand")) {
-      setViewState("dashboard");
-    } else {
-      setViewState(auth.isOnboardingComplete ? "dashboard" : "onboarding");
-    }
+    await auth.refreshSession();
+    // Cloud is the single authority
+    setViewState(auth.isOnboardingComplete ? "dashboard" : "onboarding");
   };
 
   const handleEnterDashboard = async (data?: BrandGenesisData) => {

@@ -195,7 +195,7 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({
         return;
       }
       setLoading(false);
-      onSuccess(email, email.split("@")[0], mode);
+      onSuccess(email, email.split("@")[0]);
     } catch (err: any) {
       setErrorMsg(err?.message || "Authentication error. Please check your credentials.");
       setLoading(false);
