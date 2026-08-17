@@ -105,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const handleDemoSignIn = useCallback(async (email: string, fullName?: string, explicitIsNewUser?: boolean) => {
+  const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
     const name = fullName || email.split("@")[0] || "Creator";
     const mockUser: any = {
       id: `user-${Date.now()}`,
@@ -117,26 +117,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDemoUser(mockUser);
     setError(null);
 
-    let isNewUser = explicitIsNewUser;
-    if (isNewUser === undefined && isConfigured) {
-      try {
-        const { getSupabaseClient } = await import("../backend/supabaseClient");
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          const { data: existingProfile } = await (supabase.from("profiles") as any)
-            .select("id, onboarding_complete")
-            .eq("email", email)
-            .maybeSingle();
-
-          if (existingProfile) {
-            isNewUser = !existingProfile.onboarding_complete;
-          }
-        }
-      } catch (err) {
-        console.warn("[Spark Auth] Email profile lookup error:", err);
-      }
-    }
-
     if (isNewUser) {
       localStorage.setItem("spark_onboarding_complete", "false");
       setIsOnboardingComplete(false);
@@ -144,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("spark_onboarding_complete", "true");
       setIsOnboardingComplete(true);
     }
-  }, [isConfigured]);
+  }, []);
 
   const refreshSession = useCallback(async () => {
     if (!isConfigured) {
@@ -161,12 +141,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setLoading(true);
-    const timeoutPromise = new Promise<{ session: null; error: string }>((resolve) =>
-      setTimeout(() => resolve({ session: null, error: "timeout" }), 3500)
-    );
-
     try {
-      const result = await Promise.race([restoreSession(), timeoutPromise]);
+      const result = await restoreSession();
       if (result.session) {
         await bootstrap(result.session);
       } else {
@@ -180,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (err) {
-      console.warn("[Spark Auth] Session restore notice:", err);
+      console.warn("[Spark Auth] Session restore failed, preserving stored user if available:", err);
       const storedDemo = getStoredDemoUser();
       if (storedDemo) {
         setDemoUser(storedDemo);
@@ -189,9 +165,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setBrand(null);
       }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, [bootstrap, isConfigured]);
 
   useEffect(() => {

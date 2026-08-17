@@ -221,34 +221,13 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({
                 const realEmail = userInfo.email || "creator@gmail.com";
                 const realName = userInfo.name || realEmail.split("@")[0];
 
-                // Check Supabase if this Gmail already exists as a returning user
-                let isReturningUser = false;
-                try {
-                  const { getSupabaseClient, isSupabaseConfigured } = await import("../../backend/supabaseClient");
-                  if (isSupabaseConfigured()) {
-                    const supabase = getSupabaseClient();
-                    if (supabase) {
-                      const { data: existingProfile } = await (supabase.from("profiles") as any)
-                        .select("id, onboarding_complete")
-                        .eq("email", realEmail)
-                        .maybeSingle();
-
-                      if (existingProfile && existingProfile.onboarding_complete) {
-                        isReturningUser = true;
-                      }
-                    }
-                  }
-                } catch (e) {
-                  console.warn("[AuthPanel] Google user check notice:", e);
-                }
-
-                if (isReturningUser || mode === "signin") {
-                  await auth.signIn(realEmail, "google-oauth-pass");
-                } else {
+                if (mode === "signup") {
                   await auth.signUp(realEmail, "google-oauth-pass");
+                } else {
+                  await auth.signIn(realEmail, "google-oauth-pass");
                 }
                 setLoading(false);
-                onSuccess(realEmail, realName, isReturningUser ? "signin" : "signup");
+                onSuccess(realEmail, realName);
                 return;
               } catch (err) {
                 console.error("Error fetching Google userinfo:", err);

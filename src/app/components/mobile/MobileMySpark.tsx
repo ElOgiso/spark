@@ -111,10 +111,10 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     e.preventDefault();
     if (!updateBrand) return;
     updateBrand({
-      name: editName.trim() || brand.name,
-      niche: editNiche.trim() || brand.niche,
-      archetype: editArchetype.trim() || brand.archetype,
-      purpose: editPurpose.trim() || brand.purpose,
+      name: editName.trim() || brand?.name || "My Brand",
+      niche: editNiche.trim() || brand?.niche || "Content & Media",
+      archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
+      purpose: editPurpose.trim() || brand?.purpose || "Creating impactful digital content.",
       website: editWebsite.trim(),
       country: editCountry.trim(),
       language: editLanguage.trim(),
@@ -472,7 +472,17 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
           <Sparkles className="w-3.5 h-3.5 text-accent-foreground" /> Tone Matrix
         </h2>
         <div className="flex flex-wrap gap-2">
-          {(brand?.tone || []).map((t: any) => (
+          {(Array.isArray(brand?.tone)
+            ? brand.tone
+            : typeof brand?.tone === "string" && brand.tone.trim()
+            ? brand.tone.split(",").map((t: string) => ({ label: t.trim(), active: true })).filter((t: any) => t.label)
+            : [
+                { label: "Direct", active: true },
+                { label: "Analytical", active: true },
+                { label: "Relatable", active: true },
+                { label: "Authoritative", active: true },
+              ]
+          ).map((t: any) => (
             <button
               key={t.label}
               onClick={() => toggleTone && toggleTone(t.label)}

@@ -40,6 +40,7 @@ export type ViewState =
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   if (auth.loading) return <HydrationSplash />;
+  if (auth.isAuthenticated) return <HydrationSplash />; // Transition safely to dashboard without flashing blank
   return <>{children}</>;
 }
 
@@ -49,6 +50,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   if (auth.loading) return <HydrationSplash />;
+  if (!auth.isAuthenticated) return <HydrationSplash />; // Transition safely to auth view without flashing blank
   return <>{children}</>;
 }
 
@@ -70,8 +72,9 @@ function AppContent() {
   const auth = useAuth();
   const { updateBrand, initializeBrandGenesis } = useSpark();
 
-  // Evaluate user existence strictly from auth context
-  const isUserAuthenticated = auth.isAuthenticated;
+  // Synchronously evaluate user existence from auth context or stored session
+  const storedUser = getStoredDemoUser();
+  const isUserAuthenticated = auth.isAuthenticated || Boolean(storedUser);
 
   // Initialize viewState directly: authenticated -> dashboard, unauthenticated -> auth
   const [viewState, setViewState] = useState<ViewState>(() => {
