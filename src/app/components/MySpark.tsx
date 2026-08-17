@@ -303,18 +303,18 @@ export function MySpark({ onNavigate }: MySparkProps) {
               <div className="flex items-start justify-between mb-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-2xl font-medium">{brand.name}</h3>
+                    <h3 className="text-2xl font-medium">{brand?.name || "My Brand"}</h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-success/20 text-success text-xs font-medium">Active</span>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-1">{brand.niche}</p>
-                  <p className="text-xs text-muted-foreground">Archetype: <span className="text-foreground font-medium">{brand.archetype}</span></p>
+                  <p className="text-sm text-muted-foreground mb-1">{brand?.niche || "Content Creation"}</p>
+                  <p className="text-xs text-muted-foreground">Archetype: <span className="text-foreground font-medium">{brand?.archetype || "The Expert Guide"}</span></p>
                 </div>
                 <button
                   onClick={() => {
-                    setEditName(brand.name || "");
-                    setEditNiche(brand.niche || "");
-                    setEditArchetype(brand.archetype || "");
-                    setEditPurpose(brand.purpose || "");
+                    setEditName(brand?.name || "");
+                    setEditNiche(brand?.niche || "");
+                    setEditArchetype(brand?.archetype || "");
+                    setEditPurpose(brand?.purpose || "");
                     setShowEditIdentity(true);
                   }}
                   className="px-4 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors"
@@ -324,7 +324,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
               </div>
               <div className="p-4 rounded-xl bg-background border border-border">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Brand Purpose</p>
-                <p className="text-base leading-relaxed">{brand.purpose}</p>
+                <p className="text-base leading-relaxed">{brand?.purpose || "Creating authoritative, engaging digital media content."}</p>
               </div>
 
               {showEditIdentity && (
@@ -494,10 +494,10 @@ export function MySpark({ onNavigate }: MySparkProps) {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {brand.contentPillars.map((pillar: any) => (
+                {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).map((pillar: any) => (
                   <button
                     key={pillar.label}
-                    onClick={() => toggleContentPillar(pillar.label)}
+                    onClick={() => toggleContentPillar && toggleContentPillar(pillar.label)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       pillar.active
                         ? "bg-accent text-foreground border border-accent/60"
@@ -519,21 +519,21 @@ export function MySpark({ onNavigate }: MySparkProps) {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-4">Primary Character</p>
                   <div className="flex gap-4 items-start">
-                    {(character.imageUrl || character.avatarUrl || character.characterSheetUrl) && (
+                    {(character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl) && (
                       <img
                         src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
-                        alt={character.name}
+                        alt={character?.name || "Character"}
                         className="w-16 h-16 rounded-xl object-cover border border-accent/40 shrink-0 shadow-md"
                       />
                     )}
                     <div className="space-y-2 flex-1">
                       <div>
-                        <p className="text-lg font-medium">{character.name}</p>
-                        <p className="text-sm text-muted-foreground">{character.role}</p>
+                        <p className="text-lg font-medium">{character?.name || "Primary Host"}</p>
+                        <p className="text-sm text-muted-foreground">{character?.role || "Lead Presenter"}</p>
                       </div>
-                      <p className="text-sm text-muted-foreground">{character.style}</p>
+                      <p className="text-sm text-muted-foreground">{character?.style || "Modern executive creator"}</p>
                       <div className="flex flex-wrap gap-2">
-                        {character.traits?.map((trait: any) => (
+                        {(character?.traits || []).map((trait: any) => (
                           <span key={trait} className="px-2.5 py-1 rounded-lg bg-accent/20 text-xs font-medium">
                             {trait}
                           </span>
@@ -547,18 +547,18 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   <div className="p-4 rounded-xl bg-accent/20 border border-accent/40">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-sm font-medium font-mono">{character.voice.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{character.voice.language}</p>
+                        <p className="text-sm font-medium font-mono">{character?.voice?.name || "Spark Executive Voice"}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{character?.voice?.language || "English (Global)"}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {character.voice.locked && (
+                        {character?.voice?.locked && (
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-success/20 text-success text-xs font-medium">
                             <Lock className="w-2.5 h-2.5" /> Locked
                           </span>
                         )}
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-3">{character.voice.tone}</p>
+                    <p className="text-xs text-muted-foreground mb-3">{character?.voice?.tone || "Energetic & Professional"}</p>
                     <button
                       onClick={handlePreviewVoice}
                       className="w-full py-2 rounded-lg bg-background/50 hover:bg-background text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-border/50"
@@ -578,13 +578,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
             <div className="rounded-xl border border-border bg-card p-8">
               <div className="mb-5 p-4 rounded-xl bg-background border border-border">
                 <p className="text-xs text-muted-foreground mb-1">Primary Audience</p>
-                <p className="text-base font-medium">{brand.audience.primary}</p>
+                <p className="text-base font-medium">{brand?.audience?.primary || "Digital creators and forward-thinking professionals"}</p>
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Pain Points</p>
                   <div className="space-y-2">
-                    {brand.audience.painPoints.map((point: any, i: number) => (
+                    {(Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints : []).map((point: any, i: number) => (
                       <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/5 border border-destructive/10">
                         <AlertCircle className="w-3.5 h-3.5 text-destructive mt-0.5 flex-shrink-0" />
                         <p className="text-sm">{point}</p>
@@ -595,7 +595,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Desires</p>
                   <div className="space-y-2">
-                    {brand.audience.desires.map((desire: any, i: number) => (
+                    {(Array.isArray(brand?.audience?.desires) ? brand.audience.desires : []).map((desire: any, i: number) => (
                       <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg bg-success/5 border border-success/10">
                         <CheckCircle2 className="w-3.5 h-3.5 text-success mt-0.5 flex-shrink-0" />
                         <p className="text-sm">{desire}</p>
@@ -613,10 +613,15 @@ export function MySpark({ onNavigate }: MySparkProps) {
             <div className="rounded-xl border border-border bg-card p-6">
               <p className="text-sm text-muted-foreground mb-4">Active tones shape every script, caption, and hook</p>
               <div className="flex flex-wrap gap-2">
-                {brand.tone.map((t: any) => (
+                {(Array.isArray(brand?.tone)
+                  ? brand.tone
+                  : typeof brand?.tone === "string"
+                  ? [{ label: brand.tone, active: true }]
+                  : []
+                ).map((t: any) => (
                   <button
                     key={t.label}
-                    onClick={() => toggleTone(t.label)}
+                    onClick={() => toggleTone && toggleTone(t.label)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       t.active
                         ? "bg-foreground text-background"

@@ -69,9 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Synchronously evaluate active user from session, demoUser state, or localStorage
   const currentUser = useMemo(() => {
     if (session?.user) return session.user;
-    if (!isConfigured) return demoUser ?? getStoredDemoUser();
-    return null;
-  }, [session, demoUser, isConfigured]);
+    return demoUser ?? getStoredDemoUser();
+  }, [session, demoUser]);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -131,6 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedDemo = getStoredDemoUser();
       if (storedDemo) {
         setDemoUser(storedDemo);
+        const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
+        setIsOnboardingComplete(isComplete);
       }
       setSession(null);
       setProfile(null);
@@ -149,10 +150,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedDemo = getStoredDemoUser();
         if (storedDemo) {
           setDemoUser(storedDemo);
+          const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
+          setIsOnboardingComplete(isComplete);
         } else {
           setSession(null);
           setProfile(null);
           setBrand(null);
+          setIsOnboardingComplete(false);
         }
       }
     } catch (err) {
@@ -160,17 +164,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedDemo = getStoredDemoUser();
       if (storedDemo) {
         setDemoUser(storedDemo);
+        const isComplete = localStorage.getItem("spark_onboarding_complete") !== "false";
+        setIsOnboardingComplete(isComplete);
       } else {
         setSession(null);
         setProfile(null);
         setBrand(null);
+        setIsOnboardingComplete(false);
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [bootstrap, isConfigured]);
 
   useEffect(() => {
     void refreshSession();
+    // Safety watchdog: ensure hydration splash never hangs indefinitely
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+    return () => clearTimeout(timer);
   }, [refreshSession]);
 
   useEffect(() => {
