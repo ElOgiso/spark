@@ -19,7 +19,11 @@ import {
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
-import { onboardDirectorVoiceService } from "../../services/onboarding/onboardDirectorVoiceService";
+import {
+  onboardDirectorVoiceService,
+  FRAME_TO_SCRIPT_KEY,
+  ONBOARD_SCRIPT_KEYS,
+} from "../../services/onboarding/onboardDirectorVoiceService";
 import type { ProductionMode, AutomationMode } from "../../domain/types";
 
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
@@ -1546,9 +1550,9 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
     });
 
     // Preload first step director speech immediately on mount
-    void onboardDirectorVoiceService.preload("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.");
+    void onboardDirectorVoiceService.preload("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.", ONBOARD_SCRIPT_KEYS.welcome_super_spark);
     if (DIRECTORS[1]) {
-      void onboardDirectorVoiceService.preload(DIRECTORS[1]);
+      void onboardDirectorVoiceService.preload(DIRECTORS[1], FRAME_TO_SCRIPT_KEY[1]);
     }
 
     return () => {
@@ -1565,12 +1569,15 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
     }
 
     if (frame === 0) {
-      void onboardDirectorVoiceService.speak("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.");
+      void onboardDirectorVoiceService.speak(
+        "Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.",
+        ONBOARD_SCRIPT_KEYS.welcome_super_spark
+      );
     } else if (DIRECTORS[frame]) {
-      void onboardDirectorVoiceService.speak(DIRECTORS[frame]);
+      void onboardDirectorVoiceService.speak(DIRECTORS[frame], FRAME_TO_SCRIPT_KEY[frame]);
       // Preload next step line
       if (DIRECTORS[frame + 1]) {
-        void onboardDirectorVoiceService.preload(DIRECTORS[frame + 1]);
+        void onboardDirectorVoiceService.preload(DIRECTORS[frame + 1], FRAME_TO_SCRIPT_KEY[frame + 1]);
       }
     }
   }, [frame, legalMode]);

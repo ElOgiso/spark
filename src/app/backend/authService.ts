@@ -66,9 +66,23 @@ export async function signInWithOAuth(provider: "google" | "apple"): Promise<Aut
   const redirectTo = getEnvironmentAwareRedirectUrl();
   console.log(`[SPARK AUTH] Initiating ${provider} OAuth with redirectTo:`, redirectTo);
 
+  const options: {
+    redirectTo: string;
+    queryParams?: Record<string, string>;
+  } = {
+    redirectTo,
+  };
+
+  if (provider === "google") {
+    options.queryParams = {
+      prompt: "select_account",
+      access_type: "offline",
+    };
+  }
+
   const { error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo },
+    options,
   });
   return { data: error ? null : true, error: error ? sanitizeAuthError(error) : null };
 }

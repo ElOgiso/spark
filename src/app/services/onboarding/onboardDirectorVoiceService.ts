@@ -8,6 +8,55 @@ export interface DirectorVoiceState {
 
 type VoiceListener = (state: DirectorVoiceState) => void;
 
+export const ONBOARD_SCRIPT_KEYS = {
+  welcome_super_spark: "welcome_super_spark",
+  step_connect_account: "step_connect_account",
+  step_brand_identity: "step_brand_identity",
+  step_character_host: "step_character_host",
+  step_narrator_voice: "step_narrator_voice",
+  step_research_sources: "step_research_sources",
+  step_production_mode: "step_production_mode",
+  step_ready_launch: "step_ready_launch",
+} as const;
+
+export type OnboardScriptKey = keyof typeof ONBOARD_SCRIPT_KEYS;
+
+export const ONBOARD_FIXED_SCRIPTS: Record<OnboardScriptKey, string> = {
+  welcome_super_spark: "Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.",
+  step_connect_account: "Connect the social accounts you want SPARK to manage. I'll use them for identity, publishing, and distribution.",
+  step_brand_identity: "What should we call this brand — and what niche does SPARK own?",
+  step_character_host: "Who is the host on camera? Lock a character SPARK can keep consistent forever.",
+  step_narrator_voice: "Choose the narrator voice for your content. This is your brand voice — not my chat voice.",
+  step_research_sources: "Paste channels or profiles SPARK should learn from. I'll start analysing as soon as you add them.",
+  step_production_mode: "How should SPARK produce — and how much should I decide without you?",
+  step_ready_launch: "Your SPARK is ready. Enter when you are.",
+};
+
+export const FRAME_TO_SCRIPT_KEY: Record<number, OnboardScriptKey> = {
+  0: "welcome_super_spark",
+  1: "step_connect_account",
+  2: "step_brand_identity",
+  3: "step_character_host",
+  4: "step_narrator_voice",
+  5: "step_research_sources",
+  6: "step_production_mode",
+  7: "step_ready_launch",
+};
+
+// Supabase Storage Public Audio Bucket URLs (Preloaded / Cached for instant latency-free speech)
+const SUPABASE_STORAGE_ONBOARD_BASE = "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/spark/onboard-audio";
+
+export const FIXED_ONBOARD_AUDIO_URLS: Record<OnboardScriptKey, string> = {
+  welcome_super_spark: `${SUPABASE_STORAGE_ONBOARD_BASE}/welcome_super_spark.mp3`,
+  step_connect_account: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_connect_account.mp3`,
+  step_brand_identity: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_brand_identity.mp3`,
+  step_character_host: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_character_host.mp3`,
+  step_narrator_voice: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_narrator_voice.mp3`,
+  step_research_sources: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_research_sources.mp3`,
+  step_production_mode: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_production_mode.mp3`,
+  step_ready_launch: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_ready_launch.mp3`,
+};
+
 class OnboardDirectorVoiceService {
   private isMutedState: boolean = false;
   private isSpeakingState: boolean = false;
@@ -29,6 +78,30 @@ class OnboardDirectorVoiceService {
         }
       } catch {}
     }
+
+    // Pre-populate fixed script URLs into the cache immediately
+    Object.entries(FIXED_ONBOARD_AUDIO_URLS).forEach(([key, url]) => {
+      const scriptText = ONBOARD_FIXED_SCRIPTS[key as OnboardScriptKey];
+      if (scriptText) {
+        this.preloadCache.set(key, url);
+        this.preloadCache.set(this.cleanseText(scriptText), url);
+      }
+    });
+
+    // Eagerly prefetch the first 2 clips on initial load
+    if (typeof window !== "undefined") {
+      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS.welcome_super_spark);
+      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS.step_connect_account);
+    }
+  }
+
+  private prefetchUrl(url: string) {
+    if (typeof window === "undefined" || !url) return;
+    try {
+      const audio = new Audio();
+      audio.preload = "auto";
+      audio.src = url;
+    } catch {}
   }
 
   public isMuted(): boolean {
@@ -97,10 +170,21 @@ class OnboardDirectorVoiceService {
   /**
    * Pre-fetches / warms up audio synthesis so step entry speech starts instantly
    */
-  public async preload(text: string): Promise<void> {
-    if (!text || !text.trim()) return;
-    const cleanText = this.cleanseText(text);
-    if (!cleanText || this.preloadCache.has(cleanText)) return;
+  public async preload(textOrKey: string, scriptKey?: string): Promise<void> {
+    if (!textOrKey || !textOrKey.trim()) return;
+
+    // 1. If matching fixed script key or text in fixed map, prefetch URL
+    if (scriptKey && FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]) {
+      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]);
+      return;
+    }
+
+    const cleanText = this.cleanseText(textOrKey);
+    if (this.preloadCache.has(cleanText)) {
+      const url = this.preloadCache.get(cleanText);
+      if (url) this.prefetchUrl(url);
+      return;
+    }
 
     if (this.preloadingPromises.has(cleanText)) {
       await this.preloadingPromises.get(cleanText);
@@ -120,9 +204,9 @@ class OnboardDirectorVoiceService {
   }
 
   /**
-   * Generates and speaks director speech using ElevenLabs primary TTS with preloading cache
+   * Speaks director speech instantly from preloaded Supabase storage or live fallback
    */
-  public async speak(text: string): Promise<void> {
+  public async speak(text: string, scriptKey?: string): Promise<void> {
     if (this.isMutedState || !text || !text.trim()) {
       return;
     }
@@ -140,24 +224,32 @@ class OnboardDirectorVoiceService {
       this.isSpeakingState = true;
       this.notify();
 
-      let audioDataUrl: string | null = this.preloadCache.get(cleanText) || null;
+      // 1. Check fixed script key or preloaded cache
+      let audioUrl: string | null = null;
 
-      if (!audioDataUrl) {
-        audioDataUrl = await this.synthesizeAudio(cleanText, signal);
-        if (audioDataUrl) {
-          this.preloadCache.set(cleanText, audioDataUrl);
+      if (scriptKey && FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]) {
+        audioUrl = FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey];
+      } else if (this.preloadCache.has(cleanText)) {
+        audioUrl = this.preloadCache.get(cleanText) || null;
+      }
+
+      // 2. If not found in fixed map, synthesize live
+      if (!audioUrl) {
+        audioUrl = await this.synthesizeAudio(cleanText, signal);
+        if (audioUrl) {
+          this.preloadCache.set(cleanText, audioUrl);
         }
       }
 
       if (signal.aborted) return;
 
-      if (!audioDataUrl) {
+      if (!audioUrl) {
         this.isSpeakingState = false;
         this.notify();
         return;
       }
 
-      await this.playAudioUrl(audioDataUrl, signal);
+      await this.playAudioUrl(audioUrl, signal);
     } catch (err: any) {
       if (err?.name === "AbortError" || signal.aborted) {
         return;

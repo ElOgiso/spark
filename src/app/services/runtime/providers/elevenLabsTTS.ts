@@ -21,6 +21,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Calm & Professional)",
     gender: "female",
     description: "Clear, reassuring executive narrator voice ideal for direct explainers.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/21m00Tcm4TlvDq8ikWAM/df6788f9-1955-4780-80e9-35427d1680d9.mp3",
   },
   {
     voiceId: "pNInz6obpgDQGcFmaJgB",
@@ -30,6 +31,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Deep Executive)",
     gender: "male",
     description: "Authoritative, resonant tone for high-impact hook delivery and strategy breakdowns.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/pNInz6obpgDQGcFmaJgB/111c1e55-32e6-4d0f-a3cf-7956a815a519.mp3",
   },
   {
     voiceId: "ErXwobaYiN019PkySvjV",
@@ -39,6 +41,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Modern Creator)",
     gender: "male",
     description: "Energetic and crisp cadence with natural podcast-host cadence.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/ErXwobaYiN019PkySvjV/38d8f8f0-008b-4a3e-b3ae-35e6c7d1e8d9.mp3",
   },
   {
     voiceId: "piTKgcLEGmPE4e6mEKli",
@@ -48,6 +51,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Dynamic Host)",
     gender: "female",
     description: "High-energy pacing perfect for vertical TikTok and YouTube Shorts hooks.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/piTKgcLEGmPE4e6mEKli/449b2520-22c6-43b9-bb20-29a039efc6ee.mp3",
   },
   {
     voiceId: "JBFqnCBsd6RMkjVDRZzb",
@@ -57,6 +61,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "British (Warm Storyteller)",
     gender: "male",
     description: "Rich, narrative tone built for long-form case studies and documentary cuts.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/JBFqnCBsd6RMkjVDRZzb/e6206d1a-0721-4787-aafb-06a6e705cca5.mp3",
   },
   {
     voiceId: "EXAVITQu4vr4xnSDxMaL",
@@ -66,6 +71,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Confident Presenter)",
     gender: "female",
     description: "Engaging, authoritative host voice with excellent rhythmic modulation.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/EXAVITQu4vr4xnSDxMaL/01a3e711-9e69-4277-88e1-0cc5e68b2e86.mp3",
   },
   {
     voiceId: "nPczCjzI2devNBz1zQrb",
@@ -75,6 +81,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Documentary Voice)",
     gender: "male",
     description: "Deep cinematic weight for viral dramatic hooks and brand story films.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/nPczCjzI2devNBz1zQrb/2dd3e72c-4ffd-413f-9185-b0ede1a1c376.mp3",
   },
   {
     voiceId: "XB0fDUnXU5powFXDhCwa",
@@ -84,8 +91,12 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "Global International (Executive Host)",
     gender: "female",
     description: "Sophisticated global voice for luxury, tech, and design brand narratives.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/XB0fDUnXU5powFXDhCwa/942356dc-f10d-4d70-8708-36070b173d4d.mp3",
   },
 ];
+
+// Session-level in-memory preview audio cache (avoids repeated generation per click)
+const sessionVoicePreviewCache = new Map<string, string>();
 
 /**
  * Fetch available voices from ElevenLabs API (direct or server proxy) or fallback to curated list
@@ -165,7 +176,7 @@ export async function getElevenLabsVoices(customKey?: string): Promise<{ voices:
 }
 
 /**
- * Preview TTS for a selected voice ID
+ * Preview TTS for a selected voice ID — instant playback with fallback caching
  */
 export async function previewElevenLabsVoice(
   voiceId: string,
@@ -173,8 +184,33 @@ export async function previewElevenLabsVoice(
   customKey?: string,
   signal?: AbortSignal
 ): Promise<string | null> {
+  if (!voiceId) return null;
+
+  // 1. In-memory session cache hit
+  if (sessionVoicePreviewCache.has(voiceId)) {
+    return sessionVoicePreviewCache.get(voiceId)!;
+  }
+
+  // 2. Curated premade voice preview URL
+  const curated = FALLBACK_CURATED_ELEVENLABS_VOICES.find((v) => v.voiceId === voiceId);
+  if (curated?.previewUrl) {
+    sessionVoicePreviewCache.set(voiceId, curated.previewUrl);
+    return curated.previewUrl;
+  }
+
+  // 3. Fallback synthesis (once per session)
   const text = sampleText || "Welcome to SPARK. I am ready to scale your media brand with automated high-retention content.";
-  return generateElevenLabsVoice(text, voiceId, "eleven_multilingual_v2", signal, customKey);
+  try {
+    const generated = await generateElevenLabsVoice(text, voiceId, "eleven_multilingual_v2", signal, customKey);
+    if (generated) {
+      sessionVoicePreviewCache.set(voiceId, generated);
+      return generated;
+    }
+  } catch (err) {
+    console.warn("[ElevenLabs] Preview generation error:", err);
+  }
+
+  return null;
 }
 
 /**
