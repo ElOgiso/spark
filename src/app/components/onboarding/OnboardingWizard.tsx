@@ -354,7 +354,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
     setPlayingVoiceId(voiceId);
 
     try {
-      const voiceObj = availableVoices.find((v) => v.voiceId === voiceId);
+      const voiceObj = (voices as any[]).find((v: any) => v.voiceId === voiceId);
       const voiceName = voiceObj?.name || "Rachel";
       const sampleText = `Welcome to SPARK. I'm ${voiceName}, your brand narrator for high-retention content.`;
 

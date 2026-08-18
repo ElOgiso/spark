@@ -797,22 +797,24 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
       initialResearchSources = data.researchSources.filter(Boolean).map((url: string, idx: number) => ({
         id: `src-gen-${Date.now()}-${idx}`,
-        platform: url.toLowerCase().includes("youtube") || url.toLowerCase().includes("youtu.be")
+        platform: (url.toLowerCase().includes("youtube") || url.toLowerCase().includes("youtu.be")
           ? "youtube"
           : url.toLowerCase().includes("tiktok")
           ? "tiktok"
           : url.toLowerCase().includes("instagram")
           ? "instagram"
-          : "x",
+          : "x") as any,
         url,
         username: url.split("/").filter(Boolean).pop() || "@creator",
         displayName: url.split("/").filter(Boolean).pop() || "Inspiration Source",
         videoCount: 1,
-        status: "active",
-        sourceType: "channel",
+        status: "active" as const,
+        sourceType: "channel" as const,
         recentVideos: [],
         learnings: ["High retention visual hook pattern", "Fast pace viral cut"],
+        metricsAvailability: "available" as const,
         addedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         lastSyncAt: new Date().toISOString(),
       } as ResearchSource));
     }
@@ -836,16 +838,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 posts: 0,
               });
               try {
-                socialConnectorFramework.storeToken({
+                socialConnectorFramework.saveToken({
                   platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
-                  platformDisplayName: platform,
+                  handle: handle,
+                  displayName: handle,
                   token: "oauth_genesis_" + Date.now(),
-                  channelTitle: handle,
-                  username: handle,
-                  status: "connected",
                   connectedAt: new Date().toISOString(),
-                  permissionsGranted: ["read", "write", "publish"],
-                });
+                  scopes: ["read", "write", "publish"],
+                  status: "active",
+                } as any);
               } catch {}
             }
           });
@@ -859,16 +860,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 posts: 0,
               });
               try {
-                socialConnectorFramework.storeToken({
+                socialConnectorFramework.saveToken({
                   platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
-                  platformDisplayName: platform,
+                  handle: meta.handle,
+                  displayName: meta.handle,
                   token: "oauth_genesis_" + Date.now(),
-                  channelTitle: meta.handle,
-                  username: meta.handle,
-                  status: "connected",
                   connectedAt: new Date().toISOString(),
-                  permissionsGranted: ["read", "write", "publish"],
-                });
+                  scopes: ["read", "write", "publish"],
+                  status: "active",
+                } as any);
               } catch {}
             }
           });
@@ -972,11 +972,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           imageUrl: data.characterSheetUrl || data.characterImageUrl || null,
           characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || null,
           traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
-          description: data.characterDescription,
-          wardrobe: data.wardrobe,
-          hairStyle: data.hairStyle,
-          skinTone: data.skinTone,
-          genre: data.genre,
           voice: {
             name: data.voiceProfile?.name || "Spark_Executive_Male",
             language: data.voiceProfile?.language || "English (Executive Male Accent)",
