@@ -86,16 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const bootstrap = useCallback(async (nextSession: Session | null) => {
     if (!nextSession?.user) {
-      console.log("[SPARK AUTH] bootstrap: no session user -> resetting auth state");
+      console.log("[SPARK AUTH] bootstrap: no session user in cloud");
+      // DO NOT wipe local onboarding state or brand cache on cold start / background session probe!
+      // Only explicit signOut should clear stored onboarding state.
       setSession(null);
       setProfile(null);
       setBrand(null);
-      setIsOnboardingComplete(false);
-      try {
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("spark_onboarding_complete");
-        }
-      } catch {}
       setLoading(false);
       return null;
     }
@@ -129,14 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         setError(result.error);
-        setIsOnboardingComplete(isComplete);
-        try {
-          if (typeof localStorage !== "undefined") {
-            if (isComplete) {
+        if (isComplete) {
+          setIsOnboardingComplete(true);
+          try {
+            if (typeof localStorage !== "undefined") {
               localStorage.setItem("spark_onboarding_complete", "true");
             }
-          }
-        } catch {}
+          } catch {}
+        }
 
         return result;
       } catch (err: any) {
@@ -167,7 +163,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     localStorage.setItem("spark_demo_user", JSON.stringify(demo));
     setDemoUser(demo);
-    setIsOnboardingComplete(!isNewUser);
+    if (!isNewUser) {
+      setIsOnboardingComplete(true);
+      try {
+        localStorage.setItem("spark_onboarding_complete", "true");
+      } catch {}
+    }
   }, []);
 
   const refreshSession = useCallback(async () => {
@@ -225,12 +226,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("[SPARK AUTH] user id:", nextSession.user.id);
       }
 
-      if (event === "SIGNED_OUT" || !nextSession) {
+      if (event === "SIGNED_OUT") {
         setSession(null);
         setProfile(null);
         setBrand(null);
         setIsOnboardingComplete(false);
+        try {
+          if (typeof localStorage !== "undefined") {
+            localStorage.removeItem("spark_onboarding_complete");
+          }
+        } catch {}
         setLoading(false);
+        return;
+      }
+
+      if (!nextSession) {
+        // Initial probe had no session yet; keep loading until restoreSession finishes
         return;
       }
 

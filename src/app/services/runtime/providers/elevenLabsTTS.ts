@@ -21,6 +21,47 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Calm & Professional)",
     gender: "female",
     description: "Clear, reassuring executive narrator voice ideal for direct explainers.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/21m00Tcm4TlvDq8ikWAM/df6788f9-1955-4780-8046-1fc102a80649.mp3",
+  },
+  {
+    voiceId: "AZnzlk1XvdvUeBnXmlld",
+    name: "Domi",
+    category: "premade",
+    labels: { accent: "American", gender: "female", age: "young", description: "energetic" },
+    accent: "American (Energetic & Punchy)",
+    gender: "female",
+    description: "Confident, dynamic pacing for high-tempo hooks and short-form video.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/AZnzlk1XvdvUeBnXmlld/50dd3000-192e-4a6f-a861-f163f3143236.mp3",
+  },
+  {
+    voiceId: "EXAVITQu4vr4xnSDxMaL",
+    name: "Bella",
+    category: "premade",
+    labels: { accent: "American", gender: "female", age: "young", description: "conversational" },
+    accent: "American (Warm Storyteller)",
+    gender: "female",
+    description: "Warm, conversational host tone with natural narrative modulation.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/EXAVITQu4vr4xnSDxMaL/04f36466-8b9f-4321-8329-ff64b72304f7.mp3",
+  },
+  {
+    voiceId: "ErXwobaYiN019PkySvjV",
+    name: "Antoni",
+    category: "premade",
+    labels: { accent: "American", gender: "male", age: "young", description: "clear" },
+    accent: "American (Modern Creator)",
+    gender: "male",
+    description: "Energetic and crisp cadence with natural podcast-host delivery.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/ErXwobaYiN019PkySvjV/38d8f8f0-0086-4298-b0bc-ba543271e118.mp3",
+  },
+  {
+    voiceId: "VR6AewLTigWG4xSOukaG",
+    name: "Arnold",
+    category: "premade",
+    labels: { accent: "American", gender: "male", age: "middle_aged", description: "crisp" },
+    accent: "American (Executive Delivery)",
+    gender: "male",
+    description: "Crisp, trend-native executive voice with sharp cadence and clear enunciation.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/VR6AewLTigWG4xSOukaG/66e83832-9032-4467-9c98-4d57a26f86c2.mp3",
   },
   {
     voiceId: "pNInz6obpgDQGcFmaJgB",
@@ -30,15 +71,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Deep Executive)",
     gender: "male",
     description: "Authoritative, resonant tone for high-impact hook delivery and strategy breakdowns.",
-  },
-  {
-    voiceId: "ErXwobaYiN019PkySvjV",
-    name: "Antoni",
-    category: "premade",
-    labels: { accent: "American", gender: "male", age: "young", description: "clear" },
-    accent: "American (Modern Creator)",
-    gender: "male",
-    description: "Energetic and crisp cadence with natural podcast-host cadence.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/pNInz6obpgDQGcFmaJgB/6734d750-da3d-429e-9767-4ccf318029db.mp3",
   },
   {
     voiceId: "piTKgcLEGmPE4e6mEKli",
@@ -48,6 +81,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Dynamic Host)",
     gender: "female",
     description: "High-energy pacing perfect for vertical TikTok and YouTube Shorts hooks.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/piTKgcLEGmPE4e6mEKli/4f4414d2-3011-4770-98e6-e01fa3a0aeaa.mp3",
   },
   {
     voiceId: "JBFqnCBsd6RMkjVDRZzb",
@@ -57,15 +91,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "British (Warm Storyteller)",
     gender: "male",
     description: "Rich, narrative tone built for long-form case studies and documentary cuts.",
-  },
-  {
-    voiceId: "EXAVITQu4vr4xnSDxMaL",
-    name: "Sarah",
-    category: "premade",
-    labels: { accent: "American", gender: "female", age: "young", description: "confident" },
-    accent: "American (Confident Presenter)",
-    gender: "female",
-    description: "Engaging, authoritative host voice with excellent rhythmic modulation.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/JBFqnCBsd6RMkjVDRZzb/e6206d1a-0721-4787-acb8-e3a36660834e.mp3",
   },
   {
     voiceId: "nPczCjzI2devNBz1zQrb",
@@ -75,6 +101,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "American (Documentary Voice)",
     gender: "male",
     description: "Deep cinematic weight for viral dramatic hooks and brand story films.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/nPczCjzI2devNBz1zQrb/2dd3e1e5-5e60-449e-a50e-4364273574c8.mp3",
   },
   {
     voiceId: "XB0fDUnXU5powFXDhCwa",
@@ -84,6 +111,7 @@ export const FALLBACK_CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceSummary[] = [
     accent: "Global International (Executive Host)",
     gender: "female",
     description: "Sophisticated global voice for luxury, tech, and design brand narratives.",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/XB0fDUnXU5powFXDhCwa/942356dc-f10d-4d70-8772-a44e05b57244.mp3",
   },
 ];
 
@@ -183,9 +211,16 @@ export async function previewElevenLabsVoice(
     return sessionVoicePreviewCache.get(voiceId)!;
   }
 
+  // 2. Check curated ElevenLabs voices for pre-recorded authentic preview audio
+  const matchedCurated = FALLBACK_CURATED_ELEVENLABS_VOICES.find((v) => v.voiceId === voiceId);
+  if (matchedCurated?.previewUrl && !customKey) {
+    sessionVoicePreviewCache.set(voiceId, matchedCurated.previewUrl);
+    return matchedCurated.previewUrl;
+  }
+
   const text = sampleText || "Welcome to SPARK. I am ready to scale your media brand with automated high-retention content.";
 
-  // 2. Primary: ElevenLabs synthesis
+  // 3. Primary: ElevenLabs synthesis
   try {
     const generated = await generateElevenLabsVoice(text, voiceId, "eleven_multilingual_v2", signal, customKey);
     if (generated) {
@@ -194,6 +229,10 @@ export async function previewElevenLabsVoice(
     }
   } catch (err) {
     console.warn("[ElevenLabs] Preview generation notice, trying Gemini fallback:", err);
+  }
+
+  if (matchedCurated?.previewUrl) {
+    return matchedCurated.previewUrl;
   }
 
   // 3. Secondary: Gemini TTS Fallback

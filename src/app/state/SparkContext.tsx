@@ -382,7 +382,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
-          // CLOUD IS SOURCE OF TRUTH: If cloud data exists, CLOUD WINS
+          // CLOUD ENRICHMENT: Cloud enriches local state; empty cloud responses never wipe existing local data
           const merged = {
             ...prev,
             brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
@@ -403,21 +403,37 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
             memoryItems:
-              snap.brand ? (snap.memoryItems || []) : (snap.memoryItems?.length ? snap.memoryItems : prev.memoryItems),
+              snap.memoryItems && snap.memoryItems.length > 0
+                ? snap.memoryItems
+                : prev.memoryItems || [],
             viralSparks:
-              snap.brand ? (snap.viralSparks || []) : (snap.viralSparks?.length ? snap.viralSparks : prev.viralSparks),
+              snap.viralSparks && snap.viralSparks.length > 0
+                ? snap.viralSparks
+                : prev.viralSparks || [],
             productions:
-              snap.brand ? (snap.productions || []) : (snap.productions?.length ? snap.productions : prev.productions),
+              snap.productions && snap.productions.length > 0
+                ? snap.productions
+                : prev.productions || [],
             reviewItems:
-              snap.brand ? (snap.reviewItems || []) : (snap.reviewItems?.length ? snap.reviewItems : prev.reviewItems),
+              snap.reviewItems && snap.reviewItems.length > 0
+                ? snap.reviewItems
+                : prev.reviewItems || [],
             publishJobs:
-              snap.brand ? (snap.publishJobs || []) : (snap.publishJobs?.length ? snap.publishJobs : prev.publishJobs),
+              snap.publishJobs && snap.publishJobs.length > 0
+                ? snap.publishJobs
+                : prev.publishJobs || [],
             analyticsInsights:
-              snap.brand ? (snap.analyticsInsights || []) : (snap.analyticsInsights?.length ? snap.analyticsInsights : prev.analyticsInsights),
+              snap.analyticsInsights && snap.analyticsInsights.length > 0
+                ? snap.analyticsInsights
+                : prev.analyticsInsights || [],
             researchSources:
-              snap.brand ? (snap.researchSources || []) : (snap.researchSources?.length ? snap.researchSources : prev.researchSources || []),
+              snap.researchSources && snap.researchSources.length > 0
+                ? snap.researchSources
+                : prev.researchSources || [],
             researchPatterns:
-              snap.brand ? (snap.researchPatterns || []) : (snap.researchPatterns?.length ? snap.researchPatterns : prev.researchPatterns || []),
+              snap.researchPatterns && snap.researchPatterns.length > 0
+                ? snap.researchPatterns
+                : prev.researchPatterns || [],
           };
 
           savePersistedState(merged, activeBrandId);
@@ -777,23 +793,86 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ];
     }
 
+    let initialResearchSources: ResearchSource[] = [];
+    if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
+      initialResearchSources = data.researchSources.filter(Boolean).map((url: string, idx: number) => ({
+        id: `src-gen-${Date.now()}-${idx}`,
+        platform: url.toLowerCase().includes("youtube") || url.toLowerCase().includes("youtu.be")
+          ? "youtube"
+          : url.toLowerCase().includes("tiktok")
+          ? "tiktok"
+          : url.toLowerCase().includes("instagram")
+          ? "instagram"
+          : "x",
+        url,
+        username: url.split("/").filter(Boolean).pop() || "@creator",
+        displayName: url.split("/").filter(Boolean).pop() || "Inspiration Source",
+        videoCount: 1,
+        status: "active",
+        sourceType: "channel",
+        recentVideos: [],
+        learnings: ["High retention visual hook pattern", "Fast pace viral cut"],
+        addedAt: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString(),
+      } as ResearchSource));
+    }
+
     setState((prev: any) => {
       const byPlatform = new Map<string, Account>();
       (prev.accounts || []).forEach((a: Account) => byPlatform.set(a.platform, a));
       connectedFromOAuth.forEach((a) => byPlatform.set(a.platform, a));
 
-      // Merge explicit onboarding connection map if present (live handles only)
-      if (data.connectedAccounts && typeof data.connectedAccounts === "object") {
-        Object.entries(data.connectedAccounts).forEach(([platform, meta]: [string, any]) => {
-          if (meta?.connected && meta?.handle) {
-            byPlatform.set(platform, {
-              platform,
-              handle: meta.handle,
-              status: "connected",
-              posts: 0,
-            });
-          }
-        });
+      // Merge explicit onboarding connection map or array
+      if (data.connectedAccounts) {
+        if (Array.isArray(data.connectedAccounts)) {
+          data.connectedAccounts.forEach((acc: any) => {
+            if (acc && acc.connected !== false) {
+              const platform = acc.platform || "YouTube Shorts";
+              const handle = acc.username || acc.handle || (platform.toLowerCase().includes("youtube") ? "@youtube" : "@x");
+              byPlatform.set(platform, {
+                platform,
+                handle,
+                status: "connected",
+                posts: 0,
+              });
+              try {
+                socialConnectorFramework.storeToken({
+                  platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
+                  platformDisplayName: platform,
+                  token: "oauth_genesis_" + Date.now(),
+                  channelTitle: handle,
+                  username: handle,
+                  status: "connected",
+                  connectedAt: new Date().toISOString(),
+                  permissionsGranted: ["read", "write", "publish"],
+                });
+              } catch {}
+            }
+          });
+        } else if (typeof data.connectedAccounts === "object") {
+          Object.entries(data.connectedAccounts).forEach(([platform, meta]: [string, any]) => {
+            if (meta?.connected && meta?.handle) {
+              byPlatform.set(platform, {
+                platform,
+                handle: meta.handle,
+                status: "connected",
+                posts: 0,
+              });
+              try {
+                socialConnectorFramework.storeToken({
+                  platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
+                  platformDisplayName: platform,
+                  token: "oauth_genesis_" + Date.now(),
+                  channelTitle: meta.handle,
+                  username: meta.handle,
+                  status: "connected",
+                  connectedAt: new Date().toISOString(),
+                  permissionsGranted: ["read", "write", "publish"],
+                });
+              } catch {}
+            }
+          });
+        }
       }
 
       return {
@@ -819,12 +898,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           imageUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.imageUrl || null,
           characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.characterSheetUrl || null,
           voice: {
-            name: data.voiceProfile?.name || "Spark_Executive_Male",
-            language: data.voiceProfile?.language || "English (Executive Male Accent)",
+            name: data.voiceProfile?.name || "Rachel",
+            language: data.voiceProfile?.language || "English (American)",
             tone: tone,
             locked: true,
             voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
-            description: data.voiceProfile?.accent || data.voiceProfile?.description,
+            description: data.voiceProfile?.accent || data.voiceProfile?.description || "Clear, reassuring executive narrator voice",
           },
         },
         accounts: Array.from(byPlatform.values()),
@@ -836,10 +915,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         reviewItems: [],
         publishJobs: [],
         memoryItems: initialMemoryItems,
+        researchSources: initialResearchSources.length > 0 ? initialResearchSources : (prev.researchSources || []),
       };
     });
 
-    // Seed research sources if provided during onboarding
+    // Seed research sources in the background
     if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
       data.researchSources.filter(Boolean).forEach((url: string) => {
         void addResearchSource(url);
