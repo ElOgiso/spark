@@ -164,17 +164,29 @@ export async function bootstrapUserSession(
       // 5) Determine onboarding completeness from CLOUD source of truth
       let isComplete = profile.onboarding_complete === true;
 
-      // Cloud auto-repair: if user already has an existing configured brand in Supabase but profile flag was false
-      if (!isComplete && brands.length > 0) {
-        const hasConfiguredBrand = brands.some((b) => {
-          const name = (b.name || "").trim().toLowerCase();
-          return name !== "" && name !== "spark" && (profile.active_brand_id === b.id || name !== "my brand");
-        });
-        if (hasConfiguredBrand) {
+      // Cloud auto-repair: if user already has an existing configured brand in Supabase or local cache
+      if (!isComplete) {
+        if (brands.length > 0) {
           isComplete = true;
           profile.onboarding_complete = true;
           void markProfileOnboardingComplete(user.id, activeBrand?.id);
+        } else {
+          try {
+            if (typeof localStorage !== "undefined" && localStorage.getItem("spark_onboarding_complete") === "true") {
+              isComplete = true;
+              profile.onboarding_complete = true;
+              void markProfileOnboardingComplete(user.id, activeBrand?.id);
+            }
+          } catch {}
         }
+      }
+
+      if (isComplete) {
+        try {
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("spark_onboarding_complete", "true");
+          }
+        } catch {}
       }
 
       return {
@@ -185,13 +197,14 @@ export async function bootstrapUserSession(
         error: null,
       };
     } catch (error) {
-      return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: sanitizeAuthError(error) };
-    }
-  };
+      let cachedComplete = false;
+      try {
+        if (typeof localStorage !== "undefined" && localStorage.getItem("spark_onboarding_complete") === "true") {
+          cachedComplete = true;
+        }
+      } catch {}
 
-  const timeoutPromise = new Promise<AuthBootstrapResult>((resolve) => {
-    setTimeout(() => {
-      resolve({
+      return {
         profile: {
           id: user.id,
           email: user.email || "creator@spark.ai",
@@ -199,20 +212,20 @@ export async function bootstrapUserSession(
           full_name: user.user_metadata?.full_name || "Creator",
           role: "Director",
           avatar_url: null,
-          onboarding_complete: false,
+          onboarding_complete: cachedComplete,
           active_brand_id: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
         brand: null,
         brands: [],
-        isOnboardingComplete: false,
-        error: "Session bootstrap timeout — loaded default profile.",
-      });
-    }, 8000);
-  });
+        isOnboardingComplete: cachedComplete,
+        error: sanitizeAuthError(error),
+      };
+    }
+  };
 
-  return Promise.race([runBootstrap(), timeoutPromise]);
+  return runBootstrap();
 }
 
 export function subscribeToAuthState(

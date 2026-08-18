@@ -49,37 +49,39 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
   const scheduledCount = productions.filter((p: any) => p.status === "Approved" && (p.id === "p7" || p.id.includes("scheduled"))).length;
   const publishedCount = productions.filter((p: any) => p.status === "Published").length;
 
-  const priorityItems = isEmpty ? [] : [
-    {
+  const topSpark = viralSparks?.[0];
+
+  const priorityItems = [
+    ...(readyCount > 0 ? [{
       icon: AlertCircle,
       iconColor: "text-warning",
       borderColor: "border-l-warning",
       bg: "bg-warning/5",
-      label: `${readyCount} reviews waiting`,
-      desc: "Creative review — oldest 2 min",
+      label: `${readyCount} review${readyCount > 1 ? "s" : ""} waiting`,
+      desc: reviewItems?.[0]?.title ? `"${reviewItems[0].title}"` : "Creative review waiting",
       action: "Review",
       path: "/review",
-    },
-    {
+    }] : []),
+    ...(viralSparks.length > 0 ? [{
       icon: Flame,
       iconColor: "text-destructive",
       borderColor: "border-l-destructive",
       bg: "bg-destructive/5",
-      label: "Hot opportunity",
-      desc: "Nigerian Creators + AI · 97% fit",
+      label: `${viralSparks.length} hot opportunit${viralSparks.length > 1 ? "ies" : "y"}`,
+      desc: topSpark?.title ? `"${topSpark.title}"` : `${brand?.niche || "Trending"} opportunity`,
       action: "Create",
       path: "/viral-sparks",
-    },
-    {
+    }] : []),
+    ...(approvedCount > 0 ? [{
       icon: CheckCircle2,
       iconColor: "text-success",
       borderColor: "border-l-success",
       bg: "bg-success/5",
-      label: "Publishing today 2 PM",
-      desc: "Psychology of Viral Content · YouTube",
+      label: `${approvedCount} ready to publish`,
+      desc: "Approved · ready to schedule",
       action: "Calendar",
-      path: "/review", // Since calendar isn't directly a separate page, we can route it to review queue (e.g. approved / scheduled list)
-    },
+      path: "/review",
+    }] : []),
   ];
 
   const pipeline = [
@@ -96,14 +98,22 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
     { label: "Accounts", value: String(connectedAccountsCount), icon: Tv, path: "/more" },
     { label: "Published Today", value: String(publishedCount), icon: Video, trend: `+${publishedCount}`, path: "/analytics" },
     { label: "Reviews Pending", value: String(readyCount), icon: AlertCircle, path: "/review" },
-    { label: "Viral Sparks", value: String(viralSparks.length), icon: Flame, trend: isEmpty ? "" : "new", path: "/viral-sparks" },
+    { label: "Viral Sparks", value: String(viralSparks.length), icon: Flame, trend: viralSparks.length > 0 ? "live" : "", path: "/viral-sparks" },
   ];
 
-  const activities: ActivityItem[] = isEmpty ? [] : [
-    { id: "a1", type: "opportunity", title: "AI editing trends discovered (97% fit)", time: "5m ago" },
-    { id: "a2", type: "approved", title: "Storyboard approved for Marketing Tactics", time: "12m ago" },
-    { id: "a3", type: "completed", title: "Psychology of Viral Content ready for review", time: "45m ago" },
-    { id: "a4", type: "published", title: "Build a Media Empire published to YouTube", time: "1h ago" },
+  const activities: ActivityItem[] = [
+    ...(viralSparks.slice(0, 2).map((s: any, idx: number) => ({
+      id: `sp-${idx}`,
+      type: "opportunity" as const,
+      title: `Opportunity: "${s.title || s.topic || "Trending Topic"}" (${s.brandFitScore || 95}% fit)`,
+      time: "Just now",
+    }))),
+    ...(productions.slice(0, 2).map((p: any, idx: number) => ({
+      id: `pr-${idx}`,
+      type: (p.status === "Published" ? "published" : p.status === "Approved" ? "approved" : "completed") as any,
+      title: `${p.status}: "${p.title || "Production Draft"}"`,
+      time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString() : "Recent",
+    }))),
   ];
 
   const activityIcons = {
@@ -134,7 +144,7 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
             </div>
           </div>
           <div className="border-t border-border/50">
-            {isEmpty ? (
+            {priorityItems.length === 0 ? (
               <div className="px-5 py-4 text-center text-xs text-muted-foreground">
                 All caught up! No active tasks.
               </div>

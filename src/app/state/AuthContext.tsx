@@ -60,8 +60,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [demoUser, setDemoUser] = useState<User | null>(() => getStoredDemoUser());
 
-  // Cloud bootstrap is the single source of truth for onboarding completeness
-  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(false);
+  // Cloud bootstrap is the single source of truth for onboarding completeness, backed by local cache
+  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean>(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        return localStorage.getItem("spark_onboarding_complete") === "true";
+      }
+    } catch {}
+    return false;
+  });
 
   const isConfigured = isAuthBackendReady();
   const requireAuth = isAuthRequired();
@@ -84,6 +91,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setBrand(null);
       setIsOnboardingComplete(false);
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("spark_onboarding_complete");
+        }
+      } catch {}
       setLoading(false);
       return null;
     }
@@ -118,6 +130,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setError(result.error);
         setIsOnboardingComplete(isComplete);
+        try {
+          if (typeof localStorage !== "undefined") {
+            if (isComplete) {
+              localStorage.setItem("spark_onboarding_complete", "true");
+            }
+          }
+        } catch {}
 
         return result;
       } catch (err: any) {
@@ -138,69 +157,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleDemoSignIn = useCallback((email: string, fullName?: string, isNewUser: boolean = false) => {
     const name = fullName || email.split("@")[0] || "Creator";
-    const mockUser: any = {
-      id: `user-${Date.now()}`,
-      email: email || "creator@spark.ai",
-      role: "authenticated",
-      user_metadata: { full_name: name },
+    const demo: User = {
+      id: `demo-${Date.now()}`,
+      email: email,
+      app_metadata: { provider: "email" },
+      user_metadata: { full_name: name, display_name: name },
+      aud: "authenticated",
+      created_at: new Date().toISOString(),
     };
-    try {
-      localStorage.setItem("spark_demo_user", JSON.stringify(mockUser));
-    } catch {}
-    setDemoUser(mockUser);
-    setError(null);
+    localStorage.setItem("spark_demo_user", JSON.stringify(demo));
+    setDemoUser(demo);
     setIsOnboardingComplete(!isNewUser);
-    setLoading(false);
   }, []);
 
   const refreshSession = useCallback(async () => {
     if (!isConfigured) {
-      const storedDemo = getStoredDemoUser();
-      if (storedDemo) {
-        setDemoUser(storedDemo);
-      }
-      setSession(null);
-      setProfile(null);
-      setBrand(null);
-      setError(null);
       setLoading(false);
-      return;
-    }
-
-    // If an OAuth hash token is actively present in URL, let onAuthStateChange process it
-    const hasOAuthHash = typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token");
-    if (hasOAuthHash) {
-      console.log("[SPARK AUTH] OAuth redirect detected (hash token in URL) -> awaiting Supabase auth state change");
-      setLoading(true);
       return;
     }
 
     setLoading(true);
     try {
       console.log("[SPARK AUTH] refreshSession: restoring session from Supabase client storage");
-      const restorePromise = restoreSession();
-      const timeoutPromise = new Promise<{ session: null; error: string }>((resolve) =>
-        setTimeout(() => resolve({ session: null, error: "timeout" }), 5000)
-      );
-
-      const result = await Promise.race([restorePromise, timeoutPromise]);
+      const result = await restoreSession();
       if (result.session) {
         console.log("[SPARK AUTH] session exists: true");
         console.log("[SPARK AUTH] user id:", result.session.user?.id);
         await bootstrap(result.session);
       } else {
-        console.log("[SPARK AUTH] session exists: false");
-        setSession(null);
-        setProfile(null);
-        setBrand(null);
-        setIsOnboardingComplete(false);
+        console.log("[SPARK AUTH] session exists: false (no stored session found)");
+        // Only clear if onAuthStateChange hasn't already received a session
+        setSession((prev) => {
+          if (prev) return prev;
+          setProfile(null);
+          setBrand(null);
+          return null;
+        });
       }
     } catch (err) {
-      console.warn("[SPARK AUTH] Session restore error:", err);
-      setSession(null);
-      setProfile(null);
-      setBrand(null);
-      setIsOnboardingComplete(false);
+      console.warn("[SPARK AUTH] Session restore notice:", err);
     } finally {
       setLoading(false);
     }
@@ -405,6 +400,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn("[Spark Auth] markProfileOnboardingComplete notice:", err);
       }
     }
+
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("spark_onboarding_complete", "true");
+      }
+    } catch {}
 
     setIsOnboardingComplete(true);
   }, [currentUser, session, isConfigured, brand]);

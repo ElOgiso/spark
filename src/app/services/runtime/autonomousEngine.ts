@@ -27,6 +27,9 @@ export class AutonomousEngine {
     if (this.isRunning) return;
     this.isRunning = true;
 
+    // Run initial execution cycle immediately on start
+    void this.runExecutionCycle(getWorkspaceState, updateWorkspaceState);
+
     // Run execution cycle every 45 seconds
     this.timerId = setInterval(() => {
       this.runExecutionCycle(getWorkspaceState, updateWorkspaceState);
@@ -82,6 +85,14 @@ export class AutonomousEngine {
         ...prev,
         viralSparks: [newSpark, ...(prev.viralSparks || [])],
       }));
+
+      // Persist to Supabase if brand ID available
+      const brandId = (state as any)?.brandId || (brand as any)?.id || localStorage.getItem("spark_current_brand_id");
+      if (brandId) {
+        import("../../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
+          void persistViralSparkCreate(brandId, newSpark);
+        }).catch(() => {});
+      }
 
       // Phase 4 Live Intelligence Events
       eventBus.emit("LIVE_TREND_FOUND", { title: newSpark.title, source: signal?.source || "Google Trends", velocity: signal?.searchVolumeGrowth || "+340%" }, brand.name);

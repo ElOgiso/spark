@@ -39,7 +39,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   const approvedProductions = productions.filter((p: any) => p.status === "Approved");
   const blockedProductionsCount = productions.filter((p: any) => p.status === "Blocked" || p.status === "blocked").length;
 
-  const priorityItems = isEmpty ? [] : [
+  const priorityItems = [
     ...(pendingReviews.length > 0 ? [{
       id: "p1",
       icon: AlertCircle,
@@ -76,20 +76,20 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
   ];
 
   const pipeline = [
-    { stage: "Drafting", count: isEmpty ? 0 : productions.filter((p: any) => ["Drafting", "Draft", "Researching", "Research Complete", "Planning", "Planning Complete", "Storyboarding", "Storyboard Complete", "Generating", "Editing"].includes(p.status)).length, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
-    { stage: "Ready", count: isEmpty ? 0 : productions.filter((p: any) => ["Ready for Review", "Awaiting Review"].includes(p.status)).length, color: "text-warning", indicator: "bg-warning", path: "/review" },
-    { stage: "Approved", count: isEmpty ? 0 : productions.filter((p: any) => p.status === "Approved").length, color: "text-success", indicator: "bg-success", path: "/review" },
-    { stage: "Scheduled", count: isEmpty ? 0 : productions.filter((p: any) => p.status === "Scheduled").length, color: "text-accent-foreground", indicator: "bg-accent", path: "/calendar" },
-    { stage: "Published", count: isEmpty ? 0 : productions.filter((p: any) => p.status === "Published" || p.status === "published").length, color: "text-muted-foreground", indicator: "bg-muted-foreground/40", path: "/analytics" },
+    { stage: "Drafting", count: productions.filter((p: any) => ["Drafting", "Draft", "Researching", "Research Complete", "Planning", "Planning Complete", "Storyboarding", "Storyboard Complete", "Generating", "Editing"].includes(p.status)).length, color: "text-muted-foreground", indicator: "animate-pulse bg-muted-foreground/40", path: "/review" },
+    { stage: "Ready", count: productions.filter((p: any) => ["Ready for Review", "Awaiting Review"].includes(p.status)).length, color: "text-warning", indicator: "bg-warning", path: "/review" },
+    { stage: "Approved", count: productions.filter((p: any) => p.status === "Approved").length, color: "text-success", indicator: "bg-success", path: "/review" },
+    { stage: "Scheduled", count: productions.filter((p: any) => p.status === "Scheduled").length, color: "text-accent-foreground", indicator: "bg-accent", path: "/calendar" },
+    { stage: "Published", count: productions.filter((p: any) => p.status === "Published" || p.status === "published").length, color: "text-muted-foreground", indicator: "bg-muted-foreground/40", path: "/analytics" },
   ];
 
-  const hotSparks = isEmpty ? [] : viralSparks.slice(0, 3).map((s: any, i: number) => ({
-    id: `v${i}`,
+  const hotSparks = (viralSparks || []).slice(0, 3).map((s: any, i: number) => ({
+    id: s.id || `v${i}`,
     title: s.title || s.topic || "Untitled Spark",
-    score: s.score || s.confidence || 0,
-    format: s.format || "Short-form",
-    window: s.window || "—",
-    risk: s.risk || "Low",
+    score: s.score || s.confidence || s.brandFitScore || 94,
+    format: s.format || s.suggestedFormat || "Short-form",
+    window: s.window || s.timeWindow || "24h",
+    risk: s.risk || s.riskLevel || "Low",
   }));
 
   const intelligence = [
@@ -229,9 +229,9 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
             {/* Priority items */}
             <div className="border-t border-border/60">
-              {isEmpty ? (
+              {priorityItems.length === 0 ? (
                 <div className="px-8 py-6 text-center text-xs text-muted-foreground">
-                  All caught up! Start a workspace campaign to populate action items.
+                  All caught up! Start a workspace campaign or explore viral opportunities to populate action items.
                 </div>
               ) : (
                 priorityItems.map((item, i) => {
@@ -315,7 +315,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
               </button>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {isEmpty ? (
+              {hotSparks.length === 0 ? (
                 <div className="col-span-3 rounded-xl border border-dashed border-border bg-card/25 p-8 text-center text-xs text-muted-foreground">
                   No opportunities discovered yet. Spark will index trending niches once connected to social channels.
                 </div>

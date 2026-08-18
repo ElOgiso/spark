@@ -40,13 +40,22 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       return { data: existing, error: null, source: "supabase" };
     }
 
+    // Check cached onboarding status if available
+    let initialOnboarding = false;
+    try {
+      if (typeof localStorage !== "undefined") {
+        const cached = localStorage.getItem("spark_onboarding_complete");
+        if (cached === "true") initialOnboarding = true;
+      }
+    } catch {}
+
     const payload: Partial<ProfileRow> & { id: string } = {
       id: user.id,
       display_name: displayNameFromUser(user),
       role: "Director",
       avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
       email: user.email ?? null,
-      onboarding_complete: false,
+      onboarding_complete: initialOnboarding,
       active_brand_id: null,
     };
 
@@ -56,7 +65,12 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       .select("*")
       .single();
 
-    if (error) return repositoryError<ProfileRow>(error.message);
+    if (error) {
+      // If error occurs, try fetching existing row once more before failing
+      const retry = await (supabase.from("profiles") as any).select("*").eq("id", user.id).maybeSingle();
+      if (retry.data) return { data: retry.data, error: null, source: "supabase" };
+      return repositoryError<ProfileRow>(error.message);
+    }
     return { data, error: null, source: "supabase" };
   } catch (err: any) {
     return repositoryError<ProfileRow>(err?.message || "Profile upsert failed");
@@ -86,7 +100,21 @@ export async function markProfileOnboardingComplete(
       .select("*")
       .maybeSingle();
 
-    if (error) return repositoryError<ProfileRow>(error.message);
+    if (error) {
+      // If update fails because profile row doesn't exist yet, perform upsert
+      const { data: upsertData, error: upsertErr } = await (supabase.from("profiles") as any)
+        .upsert({
+          id: userId,
+          onboarding_complete: true,
+          active_brand_id: activeBrandId || null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "id" })
+        .select("*")
+        .maybeSingle();
+
+      if (upsertErr) return repositoryError<ProfileRow>(upsertErr.message);
+      return { data: upsertData, error: null, source: "supabase" };
+    }
     return { data, error: null, source: "supabase" };
   } catch (err: any) {
     return repositoryError<ProfileRow>(err?.message || "Failed to mark profile onboarding complete");
