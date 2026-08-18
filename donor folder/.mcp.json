@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "Granola__322e5eb8": {
+      "type": "http",
+      "url": "${MCP_PROXY_BASE_URL}/proxy/322e5eb8-8034-4995-9d16-05bc2b54ee8b",
+      "headers": {
+        "Authorization": "Bearer ${MCP_PROXY_AUTH_TOKEN}"
+      }
+    },
+    "GitHub__3f6f5673": {
+      "type": "http",
+      "url": "${MCP_PROXY_BASE_URL}/proxy/3f6f5673-0c04-4d0c-a6af-f5b3d81200da",
+      "headers": {
+        "Authorization": "Bearer ${MCP_PROXY_AUTH_TOKEN}"
+      }
+    }
+  }
+}

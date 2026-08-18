@@ -1,0 +1,10 @@
+{
+  "description": "Enables seamless collaboration by integrating design editing and version control, allowing users to manage and update projects efficiently within a unified platform.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

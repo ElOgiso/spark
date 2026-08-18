@@ -1,0 +1,179 @@
+**FIGMA PROMPT — SPARK Mobile Home (“Spark”)**  
+*Aligned to Notion vision · Design Council · live MobileHome structure · onboard-level cleanliness, elevated*
+
+---
+
+### Design north star
+
+SPARK Home is the **Executive Command Surface** — not a feed, not a SaaS dashboard, not a shrunk desktop.
+
+> The executive opens SPARK and immediately sees: *what needs a decision, what SPARK is doing, what opportunities exist* — then acts once.
+
+Match the **onboard story cleanliness** (quiet dark, one clear hierarchy, soft cards, restrained purple, no chrome noise) but make Home **sharper and more operational** than setup.
+
+---
+
+### Design Council filters
+
+| Brain | Apply on Home |
+|--------|----------------|
+| **Apple** | Remove density; one breath between blocks |
+| **Linear** | Priority list is the product; metrics are secondary |
+| **CapCut** | Native mobile: thumb reach, large taps, no tiny meta |
+| **Netflix** | Surface the next best thing SPARK recommends |
+| **Spotify** | Personality in status line, not decoration |
+| **OpenAI** | Hide models, pipelines internals, agent names |
+
+**Do not:** wizard steppers, chat bubbles as layout, logo-in-avatar headers, metric walls, competing FABs.
+
+---
+
+### Live code baseline (preserve jobs, not layout clutter)
+
+Current `MobileHome.tsx` already does the right *jobs*:
+
+1. Greeting + Super Spark entry (`AIChatPill`)  
+2. Live status (“Spark is active · N opportunities · N need review”)  
+3. Priority decision rows → Review / Viral Sparks / etc.  
+4. Pipeline stage strip  
+5. Metric tiles (reviews, sparks, productions…)  
+6. Intelligence / activity list  
+7. Bottom nav clearance (`~76px`)
+
+**Figma redesign keeps these jobs.** It upgrades hierarchy, spacing, and story-grade calm so Home feels like the same family as Brand Genesis — **cleaner and better**.
+
+---
+
+### Mobile frame structure (390×844 / safe-area)
+
+```text
+┌─────────────────────────────────────┐
+│ status bar / safe                   │
+├─────────────────────────────────────┤
+│  Greeting                    [✦ Pill]│  ← Super Spark entry
+│  Spark is active · soft status      │
+├─────────────────────────────────────┤
+│                                     │
+│  NEEDS YOU                          │  ← primary block
+│  ┌ decision card ──────────── → ┐  │
+│  ┌ decision card ──────────── → ┐  │
+│                                     │
+│  PIPELINE                           │  ← quiet strip
+│  ○ ○ ● ○ ○   labels under          │
+│                                     │
+│  OPPORTUNITIES                      │  ← 1–2 spark cards max
+│  ┌ viral spark preview ───── → ┐   │
+│                                     │
+│  AT A GLANCE                      │  ← 2×2 soft metrics
+│  ┌────┐ ┌────┐                     │
+│  └────┘ └────┘                     │
+│                                     │
+│  RECENT (optional, collapsed feel)  │
+│                                     │
+├─────────────────────────────────────┤
+│     existing bottom nav (Spark)     │
+└─────────────────────────────────────┘
+```
+
+Scroll only the middle; header can pin lightly. Primary CTA energy lives in **Needs You**, not floating junk.
+
+---
+
+### Block specs
+
+#### 1 — Header (onboard-grade quiet)
+- **Greeting:** `Good morning, {name}` — medium weight, not billboard  
+- **Super Spark pill:** same family as live `AIChatPill` (compact, premium, right-aligned)  
+- **Status line:** single line, 12–13px muted  
+  - Live green pulse when active  
+  - Copy pattern: `Spark is active · {n} opportunities · {n} need review`  
+- No second toolbar, no date row unless microscopic and muted  
+- No Spark logo inside a chat avatar
+
+#### 2 — Needs You (hero of the screen)
+Label: **Needs you** (not “Priority Queue” / “Tasks”)
+
+Each row = one **decision card**:
+- Soft left accent (warning / accent / success) — thinner and calmer than harsh bars  
+- Title = human outcome (“2 reviews waiting”)  
+- Subtitle = one concrete item title  
+- Trailing: `Review →` / `Open →`  
+- Empty state: one calm line — “You’re clear. SPARK is watching.” — not empty gray boxes  
+
+Max **3** visible decisions; overflow implied by navigation to Review / Viral Sparks.
+
+#### 3 — Pipeline (intelligence, not a project tool)
+- Horizontal **5 quiet nodes** (Research → Produce → Review → Publish → Learn) or live stage labels from product  
+- Current stage emphasized; others whisper  
+- One micro-line under: what SPARK is doing now (optional)  
+- No heavy progress bars, no % spam on Home
+
+#### 4 — Opportunities (Viral Sparks preview)
+- Section label: **Opportunities**  
+- **1–2** large cards only (thumbnail optional, title, spark signal, `Open →`)  
+- If zero: hide section or one line “Research is warming up” — no fake sparks  
+- Card style = onboard card language (radius, border, quiet fill)
+
+#### 5 — At a glance (metrics)
+- 2×2 grid, **large number**, small label  
+- Live mappings: Reviews pending · Viral Sparks · In production · Approved / Ready  
+- Tap → correct route (`/review`, viral sparks, etc.)  
+- No sparklines, no 8-tile dashboard
+
+#### 6 — Recent (optional, tertiary)
+- Short list (2–3), activity style  
+- Or omit if Needs You + Opportunities already tell the story (Apple would remove)
+
+---
+
+### Visual system (match onboard, elevate)
+
+| Token | Direction |
+|--------|-----------|
+| Background | Same deep quiet as Genesis (`#0B0F17` family) |
+| Cards | `rounded-2xl`, hairline border, slight elevation only |
+| Accent | Purple reserved for Super Spark pill + active emphasis |
+| Type | Clear hierarchy: greeting → section label → body → micro |
+| Icons | Sparse, 16–18px, never icon salad |
+| Motion | Soft press `scale 0.98`; no bounce carnival |
+| Safe area | Bottom padding clear of nav; top respects notch |
+
+**Better than onboard:** slightly denser information, still one focal “Needs you.”  
+**Same as onboard:** breath, dark calm, no messenger UI, no wizard chrome.
+
+---
+
+### Empty vs active states
+
+**New brand (post-onboard, little data)**  
+- Greeting + status “Spark is ready”  
+- One card: “Add a research source” or “Explore opportunities”  
+- Metrics at zero without shame UI  
+
+**Active executive**  
+- Needs you populated  
+- Pipeline reflects real work  
+- Opportunities show real sparks only  
+
+---
+
+### Copy language (Notion / SPARK terms only)
+
+Use: Spark · Super Spark · Needs you · Opportunities · Review · Viral Sparks · Pipeline · Brand  
+Avoid: Dashboard · Inbox · Tasks · Agents · Wizard · Feed · Notifications center as hero  
+
+---
+
+### Deliverables for Figma
+
+1. **Mobile Home — Active** (with 2 priorities, 1 spark, metrics)  
+2. **Mobile Home — Empty / clear**  
+3. **Components:** Header, DecisionCard, PipelineStrip, OpportunityCard, MetricTile, SuperSparkPill  
+4. Prototype links: Decision → Review, Spark card → Viral Sparks, Pill → Super Spark, Metrics → routes  
+5. Note: bottom nav is existing system — design content above it only  
+
+---
+
+### One-line brief for designers
+
+> **Design SPARK mobile Home as a quiet executive command surface in the same visual family as Brand Genesis—cleaner, more decisive, never a widget dashboard—where “Needs you,” live status, a soft pipeline, and real opportunities are the only things that earn space.**

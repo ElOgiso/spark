@@ -891,7 +891,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           avatarUrl: data.characterSheetUrl || data.characterImageUrl || null,
           imageUrl: data.characterSheetUrl || data.characterImageUrl || null,
           characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || null,
-          traits: ["Visionary", "Charismatic", "Authority"],
+          traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
+          description: data.characterDescription,
+          wardrobe: data.wardrobe,
+          hairStyle: data.hairStyle,
+          skinTone: data.skinTone,
+          genre: data.genre,
           voice: {
             name: data.voiceProfile?.name || "Spark_Executive_Male",
             language: data.voiceProfile?.language || "English (Executive Male Accent)",

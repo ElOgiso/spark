@@ -43,20 +43,6 @@ export const FRAME_TO_SCRIPT_KEY: Record<number, OnboardScriptKey> = {
   7: "step_ready_launch",
 };
 
-// Supabase Storage Public Audio Bucket URLs (Preloaded / Cached for instant latency-free speech)
-const SUPABASE_STORAGE_ONBOARD_BASE = "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/spark/onboard-audio";
-
-export const FIXED_ONBOARD_AUDIO_URLS: Record<OnboardScriptKey, string> = {
-  welcome_super_spark: `${SUPABASE_STORAGE_ONBOARD_BASE}/welcome_super_spark.mp3`,
-  step_connect_account: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_connect_account.mp3`,
-  step_brand_identity: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_brand_identity.mp3`,
-  step_character_host: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_character_host.mp3`,
-  step_narrator_voice: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_narrator_voice.mp3`,
-  step_research_sources: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_research_sources.mp3`,
-  step_production_mode: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_production_mode.mp3`,
-  step_ready_launch: `${SUPABASE_STORAGE_ONBOARD_BASE}/step_ready_launch.mp3`,
-};
-
 class OnboardDirectorVoiceService {
   private isMutedState: boolean = false;
   private isSpeakingState: boolean = false;
@@ -65,6 +51,8 @@ class OnboardDirectorVoiceService {
   private listeners: Set<VoiceListener> = new Set();
   private preloadCache: Map<string, string> = new Map();
   private preloadingPromises: Map<string, Promise<string | null>> = new Map();
+  private pendingAutoplaySpeech: string | null = null;
+  private gestureListenerAttached: boolean = false;
 
   // Primary ElevenLabs guide voice ID (Rachel: calm, warm, relaxed onboard director)
   private readonly defaultGuideVoiceId = "21m00Tcm4TlvDq8ikWAM";
@@ -79,29 +67,32 @@ class OnboardDirectorVoiceService {
       } catch {}
     }
 
-    // Pre-populate fixed script URLs into the cache immediately
-    Object.entries(FIXED_ONBOARD_AUDIO_URLS).forEach(([key, url]) => {
-      const scriptText = ONBOARD_FIXED_SCRIPTS[key as OnboardScriptKey];
-      if (scriptText) {
-        this.preloadCache.set(key, url);
-        this.preloadCache.set(this.cleanseText(scriptText), url);
-      }
-    });
-
-    // Eagerly prefetch the first 2 clips on initial load
     if (typeof window !== "undefined") {
-      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS.welcome_super_spark);
-      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS.step_connect_account);
+      this.attachUserGestureListener();
     }
   }
 
-  private prefetchUrl(url: string) {
-    if (typeof window === "undefined" || !url) return;
-    try {
-      const audio = new Audio();
-      audio.preload = "auto";
-      audio.src = url;
-    } catch {}
+  private attachUserGestureListener() {
+    if (this.gestureListenerAttached || typeof window === "undefined") return;
+    this.gestureListenerAttached = true;
+
+    const onFirstGesture = () => {
+      window.removeEventListener("click", onFirstGesture);
+      window.removeEventListener("touchstart", onFirstGesture);
+      window.removeEventListener("keydown", onFirstGesture);
+      this.gestureListenerAttached = false;
+
+      // If speech was blocked by autoplay, speak now
+      if (this.pendingAutoplaySpeech && !this.isMutedState) {
+        const textToSpeak = this.pendingAutoplaySpeech;
+        this.pendingAutoplaySpeech = null;
+        void this.speak(textToSpeak);
+      }
+    };
+
+    window.addEventListener("click", onFirstGesture, { once: true, passive: true });
+    window.addEventListener("touchstart", onFirstGesture, { once: true, passive: true });
+    window.addEventListener("keydown", onFirstGesture, { once: true, passive: true });
   }
 
   public isMuted(): boolean {
@@ -118,6 +109,7 @@ class OnboardDirectorVoiceService {
       localStorage.setItem("spark_onboard_voice_muted", String(muted));
     } catch {}
     if (muted) {
+      this.pendingAutoplaySpeech = null;
       this.stop();
     }
     this.notify();
@@ -161,6 +153,11 @@ class OnboardDirectorVoiceService {
       } catch {}
       this.currentAudio = null;
     }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
     if (this.isSpeakingState) {
       this.isSpeakingState = false;
       this.notify();
@@ -168,21 +165,15 @@ class OnboardDirectorVoiceService {
   }
 
   /**
-   * Pre-fetches / warms up audio synthesis so step entry speech starts instantly
+   * Pre-fetches audio synthesis in background so step entry speech is fast
    */
   public async preload(textOrKey: string, scriptKey?: string): Promise<void> {
     if (!textOrKey || !textOrKey.trim()) return;
 
-    // 1. If matching fixed script key or text in fixed map, prefetch URL
-    if (scriptKey && FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]) {
-      this.prefetchUrl(FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]);
-      return;
-    }
-
     const cleanText = this.cleanseText(textOrKey);
+    if (!cleanText) return;
+
     if (this.preloadCache.has(cleanText)) {
-      const url = this.preloadCache.get(cleanText);
-      if (url) this.prefetchUrl(url);
       return;
     }
 
@@ -204,7 +195,10 @@ class OnboardDirectorVoiceService {
   }
 
   /**
-   * Speaks director speech instantly from preloaded Supabase storage or live fallback
+   * Speaks director speech with resilient multi-tier fallback:
+   * Tier 1: ElevenLabs TTS
+   * Tier 2: Gemini TTS
+   * Tier 3: Native Web Speech Synthesis
    */
   public async speak(text: string, scriptKey?: string): Promise<void> {
     if (this.isMutedState || !text || !text.trim()) {
@@ -224,16 +218,12 @@ class OnboardDirectorVoiceService {
       this.isSpeakingState = true;
       this.notify();
 
-      // 1. Check fixed script key or preloaded cache
       let audioUrl: string | null = null;
-
-      if (scriptKey && FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey]) {
-        audioUrl = FIXED_ONBOARD_AUDIO_URLS[scriptKey as OnboardScriptKey];
-      } else if (this.preloadCache.has(cleanText)) {
+      if (this.preloadCache.has(cleanText)) {
         audioUrl = this.preloadCache.get(cleanText) || null;
       }
 
-      // 2. If not found in fixed map, synthesize live
+      // Synthesize if not in cache
       if (!audioUrl) {
         audioUrl = await this.synthesizeAudio(cleanText, signal);
         if (audioUrl) {
@@ -243,20 +233,25 @@ class OnboardDirectorVoiceService {
 
       if (signal.aborted) return;
 
-      if (!audioUrl) {
-        this.isSpeakingState = false;
-        this.notify();
-        return;
+      if (audioUrl) {
+        const playedSuccessfully = await this.playAudioUrl(audioUrl, signal);
+        if (playedSuccessfully || signal.aborted) {
+          return;
+        }
       }
 
-      await this.playAudioUrl(audioUrl, signal);
+      // Fallback: Web Speech Synthesis API
+      if (!signal.aborted) {
+        await this.speakWithWebSpeech(cleanText, signal);
+      }
     } catch (err: any) {
       if (err?.name === "AbortError" || signal.aborted) {
         return;
       }
-      console.warn("[OnboardDirectorVoice] Speech playback notice:", err);
-      this.isSpeakingState = false;
-      this.notify();
+      console.warn("[OnboardDirectorVoice] Primary TTS failed, trying Web Speech fallback:", err);
+      if (!signal.aborted) {
+        await this.speakWithWebSpeech(cleanText, signal);
+      }
     }
   }
 
@@ -272,7 +267,7 @@ class OnboardDirectorVoiceService {
   }
 
   private async synthesizeAudio(text: string, signal?: AbortSignal): Promise<string | null> {
-    // 1. Primary: ElevenLabs TTS (via direct key or server proxy /api/runtime/execute)
+    // 1. Primary: ElevenLabs TTS
     try {
       const elevenAudio = await generateElevenLabsVoice(
         text,
@@ -283,17 +278,17 @@ class OnboardDirectorVoiceService {
       if (elevenAudio) return elevenAudio;
     } catch (elevenErr: any) {
       if (elevenErr?.name === "AbortError") throw elevenErr;
-      console.warn("[OnboardDirectorVoice] ElevenLabs TTS notice, trying fallback:", elevenErr);
+      console.warn("[OnboardDirectorVoice] ElevenLabs TTS notice, trying Gemini:", elevenErr);
     }
 
     if (signal?.aborted) return null;
 
-    // 2. Fail-soft Fallback: Gemini TTS via server proxy or direct key
+    // 2. Secondary: Gemini TTS
     try {
       const apiKey = resolveProviderKey("gemini");
-      const modelsToTry = ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-tts-preview", "gemini-2.0-flash"];
+      const modelsToTry = ["gemini-2.0-flash", "gemini-2.5-flash-tts-preview"];
 
-      // 2a. Direct REST
+      // Direct REST
       if (apiKey) {
         for (const model of modelsToTry) {
           if (signal?.aborted) return null;
@@ -304,7 +299,7 @@ class OnboardDirectorVoiceService {
               signal,
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                contents: [{ parts: [{ text: `Speak as the onboard guide in a friendly, relaxed, calm, helpful tone: ${text.slice(0, 500)}` }] }],
+                contents: [{ parts: [{ text: `Speak in a calm, confident, helpful creative director tone: ${text.slice(0, 400)}` }] }],
                 generationConfig: {
                   responseModalities: ["AUDIO"],
                   speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
@@ -325,7 +320,7 @@ class OnboardDirectorVoiceService {
         }
       }
 
-      // 2b. Server Proxy
+      // Server Proxy
       for (const model of modelsToTry) {
         if (signal?.aborted) return null;
         try {
@@ -337,7 +332,7 @@ class OnboardDirectorVoiceService {
               provider: "google",
               endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
               payload: {
-                contents: [{ parts: [{ text: `Speak as the onboard guide in a friendly, relaxed, calm, helpful tone: ${text.slice(0, 500)}` }] }],
+                contents: [{ parts: [{ text: `Speak in a calm, confident, helpful creative director tone: ${text.slice(0, 400)}` }] }],
                 generationConfig: {
                   responseModalities: ["AUDIO"],
                   speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
@@ -359,7 +354,6 @@ class OnboardDirectorVoiceService {
       }
     } catch (fallbackErr: any) {
       if (fallbackErr?.name === "AbortError") throw fallbackErr;
-      console.warn("[OnboardDirectorVoice] Fallback audio notice:", fallbackErr);
     }
 
     return null;
@@ -371,7 +365,6 @@ class OnboardDirectorVoiceService {
       return `data:${mimeType || "audio/mp3"};base64,${base64Data}`;
     }
 
-    // Convert raw PCM to standard 44-byte RIFF WAV
     try {
       const binaryString = atob(base64Data);
       const len = binaryString.length;
@@ -413,24 +406,26 @@ class OnboardDirectorVoiceService {
       }
       return `data:audio/wav;base64,${btoa(wavBinary)}`;
     } catch (err) {
-      console.warn("[OnboardDirectorVoice] Failed to wrap PCM in WAV header:", err);
       return `data:audio/wav;base64,${base64Data}`;
     }
   }
 
-  private playAudioUrl(url: string, signal: AbortSignal): Promise<void> {
+  private playAudioUrl(url: string, signal: AbortSignal): Promise<boolean> {
     return new Promise((resolve) => {
       if (signal.aborted) {
         this.isSpeakingState = false;
         this.notify();
-        resolve();
+        resolve(false);
         return;
       }
 
       const audio = new Audio(url);
       this.currentAudio = audio;
 
-      const cleanup = () => {
+      let hasEnded = false;
+      const cleanup = (success: boolean) => {
+        if (hasEnded) return;
+        hasEnded = true;
         if (this.currentAudio === audio) {
           this.currentAudio = null;
         }
@@ -439,16 +434,81 @@ class OnboardDirectorVoiceService {
         }
         this.isSpeakingState = false;
         this.notify();
-        resolve();
+        resolve(success);
       };
 
-      audio.onended = cleanup;
-      audio.onerror = cleanup;
+      audio.onended = () => cleanup(true);
+      audio.onerror = () => cleanup(false);
 
-      audio.play().catch((playErr) => {
-        console.warn("[OnboardDirectorVoice] playback notice:", playErr);
-        cleanup();
+      audio.play().catch((playErr: any) => {
+        // Autoplay policy was triggered before user interaction
+        if (playErr?.name === "NotAllowedError" || String(playErr).includes("interact")) {
+          this.pendingAutoplaySpeech = ONBOARD_FIXED_SCRIPTS.welcome_super_spark;
+          this.attachUserGestureListener();
+        }
+        cleanup(false);
       });
+    });
+  }
+
+  private speakWithWebSpeech(text: string, signal: AbortSignal): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (signal.aborted || typeof window === "undefined" || !window.speechSynthesis) {
+        this.isSpeakingState = false;
+        this.notify();
+        resolve(false);
+        return;
+      }
+
+      try {
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.02;
+        utterance.pitch = 1.05;
+
+        // Try selecting a clean English voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(
+          (v) =>
+            (v.name.includes("Samantha") ||
+              v.name.includes("Natural") ||
+              v.name.includes("Jenny") ||
+              v.name.includes("Google US English") ||
+              v.name.includes("Victoria") ||
+              v.lang === "en-US") &&
+            v.lang.startsWith("en")
+        );
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+        }
+
+        utterance.onstart = () => {
+          this.isSpeakingState = true;
+          this.notify();
+        };
+
+        const finish = (success: boolean) => {
+          this.isSpeakingState = false;
+          this.notify();
+          resolve(success);
+        };
+
+        utterance.onend = () => finish(true);
+        utterance.onerror = (e) => {
+          if (e.error === "not-allowed") {
+            this.pendingAutoplaySpeech = text;
+            this.attachUserGestureListener();
+          }
+          finish(false);
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        this.isSpeakingState = false;
+        this.notify();
+        resolve(false);
+      }
     });
   }
 }

@@ -16,6 +16,7 @@ import {
   designElevenLabsVoice,
   createDesignedElevenLabsVoice,
   ElevenLabsVoiceSummary,
+  playVoicePersonaWebSpeech,
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
@@ -1789,6 +1790,11 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       } catch {}
       setPreviewAudio(null);
     }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
 
     if (playingVoiceId === voiceId) {
       setPlayingVoiceId(null);
@@ -1799,34 +1805,38 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
     try {
       const voiceObj = voicesList.find((v) => v.voiceId === voiceId);
+      const voiceName = voiceObj?.name || "Rachel";
+      const sampleText = `Welcome to SPARK. I'm ${voiceName}, your brand narrator for high-retention content.`;
+
       let audioUrl = voiceObj?.previewUrl;
-
       if (!audioUrl) {
-        audioUrl = (await previewElevenLabsVoice(voiceId)) || undefined;
+        audioUrl = (await previewElevenLabsVoice(voiceId, sampleText)) || undefined;
       }
 
-      if (!audioUrl) {
-        setPlayingVoiceId(null);
-        return;
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        setPreviewAudio(audio);
+
+        audio.onended = () => {
+          setPlayingVoiceId(null);
+          setPreviewAudio(null);
+        };
+        audio.onerror = () => {
+          setPreviewAudio(null);
+          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+        };
+
+        await audio.play().catch((playErr) => {
+          console.warn("[BrandGenesisFlow] Audio play error, using Web Speech fallback:", playErr);
+          setPreviewAudio(null);
+          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+        });
+      } else {
+        const spoke = playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+        if (!spoke) {
+          setPlayingVoiceId(null);
+        }
       }
-
-      const audio = new Audio(audioUrl);
-      setPreviewAudio(audio);
-
-      audio.onended = () => {
-        setPlayingVoiceId(null);
-        setPreviewAudio(null);
-      };
-      audio.onerror = () => {
-        setPlayingVoiceId(null);
-        setPreviewAudio(null);
-      };
-
-      await audio.play().catch((playErr) => {
-        console.warn("[BrandGenesisFlow] Audio playback error:", playErr);
-        setPlayingVoiceId(null);
-        setPreviewAudio(null);
-      });
     } catch (err) {
       console.warn("[BrandGenesisFlow] handlePlayVoice error:", err);
       setPlayingVoiceId(null);
