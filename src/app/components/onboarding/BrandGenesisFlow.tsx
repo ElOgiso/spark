@@ -1166,6 +1166,7 @@ function FrameVoice({
   onPlayVoice,
   playingVoiceId,
   voicesList,
+  voiceError,
 }: {
   data: GenesisInternalState;
   onChange: (d: Partial<GenesisInternalState>) => void;
