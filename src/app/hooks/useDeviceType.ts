@@ -6,7 +6,10 @@ export const MOBILE_BREAKPOINT = 768; // Standard breakpoint (Tailwind md)
 
 export function detectDevice(): DeviceType {
   if (typeof window === "undefined") return "desktop";
-  const isTouch = window.matchMedia("(pointer: coarse)").matches || ("ontouchstart" in window);
+  const isTouch =
+    window.matchMedia("(pointer: coarse)").matches ||
+    ("ontouchstart" in window) ||
+    (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0);
   if (isTouch && window.innerWidth < 1024) return "mobile";
   return window.innerWidth < MOBILE_BREAKPOINT ? "mobile" : "desktop";
 }

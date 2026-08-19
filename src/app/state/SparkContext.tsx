@@ -88,6 +88,7 @@ interface SparkContextType {
   // Actions
   updateBrand: (data: Partial<Brand>) => void;
   updateCharacter: (data: Partial<Character>) => void;
+  resetWorkspace: () => void;
   initializeBrandGenesis: (data: any) => Promise<void> | void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
@@ -221,43 +222,80 @@ const defaultAISettings: AISettings = {
 
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const auth = useAuth();
+  const currentUserId = auth.currentUser?.id || auth.session?.user?.id || null;
+  const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
+
   const [thinkingState, setThinkingState] = useState<ThinkingState | null>(null);
 
   const [state, setState] = useState(() => {
-    const local = loadPersistedState<any>();
+    const local = loadPersistedState<any>(currentUserId || undefined, activeBrandId || undefined);
     if (local) {
       return {
         ...local,
         offers: Array.isArray(local.offers) ? local.offers : [],
         aiSettings: local.aiSettings || defaultAISettings,
-        chatMessages: local.chatMessages && local.chatMessages.length > 0 ? local.chatMessages : defaultChatMessages
+        chatMessages: Array.isArray(local.chatMessages) ? local.chatMessages : [],
       };
     }
     return {
       brand: defaultBrand,
       character: defaultCharacter,
-      accounts: defaultAccounts,
+      executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
+      accounts: [],
       automationMode: "balanced" as AutomationMode,
       productionMode: "standard" as ProductionMode,
-      memoryItems: defaultMemoryItems,
-      viralSparks: defaultViralSparks,
-      productions: defaultProductions,
-      reviewItems: defaultReviewItems,
-      publishJobs: defaultPublishJobs,
-      exportPackages: defaultExportPackages,
-      analyticsInsights: defaultAnalyticsInsights,
-      assets: defaultAssets,
+      memoryItems: [],
+      viralSparks: [],
+      productions: [],
+      reviewItems: [],
+      publishJobs: [],
+      exportPackages: [],
+      analyticsInsights: [],
+      assets: [],
       offers: [],
       researchSources: [],
       researchPatterns: [],
       aiSettings: defaultAISettings,
-      chatMessages: defaultChatMessages
+      thinkingState: null,
+      chatMessages: [],
     };
   });
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
   const activeGenerationControllers = useRef<Map<string, AbortController>>(new Map());
+
+  const resetWorkspace = useCallback(() => {
+    console.log("[SparkContext] Hard resetting workspace to empty defaults...");
+    activeGenerationControllers.current.forEach((controller) => controller.abort());
+    activeGenerationControllers.current.clear();
+
+    setState({
+      brand: defaultBrand,
+      character: defaultCharacter,
+      executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
+      accounts: [],
+      automationMode: "balanced" as AutomationMode,
+      productionMode: "standard" as ProductionMode,
+      memoryItems: [],
+      viralSparks: [],
+      productions: [],
+      reviewItems: [],
+      publishJobs: [],
+      exportPackages: [],
+      analyticsInsights: [],
+      assets: [],
+      offers: [],
+      researchSources: [],
+      researchPatterns: [],
+      aiSettings: defaultAISettings,
+      thinkingState: null,
+      chatMessages: [],
+    });
+
+    setSessions([]);
+    setActiveSessionId(null);
+  }, []);
 
   const updateAISettings = (newSettings: AISettings) => {
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
@@ -340,25 +378,41 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
   };
+  // Detect User ID changes or explicit workspace reset signals
+  const lastLoadedUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lastLoadedUserIdRef.current !== null && lastLoadedUserIdRef.current !== currentUserId) {
+      console.log(`[SparkContext] User ID changed (${lastLoadedUserIdRef.current} -> ${currentUserId}). Executing resetWorkspace().`);
+      resetWorkspace();
+    }
+    lastLoadedUserIdRef.current = currentUserId;
+  }, [currentUserId, resetWorkspace]);
+
+  useEffect(() => {
+    const handleReset = () => {
+      console.log("[SparkContext] spark-workspace-reset event received. Executing resetWorkspace().");
+      resetWorkspace();
+    };
+    window.addEventListener("spark-workspace-reset", handleReset);
+    return () => {
+      window.removeEventListener("spark-workspace-reset", handleReset);
+    };
+  }, [resetWorkspace]);
 
   // Reactively hydrate live workspace from Supabase on mount / login / brandId changes
-  const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
   useEffect(() => {
+    if (!currentUserId) return;
+
     const localTokens = getStoredAccountTokens();
     const tokenAccounts: Account[] = Object.values(localTokens)
-      .filter((t) => t.status === "Connected" || t.status === "Refreshing")
+      .filter((t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase()))
       .map((t) => ({
         platform: t.platform,
         handle: t.handle || "",
         status: "connected" as const,
         posts: t.postsCount || 0,
       }));
-
-    setState((prev: any) => {
-      const byPlatform = new Map<string, Account>();
-      tokenAccounts.forEach((a) => byPlatform.set(a.platform, a));
-      return { ...prev, accounts: Array.from(byPlatform.values()) };
-    });
 
     if (isSupabaseConfigured() && activeBrandId && isUuid(activeBrandId)) {
       let isCancelled = false;
@@ -371,8 +425,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const byPlatform = new Map<string, Account>();
           // Hydrate with Supabase accounts that are connected
           (snap.accounts || [])
-            .filter((a: any) => a.status === "connected" || a.status === "Connected")
-            .forEach((a) => byPlatform.set(a.platform, {
+            .filter((a: any) => String(a.status || "").toLowerCase() === "connected")
+            .forEach((a: any) => byPlatform.set(a.platform, {
               platform: a.platform,
               handle: a.handle || "",
               status: "connected",
@@ -384,7 +438,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
-          // CLOUD ENRICHMENT: Cloud enriches local state; empty cloud responses never wipe existing local data
+          // CLOUD IS TRUTH FOR AUTHENTICATED USER — EMPTY CLOUD ARRAYS ARE TRUTH ([])
           const merged = {
             ...prev,
             brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
@@ -404,41 +458,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
-            memoryItems:
-              snap.memoryItems && snap.memoryItems.length > 0
-                ? snap.memoryItems
-                : prev.memoryItems || [],
-            viralSparks:
-              snap.viralSparks && snap.viralSparks.length > 0
-                ? snap.viralSparks
-                : prev.viralSparks || [],
-            productions:
-              snap.productions && snap.productions.length > 0
-                ? snap.productions
-                : prev.productions || [],
-            reviewItems:
-              snap.reviewItems && snap.reviewItems.length > 0
-                ? snap.reviewItems
-                : prev.reviewItems || [],
-            publishJobs:
-              snap.publishJobs && snap.publishJobs.length > 0
-                ? snap.publishJobs
-                : prev.publishJobs || [],
-            analyticsInsights:
-              snap.analyticsInsights && snap.analyticsInsights.length > 0
-                ? snap.analyticsInsights
-                : prev.analyticsInsights || [],
-            researchSources:
-              snap.researchSources && snap.researchSources.length > 0
-                ? snap.researchSources
-                : prev.researchSources || [],
-            researchPatterns:
-              snap.researchPatterns && snap.researchPatterns.length > 0
-                ? snap.researchPatterns
-                : prev.researchPatterns || [],
+
+            // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
+            memoryItems: snap.memoryItems || [],
+            viralSparks: snap.viralSparks || [],
+            productions: snap.productions || [],
+            reviewItems: snap.reviewItems || [],
+            publishJobs: snap.publishJobs || [],
+            analyticsInsights: snap.analyticsInsights || [],
+            researchSources: snap.researchSources || [],
+            researchPatterns: snap.researchPatterns || [],
           };
 
-          savePersistedState(merged, activeBrandId);
+          savePersistedState(merged, currentUserId, activeBrandId);
           return merged;
         });
       }).catch((err) => {
@@ -449,7 +481,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isCancelled = true;
       };
     }
-  }, [activeBrandId, auth.currentUser?.id]);
+  }, [currentUserId, activeBrandId]);
 
   useEffect(() => {
     const onAccountConnected = (ev: Event) => {
@@ -596,7 +628,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync to abstracted persistence helper & start Autonomous Runtime Engine
   useEffect(() => {
-    savePersistedState(state);
+    if (currentUserId && activeBrandId) {
+      savePersistedState(state, currentUserId, activeBrandId);
+    }
 
     if (state.automationMode !== "manual") {
       autonomousEngine.start(
@@ -606,7 +640,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       autonomousEngine.stop();
     }
-  }, [state]);
+  }, [state, currentUserId, activeBrandId]);
 
   const updateBrand = (brandData: Partial<Brand> & Record<string, any>) => {
     const brandId = auth.brand?.id || getBrandWorkspaceId();
@@ -2250,6 +2284,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         sessions,
         executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
         updateBrand,
+        updateCharacter,
+        resetWorkspace,
         initializeBrandGenesis,
         updateAutomationMode,
         updateProductionMode,

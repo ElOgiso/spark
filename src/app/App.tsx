@@ -289,11 +289,14 @@ function AppContent() {
       return <HydrationSplash />;
     }
 
+    // Evaluate device type synchronously on first authenticated paint
+    const currentDevice = detectDevice();
+
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
       // Returning user whose onboarding is complete in cloud -> straight to dashboard (no marketing splash)
       if (auth.isOnboardingComplete) {
-        if (deviceType === "mobile") {
+        if (currentDevice === "mobile" || deviceType === "mobile") {
           return (
             <ProtectedRoute>
               <MobileApp />

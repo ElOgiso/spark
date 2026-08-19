@@ -236,6 +236,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem("spark_onboarding_complete");
           }
         } catch {}
+        void import("./persistence").then(({ clearPersistedState }) => clearPersistedState());
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("spark-workspace-reset"));
+        }
         setLoading(false);
         return;
       }
@@ -380,6 +384,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setBrand(null);
       setIsOnboardingComplete(false);
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("spark-workspace-reset"));
+      }
     } catch (err) {
       console.warn("[Spark Auth] signOut notice:", err);
     } finally {
