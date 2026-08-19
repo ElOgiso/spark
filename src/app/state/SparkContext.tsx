@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import { NotificationService } from "../notifications/notificationService";
 import { loadPersistedState, savePersistedState } from "./persistence";
 import { generateSuperSparkResponse, SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import {
