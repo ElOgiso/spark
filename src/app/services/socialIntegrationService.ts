@@ -931,7 +931,7 @@ export function listLiveConnectedAccounts(): Array<{
   active: true;
 }> {
   return Object.values(getStoredAccountTokens())
-    .filter((t) => t.status === "Connected" || t.status === "Refreshing")
+    .filter((t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase()))
     .map((t) => ({
       platform: t.platform,
       handle: t.handle || "",
@@ -956,7 +956,7 @@ export { formatCount };
  */
 export async function fetchLiveAccountProfiles(): Promise<LiveAccountProfileCard[]> {
   const tokens = Object.values(getStoredAccountTokens()).filter(
-    (t) => t.status === "Connected" || t.status === "Refreshing"
+    (t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase())
   );
   if (tokens.length === 0) return [];
 

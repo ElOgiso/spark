@@ -79,11 +79,18 @@ export type WorkspaceSnapshot = {
 };
 
 function brandRowToDomain(row: BrandRow): Brand {
+  const audienceObj = (row.audience && typeof row.audience === "object" && !Array.isArray(row.audience))
+    ? (row.audience as any)
+    : {};
+
   return {
     name: row.name || "My Brand",
     niche: row.niche || "Content Creation",
     archetype: row.archetype || "The Expert Guide",
     purpose: row.purpose || "Creating authoritative, engaging digital media content.",
+    website: audienceObj.website || "",
+    country: audienceObj.country || "Nigeria",
+    language: audienceObj.language || "English (UK/NG)",
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
       : [
@@ -92,13 +99,11 @@ function brandRowToDomain(row: BrandRow): Brand {
           { label: "Content Creation", active: true },
           { label: "Growth Marketing", active: true },
         ],
-    audience: (row.audience && typeof row.audience === "object" && !Array.isArray(row.audience))
-      ? (row.audience as any)
-      : {
-          primary: "Digital creators and forward-thinking professionals",
-          painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
-          desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
-        },
+    audience: {
+      primary: audienceObj.primary || "Digital creators and forward-thinking professionals",
+      painPoints: Array.isArray(audienceObj.painPoints) ? audienceObj.painPoints : ["Inconsistent publishing workflow", "High time investment required for research"],
+      desires: Array.isArray(audienceObj.desires) ? audienceObj.desires : ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+    },
     tone: Array.isArray(row.tone)
       ? (row.tone as any[]).map((t) => typeof t === "string" ? { label: t, active: true } : t)
       : [
@@ -111,7 +116,7 @@ function brandRowToDomain(row: BrandRow): Brand {
     review_required: row.review_required ?? true,
     publish_requires_approval: row.publish_requires_approval ?? true,
     autonomous_publishing_enabled: row.autonomous_publishing_enabled ?? false,
-  };
+  } as any;
 }
 
 function characterRowToDomain(row: CharacterRow): Character {
@@ -485,21 +490,50 @@ export async function persistMemoryDeleteSafe(id: string) {
   await deleteMemoryItem(id);
 }
 
-export async function persistBrandUpdate(brandId: string, patch: Partial<Brand>) {
-  if (!isSupabaseConfigured() || !isUuid(brandId)) return;
+export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> & Record<string, any>): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    console.warn("[workspaceSync] persistBrandUpdate skipped: Supabase not configured");
+    return false;
+  }
+  if (!isUuid(brandId)) {
+    console.error("[workspaceSync] persistBrandUpdate failed: brandId is not a valid UUID", brandId);
+    return false;
+  }
+
   try {
     const { updateBrand } = await import("./repositories/brandRepository");
     const rowPatch: any = {};
-    if (patch.name) rowPatch.name = patch.name;
-    if (patch.niche) rowPatch.niche = patch.niche;
-    if (patch.archetype) rowPatch.archetype = patch.archetype;
-    if (patch.purpose) rowPatch.purpose = patch.purpose;
-    if (patch.contentPillars) rowPatch.content_pillars = patch.contentPillars;
-    if (patch.tone) rowPatch.tone = patch.tone;
-    if (patch.audience) rowPatch.audience = patch.audience;
-    await updateBrand(brandId, rowPatch);
+    if (patch.name !== undefined) rowPatch.name = patch.name;
+    if (patch.niche !== undefined) rowPatch.niche = patch.niche;
+    if (patch.archetype !== undefined) rowPatch.archetype = patch.archetype;
+    if (patch.purpose !== undefined) rowPatch.purpose = patch.purpose;
+    if (patch.contentPillars !== undefined) rowPatch.content_pillars = patch.contentPillars;
+    if (patch.tone !== undefined) rowPatch.tone = patch.tone;
+
+    const audienceObj: Record<string, any> =
+      typeof patch.audience === "object" && patch.audience !== null ? { ...patch.audience } : {};
+
+    if (patch.audiencePrimary !== undefined) audienceObj.primary = patch.audiencePrimary;
+    if (patch.painPoints !== undefined) audienceObj.painPoints = patch.painPoints;
+    if (patch.desires !== undefined) audienceObj.desires = patch.desires;
+    if (patch.website !== undefined) audienceObj.website = patch.website;
+    if (patch.country !== undefined) audienceObj.country = patch.country;
+    if (patch.language !== undefined) audienceObj.language = patch.language;
+    if (patch.targetAudience !== undefined) audienceObj.targetAudience = patch.targetAudience;
+
+    if (Object.keys(audienceObj).length > 0) {
+      rowPatch.audience = audienceObj;
+    }
+
+    const res = await updateBrand(brandId, rowPatch);
+    if (res.error) {
+      console.error("[workspaceSync] persistBrandUpdate cloud write error:", res.error);
+      return false;
+    }
+    return true;
   } catch (err) {
-    console.warn("[workspaceSync] Brand update persist notice:", err);
+    console.error("[workspaceSync] Brand update persist notice:", err);
+    return false;
   }
 }
 

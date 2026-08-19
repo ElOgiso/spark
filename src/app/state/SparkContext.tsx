@@ -86,6 +86,7 @@ interface SparkContextType {
   
   // Actions
   updateBrand: (data: Partial<Brand>) => void;
+  updateCharacter: (data: Partial<Character>) => void;
   initializeBrandGenesis: (data: any) => Promise<void> | void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
@@ -606,17 +607,62 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [state]);
 
-  const updateBrand = (brandData: Partial<Brand>) => {
+  const updateBrand = (brandData: Partial<Brand> & Record<string, any>) => {
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (!brandId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(brandId)) {
+      console.error("[SparkContext] updateBrand failed: valid UUID brand ID required", brandId);
+      NotificationService.addNotification({
+        title: "Save Error",
+        description: "Cannot save brand profile: workspace brand ID is missing or invalid.",
+        type: "brand_rule_conflict",
+        priority: "high",
+      });
+      return;
+    }
+
     setState((prev: any) => ({
       ...prev,
-      brand: { ...prev.brand, ...brandData }
+      brand: {
+        ...prev.brand,
+        ...brandData,
+        audience: typeof brandData.audience === "object" ? { ...prev.brand?.audience, ...brandData.audience } : prev.brand?.audience,
+      },
     }));
-    const brandId = getBrandWorkspaceId();
-    if (brandId) {
-      void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
-        void persistBrandUpdate(brandId, brandData);
+
+    void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+      void persistBrandUpdate(brandId, brandData).then((success) => {
+        if (success) {
+          NotificationService.addNotification({
+            title: "Brand Profile Saved",
+            description: "Profile updates persisted to cloud database.",
+            type: "system_update",
+            priority: "low",
+          });
+        }
       });
+    });
+  };
+
+  const updateCharacter = (characterData: Partial<Character>) => {
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (!brandId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(brandId)) {
+      console.error("[SparkContext] updateCharacter failed: valid UUID brand ID required", brandId);
+      return;
     }
+
+    let updatedChar: Character;
+    setState((prev: any) => {
+      updatedChar = {
+        ...prev.character,
+        ...characterData,
+        voice: { ...prev.character?.voice, ...characterData.voice },
+      };
+      return { ...prev, character: updatedChar };
+    });
+
+    void import("../backend/workspaceSync").then(({ persistCharacterUpdate }) => {
+      void persistCharacterUpdate(brandId, updatedChar!);
+    });
   };
 
   const initializeBrandGenesis = async (data: any) => {

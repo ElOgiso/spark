@@ -17,7 +17,10 @@ interface SparkHomeProps {
 
 export function SparkHome({ onNavigate }: SparkHomeProps) {
   const auth = useAuth();
-  const { productions, reviewItems, viralSparks, character, brand, accounts } = useSpark() as any;
+  const { productions = [], reviewItems = [], viralSparks = [], character, brand, accounts = [], memoryItems = [], researchSources = [] } = useSpark() as any;
+  const connectedAccounts = (accounts || []).filter((a: any) => String(a.status || "").toLowerCase() === "connected");
+  const liveMemory = (memoryItems || []).filter((m: any) => !m.archived);
+  const pendingReviews = (reviewItems || []).filter((r: any) => r.status === "Pending Review");
   const userDisplayName = auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || character?.name || "Creator";
   const isEmpty = productions.length === 0;
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -35,7 +38,6 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
     }).catch(err => console.warn("[SparkHome] analytics load fail", err));
   }, []);
 
-  const pendingReviews = reviewItems.filter((r: any) => r.status === "Pending Review");
   const approvedProductions = productions.filter((p: any) => p.status === "Approved");
   const blockedProductionsCount = productions.filter((p: any) => p.status === "Blocked" || p.status === "blocked").length;
 
@@ -92,26 +94,60 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
     risk: s.risk || s.riskLevel || "Low",
   }));
 
+  const hasLiveSignals = (viralSparks.length > 0) || (liveMemory.length > 0) || (researchSources.length > 0) || (connectedAccounts.length > 0);
+
   const intelligence = [
     {
-      type: "opportunity", label: "Top Opportunities",
-      items: isEmpty ? ["No opportunities yet. Connect your integrations to retrieve market signals."] : ["Trending topics detected in your niche — review opportunities", "Format analysis suggests potential for engagement growth", `${viralSparks.length} topics awaiting production`],
+      type: "opportunity",
+      label: "Top Opportunities",
       color: "text-success", bg: "bg-success/10", border: "border-success/20",
+      items: viralSparks.length > 0
+        ? viralSparks.slice(0, 3).map((s: any) => ({
+            text: `[${s.score || s.brandFitScore || 90}% Match] ${s.title || s.topic}`,
+            sub: s.hook || s.whyNow || "Trending topic in your niche",
+            path: "/viral-sparks",
+          }))
+        : researchSources.length > 0
+        ? [{ text: `${researchSources.length} research source(s) active`, sub: "Extracting trend patterns for your brand...", path: "/my-spark" }]
+        : [{ text: "No live signals yet — add Research Sources in My Spark", sub: "Add creator channels or topics to begin automated indexing", path: "/my-spark" }],
     },
     {
-      type: "signal", label: "Audience Signal",
-      items: isEmpty ? ["Signals will index here after publishing content."] : ["Connect analytics to receive audience engagement signals", "Posting window analysis available after first publish", "Hook style analysis requires minimum 3 published posts"],
+      type: "signal",
+      label: "Audience & Channels",
       color: "text-accent-foreground", bg: "bg-accent/10", border: "border-accent/30",
+      items: connectedAccounts.length > 0
+        ? connectedAccounts.map((a: any) => ({
+            text: `${a.platform} (${a.handle || "Connected"})`,
+            sub: "Connected publishing channel ready for automated distribution",
+            path: "/more/accounts",
+          }))
+        : [{ text: "No social accounts connected yet", sub: "Connect accounts in Settings to expand audience reach", path: "/more/accounts" }],
     },
     {
-      type: "warning", label: "Needs Attention",
-      items: isEmpty ? ["No action items pending."] : [`${reviewItems.filter((r: any) => r.status === "Pending Review").length} items pending review`, "Connect analytics to monitor content performance", "Review pending creative approvals"],
+      type: "warning",
+      label: "Needs Attention",
       color: "text-warning", bg: "bg-warning/10", border: "border-warning/20",
+      items: pendingReviews.length > 0
+        ? pendingReviews.slice(0, 3).map((r: any) => ({
+            text: `Pending Review: "${r.title || "Production"}"`,
+            sub: "Awaiting executive decision before publishing",
+            path: "/review",
+          }))
+        : blockedProductionsCount > 0
+        ? [{ text: `${blockedProductionsCount} blocked production(s)`, sub: "Review brand policy or asset generation flags", path: "/review" }]
+        : [{ text: "All creative approvals & pipelines clear", sub: "No action items pending", path: "/review" }],
     },
     {
-      type: "action", label: "Recommended Actions",
-      items: isEmpty ? ["Start by generating a campaign storyboard."] : ["Create production from your top opportunity", "Review pending creative approvals", "Connect more accounts to expand distribution"],
+      type: "action",
+      label: "Executive Memory & Rules",
       color: "text-foreground", bg: "bg-muted/20", border: "border-border/50",
+      items: liveMemory.length > 0
+        ? liveMemory.slice(0, 3).map((m: any) => ({
+            text: `[${m.category || "Rule"}] ${m.text.length > 80 ? m.text.slice(0, 80) + "…" : m.text}`,
+            sub: `Added ${m.dateAdded || "recently"}`,
+            path: "/my-spark",
+          }))
+        : [{ text: "No executive memory rules defined yet", sub: "Add brand rules or creative preferences in My Spark", path: "/my-spark" }],
     },
   ];
 
@@ -124,7 +160,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
 
   const totalRevenue = Object.values(platformAnalytics).reduce((sum, r: any) => sum + (r.estimatedRevenue || 0), 0);
   const hasRevenueData = Object.values(platformAnalytics).some((r: any) => r.estimatedRevenue != null && r.estimatedRevenue > 0);
-  const hasAccounts = accounts && accounts.length > 0;
+  const hasAccounts = connectedAccounts.length > 0;
 
   const revenueValue = hasRevenueData
     ? `$${totalRevenue.toLocaleString()}`
@@ -143,7 +179,7 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
     { title: "Revenue", value: revenueValue, icon: DollarSign, subtitle: revenueSubtitle },
     { title: "Growth Rate", value: avgEngagement !== "—" ? avgEngagement : "No data", icon: TrendingUp, subtitle: avgEngagement !== "—" ? "Avg engagement" : "Connect analytics to track" },
     { title: "Published", value: String(productions.filter((p: any) => p.status === "Published" || p.status === "published").length), icon: Video, subtitle: "This month" },
-    { title: "Accounts", value: String(accounts?.length || 0), icon: Tv, subtitle: "Connected" },
+    { title: "Accounts", value: String(connectedAccounts.length), icon: Tv, subtitle: "Connected" },
     { title: "Productions", value: String(productions.length), icon: Clapperboard, subtitle: "Active" },
   ];
 
@@ -360,7 +396,9 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Spark Intelligence</h2>
-              <p className="text-xs text-muted-foreground">Generated 6:00 AM · Refreshed 12m ago</p>
+              <p className="text-xs text-muted-foreground">
+                {hasLiveSignals ? "Live Workspace Signals Active" : "Awaiting Live Signals"}
+              </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -368,11 +406,23 @@ export function SparkHome({ onNavigate }: SparkHomeProps) {
                   <div key={section.type} className={`rounded-xl border p-5 ${section.bg} ${section.border}`}>
                     <p className={`text-xs font-medium uppercase tracking-wide mb-3 ${section.color}`}>{section.label}</p>
                     <div className="space-y-2.5">
-                      {section.items.map((item, i) => (
-                        <div key={i} className="flex items-start gap-2.5">
-                          <ArrowRight className="w-3.5 h-3.5 mt-0.5 text-muted-foreground/50 flex-shrink-0" />
-                          <p className="text-sm text-muted-foreground">{item}</p>
-                        </div>
+                      {section.items.map((item: any, i: number) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => onNavigate(item.path)}
+                          className="w-full text-left flex items-start gap-2.5 group hover:bg-background/40 p-1.5 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5 mt-0.5 text-muted-foreground/50 group-hover:text-foreground transition-colors flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-foreground/90 font-medium group-hover:text-accent transition-colors truncate">
+                              {item.text}
+                            </p>
+                            {item.sub && (
+                              <p className="text-xs text-muted-foreground truncate">{item.sub}</p>
+                            )}
+                          </div>
+                        </button>
                       ))}
                     </div>
                   </div>
