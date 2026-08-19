@@ -1172,6 +1172,7 @@ function FrameVoice({
   onPlayVoice: (voiceId: string) => void;
   playingVoiceId: string | null;
   voicesList: ElevenLabsVoiceSummary[];
+  voiceError?: string | null;
 }) {
   const fallbackVoices = [
     { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", tag: "F", desc: "Calm, narrative, high authority", col: "text-fuchsia-300" },
@@ -1194,6 +1195,12 @@ function FrameVoice({
 
   return (
     <div className="space-y-2.5">
+      {voiceError && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-200 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <span>{voiceError}</span>
+        </div>
+      )}
       {displayVoices.map((v) => (
         <div
           key={v.id}
@@ -1802,15 +1809,16 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
     }
 
     setPlayingVoiceId(voiceId);
+    setVoiceError(null);
 
     try {
       const voiceObj = voicesList.find((v) => v.voiceId === voiceId);
       const voiceName = voiceObj?.name || "Rachel";
       const sampleText = `Welcome to SPARK. I'm ${voiceName}, your brand narrator for high-retention content.`;
 
-      let audioUrl = voiceObj?.previewUrl;
-      if (!audioUrl) {
-        audioUrl = (await previewElevenLabsVoice(voiceId, sampleText)) || undefined;
+      let audioUrl = await previewElevenLabsVoice(voiceId, sampleText);
+      if (!audioUrl && voiceObj?.previewUrl) {
+        audioUrl = voiceObj.previewUrl;
       }
 
       if (audioUrl) {
@@ -1821,10 +1829,24 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           setPlayingVoiceId(null);
           setPreviewAudio(null);
         };
-        audio.onerror = () => {
-          console.warn("[BrandGenesisFlow] ElevenLabs audio preview playback error");
-          setPreviewAudio(null);
-          setPlayingVoiceId(null);
+        audio.onerror = async () => {
+          console.warn("[BrandGenesisFlow] Audio URL load error, attempting live TTS synthesis fallback");
+          const fallback = await generateElevenLabsVoice(sampleText, voiceId);
+          if (fallback) {
+            const fallbackAudio = new Audio(fallback);
+            setPreviewAudio(fallbackAudio);
+            fallbackAudio.onended = () => { setPlayingVoiceId(null); setPreviewAudio(null); };
+            fallbackAudio.onerror = () => {
+              setPreviewAudio(null);
+              setPlayingVoiceId(null);
+              setVoiceError("ElevenLabs API key not configured or preview unavailable.");
+            };
+            await fallbackAudio.play().catch(() => { setPlayingVoiceId(null); setPreviewAudio(null); });
+          } else {
+            setPreviewAudio(null);
+            setPlayingVoiceId(null);
+            setVoiceError("ElevenLabs API key not configured or preview unavailable.");
+          }
         };
 
         await audio.play().catch((playErr) => {
@@ -1834,10 +1856,12 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
         });
       } else {
         console.warn("[BrandGenesisFlow] ElevenLabs preview audio unavailable for voice ID:", voiceId);
+        setVoiceError("ElevenLabs API key not configured or preview unavailable.");
         setPlayingVoiceId(null);
       }
     } catch (err) {
       console.error("[BrandGenesisFlow] handlePlayVoice error:", err);
+      setVoiceError("ElevenLabs API key not configured or preview unavailable.");
       setPlayingVoiceId(null);
       setPreviewAudio(null);
     }
@@ -2041,6 +2065,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
             onPlayVoice={handlePlayVoice}
             playingVoiceId={playingVoiceId}
             voicesList={voicesList}
+            voiceError={voiceError}
           />
         );
       case 5:

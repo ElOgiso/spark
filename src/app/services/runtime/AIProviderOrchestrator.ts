@@ -62,7 +62,14 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
       openai: [p.OPENAI_API_KEY, p.OPEN_AI_KEY, p.VITE_OPENAI_API_KEY],
       claude: [p.ANTHROPIC_API_KEY, p.CLAUDE_API_KEY, p.VITE_ANTHROPIC_API_KEY, p.VITE_CLAUDE_API_KEY],
       grok: [p.XAI_API_KEY, p.GROK_API_KEY, p.VITE_XAI_API_KEY, p.VITE_GROK_API_KEY],
-      elevenlabs: [p.elevenlabs_API_Key, p.ELEVENLABS_API_KEY, p.VITE_ELEVENLABS_API_KEY],
+      elevenlabs: [
+        p.elevenlabs_API_Key,
+        p.ELEVENLABS_API_KEY,
+        p.VITE_ELEVENLABS_API_KEY,
+        p.VITE_elevenlabs_API_Key,
+        p.ELEVEN_LABS_API_KEY,
+        p.VITE_ELEVEN_LABS_API_KEY,
+      ],
       higgsfield: [p.HIGGSFIELD_API_KEY, p.VITE_HIGGSFIELD_API_KEY],
     };
     const list = candidates[providerId] || [];
@@ -78,7 +85,14 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
       openai: [m.VITE_OPENAI_API_KEY, m.OPENAI_API_KEY, m.OPEN_AI_KEY],
       claude: [m.VITE_ANTHROPIC_API_KEY, m.ANTHROPIC_API_KEY, m.VITE_CLAUDE_API_KEY, m.CLAUDE_API_KEY],
       grok: [m.VITE_XAI_API_KEY, m.XAI_API_KEY, m.VITE_GROK_API_KEY, m.GROK_API_KEY],
-      elevenlabs: [m.VITE_ELEVENLABS_API_KEY, m.elevenlabs_API_Key, m.ELEVENLABS_API_KEY],
+      elevenlabs: [
+        m.VITE_ELEVENLABS_API_KEY,
+        m.VITE_elevenlabs_API_Key,
+        m.elevenlabs_API_Key,
+        m.ELEVENLABS_API_KEY,
+        m.VITE_ELEVEN_LABS_API_KEY,
+        m.ELEVEN_LABS_API_KEY,
+      ],
       higgsfield: [m.VITE_HIGGSFIELD_API_KEY, m.HIGGSFIELD_API_KEY],
     };
     const list = candidates[providerId] || [];

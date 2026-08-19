@@ -206,21 +206,14 @@ export async function previewElevenLabsVoice(
 ): Promise<string | null> {
   if (!voiceId) return null;
 
-  // 1. In-memory session cache hit
+  // 1. In-memory session cache hit (blob URL or base64 data URL)
   if (sessionVoicePreviewCache.has(voiceId)) {
     return sessionVoicePreviewCache.get(voiceId)!;
   }
 
-  // 2. Check curated ElevenLabs voices for pre-recorded authentic preview audio
-  const matchedCurated = FALLBACK_CURATED_ELEVENLABS_VOICES.find((v) => v.voiceId === voiceId);
-  if (matchedCurated?.previewUrl && !customKey) {
-    sessionVoicePreviewCache.set(voiceId, matchedCurated.previewUrl);
-    return matchedCurated.previewUrl;
-  }
-
   const text = sampleText || "Welcome to SPARK. I am ready to scale your media brand with automated high-retention content.";
 
-  // 3. ElevenLabs synthesis
+  // 2. ElevenLabs live API or server proxy synthesis
   try {
     const generated = await generateElevenLabsVoice(text, voiceId, "eleven_multilingual_v2", signal, customKey);
     if (generated) {
@@ -228,91 +221,17 @@ export async function previewElevenLabsVoice(
       return generated;
     }
   } catch (err) {
-    console.error("[ElevenLabs] Preview generation error:", err);
+    console.warn("[ElevenLabs] Live preview generation notice:", err);
   }
 
+  // 3. Fall through to pre-recorded curated preview URL if live API/proxy is unreachable
+  const matchedCurated = FALLBACK_CURATED_ELEVENLABS_VOICES.find((v) => v.voiceId === voiceId);
   if (matchedCurated?.previewUrl) {
+    sessionVoicePreviewCache.set(voiceId, matchedCurated.previewUrl);
     return matchedCurated.previewUrl;
   }
 
   return null;
-}
-
-/**
- * Native Browser Web Speech API playback fallback tailored to voice persona
- */
-export function playVoicePersonaWebSpeech(
-  voiceId: string,
-  sampleText: string = "Welcome to SPARK. I am ready to scale your media brand.",
-  onEnd?: () => void
-): boolean {
-  if (typeof window === "undefined" || !window.speechSynthesis) return false;
-
-  try {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(sampleText);
-
-    // Persona tuning for fallback
-    switch (voiceId) {
-      case "pNInz6obpgDQGcFmaJgB": // Adam (Deep male)
-      case "nPczCjzI2devNBz1zQrb": // Brian (Deep doc)
-        utterance.pitch = 0.75;
-        utterance.rate = 0.95;
-        break;
-      case "ErXwobaYiN019PkySvjV": // Antoni (Crisp male)
-        utterance.pitch = 0.95;
-        utterance.rate = 1.05;
-        break;
-      case "piTKgcLEGmPE4e6mEKli": // Nicole (Dynamic female)
-        utterance.pitch = 1.2;
-        utterance.rate = 1.1;
-        break;
-      case "JBFqnCBsd6RMkjVDRZzb": // George (Warm British male)
-        utterance.pitch = 0.85;
-        utterance.rate = 0.95;
-        break;
-      case "EXAVITQu4vr4xnSDxMaL": // Sarah (Confident female)
-        utterance.pitch = 1.05;
-        utterance.rate = 1.0;
-        break;
-      case "XB0fDUnXU5powFXDhCwa": // Charlotte (Sophisticated female)
-        utterance.pitch = 1.1;
-        utterance.rate = 0.95;
-        break;
-      case "21m00Tcm4TlvDq8ikWAM": // Rachel (Calm executive female)
-      default:
-        utterance.pitch = 1.0;
-        utterance.rate = 1.0;
-        break;
-    }
-
-    const voices = window.speechSynthesis.getVoices();
-    const voiceObj = FALLBACK_CURATED_ELEVENLABS_VOICES.find((v) => v.voiceId === voiceId);
-    const targetGender = voiceObj?.gender || "neutral";
-
-    const matchedVoice = voices.find((v) => {
-      const vname = v.name.toLowerCase();
-      if (targetGender === "female" && (vname.includes("female") || vname.includes("samantha") || vname.includes("jenny") || vname.includes("victoria") || vname.includes("zira"))) {
-        return true;
-      }
-      if (targetGender === "male" && (vname.includes("male") || vname.includes("david") || vname.includes("george") || vname.includes("mark"))) {
-        return true;
-      }
-      return v.lang.startsWith("en");
-    });
-
-    if (matchedVoice) {
-      utterance.voice = matchedVoice;
-    }
-
-    utterance.onend = () => onEnd?.();
-    utterance.onerror = () => onEnd?.();
-
-    window.speechSynthesis.speak(utterance);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**

@@ -358,9 +358,9 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       const voiceName = voiceObj?.name || "Rachel";
       const sampleText = `Welcome to SPARK. I'm ${voiceName}, your brand narrator for high-retention content.`;
 
-      let audioUrl = voiceObj?.previewUrl;
-      if (!audioUrl) {
-        audioUrl = (await previewElevenLabsVoice(voiceId, sampleText)) || undefined;
+      let audioUrl = await previewElevenLabsVoice(voiceId, sampleText);
+      if (!audioUrl && voiceObj?.previewUrl) {
+        audioUrl = voiceObj.previewUrl;
       }
 
       if (audioUrl) {
@@ -370,9 +370,20 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
         audio.onended = () => {
           setPlayingVoiceId(null);
         };
-        audio.onerror = () => {
-          console.warn("[OnboardingWizard] ElevenLabs audio preview playback error");
-          setPlayingVoiceId(null);
+        audio.onerror = async () => {
+          console.warn("[OnboardingWizard] Audio URL load error, attempting live TTS synthesis fallback");
+          const fallback = await generateElevenLabsVoice(sampleText, voiceId);
+          if (fallback) {
+            const fallbackAudio = new Audio(fallback);
+            setPreviewAudioElement(fallbackAudio);
+            fallbackAudio.onended = () => { setPlayingVoiceId(null); setPreviewAudioElement(null); };
+            fallbackAudio.onerror = () => { setPlayingVoiceId(null); setPreviewAudioElement(null); };
+            await fallbackAudio.play().catch(() => setPlayingVoiceId(null));
+          } else {
+            console.warn("[OnboardingWizard] ElevenLabs API key not configured or preview unavailable for voice ID:", voiceId);
+            setPlayingVoiceId(null);
+            setPreviewAudioElement(null);
+          }
         };
 
         await audio.play().catch((playErr) => {
