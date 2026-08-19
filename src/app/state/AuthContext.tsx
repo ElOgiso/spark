@@ -125,14 +125,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         setError(result.error);
-        if (isComplete) {
-          setIsOnboardingComplete(true);
-          try {
-            if (typeof localStorage !== "undefined") {
+        setIsOnboardingComplete(isComplete);
+        try {
+          if (typeof localStorage !== "undefined") {
+            if (isComplete) {
               localStorage.setItem("spark_onboarding_complete", "true");
+            } else {
+              localStorage.removeItem("spark_onboarding_complete");
             }
-          } catch {}
-        }
+          }
+        } catch {}
 
         return result;
       } catch (err: any) {
