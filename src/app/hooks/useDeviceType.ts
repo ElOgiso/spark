@@ -2,82 +2,54 @@ import { useState, useEffect } from "react";
 
 export type DeviceType = "mobile" | "desktop";
 
-const MOBILE_BREAKPOINT = 768; // Match Tailwind's md breakpoint
-const SESSION_DEVICE_KEY = "spark_shell_device_type";
+export const MOBILE_BREAKPOINT = 768; // Standard breakpoint (Tailwind md)
 
-function detectDevice(): DeviceType {
+export function detectDevice(): DeviceType {
   if (typeof window === "undefined") return "desktop";
-
-  // Check stored session device preference first for session stability
-  try {
-    const stored = sessionStorage.getItem(SESSION_DEVICE_KEY);
-    if (stored === "mobile" || stored === "desktop") {
-      return stored;
-    }
-  } catch {}
-
-  const isCoarsePointer = Boolean(
-    (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
-    (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-    /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-  );
-
-  // If mobile touch device with viewport < 1024px, lock as mobile
-  if (isCoarsePointer && window.innerWidth < 1024) {
-    try {
-      sessionStorage.setItem(SESSION_DEVICE_KEY, "mobile");
-    } catch {}
-    return "mobile";
-  }
-
-  const result: DeviceType = window.innerWidth < MOBILE_BREAKPOINT ? "mobile" : "desktop";
-  try {
-    sessionStorage.setItem(SESSION_DEVICE_KEY, result);
-  } catch {}
-  return result;
+  const isTouch = window.matchMedia("(pointer: coarse)").matches || ("ontouchstart" in window);
+  if (isTouch && window.innerWidth < 1024) return "mobile";
+  return window.innerWidth < MOBILE_BREAKPOINT ? "mobile" : "desktop";
 }
 
 export function useDeviceType(): DeviceType {
   const [deviceType, setDeviceType] = useState<DeviceType>(() => detectDevice());
 
   useEffect(() => {
-    let resizeTimer: any = null;
+    if (typeof window === "undefined") return;
 
-    const handleResize = () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        const isCoarsePointer = Boolean(
-          (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
-          (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-          /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-        );
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
 
-        // On mobile touch devices, don't flip shell due to address-bar/keyboard size variations
-        if (isCoarsePointer && window.innerWidth < 1024) {
-          return;
-        }
-
-        const newDeviceType: DeviceType =
-          window.innerWidth < MOBILE_BREAKPOINT ? "mobile" : "desktop";
-
-        setDeviceType((prev) => {
-          if (prev !== newDeviceType) {
-            try {
-              sessionStorage.setItem(SESSION_DEVICE_KEY, newDeviceType);
-            } catch {}
-            return newDeviceType;
-          }
-          return prev;
-        });
-      }, 250);
+    const handleUpdate = () => {
+      const nextType = detectDevice();
+      setDeviceType((prev) => (prev !== nextType ? nextType : prev));
     };
 
-    window.addEventListener("resize", handleResize);
+    // Initial sync
+    handleUpdate();
+
+    // Listen to media query changes
+    if (mql.addEventListener) {
+      mql.addEventListener("change", handleUpdate);
+    } else if ((mql as any).addListener) {
+      // Fallback for older Safari/WebKit
+      (mql as any).addListener(handleUpdate);
+    }
+
+    // Also listen to window resize and orientation changes
+    window.addEventListener("resize", handleUpdate);
+    window.addEventListener("orientationchange", handleUpdate);
+
     return () => {
-      clearTimeout(resizeTimer);
-      window.removeEventListener("resize", handleResize);
+      if (mql.removeEventListener) {
+        mql.removeEventListener("change", handleUpdate);
+      } else if ((mql as any).removeListener) {
+        (mql as any).removeListener(handleUpdate);
+      }
+      window.removeEventListener("resize", handleUpdate);
+      window.removeEventListener("orientationchange", handleUpdate);
     };
   }, []);
 
   return deviceType;
 }
+

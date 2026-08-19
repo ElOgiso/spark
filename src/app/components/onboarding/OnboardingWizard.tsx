@@ -371,18 +371,17 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           setPlayingVoiceId(null);
         };
         audio.onerror = () => {
-          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+          console.warn("[OnboardingWizard] ElevenLabs audio preview playback error");
+          setPlayingVoiceId(null);
         };
 
         await audio.play().catch((playErr) => {
-          console.warn("[OnboardingWizard] Audio play error, fallback to Web Speech:", playErr);
-          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+          console.warn("[OnboardingWizard] Audio autoplay policy notice:", playErr);
+          setPlayingVoiceId(null);
         });
       } else {
-        const spoke = playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
-        if (!spoke) {
-          setPlayingVoiceId(null);
-        }
+        console.warn("[OnboardingWizard] ElevenLabs preview audio unavailable for voice ID:", voiceId);
+        setPlayingVoiceId(null);
       }
     } catch {
       setPlayingVoiceId(null);

@@ -193,6 +193,9 @@ export function productionRowToDomain(row: ProductionRow): Production {
     aspectRatio: String(brief.aspectRatio ?? "9:16"),
     formats,
     scenes,
+    audioUrl: typeof brief.audioUrl === "string" ? brief.audioUrl : undefined,
+    videoUrl: typeof brief.videoUrl === "string" ? brief.videoUrl : undefined,
+    brief: (brief.briefObject as any) || undefined,
     reasoning: (row.reasoning && typeof row.reasoning === "object" && !Array.isArray(row.reasoning)) ? (row.reasoning as any) : {},
   };
 }
@@ -227,6 +230,9 @@ export function domainProductionToInsert(
       formats: production.formats,
       scenes: production.scenes,
       sparkId: production.sparkId,
+      audioUrl: production.audioUrl,
+      videoUrl: production.videoUrl,
+      briefObject: production.brief,
     } as Json,
     assets: [],
     reasoning: (production.reasoning || {}) as Json,
@@ -259,6 +265,10 @@ export function reviewRowToDomain(row: ReviewItemRow): ReviewItem {
       policyCheck: "Passed",
       technicalCheck: "Passed",
     },
+    brief: (reasoning.brief as any) || undefined,
+    whyThisWorks: typeof reasoning.whyThisWorks === "string" ? reasoning.whyThisWorks : undefined,
+    videoUrl: typeof reasoning.videoUrl === "string" ? reasoning.videoUrl : undefined,
+    audioUrl: typeof reasoning.audioUrl === "string" ? reasoning.audioUrl : undefined,
   };
 }
 
@@ -284,6 +294,10 @@ export function domainReviewToInsert(
       scriptSnippet: item.scriptSnippet,
       conceptText: item.conceptText,
       openingMoment: item.openingMoment,
+      brief: item.brief,
+      whyThisWorks: item.whyThisWorks,
+      videoUrl: item.videoUrl,
+      audioUrl: item.audioUrl,
     } as Json,
   };
 }

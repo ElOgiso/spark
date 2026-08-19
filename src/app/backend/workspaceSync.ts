@@ -334,18 +334,61 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     patch.status = statusMap[production.status] || production.status;
   }
   if (production.title) patch.title = production.title;
-  if (production.scenes || production.aspectRatio || production.formats) {
+  if (
+    production.scenes ||
+    production.aspectRatio ||
+    production.formats ||
+    (production as any).audioUrl ||
+    (production as any).videoUrl ||
+    (production as any).brief
+  ) {
     patch.brief = {
       aspectRatio: production.aspectRatio,
       formats: production.formats,
       scenes: production.scenes,
       sparkId: production.sparkId,
+      audioUrl: (production as any).audioUrl,
+      videoUrl: (production as any).videoUrl,
+      briefObject: (production as any).brief,
     };
   }
   if ((production as any).reasoning) {
     (patch as any).reasoning = (production as any).reasoning;
   }
   await updateProduction(id, patch);
+}
+
+export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>) {
+  if (!isSupabaseConfigured() || !isUuid(id)) return;
+  const patch: Record<string, unknown> = {};
+  if (item.status) {
+    const statusMap: Record<string, string> = {
+      "Pending Review": "pending",
+      Approved: "approved",
+      "Needs Edit": "needs_edit",
+    };
+    patch.status = statusMap[item.status] || item.status;
+  }
+  const reasoningPatch: Record<string, unknown> = {};
+  if (item.title) reasoningPatch.title = item.title;
+  if (item.account) reasoningPatch.account = item.account;
+  if (item.series) reasoningPatch.series = item.series;
+  if (item.scriptSnippet) {
+    reasoningPatch.scriptSnippet = item.scriptSnippet;
+    patch.notes = item.scriptSnippet;
+  }
+  if (item.conceptText) reasoningPatch.conceptText = item.conceptText;
+  if (item.openingMoment) reasoningPatch.openingMoment = item.openingMoment;
+  if (item.brief) reasoningPatch.brief = item.brief;
+  if (item.whyThisWorks) reasoningPatch.whyThisWorks = item.whyThisWorks;
+  if (item.videoUrl) reasoningPatch.videoUrl = item.videoUrl;
+  if (item.audioUrl) reasoningPatch.audioUrl = item.audioUrl;
+
+  if (Object.keys(reasoningPatch).length > 0) {
+    patch.reasoning = reasoningPatch;
+  }
+
+  await updateReviewItem(id, patch as any);
 }
 
 function isUuid(id?: string | null) {
@@ -412,12 +455,6 @@ export async function persistPublishJobCreate(brandId: string, job: PublishJob) 
   if (!isUuid(job.productionId)) return null;
   const result = await createPublishJob(domainPublishJobToInsert(brandId, job));
   return result.data ? publishJobRowToDomain(result.data) : null;
-}
-
-export async function persistReviewUpdate(id: string, values: { status?: string; notes?: string }) {
-  if (!isSupabaseConfigured() || !isUuid(id)) return null;
-  const result = await updateReviewItem(id, values as any);
-  return result.data ? reviewRowToDomain(result.data) : null;
 }
 
 export async function persistResearchSourceCreate(brandId: string, source: ResearchSource) {

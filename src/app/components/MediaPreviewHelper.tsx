@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Volume2, Maximize, Check, Sparkles, Film, ArrowRight, Music } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon } from "lucide-react";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -180,58 +180,94 @@ export function ThumbnailVariantCard({ id, variant, concept, image, isSelected, 
             </div>
           </>
         )}
-        
-        {/* Interactive glow pointer */}
-        <div className="absolute top-3 right-3 px-2 py-0.5 rounded bg-black/80 text-[9px] font-mono font-medium text-white tracking-wider z-10 backdrop-blur-sm">
-          VARIANT {variant}
-        </div>
 
-        {/* Tag Pill */}
         <div className="absolute top-3 left-3 z-10">
           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${d.tagColor} shadow-md`}>
             {d.badge}
           </span>
         </div>
       </div>
-
-      <div className="p-3 border-t border-border/50 bg-card">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-foreground">{d.styleName}</span>
-          {isSelected && (
-            <span className="w-4 h-4 rounded-full bg-accent flex items-center justify-center">
-              <Check className="w-2.5 h-2.5 text-white" />
-            </span>
-          )}
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-          {concept}
-        </p>
+      <div className="p-3 bg-card border-t border-border">
+        <p className="text-xs font-semibold text-foreground">{d.styleName}</p>
+        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{concept}</p>
       </div>
     </button>
   );
 }
 
-interface InteractiveVideoPlayerProps {
+interface SceneItem {
+  scene: number;
+  description: string;
+  duration: string;
+  videoUrl?: string;
+  image?: string;
+}
+
+export interface InteractiveVideoPlayerProps {
   id: string;
   title: string;
-  scenes?: { scene: number; description: string; duration: string }[];
+  scenes?: SceneItem[];
   durationText?: string;
+  videoUrl?: string;
+  audioUrl?: string;
+  hostName?: string;
+  hostAvatar?: string;
   onApprove?: () => void;
 }
 
-export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = "3:20", onApprove }: InteractiveVideoPlayerProps) {
+export function InteractiveVideoPlayer({
+  id,
+  title,
+  scenes = [],
+  durationText = "3:20",
+  videoUrl,
+  audioUrl,
+  hostName = "Lead Host",
+  hostAvatar,
+  onApprove
+}: InteractiveVideoPlayerProps) {
   const theme = getMediaTheme(id);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(60);
   const [volume, setVolume] = useState(80);
+  const [isMuted, setIsMuted] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("English");
   
-  const totalSeconds = 200; // Mock 200 seconds length
-  const progressPercent = (currentTime / totalSeconds) * 100;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const totalSeconds = duration || 60;
+  const progressPercent = totalSeconds > 0 ? (currentTime / totalSeconds) * 100 : 0;
+
+  const activeSceneIndex = Math.min(
+    Math.floor((currentTime / Math.max(totalSeconds, 1)) * (scenes.length || 1)),
+    (scenes.length || 1) - 1
+  );
+
+  const activeScene = scenes[activeSceneIndex] || {
+    scene: 1,
+    description: title || "Intro Hook: Dynamic visual pattern interrupt",
+    duration: "0–10s"
+  };
+
+  const activeVideoUrl = activeScene.videoUrl || videoUrl;
+  const activeImageUrl = activeScene.image;
+
+  const togglePlay = () => {
+    setIsPlaying(prev => !prev);
+  };
 
   useEffect(() => {
     if (isPlaying) {
+      if (videoRef.current) {
+        videoRef.current.play().catch(() => {});
+      }
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {});
+      }
       timerRef.current = setInterval(() => {
         setCurrentTime((prev) => {
           if (prev >= totalSeconds) {
@@ -242,58 +278,101 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
         });
       }, 1000);
     } else {
+      if (videoRef.current) videoRef.current.pause();
+      if (audioRef.current) audioRef.current.pause();
       if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPlaying]);
+  }, [isPlaying, totalSeconds]);
+
+  useEffect(() => {
+    const effectiveVolume = isMuted ? 0 : volume / 100;
+    if (videoRef.current) videoRef.current.volume = effectiveVolume;
+    if (audioRef.current) audioRef.current.volume = effectiveVolume;
+  }, [volume, isMuted]);
+
+  const handleSeek = (newSecs: number) => {
+    setCurrentTime(newSecs);
+    if (videoRef.current) videoRef.current.currentTime = newSecs;
+    if (audioRef.current) audioRef.current.currentTime = newSecs;
+  };
+
+  const handleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      containerRef.current.requestFullscreen().catch(() => {});
+    }
+  };
 
   const formatTime = (secs: number) => {
     const minutes = Math.floor(secs / 60);
-    const seconds = secs % 60;
+    const seconds = Math.floor(secs % 60);
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
 
-  // Map progress to active storyboard scene
-  const activeSceneIndex = Math.min(
-    Math.floor((currentTime / totalSeconds) * (scenes.length || 1)),
-    (scenes.length || 1) - 1
-  );
-
-  const activeScene = scenes[activeSceneIndex] || {
-    scene: 1,
-    description: "Intro Hook: Eye-catching pattern interrupt graphic",
-    duration: "0-10s"
+  const handleDownloadMedia = (mediaUrl: string | undefined, filename: string) => {
+    if (!mediaUrl) return;
+    const a = document.createElement("a");
+    a.href = mediaUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
-    <div className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[420px] shadow-2xl">
-      {/* LEFT: Video Screen Container */}
+    <div ref={containerRef} className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[430px] shadow-2xl">
+      {audioUrl && (
+        <audio
+          ref={audioRef}
+          src={audioUrl}
+          onLoadedMetadata={(e) => {
+            const dur = (e.target as HTMLAudioElement).duration;
+            if (dur && !isNaN(dur)) setDuration(Math.round(dur));
+          }}
+          onEnded={() => setIsPlaying(false)}
+        />
+      )}
+
       <div className="flex-1 relative aspect-video md:aspect-auto bg-neutral-950 flex flex-col justify-between overflow-hidden group select-none">
-        
-        {/* Animated video background representation or real generated media */}
-        {(activeScene as any).videoUrl ? (
-          <video src={(activeScene as any).videoUrl} autoPlay loop muted className="absolute inset-0 w-full h-full object-cover" />
-        ) : (activeScene as any).image ? (
-          <img src={(activeScene as any).image} alt={activeScene.description} className="absolute inset-0 w-full h-full object-cover opacity-80" />
+        {activeVideoUrl ? (
+          <video
+            ref={videoRef}
+            src={activeVideoUrl}
+            loop
+            muted={isMuted}
+            playsInline
+            onLoadedMetadata={(e) => {
+              const dur = (e.target as HTMLVideoElement).duration;
+              if (dur && !isNaN(dur) && !audioUrl) setDuration(Math.round(dur));
+            }}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : activeImageUrl ? (
+          <img
+            src={activeImageUrl}
+            alt={activeScene.description}
+            className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${isPlaying ? "scale-105" : "scale-100"}`}
+          />
         ) : (
           <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} transition-all duration-1000 ${
             isPlaying ? "animate-pulse saturate-150 scale-105" : "saturate-75"
           }`} />
         )}
         
-        {/* Media patterns & overlays */}
-        <div className="absolute inset-0 bg-black/40" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-black/20 to-black/60" />
+        <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-black/20 to-black/60 pointer-events-none" />
 
-        {/* Equalizer animation overlay when playing */}
         {isPlaying && (
-          <div className="absolute right-6 top-6 flex items-end gap-[3px] h-6">
+          <div className="absolute right-6 top-6 flex items-end gap-[3px] h-6 z-20 pointer-events-none">
             {[1, 2, 3, 4, 5, 4, 3, 2, 5, 2, 4].map((h, i) => (
               <span
                 key={i}
-                className="w-[2px] bg-white rounded-full animate-bounce"
+                className="w-[2px] bg-accent rounded-full animate-bounce"
                 style={{
                   height: `${h * 20}%`,
                   animationDuration: `${0.4 + i * 0.1}s`,
@@ -304,51 +383,84 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
           </div>
         )}
 
-        {/* Platform logo indicator (YouTube style or TikTok format) */}
-        <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white border border-white/10">
-          <Film className="w-3 h-3 text-red-500 fill-current" />
-          <span className="font-semibold uppercase tracking-wider text-[9px]">
-            {theme.tag} Spark preview
-          </span>
+        <div className="absolute top-4 left-4 flex items-center gap-2 z-20">
+          <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white border border-white/10">
+            <Film className="w-3 h-3 text-red-500 fill-current" />
+            <span className="font-semibold uppercase tracking-wider text-[9px]">
+              {theme.tag} Spark preview
+            </span>
+          </div>
+
+          {activeVideoUrl && (
+            <button
+              onClick={() => handleDownloadMedia(activeVideoUrl, `${title || "spark-video"}.mp4`)}
+              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
+              title="Download MP4 Video"
+            >
+              <Download className="w-2.5 h-2.5 text-accent" />
+              <span>Video</span>
+            </button>
+          )}
+
+          {audioUrl && (
+            <button
+              onClick={() => handleDownloadMedia(audioUrl, `${title || "voiceover"}.mp3`)}
+              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
+              title="Download Voiceover Audio"
+            >
+              <Mic className="w-2.5 h-2.5 text-success" />
+              <span>Voice</span>
+            </button>
+          )}
+
+          {activeImageUrl && (
+            <button
+              onClick={() => handleDownloadMedia(activeImageUrl, `scene-${activeScene.scene}.png`)}
+              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
+              title="Download Frame Still"
+            >
+              <ImageIcon className="w-2.5 h-2.5 text-warning" />
+              <span>Frame</span>
+            </button>
+          )}
         </div>
 
-        {/* Screen center: Host Character Avatar & Subtitles overlay */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
-          
-          {/* Interactive play circle overlay */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
           {!isPlaying && (
             <button
-              onClick={() => setIsPlaying(true)}
-              className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 active:scale-95 transition-transform duration-200 shadow-xl cursor-pointer z-10"
+              onClick={togglePlay}
+              className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 active:scale-95 transition-transform duration-200 shadow-xl cursor-pointer z-20 mb-4"
+              aria-label="Play video"
             >
               <Play className="w-7 h-7 fill-current translate-x-0.5 text-black" />
             </button>
           )}
 
-          {/* Simulated Host avatar reacting in viewport */}
-          <div className={`w-28 h-28 rounded-full border-4 border-white/15 bg-white/10 flex items-center justify-center transition-all duration-500 overflow-hidden ${
-            isPlaying ? "scale-105 rotate-1" : "scale-90"
-          }`}>
-            <span className={`text-6xl ${isPlaying ? "animate-wiggle" : ""}`}>🧑🏾‍💻</span>
-          </div>
+          {!activeVideoUrl && (
+            <div className={`w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-md flex items-center justify-center transition-all duration-500 overflow-hidden shadow-xl mb-3 ${
+              isPlaying ? "scale-105 ring-2 ring-accent" : "scale-95 opacity-80"
+            }`}>
+              {hostAvatar ? (
+                <img src={hostAvatar} alt={hostName} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl font-bold text-white">
+                  {hostName.charAt(0)}
+                </span>
+              )}
+            </div>
+          )}
 
-          {/* Real-time speech subtitle transcription bubble */}
-          <div className="mt-4 max-w-md bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl text-center shadow-2xl">
+          <div className="max-w-md bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl text-center shadow-2xl">
             <span className="text-[10px] font-bold text-accent tracking-widest uppercase block mb-0.5">
-              Tunde speaking
+              {hostName} • Scene {activeScene.scene}
             </span>
             <p className="text-xs font-medium text-white leading-relaxed line-clamp-2">
-              {isPlaying 
-                ? `"...${activeScene.description}. This ensures high engagement right away."`
-                : `[Video Paused] - Click Play to simulate and preview scene transitions.`
-              }
+              {activeScene.description}
             </p>
           </div>
         </div>
 
-        {/* Video Control Bar Panel */}
-        <div className="p-3 bg-gradient-to-t from-black via-black/80 to-transparent pt-8 relative z-10">
-          {/* Progress Timeline Slider */}
+        <div className="p-3 bg-gradient-to-t from-black via-black/80 to-transparent pt-8 relative z-20">
           <div className="flex items-center gap-3 group/timeline mb-2">
             <span className="text-[10px] font-mono text-white/85">
               {formatTime(currentTime)}
@@ -358,12 +470,12 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
-                const newPercent = clickX / rect.width;
-                setCurrentTime(Math.floor(newPercent * totalSeconds));
+                const newPercent = Math.max(0, Math.min(1, clickX / rect.width));
+                handleSeek(Math.floor(newPercent * totalSeconds));
               }}
             >
               <div 
-                className={`h-full bg-accent relative rounded-full`} 
+                className="h-full bg-accent relative rounded-full" 
                 style={{ width: `${progressPercent}%` }} 
               />
             </div>
@@ -372,24 +484,32 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
             </span>
           </div>
 
-          {/* Bottom control buttons */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button 
-                onClick={() => setIsPlaying(!isPlaying)}
+                onClick={togglePlay}
                 className="text-white hover:text-accent transition-colors"
+                aria-label={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
               </button>
               
               <div className="flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-white" />
+                <button
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="text-white hover:text-accent transition-colors"
+                >
+                  {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
                 <input 
                   type="range" 
                   min="0" 
                   max="100" 
-                  value={volume} 
-                  onChange={(e) => setVolume(Number(e.target.value))}
+                  value={isMuted ? 0 : volume} 
+                  onChange={(e) => {
+                    setVolume(Number(e.target.value));
+                    if (isMuted) setIsMuted(false);
+                  }}
                   className="w-12 h-1 accent-accent bg-white/20 rounded-full cursor-pointer"
                 />
               </div>
@@ -409,23 +529,26 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
                   </button>
                 ))}
               </div>
-              <Maximize className="w-4 h-4 text-white hover:text-accent cursor-pointer" />
+              <button
+                onClick={handleFullscreen}
+                className="text-white hover:text-accent cursor-pointer transition-colors"
+                aria-label="Fullscreen"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
-
       </div>
 
-      {/* RIGHT: Active Storyboard Interactive Script Queue */}
       <div className="w-full md:w-80 bg-neutral-900 border-l border-border/40 flex flex-col justify-between overflow-hidden">
-        <div className="p-4 border-b border-border/30 bg-neutral-950/60">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center justify-between">
-            <span>Storyboard Script</span>
-            <span className="text-accent text-[10px] font-mono">Active Scene {activeScene.scene}</span>
+        <div className="p-4 border-b border-border/30 bg-neutral-950/60 flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center justify-between w-full">
+            <span>Storyboard Scenes</span>
+            <span className="text-accent text-[10px] font-mono">Scene {activeScene.scene}/{scenes.length || 1}</span>
           </h3>
         </div>
 
-        {/* Scrollable scene list that auto-scrolls/highlights */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5 scrollbar-none">
           {scenes.map((scene, index) => {
             const isActive = index === activeSceneIndex;
@@ -434,7 +557,7 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
                 key={scene.scene}
                 onClick={() => {
                   const chunk = totalSeconds / (scenes.length || 1);
-                  setCurrentTime(Math.floor(index * chunk + 1));
+                  handleSeek(Math.floor(index * chunk + 0.5));
                   setIsPlaying(true);
                 }}
                 className={`w-full text-left p-2.5 rounded-lg border transition-all ${
@@ -448,7 +571,7 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
                     SCENE {scene.scene}
                   </span>
                   <span className="text-[9px] font-mono bg-black/40 px-1 py-[1px] rounded">
-                    {scene.duration}
+                    {scene.duration || `${index * 5}–${(index + 1) * 5}s`}
                   </span>
                 </div>
                 <p className="text-xs leading-relaxed line-clamp-2">
@@ -459,7 +582,6 @@ export function InteractiveVideoPlayer({ id, title, scenes = [], durationText = 
           })}
         </div>
 
-        {/* CTA approval trigger */}
         {onApprove && (
           <div className="p-3 bg-neutral-950 border-t border-border/20">
             <button

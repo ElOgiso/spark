@@ -220,7 +220,7 @@ export async function previewElevenLabsVoice(
 
   const text = sampleText || "Welcome to SPARK. I am ready to scale your media brand with automated high-retention content.";
 
-  // 3. Primary: ElevenLabs synthesis
+  // 3. ElevenLabs synthesis
   try {
     const generated = await generateElevenLabsVoice(text, voiceId, "eleven_multilingual_v2", signal, customKey);
     if (generated) {
@@ -228,85 +228,11 @@ export async function previewElevenLabsVoice(
       return generated;
     }
   } catch (err) {
-    console.warn("[ElevenLabs] Preview generation notice, trying Gemini fallback:", err);
+    console.error("[ElevenLabs] Preview generation error:", err);
   }
 
   if (matchedCurated?.previewUrl) {
     return matchedCurated.previewUrl;
-  }
-
-  // 3. Secondary: Gemini TTS Fallback
-  try {
-    const apiKey = resolveProviderKey("gemini");
-    const geminiVoiceMap: Record<string, string> = {
-      "21m00Tcm4TlvDq8ikWAM": "Zephyr", // Rachel
-      "pNInz6obpgDQGcFmaJgB": "Fenrir", // Adam
-      "ErXwobaYiN019PkySvjV": "Puck", // Antoni
-      "piTKgcLEGmPE4e6mEKli": "Aoede", // Nicole
-      "JBFqnCBsd6RMkjVDRZzb": "Fenrir", // George
-      "EXAVITQu4vr4xnSDxMaL": "Kore", // Sarah
-      "nPczCjzI2devNBz1zQrb": "Fenrir", // Brian
-      "XB0fDUnXU5powFXDhCwa": "Aoede", // Charlotte
-    };
-    const targetGeminiVoice = geminiVoiceMap[voiceId] || "Zephyr";
-
-    const payload = {
-      contents: [{ parts: [{ text }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: targetGeminiVoice } } },
-      },
-    };
-
-    let base64Audio: string | null = null;
-    let mimeType: string = "audio/mp3";
-
-    if (apiKey) {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const part = json?.candidates?.[0]?.content?.parts?.[0];
-        if (part?.inlineData?.data) {
-          base64Audio = part.inlineData.data;
-          mimeType = part.inlineData.mimeType || mimeType;
-        }
-      }
-    }
-
-    if (!base64Audio) {
-      const proxyRes = await fetch("/api/runtime/execute", {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: "google",
-          endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-          payload,
-        }),
-      });
-      if (proxyRes.ok) {
-        const json = await proxyRes.json();
-        const part = json?.candidates?.[0]?.content?.parts?.[0];
-        if (part?.inlineData?.data) {
-          base64Audio = part.inlineData.data;
-          mimeType = part.inlineData.mimeType || mimeType;
-        }
-      }
-    }
-
-    if (base64Audio) {
-      const formatted = base64Audio.startsWith("data:") ? base64Audio : `data:${mimeType};base64,${base64Audio}`;
-      sessionVoicePreviewCache.set(voiceId, formatted);
-      return formatted;
-    }
-  } catch (gemErr) {
-    console.warn("[ElevenLabs] Gemini TTS preview fallback notice:", gemErr);
   }
 
   return null;

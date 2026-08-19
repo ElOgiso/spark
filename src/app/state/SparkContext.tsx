@@ -2184,7 +2184,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const brandId = getBrandWorkspaceId();
       if (brandId) {
         void persistPublishJobCreate(brandId, publishJob);
-        void persistProductionUpdate(brandId, { id: productionId, status: "Published" } as any);
+        void persistProductionUpdate(productionId, { status: "Published" } as any);
       }
 
       alert(`Successfully published to ${platform}!${postUrl ? ` URL: ${postUrl}` : ""}`);

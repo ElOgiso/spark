@@ -1822,23 +1822,22 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           setPreviewAudio(null);
         };
         audio.onerror = () => {
+          console.warn("[BrandGenesisFlow] ElevenLabs audio preview playback error");
           setPreviewAudio(null);
-          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+          setPlayingVoiceId(null);
         };
 
         await audio.play().catch((playErr) => {
-          console.warn("[BrandGenesisFlow] Audio play error, using Web Speech fallback:", playErr);
+          console.warn("[BrandGenesisFlow] Audio autoplay policy notice:", playErr);
           setPreviewAudio(null);
-          playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
+          setPlayingVoiceId(null);
         });
       } else {
-        const spoke = playVoicePersonaWebSpeech(voiceId, sampleText, () => setPlayingVoiceId(null));
-        if (!spoke) {
-          setPlayingVoiceId(null);
-        }
+        console.warn("[BrandGenesisFlow] ElevenLabs preview audio unavailable for voice ID:", voiceId);
+        setPlayingVoiceId(null);
       }
     } catch (err) {
-      console.warn("[BrandGenesisFlow] handlePlayVoice error:", err);
+      console.error("[BrandGenesisFlow] handlePlayVoice error:", err);
       setPlayingVoiceId(null);
       setPreviewAudio(null);
     }

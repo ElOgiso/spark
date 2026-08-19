@@ -1,5 +1,6 @@
 import { generateElevenLabsVoice } from "../runtime/providers/elevenLabsTTS";
 import { resolveProviderKey } from "../runtime/AIProviderOrchestrator";
+import { supabase } from "../../backend/supabaseClient";
 
 export interface DirectorVoiceState {
   isSpeaking: boolean;
@@ -223,9 +224,14 @@ class OnboardDirectorVoiceService {
         audioUrl = this.preloadCache.get(cleanText) || null;
       }
 
-      // Synthesize if not in cache
+      // Check Supabase Storage cache for fixed director script keys
+      if (!audioUrl && scriptKey) {
+        audioUrl = await this.getCachedStorageAudio(scriptKey);
+      }
+
+      // Synthesize via ElevenLabs if not in cache
       if (!audioUrl) {
-        audioUrl = await this.synthesizeAudio(cleanText, signal);
+        audioUrl = await this.synthesizeAudio(cleanText, scriptKey, signal);
         if (audioUrl) {
           this.preloadCache.set(cleanText, audioUrl);
         }
@@ -240,18 +246,17 @@ class OnboardDirectorVoiceService {
         }
       }
 
-      // Fallback: Web Speech Synthesis API
-      if (!signal.aborted) {
-        await this.speakWithWebSpeech(cleanText, signal);
-      }
+      // If playback failed or audioUrl was null, notify state of failure (no WebSpeech fallback)
+      console.warn("[OnboardDirectorVoice] Audio playback failed or ElevenLabs audio unavailable.");
+      this.isSpeakingState = false;
+      this.notify();
     } catch (err: any) {
       if (err?.name === "AbortError" || signal.aborted) {
         return;
       }
-      console.warn("[OnboardDirectorVoice] Primary TTS failed, trying Web Speech fallback:", err);
-      if (!signal.aborted) {
-        await this.speakWithWebSpeech(cleanText, signal);
-      }
+      console.error("[OnboardDirectorVoice] ElevenLabs speech generation failed:", err);
+      this.isSpeakingState = false;
+      this.notify();
     }
   }
 
@@ -266,8 +271,26 @@ class OnboardDirectorVoiceService {
       .trim();
   }
 
-  private async synthesizeAudio(text: string, signal?: AbortSignal): Promise<string | null> {
-    // 1. Primary: ElevenLabs TTS
+  private async getCachedStorageAudio(scriptKey: string): Promise<string | null> {
+    if (!supabase) return null;
+    try {
+      const storagePath = `director_audio/${this.defaultGuideVoiceId}_${scriptKey}.mp3`;
+      const { data } = supabase.storage.from("Spark").getPublicUrl(storagePath);
+      if (data?.publicUrl) {
+        // Verify clip exists via HEAD check
+        const res = await fetch(data.publicUrl, { method: "HEAD" });
+        if (res.ok) {
+          return data.publicUrl;
+        }
+      }
+    } catch (err) {
+      console.warn("[OnboardDirectorVoice] Storage audio check notice:", err);
+    }
+    return null;
+  }
+
+  private async synthesizeAudio(text: string, scriptKey?: string, signal?: AbortSignal): Promise<string | null> {
+    // ElevenLabs TTS (Exclusive for SPARK director voice)
     try {
       const elevenAudio = await generateElevenLabsVoice(
         text,
@@ -275,85 +298,29 @@ class OnboardDirectorVoiceService {
         "eleven_multilingual_v2",
         signal
       );
-      if (elevenAudio) return elevenAudio;
+
+      if (elevenAudio) {
+        // Asynchronously cache to Supabase Storage if scriptKey provided
+        if (supabase && scriptKey) {
+          void (async () => {
+            try {
+              const res = await fetch(elevenAudio);
+              const blob = await res.blob();
+              const storagePath = `director_audio/${this.defaultGuideVoiceId}_${scriptKey}.mp3`;
+              await supabase.storage.from("Spark").upload(storagePath, blob, {
+                upsert: true,
+                contentType: "audio/mp3"
+              });
+            } catch (uErr) {
+              console.warn("[OnboardDirectorVoice] Upload to Supabase Storage notice:", uErr);
+            }
+          })();
+        }
+        return elevenAudio;
+      }
     } catch (elevenErr: any) {
       if (elevenErr?.name === "AbortError") throw elevenErr;
-      console.warn("[OnboardDirectorVoice] ElevenLabs TTS notice, trying Gemini:", elevenErr);
-    }
-
-    if (signal?.aborted) return null;
-
-    // 2. Secondary: Gemini TTS
-    try {
-      const apiKey = resolveProviderKey("gemini");
-      const modelsToTry = ["gemini-2.0-flash", "gemini-2.5-flash-tts-preview"];
-
-      // Direct REST
-      if (apiKey) {
-        for (const model of modelsToTry) {
-          if (signal?.aborted) return null;
-          try {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-            const res = await fetch(endpoint, {
-              method: "POST",
-              signal,
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `Speak in a calm, confident, helpful creative director tone: ${text.slice(0, 400)}` }] }],
-                generationConfig: {
-                  responseModalities: ["AUDIO"],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
-                },
-              }),
-            });
-            if (res.ok) {
-              const json = await res.json();
-              const candidate = json?.candidates?.[0];
-              const part = candidate?.content?.parts?.[0];
-              if (part && part.inlineData?.data) {
-                return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
-              }
-            }
-          } catch (rErr: any) {
-            if (rErr?.name === "AbortError") throw rErr;
-          }
-        }
-      }
-
-      // Server Proxy
-      for (const model of modelsToTry) {
-        if (signal?.aborted) return null;
-        try {
-          const proxyRes = await fetch("/api/runtime/execute", {
-            method: "POST",
-            signal,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              provider: "google",
-              endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-              payload: {
-                contents: [{ parts: [{ text: `Speak in a calm, confident, helpful creative director tone: ${text.slice(0, 400)}` }] }],
-                generationConfig: {
-                  responseModalities: ["AUDIO"],
-                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } },
-                },
-              },
-            }),
-          });
-          if (proxyRes.ok) {
-            const json = await proxyRes.json();
-            const candidate = json?.candidates?.[0];
-            const part = candidate?.content?.parts?.[0];
-            if (part && part.inlineData?.data) {
-              return this.formatInlineAudio(part.inlineData.data, part.inlineData.mimeType);
-            }
-          }
-        } catch (pErr: any) {
-          if (pErr?.name === "AbortError") throw pErr;
-        }
-      }
-    } catch (fallbackErr: any) {
-      if (fallbackErr?.name === "AbortError") throw fallbackErr;
+      console.error("[OnboardDirectorVoice] ElevenLabs TTS error:", elevenErr);
     }
 
     return null;

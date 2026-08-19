@@ -434,6 +434,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 title={proposal.title} 
                 scenes={proposal.storyboard} 
                 durationText="3:20"
+                videoUrl={activeProd?.videoUrl || activeReview?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
+                audioUrl={activeProd?.audioUrl || activeReview?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.generatedAudio?.[0]}
                 onApprove={handleApprove}
               />
             </div>
