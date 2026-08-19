@@ -131,53 +131,35 @@ export async function bootstrapUserSession(
       }
       let profile = profileRes.data;
 
-      // 1) Ensure user has a default brand if none exists yet
-      const defaultBrandRes = await ensureDefaultBrand(user.id, localBrand);
-      let activeBrand: BrandRow | null = defaultBrandRes.data || null;
-
-      // 2) Query all brands owned by this user
+      // 1) Query all brands owned by this user FIRST
       const brandsRes = await listBrandsForOwner(user.id);
       let brands = brandsRes.data || [];
-      if (brands.length === 0 && activeBrand) {
-        brands = [activeBrand];
-      }
+      let activeBrand: BrandRow | null = null;
 
-      // 3) Resolve active brand based on profile pointer or first brand
+      // 2) Resolve active brand based on profile pointer or first brand
       if (profile.active_brand_id) {
-        const matched = brands.find((b) => b.id === profile.active_brand_id);
-        if (matched) {
-          activeBrand = matched;
-        }
+        activeBrand = brands.find((b) => b.id === profile.active_brand_id) || null;
       }
       if (!activeBrand && brands.length > 0) {
         activeBrand = brands[0];
       }
 
-      // 4) Ensure profile.active_brand_id in Supabase points to the active brand
+      // 3) Determine onboarding completeness from CLOUD source of truth:
+      // Profile flag is true OR user has at least one configured brand in Supabase
+      let isComplete = profile.onboarding_complete === true || (brands.length > 0 && Boolean(activeBrand));
+
+      // 4) Cloud auto-repair: if user already has an existing brand in Supabase but profile flag is false -> REPAIR flag in Supabase!
+      if (brands.length > 0 && activeBrand && !profile.onboarding_complete) {
+        profile.onboarding_complete = true;
+        isComplete = true;
+        void markProfileOnboardingComplete(user.id, activeBrand.id);
+      }
+
+      // 5) Ensure profile.active_brand_id in Supabase points to the active brand
       if (activeBrand?.id && profile.active_brand_id !== activeBrand.id) {
         const setBrandRes = await setActiveBrand(user.id, activeBrand.id);
         if (setBrandRes.data) {
           profile = setBrandRes.data;
-        }
-      }
-
-      // 5) Determine onboarding completeness from CLOUD source of truth
-      let isComplete = profile.onboarding_complete === true;
-
-      // Cloud auto-repair: if user already has an existing configured brand in Supabase or local cache
-      if (!isComplete) {
-        if (brands.length > 0) {
-          isComplete = true;
-          profile.onboarding_complete = true;
-          void markProfileOnboardingComplete(user.id, activeBrand?.id);
-        } else {
-          try {
-            if (typeof localStorage !== "undefined" && localStorage.getItem("spark_onboarding_complete") === "true") {
-              isComplete = true;
-              profile.onboarding_complete = true;
-              void markProfileOnboardingComplete(user.id, activeBrand?.id);
-            }
-          } catch {}
         }
       }
 

@@ -654,6 +654,17 @@ class BasePlatformAdapter implements ISocialPlatformAdapter {
   }
 }
 
+export function normalizePlatformKey(platform: string): string {
+  const lower = String(platform || "").toLowerCase().trim();
+  if (lower.includes("youtube") || lower.includes("youtu")) return "youtube";
+  if (lower.includes("x") || lower.includes("twitter")) return "x";
+  if (lower.includes("tiktok")) return "tiktok";
+  if (lower.includes("instagram")) return "instagram";
+  if (lower.includes("facebook")) return "facebook";
+  if (lower.includes("linkedin")) return "linkedin";
+  return lower;
+}
+
 export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IProfileFetcher, IAnalyticsFetcher, IPublisher {
   private static instance: SocialConnectorFramework;
   private adapters: Map<string, ISocialPlatformAdapter> = new Map();
@@ -707,11 +718,12 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
   saveToken(token: ConnectedAccountToken, opts?: { silent?: boolean }): void {
     try {
       const stored = this.getStoredTokens();
-      stored[token.platform] = token;
+      const pKey = normalizePlatformKey(token.platform);
+      stored[pKey] = { ...token, platform: pKey };
       localStorage.setItem("spark_social_account_tokens_v2", JSON.stringify(stored));
       // silent=true when analytics pipeline enriches cache (avoid re-sync loops)
       if (!opts?.silent) {
-        eventBus.emit("ACCOUNT_CONNECTED", { platform: token.platform, handle: token.handle });
+        eventBus.emit("ACCOUNT_CONNECTED", { platform: pKey, handle: token.handle });
       }
     } catch (err) {
       console.warn("[SocialConnectorFramework] Token save error:", err);
@@ -721,7 +733,16 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
   getStoredTokens(): Record<string, ConnectedAccountToken> {
     try {
       const stored = localStorage.getItem("spark_social_account_tokens_v2");
-      return stored ? JSON.parse(stored) : {};
+      if (!stored) return {};
+      const parsed = JSON.parse(stored);
+      const normalized: Record<string, ConnectedAccountToken> = {};
+      Object.entries(parsed).forEach(([k, tok]: [string, any]) => {
+        if (tok && typeof tok === "object") {
+          const pKey = normalizePlatformKey(tok.platform || k);
+          normalized[pKey] = { ...tok, platform: pKey };
+        }
+      });
+      return normalized;
     } catch {
       return {};
     }

@@ -1,4 +1,5 @@
 import { MemoryCategory } from "../database.types";
+import { normalizePlatformKey } from "../../services/socialIntegrationService";
 import type {
   AccountRow,
   AnalyticsSnapshotRow,
@@ -356,8 +357,9 @@ export function accountRowToDomain(row: any): Account {
     statusRaw === "connected" ||
     row.connected === true ||
     statusRaw === "active";
+  const pKey = normalizePlatformKey(row.platform || "");
   return {
-    platform: row.platform,
+    platform: pKey,
     handle: row.username || row.handle || row.display_name || "",
     status: connected ? "connected" : "disconnected",
     posts: 0,

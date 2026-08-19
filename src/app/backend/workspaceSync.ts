@@ -420,7 +420,9 @@ export async function persistAccountToken(brandId: string, account: any) {
   try {
     const { supabase } = await import("./supabaseClient");
     if (!supabase) return;
+    const { normalizePlatformKey } = await import("../services/socialIntegrationService");
     const now = new Date().toISOString();
+    const pKey = normalizePlatformKey(account.platform || "youtube");
     const permissions =
       account.permissions && typeof account.permissions === "object"
         ? account.permissions
@@ -432,7 +434,7 @@ export async function persistAccountToken(brandId: string, account: any) {
     await (supabase.from("accounts") as any).upsert(
       {
         brand_id: brandId,
-        platform: account.platform || "YouTube Shorts",
+        platform: pKey,
         handle: account.handle || account.username || null,
         display_name: account.displayName || account.display_name || null,
         status:

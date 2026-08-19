@@ -47,6 +47,7 @@ import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
   getBrandWorkspaceId,
   getStoredAccountTokens,
+  normalizePlatformKey,
   socialConnectorFramework,
 } from "../services/socialIntegrationService";
 import { useAuth } from "./AuthContext";
@@ -426,14 +427,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // Hydrate with Supabase accounts that are connected
           (snap.accounts || [])
             .filter((a: any) => String(a.status || "").toLowerCase() === "connected")
-            .forEach((a: any) => byPlatform.set(a.platform, {
-              platform: a.platform,
-              handle: a.handle || "",
-              status: "connected",
-              posts: a.posts || 0,
-            }));
+            .forEach((a: any) => {
+              const pKey = normalizePlatformKey(a.platform);
+              byPlatform.set(pKey, {
+                platform: pKey,
+                handle: a.handle || "",
+                status: "connected",
+                posts: a.posts || 0,
+              });
+            });
           // Merge local tokens
-          tokenAccounts.forEach((a) => byPlatform.set(a.platform, a));
+          tokenAccounts.forEach((a) => {
+            const pKey = normalizePlatformKey(a.platform);
+            byPlatform.set(pKey, {
+              ...a,
+              platform: pKey,
+            });
+          });
           
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
@@ -996,7 +1006,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         reviewItems: [],
         publishJobs: [],
         memoryItems: initialMemoryItems,
-        researchSources: initialResearchSources.length > 0 ? initialResearchSources : (prev.researchSources || []),
+        researchSources: Array.from(
+          new Map(
+            [...(prev.researchSources || []), ...initialResearchSources].map((s) => [s.url.toLowerCase().trim(), s])
+          ).values()
+        ),
       };
     });
 
