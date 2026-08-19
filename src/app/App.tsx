@@ -10,7 +10,7 @@ import { Analytics } from "./components/Analytics";
 import { MorePage } from "./components/MorePage";
 import { MoreSubPages, FullLegalPage } from "./components/MoreSubPages";
 import { MobileApp } from "./components/mobile/MobileApp";
-import { useDeviceType } from "./hooks/useDeviceType";
+import { useDeviceType, detectDevice } from "./hooks/useDeviceType";
 import { SparkProvider, useSpark } from "./state/SparkContext";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { AuthProvider, useAuth, getStoredDemoUser } from "./state/AuthContext";
