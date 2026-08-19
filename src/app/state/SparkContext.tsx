@@ -1014,13 +1014,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    // Seed research sources in the background
-    if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
-      data.researchSources.filter(Boolean).forEach((url: string) => {
-        void addResearchSource(url);
-      });
-    }
-
     let brandId = auth.brand?.id || getBrandWorkspaceId();
     if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
       try {
@@ -1039,12 +1032,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
+    if (isSupabaseConfigured() && auth.currentUser?.id && (!brandId || !isUuid(brandId))) {
+      throw new Error("Genesis persistence failed: Unable to provision cloud brand workspace UUID.");
+    }
+
     if (brandId && isUuid(brandId)) {
       if (initialMemoryItems[0]) {
         void persistMemoryCreate(brandId, initialMemoryItems[0]);
       }
       try {
-        const { persistBrandUpdate, persistCharacterUpdate, persistViralSparkCreate } = await import("../backend/workspaceSync");
+        const {
+          persistBrandUpdate,
+          persistCharacterUpdate,
+          persistViralSparkCreate,
+          persistResearchSourceCreate,
+        } = await import("../backend/workspaceSync");
         await persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
@@ -1094,9 +1096,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
           }
         }
+
+        // Persist research sources to research_sources table in cloud
+        if (initialResearchSources.length > 0) {
+          for (const src of initialResearchSources) {
+            void persistResearchSourceCreate(brandId, src);
+          }
+        }
       } catch (persistErr) {
         console.warn("[SparkContext] initializeBrandGenesis persist error:", persistErr);
       }
+    }
+
+    // Seed additional research sources in background if provided
+    if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
+      data.researchSources.filter(Boolean).forEach((url: string) => {
+        void addResearchSource(url);
+      });
     }
 
     // ALWAYS mark onboarding complete in Supabase profiles
