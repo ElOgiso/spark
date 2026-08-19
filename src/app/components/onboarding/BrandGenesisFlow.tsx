@@ -13,10 +13,10 @@ import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../servic
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
+  generateElevenLabsVoice,
   designElevenLabsVoice,
   createDesignedElevenLabsVoice,
   ElevenLabsVoiceSummary,
-  playVoicePersonaWebSpeech,
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
@@ -1542,6 +1542,7 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
   const [voicesList, setVoicesList] = useState<ElevenLabsVoiceSummary[]>([]);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [syncStatuses, setSyncStatuses] = useState<Record<string, "syncing" | "ready">>({});
 
   // Onboard Director Gemini Voice state

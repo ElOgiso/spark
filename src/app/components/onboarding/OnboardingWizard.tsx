@@ -36,11 +36,11 @@ import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../servic
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
+  generateElevenLabsVoice,
   designElevenLabsVoice,
   createDesignedElevenLabsVoice,
   FALLBACK_CURATED_ELEVENLABS_VOICES,
   type ElevenLabsVoiceSummary,
-  playVoicePersonaWebSpeech,
 } from "../../services/runtime/providers/elevenLabsTTS";
 
 export interface VoiceProfile {
