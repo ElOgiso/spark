@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
+import { AIPreferencesPanel } from "./ui/AIPreferencesPanel";
 import { useSpark } from "../state/SparkContext";
 import {
   disconnectConnectedAccount,
@@ -2279,6 +2280,10 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
         };
     }
   };
+
+  if (subPath === "/more/ai-preferences") {
+    return <AIPreferencesPanel onNavigate={onNavigate} />;
+  }
 
   const page = getSubPageDetails();
   const Icon = page.icon;
