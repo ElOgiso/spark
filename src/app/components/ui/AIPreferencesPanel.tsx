@@ -166,12 +166,12 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
 
   const handleUpdateProvider = (categoryKey: AIRoutingCategory, providerId: AIProviderId | "auto") => {
     const updatedRouting = ModelRouter.setUserRoutingConfig({ [categoryKey]: providerId });
-    setAiRoutingConfig(updatedRouting);
+    setAiRoutingConfig(updatedRouting as any);
 
     // If changing to auto, clear custom model selection for this task
     if (providerId === "auto") {
       const updatedModels = ModelRouter.setUserModelSelectionConfig({ [categoryKey]: "" });
-      setAiModelSelectionConfig(updatedModels);
+      setAiModelSelectionConfig(updatedModels as any);
     } else {
       // Pick first recommended model for chosen provider
       const capability = ModelRouter.mapCategoryToCapability(categoryKey);
@@ -179,7 +179,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
       const recommended = available.find((m) => m.recommended) || available[0];
       if (recommended) {
         const updatedModels = ModelRouter.setUserModelSelectionConfig({ [categoryKey]: recommended.id });
-        setAiModelSelectionConfig(updatedModels);
+        setAiModelSelectionConfig(updatedModels as any);
       }
     }
 
@@ -193,7 +193,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
 
   const handleUpdateModel = (categoryKey: AIRoutingCategory, modelId: string) => {
     const updatedModels = ModelRouter.setUserModelSelectionConfig({ [categoryKey]: modelId });
-    setAiModelSelectionConfig(updatedModels);
+    setAiModelSelectionConfig(updatedModels as any);
 
     if (typeof updateAISettings === "function") {
       updateAISettings({
@@ -214,8 +214,8 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
     const updatedRouting = ModelRouter.setUserRoutingConfig(defaultRouting as any);
     const updatedModels = ModelRouter.setUserModelSelectionConfig(defaultModels as any);
 
-    setAiRoutingConfig(updatedRouting);
-    setAiModelSelectionConfig(updatedModels);
+    setAiRoutingConfig(updatedRouting as any);
+    setAiModelSelectionConfig(updatedModels as any);
 
     if (typeof updateAISettings === "function") {
       updateAISettings({ routing: updatedRouting, modelSelection: updatedModels });
