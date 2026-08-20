@@ -90,23 +90,7 @@ const STYLES = `
   .spark-p4 { animation: spark-p4 3.8s ease infinite; }
 `;
 
-function MainLogoAnimated({ size = 80 }: { size?: number }) {
-  return (
-    <div className="spark-mark-wrap" style={{ width: size, height: size, position: "relative", display: "inline-flex" }}>
-      <div className="spark-bloom" style={{ width: size * 2.4, height: size * 2.4, left: -(size * 0.7), top: -(size * 0.7) }} />
-      <div className="spark-p spark-p1" style={{ left: size * 0.22, top: size * 0.12 }} />
-      <div className="spark-p spark-p2" style={{ right: size * 0.08, top: size * 0.2 }} />
-      <div className="spark-p spark-p3" style={{ left: size * 0.08, bottom: size * 0.22 }} />
-      <div className="spark-p spark-p4" style={{ right: size * 0.2, bottom: size * 0.1 }} />
-      <img
-        src={mainLogo}
-        alt="Spark"
-        className="spark-mark-svg"
-        style={{ width: size, height: size, objectFit: "contain", position: "relative", zIndex: 2 }}
-      />
-    </div>
-  );
-}
+import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 
 function AmbientOrbs() {
   return (

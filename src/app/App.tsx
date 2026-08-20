@@ -54,14 +54,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+import { MainLogoAnimated } from "./components/ui/SparkAnimatedLogo";
+
 /**
  * Hydration Splash: Shown during initial session restoration (never flashes public screens)
  */
 function HydrationSplash() {
   return (
     <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none">
-      <div className="space-y-4 animate-in fade-in duration-300">
-        <SparkLogo className="w-16 h-16 mx-auto animate-pulse" variant="superspark" />
+      <div className="space-y-6 animate-in fade-in duration-300 flex flex-col items-center">
+        <MainLogoAnimated size={90} />
         <p className="text-xs font-semibold tracking-wider text-purple-300 uppercase">Restoring Executive OS...</p>
       </div>
     </div>
