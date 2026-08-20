@@ -1620,14 +1620,14 @@ export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
             const isYt = tok.platform.toLowerCase().includes("youtube");
             const pid = isYt ? "youtube" : "x";
 
-            let realHandle = (tok.handle || tok.accountHandle || "").trim();
-            if (realHandle === "@connected" || realHandle === "connected") {
+            let realHandle = (tok.handle || tok.accountHandle || "").trim().replace(/^@+/, "");
+            if (realHandle === "connected") {
               realHandle = "";
             }
             if (!realHandle && tok.displayName) {
-              realHandle = `@${tok.displayName.replace(/\s+/g, "").toLowerCase()}`;
+              realHandle = tok.displayName.replace(/\s+/g, "").toLowerCase().replace(/^@+/, "");
             }
-            if (realHandle && !realHandle.startsWith("@")) {
+            if (realHandle) {
               realHandle = `@${realHandle}`;
             }
 

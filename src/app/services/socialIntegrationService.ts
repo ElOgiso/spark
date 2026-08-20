@@ -403,10 +403,8 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
         platform: this.platform,
         displayName: title,
         username: customUrl
-          ? customUrl.startsWith("@")
-            ? customUrl
-            : `@${customUrl}`
-          : `@${title.toLowerCase().replace(/\s+/g, "")}`,
+          ? `@${customUrl.replace(/^@+/, "")}`
+          : `@${title.toLowerCase().replace(/\s+/g, "").replace(/^@+/, "")}`,
         avatarUrl:
           item.snippet.thumbnails?.high?.url ||
           item.snippet.thumbnails?.medium?.url ||
@@ -578,7 +576,7 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
       return {
         platform: this.platform,
         displayName: u.name,
-        username: `@${u.username}`,
+        username: `@${(u.username || "").replace(/^@+/, "")}`,
         avatarUrl: (u.profile_image_url || "").replace("_normal", "_400x400"),
         channelId: u.id,
         verified: Boolean(u.verified),

@@ -1024,7 +1024,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (acc && acc.connected && acc.username) {
               void persistAccountToken(brandId, {
                 platform: acc.platform,
-                handle: acc.username,
+                handle: `@${acc.username.replace(/^@+/, "")}`,
                 status: "connected",
               });
             }

@@ -381,6 +381,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem("spark_demo_user");
         } catch {}
       }
+      if (typeof sessionStorage !== "undefined") {
+        try {
+          sessionStorage.removeItem("spark_splash_played");
+        } catch {}
+      }
       setDemoUser(null);
       setSession(null);
       setProfile(null);

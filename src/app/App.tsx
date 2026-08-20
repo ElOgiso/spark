@@ -190,6 +190,18 @@ function AppContent() {
           window.history.replaceState({}, "", "/auth");
         }
         setViewState("auth");
+        if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("spark_splash_played") !== "true") {
+          const search = typeof window !== "undefined" ? window.location.search : "";
+          if (
+            !pathname.startsWith("/auth/google") &&
+            !pathname.startsWith("/auth/x") &&
+            !pathname.startsWith("/auth/callback") &&
+            !search.includes("code=") &&
+            !search.includes("spark_oauth=")
+          ) {
+            setSplashDone(false);
+          }
+        }
       }
     }
   }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete]);
