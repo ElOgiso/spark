@@ -61,10 +61,10 @@ import { MainLogoAnimated } from "./components/ui/SparkAnimatedLogo";
  */
 function HydrationSplash() {
   return (
-    <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none">
-      <div className="space-y-6 animate-in fade-in duration-300 flex flex-col items-center">
-        <MainLogoAnimated size={90} />
-        <p className="text-xs font-semibold tracking-wider text-purple-300 uppercase">Restoring Executive OS...</p>
+    <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none relative overflow-hidden">
+      <div className="animate-in fade-in duration-300 flex flex-col items-center gap-4">
+        <MainLogoAnimated size={96} />
+        <p className="text-[11px] font-medium tracking-widest text-purple-300/60 uppercase pt-2">Restoring session...</p>
       </div>
     </div>
   );

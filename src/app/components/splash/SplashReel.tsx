@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import mainLogo from "@/imports/MAIN_LOGO.png";
+import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 
 // ─── Keyframes & Styles from Donor ─────────────────────────────────────────────
 const SPLASH_STYLES = `
@@ -370,16 +371,7 @@ export function SplashReel({ onDone }: SplashReelProps) {
               className="absolute inset-0 flex items-center justify-center"
               style={{ animation: "reel-logo-pop 450ms 180ms ease both" }}
             >
-              <img
-                src={mainLogo}
-                alt="Spark"
-                style={{
-                  width: 90,
-                  height: 90,
-                  objectFit: "contain",
-                  filter: "drop-shadow(0 0 32px #F018FF)",
-                }}
-              />
+              <MainLogoAnimated size={90} />
             </div>
           </div>
         )}
@@ -390,16 +382,9 @@ export function SplashReel({ onDone }: SplashReelProps) {
             key={`sp-${idx}`}
             className="absolute inset-0 flex flex-col items-center justify-center gap-5"
           >
-            <img
-              src={mainLogo}
-              alt="Spark"
-              style={{
-                width: 148,
-                height: 148,
-                objectFit: "contain",
-                animation: "reel-spark-reveal 1.1s ease both",
-              }}
-            />
+            <div style={{ animation: "reel-spark-reveal 1.1s ease both" }}>
+              <MainLogoAnimated size={130} />
+            </div>
             <div
               style={{
                 animation: "reel-wordmark 500ms 650ms ease both",
