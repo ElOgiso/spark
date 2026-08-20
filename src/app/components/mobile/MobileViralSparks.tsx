@@ -176,7 +176,16 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
 
       {/* Scrollable Content Block */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 scrollbar-none pb-24">
-          {filtered.map((spark) => {
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/25 p-8 text-center text-muted-foreground my-4">
+            <Zap className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-foreground">No live opportunities discovered yet</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+              Add a Research Source or connect an account to surface live opportunities.
+            </p>
+          </div>
+        ) : (
+          filtered.map((spark) => {
             const isCreated = createdSparks.has(spark.id);
             return (
               <div
@@ -239,8 +248,9 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                 )}
               </div>
             );
-          })}
-        </div>
+          })
+        )}
+      </div>
       </div>
 
       {/* Mobile Production Drawer — bottom sheet */}

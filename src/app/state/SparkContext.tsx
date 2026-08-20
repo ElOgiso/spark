@@ -471,7 +471,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
             memoryItems: snap.memoryItems || [],
-            viralSparks: snap.viralSparks || [],
+            viralSparks: (snap.viralSparks || []).filter((s: any) => s && !s.id?.startsWith("vs-init-")),
             productions: snap.productions || [],
             reviewItems: snap.reviewItems || [],
             publishJobs: snap.publishJobs || [],
@@ -737,69 +737,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ? "standard"
         : (rawProdMode as ProductionMode);
 
-    // Initial Live Viral Sparks for creator's brand niche
-    const initialSparks: ViralSpark[] = [
-      {
-        id: `vs-init-${Date.now()}-1`,
-        title: `The 2026 Shift in ${niche}: What Top Creators Are Doing Differently`,
-        angle: "Strategic inflection point breakdown",
-        brandFitScore: 98,
-        platformFit: platforms.length > 0 ? platforms.map((p: any) => typeof p === "string" ? p : p.platform).join(" + ") : "YouTube Shorts + TikTok",
-        timeWindow: "24h",
-        whyNow: "High audience search interest and engagement spike across social channels.",
-        hook: `"If you're creating in ${niche}, you need to see this immediate shift."`,
-        views: "1.4M",
-        velocity: "+380%",
-        category: "hot",
-        productionTime: "24h",
-        audienceEmotion: "Curiosity + Authority",
-        expectedRetention: "Rapid hook retention with high completion rate",
-        difficulty: "Medium",
-        riskLevel: "Low",
-        suggestedFormat: "Short-form (45–60 sec)",
-        suggestedProductionMode: productionMode === "deep" ? "Cinematic Story" : "Autonomous Draft",
-      },
-      {
-        id: `vs-init-${Date.now()}-2`,
-        title: `3 Core Rules ${brandName} Uses to Master ${niche}`,
-        angle: "High-value framework / tactical guide",
-        brandFitScore: 95,
-        platformFit: platforms.length > 0 ? platforms.map((p: any) => typeof p === "string" ? p : p.platform).join(" + ") : "YouTube Shorts + Twitter/X",
-        timeWindow: "48h",
-        whyNow: "Breakdown formats generate 2.8x higher bookmark and share rates.",
-        hook: `"The 3 non-negotiable rules for winning in ${niche} right now."`,
-        views: "920K",
-        velocity: "+210%",
-        category: "rising",
-        productionTime: "48h",
-        audienceEmotion: "Aspiration + Clarity",
-        expectedRetention: "Numbered structure keeps drop-off below 15%",
-        difficulty: "Easy",
-        riskLevel: "Low",
-        suggestedFormat: "Short-form (60 sec)",
-        suggestedProductionMode: "Autonomous Draft",
-      },
-      {
-        id: `vs-init-${Date.now()}-3`,
-        title: `Why Traditional Approaches to ${niche} Are Failing`,
-        angle: "Contrarian truth / pattern interrupt",
-        brandFitScore: 92,
-        platformFit: platforms.length > 0 ? platforms.map((p: any) => typeof p === "string" ? p : p.platform).join(" + ") : "TikTok + Instagram",
-        timeWindow: "72h",
-        whyNow: "Contrarian analysis drives 3.4x comment velocity.",
-        hook: `"Everyone is telling you to do this in ${niche}—here is why it's a trap."`,
-        views: "750K",
-        velocity: "+185%",
-        category: "niche",
-        productionTime: "48h",
-        audienceEmotion: "Surprise + Urgency",
-        expectedRetention: "Pattern interrupt in first 3 seconds sustains viewer focus",
-        difficulty: "Medium",
-        riskLevel: "Low",
-        suggestedFormat: "Short-form (45 sec)",
-        suggestedProductionMode: "Autonomous Draft",
-      },
-    ];
+    // Real research/source pipeline only — no mock initialSparks seed
+    const initialSparks: ViralSpark[] = [];
 
     // Production mode: no fabricated sparks/productions/reviews.
     // Only real onboarding identity + memory rules.
@@ -1078,11 +1017,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             description: data.voiceProfile?.accent || data.voiceProfile?.description,
           },
         });
-
-        // Persist initial viral sparks to cloud
-        for (const spk of initialSparks) {
-          void persistViralSparkCreate(brandId, spk);
-        }
 
         // Persist connected accounts to cloud
         if (data.connectedAccounts && Array.isArray(data.connectedAccounts)) {

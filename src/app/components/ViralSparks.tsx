@@ -447,8 +447,10 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
           {filtered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-card/25 p-12 text-center text-muted-foreground">
               <Zap className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm font-medium">No opportunities discovered yet</p>
-              <p className="text-xs text-muted-foreground/75 mt-1">Spark will index trending topics, keywords, and viral formats once your social integrations are active.</p>
+              <p className="text-sm font-medium text-foreground">No live opportunities discovered yet</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                Add a Research Source or connect an account to surface live opportunities.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
