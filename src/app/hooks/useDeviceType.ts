@@ -24,7 +24,18 @@ export function useDeviceType(): DeviceType {
 
     const handleUpdate = () => {
       const nextType = detectDevice();
-      setDeviceType((prev) => (prev !== nextType ? nextType : prev));
+      setDeviceType((prev) => {
+        const isTouch =
+          typeof window !== "undefined" &&
+          (window.matchMedia("(pointer: coarse)").matches ||
+            "ontouchstart" in window ||
+            (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0));
+        // If already mobile on a touch device under 1024px width, lock mobile state during keyboard height resizes
+        if (prev === "mobile" && isTouch && window.innerWidth < 1024) {
+          return "mobile";
+        }
+        return prev !== nextType ? nextType : prev;
+      });
     };
 
     // Initial sync

@@ -2287,7 +2287,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     <>
       <TopBar pageName={`More / ${page.title}`} onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-8 space-y-6">
+        <div className="max-w-4xl mx-auto px-4 py-6 sm:p-8 pb-28 space-y-6">
           <button
             onClick={() => onNavigate("/more")}
             className="flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors group mb-2"
@@ -2323,7 +2323,7 @@ export function FullLegalPage({ onNavigate, type }: SubPageProps & { type: "term
     <>
       <TopBar pageName={type === "terms" ? "Terms of Service" : "Privacy Policy"} onNavigate={onNavigate} />
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto p-8 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 py-6 sm:p-8 pb-28 space-y-6">
           <button
             onClick={() => onNavigate("/more")}
             className="flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors group mb-2"
@@ -2332,7 +2332,7 @@ export function FullLegalPage({ onNavigate, type }: SubPageProps & { type: "term
             Back to More
           </button>
 
-          <div className="rounded-xl border border-border bg-card p-8 space-y-6 leading-relaxed text-sm">
+          <div className="rounded-xl border border-border bg-card p-4 sm:p-8 space-y-6 leading-relaxed text-sm">
             <h1 className="text-3xl font-bold text-foreground">
               {type === "terms" ? "Terms of Service" : "Privacy Policy"}
             </h1>

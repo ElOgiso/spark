@@ -37,7 +37,12 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
   const auth = useAuth();
   const { productions, reviewItems, viralSparks, character, brand, accounts } = useSpark() as any;
   const userDisplayName = auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || character?.name || "Creator";
-  const connectedAccountsCount = accounts ? accounts.filter((a: any) => a.status?.toLowerCase() === "connected").length : 0;
+  const connectedAccountsCount = (() => {
+    if (!accounts || !Array.isArray(accounts)) return 0;
+    const connected = accounts.filter((a: any) => a && (a.status?.toLowerCase() === "connected" || a.connected));
+    const uniquePlatforms = new Set(connected.map((a: any) => (a.platform || "").toLowerCase()));
+    return uniquePlatforms.size;
+  })();
   const isEmpty = productions.length === 0;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -228,7 +233,13 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
               [
                 { text: `${viralSparks.length} high-fit opportunities ready to create`, type: "opportunity" as const, path: "/viral-sparks" },
                 { text: `${readyCount} productions awaiting review approval`, type: "alert" as const, path: "/review" },
-                { text: "YouTube growing rapidly (+42%) — momentum window open", type: "success" as const, path: "/analytics" },
+                {
+                  text: connectedAccountsCount > 0
+                    ? `${connectedAccountsCount} active account${connectedAccountsCount > 1 ? "s" : ""} synced for publishing`
+                    : "Connect social accounts in More to enable distribution",
+                  type: "success" as const,
+                  path: "/more"
+                },
               ].map((item, i) => {
                 const config = {
                   opportunity: { icon: TrendingUp, color: "text-success", bg: "bg-success/10" },
