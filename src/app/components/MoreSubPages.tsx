@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { AIPreferencesPanel } from "./ui/AIPreferencesPanel";
+import { useDeviceType, detectDevice } from "../hooks/useDeviceType";
 import { useSpark } from "../state/SparkContext";
 import {
   disconnectConnectedAccount,
@@ -2281,7 +2282,11 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     }
   };
 
-  if (subPath === "/more/ai-preferences") {
+  const deviceType = useDeviceType();
+  const currentDevice = detectDevice();
+  const isMobileDevice = currentDevice === "mobile" || deviceType === "mobile";
+
+  if (subPath === "/more/ai-preferences" && isMobileDevice) {
     return <AIPreferencesPanel onNavigate={onNavigate} />;
   }
 

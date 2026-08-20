@@ -125,18 +125,27 @@ export async function bootstrapUserSession(
 
   const runBootstrap = async (): Promise<AuthBootstrapResult> => {
     try {
-      const profileRes = await upsertProfile(user);
-      if (profileRes.error || !profileRes.data) {
-        return { profile: null, brand: null, brands: [], isOnboardingComplete: false, error: profileRes.error };
-      }
-      let profile = profileRes.data;
-
       // 1) Query all brands owned by this user FIRST
       const brandsRes = await listBrandsForOwner(user.id);
-      let brands = brandsRes.data || [];
-      let activeBrand: BrandRow | null = null;
+      const brands = brandsRes.data || [];
 
-      // 2) Resolve active brand based on profile pointer or first brand
+      // 2) Upsert profile in Supabase
+      const profileRes = await upsertProfile(user);
+      let profile = profileRes.data || {
+        id: user.id,
+        email: user.email || "creator@spark.ai",
+        display_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Creator",
+        full_name: user.user_metadata?.full_name || "Creator",
+        role: "Director",
+        avatar_url: null,
+        onboarding_complete: brands.length > 0,
+        active_brand_id: brands[0]?.id || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // 3) Resolve active brand based on profile pointer or first brand
+      let activeBrand: BrandRow | null = null;
       if (profile.active_brand_id) {
         activeBrand = brands.find((b) => b.id === profile.active_brand_id) || null;
       }
@@ -144,18 +153,18 @@ export async function bootstrapUserSession(
         activeBrand = brands[0];
       }
 
-      // 3) Determine onboarding completeness from CLOUD source of truth:
+      // 4) Determine onboarding completeness from CLOUD source of truth:
       // Profile flag is true OR user has at least one configured brand in Supabase
       let isComplete = profile.onboarding_complete === true || (brands.length > 0 && Boolean(activeBrand));
 
-      // 4) Cloud auto-repair: if user already has an existing brand in Supabase but profile flag is false -> REPAIR flag in Supabase!
+      // 5) Cloud auto-repair: if user already has an existing brand in Supabase but profile flag is false -> REPAIR flag in Supabase!
       if (brands.length > 0 && activeBrand && !profile.onboarding_complete) {
         profile.onboarding_complete = true;
         isComplete = true;
         void markProfileOnboardingComplete(user.id, activeBrand.id);
       }
 
-      // 5) Ensure profile.active_brand_id in Supabase points to the active brand
+      // 6) Ensure profile.active_brand_id in Supabase points to the active brand
       if (activeBrand?.id && profile.active_brand_id !== activeBrand.id) {
         const setBrandRes = await setActiveBrand(user.id, activeBrand.id);
         if (setBrandRes.data) {
@@ -179,12 +188,28 @@ export async function bootstrapUserSession(
         error: null,
       };
     } catch (error) {
-      let cachedComplete = false;
+      console.warn("[SPARK AUTH] bootstrap exception, attempting recovery query:", error);
+
+      let retryBrands: BrandRow[] = [];
+      let retryActiveBrand: BrandRow | null = null;
+      let isComplete = false;
+
       try {
-        if (typeof localStorage !== "undefined" && localStorage.getItem("spark_onboarding_complete") === "true") {
-          cachedComplete = true;
+        const bRes = await listBrandsForOwner(user.id);
+        if (bRes.data && bRes.data.length > 0) {
+          retryBrands = bRes.data;
+          retryActiveBrand = bRes.data[0];
+          isComplete = true;
         }
       } catch {}
+
+      if (!isComplete) {
+        try {
+          if (typeof localStorage !== "undefined" && localStorage.getItem("spark_onboarding_complete") === "true") {
+            isComplete = true;
+          }
+        } catch {}
+      }
 
       return {
         profile: {
@@ -194,14 +219,14 @@ export async function bootstrapUserSession(
           full_name: user.user_metadata?.full_name || "Creator",
           role: "Director",
           avatar_url: null,
-          onboarding_complete: cachedComplete,
-          active_brand_id: null,
+          onboarding_complete: isComplete,
+          active_brand_id: retryActiveBrand?.id || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
-        brand: null,
-        brands: [],
-        isOnboardingComplete: cachedComplete,
+        brand: retryActiveBrand,
+        brands: retryBrands,
+        isOnboardingComplete: isComplete,
         error: sanitizeAuthError(error),
       };
     }
