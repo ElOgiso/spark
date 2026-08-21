@@ -30,10 +30,6 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  if (!isOpen) return null;
-
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
 
   const handleGenerateSheet = async () => {
@@ -165,6 +161,8 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
     a.click();
     document.body.removeChild(a);
   };
+
+  if (!isOpen) return null;
 
   return (
     <>

@@ -42,25 +42,6 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
 
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
 
-  useEffect(() => {
-    if (isOpen) {
-      void getElevenLabsVoices().then((res) => {
-        const fetched = res?.voices || [];
-        if (fetched.length > 0) {
-          setVoicesList((prev) => {
-            const existingIds = new Set(prev.map((v) => v.voiceId));
-            const newVoices = fetched.filter((v) => !existingIds.has(v.voiceId));
-            return [...prev, ...newVoices];
-          });
-        }
-      });
-    } else {
-      stopAudio();
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
   const stopAudio = () => {
     if (activeAudio) {
       try {
@@ -77,6 +58,22 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     setPlayingVoiceId(null);
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      void getElevenLabsVoices().then((res) => {
+        const fetched = res?.voices || [];
+        if (fetched.length > 0) {
+          setVoicesList((prev) => {
+            const existingIds = new Set(prev.map((v) => v.voiceId));
+            const newVoices = fetched.filter((v) => !existingIds.has(v.voiceId));
+            return [...prev, ...newVoices];
+          });
+        }
+      });
+    } else {
+      stopAudio();
+    }
+  }, [isOpen]);
   const handlePlayVoice = async (voiceObj: ElevenLabsVoiceSummary) => {
     if (playingVoiceId === voiceObj.voiceId) {
       stopAudio();
@@ -248,6 +245,8 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     a.click();
     document.body.removeChild(a);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 sm:p-6 overflow-y-auto select-none">
