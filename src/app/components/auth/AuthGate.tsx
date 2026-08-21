@@ -4,6 +4,8 @@ import { useDeviceType } from "../../hooks/useDeviceType";
 import { MobileAuthExperience } from "../mobile/auth/MobileAuthExperience";
 import { DesktopAuthExperience } from "../desktop/DesktopAuthExperience";
 
+import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
+
 type AuthGateProps = {
   children: ReactNode;
   requireAuth?: boolean;
@@ -17,8 +19,13 @@ export function AuthGate({ children, requireAuth = false, fallback = null }: Aut
 
   if (auth.loading) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground font-mono animate-pulse">Restoring Executive Spark Session...</p>
+      <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none relative overflow-hidden">
+        <div className="animate-in fade-in duration-300 flex flex-col items-center gap-4">
+          <MainLogoAnimated size={96} />
+          <p className="text-[11px] font-medium tracking-widest text-purple-300/60 uppercase pt-2 animate-pulse">
+            Looking for your spark...
+          </p>
+        </div>
       </div>
     );
   }

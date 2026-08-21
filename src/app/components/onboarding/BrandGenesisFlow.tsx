@@ -20,6 +20,7 @@ import {
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
+import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 import {
   onboardDirectorVoiceService,
   FRAME_TO_SCRIPT_KEY,
@@ -1438,6 +1439,7 @@ const LEGAL_SCREENS = [
 
 function LegalFlow({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const screen = LEGAL_SCREENS[step];
   const handleAgree = () => {
@@ -1445,9 +1447,23 @@ function LegalFlow({ onComplete }: { onComplete: () => void }) {
       setStep((s) => s + 1);
       scrollRef.current?.scrollTo({ top: 0 });
     } else {
+      setIsSubmitting(true);
       onComplete();
     }
   };
+
+  if (isSubmitting) {
+    return (
+      <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none relative overflow-hidden z-50">
+        <div className="animate-in fade-in duration-300 flex flex-col items-center gap-4">
+          <MainLogoAnimated size={96} />
+          <p className="text-[11px] font-medium tracking-widest text-purple-300/60 uppercase pt-2 animate-pulse">
+            Looking for your spark...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1493,7 +1509,7 @@ function LegalFlow({ onComplete }: { onComplete: () => void }) {
         <button
           onClick={handleAgree}
           type="button"
-          className="w-full py-4 rounded-2xl bg-purple-600 text-white text-sm font-bold tracking-wide hover:bg-purple-500 active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(168,85,247,0.35)]"
+          className="w-full py-4 rounded-2xl bg-purple-600 text-white text-sm font-bold tracking-wide hover:bg-purple-500 active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(168,85,247,0.35)] cursor-pointer"
         >
           {screen.agree}
         </button>

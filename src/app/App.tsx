@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Navigation } from "./components/Navigation";
 import { SparkHome } from "./components/SparkHome";
 import { MySpark } from "./components/MySpark";
@@ -64,7 +64,9 @@ function HydrationSplash() {
     <div className="h-screen w-screen bg-[#0B0F17] flex items-center justify-center text-center p-6 select-none relative overflow-hidden">
       <div className="animate-in fade-in duration-300 flex flex-col items-center gap-4">
         <MainLogoAnimated size={96} />
-        <p className="text-[11px] font-medium tracking-widest text-purple-300/60 uppercase pt-2">Restoring session...</p>
+        <p className="text-[11px] font-medium tracking-widest text-purple-300/60 uppercase pt-2 animate-pulse">
+          Looking for your spark...
+        </p>
       </div>
     </div>
   );
@@ -224,12 +226,26 @@ function AppContent() {
     setViewState(isComplete ? "dashboard" : "onboarding");
   };
 
+  const genesisCompletedInSessionRef = useRef(false);
+
   const handleEnterDashboard = async (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName || "Creator");
-    await initializeBrandGenesis(finalData);
-    const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
-    await auth.markOnboardingComplete(targetBrandId);
+    if (!auth.isOnboardingComplete && !genesisCompletedInSessionRef.current) {
+      genesisCompletedInSessionRef.current = true;
+      try {
+        await Promise.race([
+          initializeBrandGenesis(finalData),
+          new Promise((resolve) => setTimeout(resolve, 8000)),
+        ]);
+        const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
+        if (targetBrandId && isUuid(targetBrandId)) {
+          await auth.markOnboardingComplete(targetBrandId);
+        }
+      } catch (err) {
+        console.warn("[App] handleEnterDashboard genesis notice:", err);
+      }
+    }
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
