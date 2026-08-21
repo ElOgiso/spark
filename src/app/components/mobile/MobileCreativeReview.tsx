@@ -344,7 +344,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           className="w-full text-left rounded-xl border border-border bg-card p-4"
         >
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-medium">Storyboard</h3>
+            <h3 className="text-base font-medium">Storyboard & Visual Map</h3>
             {expandedSections.has("storyboard") ? (
               <ChevronUp className="w-5 h-5 text-muted-foreground" />
             ) : (
@@ -353,14 +353,31 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           </div>
           {expandedSections.has("storyboard") && (
             <div className="mt-4 space-y-3">
+              {(brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
+                <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Master Storyboard Map</p>
+                  <div className="w-full max-h-56 rounded-md overflow-hidden bg-black/40 flex items-center justify-center">
+                    <img
+                      src={brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
+                      alt="Master Storyboard Grid Map"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
               {proposal.storyboard.map((scene: any) => (
-                <div key={scene.scene} className="p-3 rounded-lg bg-background">
-                  <div className="flex items-center gap-2 mb-2">
+                <div key={scene.scene} className="p-3 rounded-lg bg-background flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">
                       Scene {scene.scene}
                     </span>
                     <span className="text-xs text-muted-foreground">{scene.duration}</span>
                   </div>
+                  {scene.image && (
+                    <div className="w-full h-28 rounded-md overflow-hidden border border-border/40 bg-black/30">
+                      <img src={scene.image} alt={`Scene ${scene.scene}`} className="w-full h-full object-cover" />
+                    </div>
+                  )}
                   <p className="text-sm">{scene.description}</p>
                 </div>
               ))}

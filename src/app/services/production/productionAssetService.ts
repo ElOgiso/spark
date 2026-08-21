@@ -35,7 +35,7 @@ export function buildLockedIdentityPack(params: {
 }): LockedIdentityPack {
   const { brand, character, brief, production } = params;
   const characterReferenceImageUrl =
-    character?.imageUrl || character?.characterSheetUrl || character?.avatarUrl || undefined;
+    character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || undefined;
 
   const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
   const mode: "express" | "standard" | "deep" =
@@ -50,7 +50,7 @@ export function buildLockedIdentityPack(params: {
       ? production.aspectRatio
       : production.aspectRatio || (mode === "deep" ? "16:9" : "9:16");
 
-  const identityBlock = `CHARACTER & WARDROBE LOCK: Primary subject is "${character?.name || "Host"}". Persona: ${character?.style || "Executive Presenter"}. Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}. CONTINUITY LAW: Exact same person, consistent facial structure, identical hair and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.`;
+  const identityBlock = `CHARACTER & WARDROBE LOCK: Primary subject is "${character?.name || "Host"}". Persona: ${character?.style || "Executive Presenter"}. Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}. CONTINUITY LAW: Exact same person, consistent facial structure, identical hair and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.${characterReferenceImageUrl ? ` Reference Sheet: ${characterReferenceImageUrl}` : ""}`;
 
   const setBlock = `SET & LIGHTING CONTINUITY: Environment is "${brief.visualDirection || "a high-end executive studio with refined architectural lighting"}". Lighting: Premium cinematic studio lighting, coherent shadows and color temperature aligned with ${brand.name || "Brand"}. Same physical space and atmosphere across all scenes.`;
 
@@ -272,6 +272,7 @@ export class ProductionAssetService {
 
     let currentStoryboard: ProductionScene[] = [];
     let currentThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
+    let realGridUrl: string | undefined = brief.storyboardGridUrl || brief.generatedAssets?.storyboardGridUrl;
     let realVoiceUrl: string | undefined = undefined;
     let realVideoUrl: string | undefined = undefined;
     let lastError: string | undefined = undefined;
@@ -285,8 +286,10 @@ export class ProductionAssetService {
         const stageBrief: ProductionBrief = {
           ...brief,
           storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
+          storyboardGridUrl: realGridUrl,
           generatedAssets: {
             ...brief.generatedAssets,
+            storyboardGridUrl: realGridUrl,
             thumbnails: currentThumbnails,
             voiceoverUrl: realVoiceUrl,
             generatedFrames: currentStoryboard.map((s) => s.image).filter(Boolean) as string[],
@@ -594,10 +597,6 @@ Return valid JSON with exactly this structure:
         concept: t.concept || `Variant ${t.variant || "A"}`,
       }));
 
-      stages[0].status = "done";
-      stages[1].status = "active";
-      emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
-
       const isValidMediaData = (val?: string | null): val is string => {
         if (!val || typeof val !== "string") return false;
         const trimmed = val.trim();
@@ -609,6 +608,61 @@ Return valid JSON with exactly this structure:
           trimmed.startsWith("https://")
         );
       };
+
+      // Generate ONE master multi-panel storyboard GRID image mapping scenes 1 -> N
+      checkAborted();
+      if (!forceRegenerate && isValidMediaData(realGridUrl)) {
+        console.log(`[SPARK Pipeline] Reusing existing Master Storyboard Grid -> ${realGridUrl}`);
+      } else {
+        try {
+          checkAborted();
+          console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
+          const masterGridPrompt = `
+[9:16 MULTI-PANEL STORYBOARD GRID - ${storyboard.length} SEQUENTIAL SCENE PANELS]
+TITLE: "${brief.title}"
+PANEL 1 (Top / Scene 1): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"}
+PANEL 2 (Middle / Scene 2): ${storyboard[1]?.startState || storyboard[1]?.visualDescription || "Scene 2 transition"}
+PANEL 3 (Bottom / Scene 3): ${storyboard[2]?.endState || storyboard[2]?.visualDescription || "Scene 3 resolution"}
+${identityPack.combinedPromptPrefix}
+LAYOUT INSTRUCTION: Create a 9:16 vertical continuous multi-panel storyboard grid mapping Scene 1, Scene 2, and Scene 3 in exact order from top to bottom. The host subject "${character?.name || "Host"}" must look identical across all panels.
+`.trim();
+
+          const gridImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
+            prompt: masterGridPrompt,
+            referenceImageUrl: identityPack.characterReferenceImageUrl,
+            aspectRatio: identityPack.aspectRatio,
+          });
+          checkAborted();
+
+          if (isValidMediaData(gridImgData)) {
+            let finalGrid = gridImgData;
+            try {
+              const storedGrid = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "storyboard",
+                storagePath: getStoragePath("storyboard/master-grid.png"),
+                dataUrlOrBlob: gridImgData,
+                mimeType: "image/png",
+                prompt: masterGridPrompt,
+                provider: "ModelRouter",
+              });
+              if (storedGrid?.publicUrl) finalGrid = storedGrid.publicUrl;
+              console.log(`[SPARK Pipeline] Storage Upload: Master Storyboard Grid -> ${finalGrid}`);
+            } catch (storageErr) {
+              console.warn("[SPARK Pipeline] Master Storyboard Grid upload notice:", storageErr);
+            }
+            realGridUrl = finalGrid;
+          }
+        } catch (gridErr: any) {
+          if (gridErr?.name === "AbortError" || signal?.aborted) throw gridErr;
+          console.warn("[SPARK Pipeline] Master Storyboard Grid generation notice:", gridErr);
+        }
+      }
+
+      stages[0].status = "done";
+      stages[1].status = "active";
+      emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
 
       // Synthesize real voiceover audio via ElevenLabs (with brand voiceId) -> Provider TTS pipeline (or reuse if present)
       checkAborted();
@@ -710,7 +764,7 @@ Hook Context: "${brief.hook}". Brand: ${brand.name}
             console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} hero keyframe via ModelRouter ("storyboardImages")...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
-              referenceImageUrl: identityPack.characterReferenceImageUrl,
+              referenceImageUrl: realGridUrl || identityPack.characterReferenceImageUrl,
               aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
@@ -800,7 +854,7 @@ Brand: ${brand.name}
             console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
             const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: thumbPrompt,
-              referenceImageUrl: identityPack.characterReferenceImageUrl,
+              referenceImageUrl: realGridUrl || identityPack.characterReferenceImageUrl,
               aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
@@ -882,22 +936,30 @@ Brand: ${brand.name}
             const sceneStill = scene.image || sceneImages[sIdx];
 
             const stageMotionPrompt = `
-[${identityPack.aspectRatio} CINEMATIC MOTION - STAGE ${sIdx + 1} OF ${totalVideoStages}]
-INITIAL FRAME / START STATE: ${scene.startState || "Host established in framing"}
-PRIMARY ACTION / CHANGE: ${scene.primaryChange || scene.visualDescription}
-CAMERA MOVEMENT: ${scene.cameraDirection || "Motivated smooth camera motion"}
-DESTINATION / END STATE: ${scene.endState || "Target composition reached"}
+[${identityPack.aspectRatio} STORYBOARD MAP ANIMATION - SCENE ${sIdx + 1} OF ${totalVideoStages}]
+STORYBOARD MAP CONTINUITY: Animate Scene ${sIdx + 1} from panel ${sIdx + 1} of the master storyboard map.
+panel 1 -> panel 2 -> panel 3 sequence MUST be maintained in exact order.
+START FRAME: ${scene.startState || "Host established in framing"}
+PRIMARY MOTION: ${scene.primaryChange || scene.visualDescription}
+END FRAME: ${scene.endState || "Target composition reached"}
+CAMERA MOTION: ${scene.cameraDirection || "Motivated smooth camera motion"}
 ${identityPack.combinedPromptPrefix}
+ANIMATION RULES:
+1. Animate panels/scenes in exact sequential order (Scene ${sIdx + 1}).
+2. Character MUST remain identical to reference sheet throughout—no drifting, no outfit changes.
+3. Environment must remain continuous and locked.
+4. One primary action per scene beat.
+5. No resets, no reordered beats, no new identity.
 Script snippet: "${scene.scriptSnippet || brief.hook}"
 `.trim();
 
-            console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill)}]...`);
+            console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
 
             try {
               checkAborted();
               const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
                 prompt: stageMotionPrompt,
-                referenceImageUrl: sceneStill || undefined,
+                referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
                 aspectRatio: identityPack.aspectRatio,
               });
               checkAborted();

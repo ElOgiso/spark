@@ -677,18 +677,37 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
           {/* Storyboard */}
           <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <SectionToggle id="storyboard" title="Storyboard Preview" />
+            <SectionToggle id="storyboard" title="Storyboard Preview & Sequential Visual Map" />
             {expandedSections.has("storyboard") && (
-              <div className="px-6 pb-6 grid grid-cols-2 gap-3">
-                {proposal.storyboard.map((scene: any) => (
-                  <div key={scene.scene} className="p-4 rounded-xl bg-background border border-border">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">Scene {scene.scene}</span>
-                      <span className="text-xs text-muted-foreground">{scene.duration}</span>
+              <div className="px-6 pb-6 space-y-4">
+                {(brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
+                  <div className="p-4 rounded-xl bg-background border border-border/70 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-accent">Master Multi-Panel Storyboard Map</p>
+                    <div className="w-full max-h-64 overflow-hidden rounded-lg border border-border bg-black/40 flex items-center justify-center">
+                      <img
+                        src={brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
+                        alt="Master Storyboard Grid Map"
+                        className="w-full h-full object-contain"
+                      />
                     </div>
-                    <p className="text-sm">{scene.description}</p>
                   </div>
-                ))}
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {proposal.storyboard.map((scene: any) => (
+                    <div key={scene.scene} className="p-4 rounded-xl bg-background border border-border flex flex-col gap-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">Scene {scene.scene}</span>
+                        <span className="text-xs text-muted-foreground">{scene.duration}</span>
+                      </div>
+                      {scene.image && (
+                        <div className="w-full h-32 rounded-lg overflow-hidden border border-border/50 bg-black/30 mb-1">
+                          <img src={scene.image} alt={`Scene ${scene.scene} Still`} className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <p className="text-sm">{scene.description}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

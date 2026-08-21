@@ -145,6 +145,7 @@ export interface ProductionBrief {
   brandFitScore: number;
   suggestedDuration: string;
   storyboard?: ProductionScene[];
+  storyboardGridUrl?: string;
   audioUrl?: string;
   videoUrl?: string;
   offerCta?: {
@@ -156,6 +157,7 @@ export interface ProductionBrief {
     description?: string;
   };
   generatedAssets?: {
+    storyboardGridUrl?: string;
     sceneClips?: string[];
     thumbnails?: { id: string; concept: string; variant: string; url?: string; image?: string }[];
     voiceoverUrl?: string;
