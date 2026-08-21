@@ -1295,7 +1295,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   };
 
   return (
-    <div className="pb-24 px-4 pt-6 space-y-6">
+    <div className="w-full min-h-[100dvh] flex flex-col space-y-6 pt-3 pb-6 px-4">
       <div>
         <h1 className="text-2xl font-medium">More</h1>
         <p className="text-sm text-muted-foreground mt-1">Settings and management</p>

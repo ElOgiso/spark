@@ -23,10 +23,10 @@ export function BottomNavigation({
 }: BottomNavigationProps) {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border z-50 max-w-md mx-auto"
+      className="fixed bottom-0 left-0 right-0 w-full bg-card/95 backdrop-blur-md border-t border-border z-50"
       style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom, 8px))" }}
     >
-      <div className="flex items-center justify-around px-2 pt-2">
+      <div className="flex items-center justify-around px-2 pt-2 max-w-xl mx-auto w-full">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id || (activeTab === ("my-spark" as any) && item.id === "more");

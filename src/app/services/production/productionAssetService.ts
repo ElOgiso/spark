@@ -299,7 +299,13 @@ export class ProductionAssetService {
           brief: stageBrief,
           audioUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
-          scenes: stageBrief.storyboard,
+          scenes: stageBrief.storyboard?.map((s) => ({
+            scene: s.scene,
+            description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
+            duration: s.duration,
+            image: s.image,
+            videoUrl: s.videoUrl,
+          })),
         });
         console.log(`[SPARK Pipeline] Persistent stage saved to Supabase -> ${stageName} (prod ${production.id})`);
       } catch (stageSyncErr) {
@@ -328,13 +334,7 @@ export class ProductionAssetService {
           message,
           updatedAt: new Date().toISOString(),
           partialAssets: {
-            storyboard: (partialOverride?.storyboard ?? currentStoryboard).map((s) => ({
-              scene: s.scene,
-              description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
-              duration: s.duration,
-              image: s.image,
-              videoUrl: s.videoUrl,
-            })),
+            storyboard: partialOverride?.storyboard ?? (currentStoryboard.length > 0 ? currentStoryboard : undefined),
             thumbnails: partialOverride?.thumbnails ?? (currentThumbnails.length > 0 ? currentThumbnails.map((t) => ({ ...t })) : undefined),
             voiceUrl: partialOverride?.voiceUrl ?? realVoiceUrl,
             videoUrl: partialOverride?.videoUrl ?? realVideoUrl,
@@ -1017,13 +1017,7 @@ ${identityPack.combinedPromptPrefix}
           : `Video synthesis failed or incomplete. ${lastError || "Check error logs and click Regenerate."}`,
         updatedAt: renderCompletedAt,
         partialAssets: {
-          storyboard: currentStoryboard.map((s) => ({
-            scene: s.scene,
-            description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
-            duration: s.duration,
-            image: s.image,
-            videoUrl: s.videoUrl,
-          })),
+          storyboard: currentStoryboard,
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceUrl: realVoiceUrl,
           videoUrl: realVideoUrl,

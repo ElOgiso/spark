@@ -130,9 +130,9 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
   };
 
   return (
-    <div className="h-[calc(100vh-76px)] flex flex-col overflow-hidden">
+    <div className="w-full min-h-[100dvh] flex flex-col space-y-4 pt-3 pb-6 px-4">
       {/* Fixed Header & Pipeline Block */}
-      <div className="p-4 pb-0 space-y-4 flex-shrink-0 bg-background z-10">
+      <div className="space-y-4 flex-shrink-0 bg-background z-10">
         {/* Command Header */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="px-5 pt-4 pb-3">
@@ -192,8 +192,8 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
         </div>
       </div>
 
-      {/* Scrollable Metrics and Activity Feed */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-none pb-28">
+      {/* Metrics and Activity Feed */}
+      <div className="space-y-4 py-2">
         {/* Metrics Grid */}
         <div className="grid grid-cols-2 gap-3">
           {metrics.map((metric) => {

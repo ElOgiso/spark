@@ -308,7 +308,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground px-4 py-4 space-y-4 pb-28 antialiased">
+    <div className="w-full min-h-[100dvh] flex flex-col space-y-4 pt-3 pb-6 px-4 antialiased">
       {/* 1. Compact Header: Brand Name, Niche, Archetype, Active Badge, Edit Button */}
       <div className="flex items-center justify-between gap-3 pt-2 pb-1 border-b border-border/40">
         <div className="min-w-0 flex-1">

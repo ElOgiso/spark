@@ -66,15 +66,15 @@ export function MobileApp() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased">
-      <div className="max-w-md mx-auto relative">
+    <div className="w-full min-h-[100dvh] bg-background text-foreground antialiased overflow-x-hidden flex flex-col relative">
+      <main className="w-full flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom,16px))]">
         {renderContent()}
-        <BottomNavigation
-          activeTab={activeTab as any}
-          onTabChange={handleTabChange as any}
-          pendingReviews={pendingReviewsCount}
-        />
-      </div>
+      </main>
+      <BottomNavigation
+        activeTab={activeTab as any}
+        onTabChange={handleTabChange as any}
+        pendingReviews={pendingReviewsCount}
+      />
     </div>
   );
 }

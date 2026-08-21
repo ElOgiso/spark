@@ -257,9 +257,9 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
   ) as Record<StageFilter, number>;
 
   return (
-    <div className="h-[calc(100vh-76px)] flex flex-col overflow-hidden">
-      {/* Fixed Top Block */}
-      <div className="p-4 pb-0 space-y-4 flex-shrink-0 bg-background z-10">
+    <div className="w-full min-h-[100dvh] flex flex-col space-y-4 pt-3 pb-6 px-4">
+      {/* Top Block */}
+      <div className="space-y-4 flex-shrink-0 bg-background z-10">
 
       {/* Header */}
       <div>
@@ -312,8 +312,8 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
       </div>
       </div>
 
-      {/* Scrollable Content Block */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-none pb-24">
+      {/* Content Block */}
+      <div className="space-y-3 py-2">
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center flex flex-col items-center">
           <p className="text-sm font-medium text-muted-foreground mb-1">Nothing here</p>
