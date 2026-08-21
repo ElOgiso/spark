@@ -240,6 +240,8 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             title={proposal.title} 
             scenes={proposal.storyboard} 
             durationText="3:20"
+            videoUrl={activeProd?.videoUrl || item?.videoUrl || item?.brief?.videoUrl || item?.brief?.generatedAssets?.generatedVideos?.[0]}
+            audioUrl={activeProd?.audioUrl || item?.audioUrl || item?.brief?.audioUrl || item?.brief?.generatedAssets?.generatedAudio?.[0]}
             onApprove={() => {
               if (item?.id) {
                 approveReviewItem(item.id);

@@ -76,6 +76,12 @@ interface SubPageProps {
 }
 
 export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: string }) {
+  useEffect(() => {
+    if (subPath === "/my-spark" || subPath === "my-spark" || subPath === "/more/my-spark") {
+      onNavigate("/my-spark");
+    }
+  }, [subPath, onNavigate]);
+
   const spark = useSpark() as any;
   const { state, addMemoryItem, removeMemoryItem } = spark;
   const activeMemoryItems: MemoryItem[] = spark.memoryItems || state?.memoryItems || [];

@@ -20,6 +20,11 @@ export function MobileApp() {
 
   const handleMobileNavigate = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    if (cleanPath === "/my-spark" || cleanPath === "/more/my-spark" || cleanPath === "my-spark") {
+      setSubPath(null);
+      setActiveTab("my-spark");
+      return;
+    }
     if (cleanPath.startsWith("/more/")) {
       setSubPath(cleanPath);
       setActiveTab("more");
@@ -32,13 +37,16 @@ export function MobileApp() {
       setActiveTab("viral-sparks");
     } else if (cleanPath === "/analytics") {
       setActiveTab("analytics");
-    } else if (cleanPath === "/my-spark") {
-      setActiveTab("my-spark");
     } else if (cleanPath === "/more") {
       setActiveTab("more");
     } else {
       setActiveTab("spark");
     }
+  };
+
+  const handleTabChange = (tab: NavTab) => {
+    setSubPath(null);
+    setActiveTab(tab);
   };
 
   const renderContent = () => {
@@ -63,7 +71,7 @@ export function MobileApp() {
         {renderContent()}
         <BottomNavigation
           activeTab={activeTab as any}
-          onTabChange={setActiveTab as any}
+          onTabChange={handleTabChange as any}
           pendingReviews={pendingReviewsCount}
         />
       </div>

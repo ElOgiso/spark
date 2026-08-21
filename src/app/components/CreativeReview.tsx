@@ -720,7 +720,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       </main>
 
       {/* Fixed Action Bar */}
-      <div className="fixed bottom-0 left-56 right-0 bg-card/95 backdrop-blur-sm border-t border-border p-5 shadow-2xl">
+      <div className="fixed bottom-0 left-56 right-0 bg-card border-t border-border p-5 shadow-2xl z-50">
         <div className="max-w-5xl mx-auto flex flex-col gap-2">
           {actionSuccess && (
             <div

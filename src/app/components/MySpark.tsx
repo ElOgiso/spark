@@ -694,7 +694,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
               const connected = accounts ? accounts.filter((a: any) => a.status?.toLowerCase() === "connected") : [];
               if (connected.length === 0) {
                 return (
-                  <div className="rounded-xl border border-dashed border-border bg-card/25 p-8 text-center text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-muted-foreground">
                     <p className="text-sm font-medium">Connect your first social platform.</p>
                     <button
                       onClick={() => onNavigate("/more/accounts")}
