@@ -20,7 +20,7 @@ interface VoiceStudioModalProps {
 
 export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onClose }) => {
   const auth = useAuth();
-  const { character, brand, setState } = useSpark() as any;
+  const { character, brand, setState, updateCharacter } = useSpark() as any;
 
   const [voicesList, setVoicesList] = useState<ElevenLabsVoiceSummary[]>(FALLBACK_CURATED_ELEVENLABS_VOICES);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(
@@ -193,10 +193,21 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     try {
       const { persistCharacterUpdate, uploadVoicePreviewToStorage } = await import("../../backend/workspaceSync");
 
-      let finalPreviewUrl: string | undefined = selectedVoiceObj?.previewUrl || character?.voice?.previewUrl || undefined;
-      if (sampleAudioUrl) {
+      let audioToUpload = sampleAudioUrl;
+      // Auto-generate preview sample if not yet played or if new voice selected
+      if (!audioToUpload && selectedVoiceId) {
         try {
-          const uploaded = await uploadVoicePreviewToStorage(activeBrandId, sampleAudioUrl);
+          const text = `Welcome to ${brand?.name || "SPARK Media OS"}. This is ${selectedVoiceName} presenting live voice synthesis.`;
+          audioToUpload = await generateElevenLabsVoice(text, selectedVoiceId);
+        } catch (genErr) {
+          console.warn("[VoiceStudioModal] Auto sample generation notice:", genErr);
+        }
+      }
+
+      let finalPreviewUrl: string | undefined = selectedVoiceObj?.previewUrl || character?.voice?.previewUrl || undefined;
+      if (audioToUpload) {
+        try {
+          const uploaded = await uploadVoicePreviewToStorage(activeBrandId, audioToUpload);
           if (uploaded) finalPreviewUrl = uploaded;
         } catch (upErr) {
           console.warn("[VoiceStudioModal] Preview upload notice:", upErr);
@@ -226,13 +237,17 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
 
       await persistCharacterUpdate(activeBrandId, updatedCharacterObj);
 
-      setState((prev: any) => ({
-        ...prev,
-        character: {
-          ...prev.character,
-          voice: voiceData,
-        },
-      }));
+      if (typeof updateCharacter === "function") {
+        updateCharacter({ voice: voiceData });
+      } else {
+        setState((prev: any) => ({
+          ...prev,
+          character: {
+            ...prev.character,
+            voice: voiceData,
+          },
+        }));
+      }
 
       setSuccessMsg("Voice identity saved & persisted to Supabase!");
       setTimeout(() => {

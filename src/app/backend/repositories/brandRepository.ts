@@ -83,7 +83,18 @@ export async function deleteBrand(id: string): Promise<RepositoryResult<true>> {
 }
 
 export async function listCharacters(brandId: string): Promise<RepositoryResult<CharacterRow[]>> {
-  return listByBrand("characters", brandId);
+  if (!isSupabaseConfigured()) return unconfiguredResult<CharacterRow[]>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<CharacterRow[]>();
+
+  const { data, error } = await (supabase.from("characters") as any)
+    .select("*")
+    .eq("brand_id", brandId)
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (error) return repositoryError<CharacterRow[]>(error.message);
+  return { data: (data ?? []) as CharacterRow[], error: null, source: "supabase" };
 }
 
 export async function listBrandRules(brandId: string): Promise<RepositoryResult<BrandRuleRow[]>> {

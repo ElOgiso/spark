@@ -788,7 +788,11 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
     const { data: existing } = await (supabase.from("characters") as any)
       .select("id")
       .eq("brand_id", brandId)
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(1);
+
+    const now = new Date().toISOString();
 
     if (existing && existing.length > 0) {
       await (supabase.from("characters") as any)
@@ -798,7 +802,7 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
           appearance: appearancePayload,
           personality: personalityPayload,
           voice: voicePayload,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", existing[0].id);
     } else {
@@ -811,6 +815,7 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
         voice: voicePayload,
         consistency_rules: {},
         generation_rules: {},
+        updated_at: now,
       });
     }
   } catch (err) {
