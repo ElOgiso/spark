@@ -7,8 +7,8 @@ import { getBrandWorkspaceId } from "../../services/socialIntegrationService";
 import {
   FALLBACK_CURATED_ELEVENLABS_VOICES,
   ElevenLabsVoiceSummary,
-  fetchElevenLabsVoices,
-  synthesizeElevenLabsSpeech,
+  getElevenLabsVoices,
+  generateElevenLabsVoice,
   designElevenLabsVoice,
   createDesignedElevenLabsVoice,
 } from "../../services/runtime/providers/elevenLabsTTS";
@@ -44,11 +44,11 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
 
   useEffect(() => {
     if (isOpen) {
-      void fetchElevenLabsVoices().then((res) => {
+      void getElevenLabsVoices().then((res: ElevenLabsVoiceSummary[]) => {
         if (res && res.length > 0) {
           setVoicesList((prev) => {
             const existingIds = new Set(prev.map((v) => v.voiceId));
-            const newVoices = res.filter((v) => !existingIds.has(v.voiceId));
+            const newVoices = res.filter((v: ElevenLabsVoiceSummary) => !existingIds.has(v.voiceId));
             return [...prev, ...newVoices];
           });
         }
@@ -98,7 +98,7 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
       }
 
       const text = `Welcome to ${brand?.name || "SPARK Media OS"}. This is ${voiceObj.name} presenting live voice synthesis.`;
-      const synthesizedUrl = await synthesizeElevenLabsSpeech({ text, voiceId: voiceObj.voiceId });
+      const synthesizedUrl = await generateElevenLabsVoice(text, voiceObj.voiceId);
 
       if (synthesizedUrl) {
         const audio = new Audio(synthesizedUrl);

@@ -113,7 +113,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
       const traitsArr = personality
         .split(/[,&]/)
-        .map((t) => t.trim())
+        .map((t: string) => t.trim())
         .filter(Boolean);
 
       const updatedCharacterObj = {
