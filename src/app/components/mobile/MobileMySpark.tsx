@@ -400,8 +400,8 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 title="Tap to edit / generate character sheet"
               >
                 <img
-                  src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
-                  alt={character.name}
+                  src={character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl || ""}
+                  alt={character?.name || "Host"}
                   className="w-11 h-11 rounded-xl object-cover border border-accent/40 group-hover:border-accent transition-colors"
                 />
                 <span className="absolute -bottom-1 -right-1 bg-accent/90 text-foreground text-[9px] px-1 rounded font-mono">
@@ -425,7 +425,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             </div>
           </div>
 
-          {character?.traits && character.traits.length > 0 && (
+          {character?.traits && Array.isArray(character.traits) && character.traits.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {character.traits.map((trait: string) => (
                 <span key={trait} className="px-2 py-0.5 rounded bg-accent/15 text-[11px] font-medium text-foreground">

@@ -13,13 +13,32 @@ import { MoreSubPages } from "../MoreSubPages";
 type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more" | "my-spark";
 
 export function MobileApp() {
-  const [activeTab, setActiveTab] = useState<NavTab>("spark");
-  const [subPath, setSubPath] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<NavTab>(() => {
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname.replace(/\/$/, "");
+      if (path === "/my-spark") return "my-spark";
+      if (path === "/viral-sparks") return "viral-sparks";
+      if (path === "/review") return "review";
+      if (path === "/analytics") return "analytics";
+      if (path.startsWith("/more")) return "more";
+    }
+    return "spark";
+  });
+  const [subPath, setSubPath] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname.replace(/\/$/, "");
+      if (path.startsWith("/more/")) return path;
+    }
+    return null;
+  });
   const { productions } = useSpark();
   const pendingReviewsCount = productions.filter((p) => p.status === "Ready for Review").length;
 
   const handleMobileNavigate = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    if (typeof window !== "undefined" && window.history && window.history.pushState) {
+      window.history.pushState({}, "", cleanPath);
+    }
     if (cleanPath.startsWith("/more/")) {
       setSubPath(cleanPath);
       setActiveTab("more");

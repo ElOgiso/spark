@@ -110,10 +110,10 @@ export function MySpark({ onNavigate }: MySparkProps) {
     e.preventDefault();
     if (!updateBrand) return;
     updateBrand({
-      name: editName.trim() || brand.name,
-      niche: editNiche.trim() || brand.niche,
-      archetype: editArchetype.trim() || brand.archetype,
-      purpose: editPurpose.trim() || brand.purpose,
+      name: editName.trim() || brand?.name || "My Brand",
+      niche: editNiche.trim() || brand?.niche || "Content & Media",
+      archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
+      purpose: editPurpose.trim() || brand?.purpose || "Creating impactful digital content.",
       website: editWebsite.trim(),
       country: editCountry.trim(),
       language: editLanguage.trim(),
@@ -546,7 +546,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         title="Click to edit / generate character sheet"
                       >
                         <img
-                          src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
+                          src={character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl || ""}
                           alt={character?.name || "Host"}
                           className="w-16 h-16 rounded-xl object-cover border border-accent/40 group-hover:border-accent transition-colors shadow-md"
                         />
