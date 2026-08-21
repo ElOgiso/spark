@@ -1335,12 +1335,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
                   const bId = getBrandWorkspaceId();
                   if (isSupabaseConfigured() && bId) {
-                    void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewItemUpdate }) => {
+                    void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
                       setState((currState: any) => {
                         const pUpdate = currState.productions?.find((p: any) => p.id === prodId);
                         const rUpdate = currState.reviewItems?.find((r: any) => r.productionId === prodId || r.id === reviewId);
-                        if (pUpdate) void persistProductionUpdate(bId, pUpdate);
-                        if (rUpdate) void persistReviewItemUpdate(bId, rUpdate);
+                        if (pUpdate?.id) void persistProductionUpdate(pUpdate.id, pUpdate);
+                        if (rUpdate?.id) void persistReviewUpdate(rUpdate.id, rUpdate);
                         return currState;
                       });
                     });
@@ -1530,12 +1530,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           const bId = getBrandWorkspaceId();
           if (isSupabaseConfigured() && bId) {
-            void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewItemUpdate }) => {
+            void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
               setState((currState: any) => {
                 const pUpdate = currState.productions?.find((p: any) => p.id === productionId);
                 const rUpdate = currState.reviewItems?.find((r: any) => r.productionId === productionId);
-                if (pUpdate) void persistProductionUpdate(bId, pUpdate);
-                if (rUpdate) void persistReviewItemUpdate(bId, rUpdate);
+                if (pUpdate?.id) void persistProductionUpdate(pUpdate.id, pUpdate);
+                if (rUpdate?.id) void persistReviewUpdate(rUpdate.id, rUpdate);
                 return currState;
               });
             });
