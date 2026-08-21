@@ -102,7 +102,7 @@ export function TopBar({
           </button>
 
           {isWorkspaceOpen && (
-            <div className="absolute left-0 mt-2 w-64 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in duration-150">
+            <div className="absolute left-0 mt-2 w-64 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
               <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border/40 mb-1">
                 Active Brand OS
               </div>
@@ -129,7 +129,7 @@ export function TopBar({
           </div>
 
           {isSearchFocused && searchQuery.trim().length > 0 && (
-            <div className="absolute left-0 mt-2 w-96 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 max-h-[350px] overflow-y-auto scrollbar-none animate-in fade-in duration-150">
+            <div className="absolute left-0 mt-2 w-96 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 max-h-[350px] overflow-y-auto scrollbar-none animate-in fade-in duration-150">
               {filteredSearch.length > 0 ? (
                 <div className="space-y-1">
                   {filteredSearch.map((item) => (
@@ -178,7 +178,7 @@ export function TopBar({
             </button>
 
             {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-popover p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in duration-150">
+              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
                 <div className="px-3 py-2.5 border-b border-border/40 mb-2">
                   <p className="text-xs font-semibold leading-none">{displayName}</p>
                   <p className="text-[10px] text-muted-foreground mt-1">{userRole} · Media Workspace Administrator</p>

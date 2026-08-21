@@ -76,7 +76,7 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm transition-opacity duration-300"
+        className="fixed inset-0 z-40 bg-black/80 backdrop-blur-md transition-opacity duration-300"
         onClick={drawerState === "idle" || drawerState === "creating" ? onClose : undefined}
       />
 

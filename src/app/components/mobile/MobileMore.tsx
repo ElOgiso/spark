@@ -1493,7 +1493,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
       {/* Sign In Modal */}
       {showSignIn && (
-        <div className="fixed inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-card border border-border rounded-xl p-5 max-w-sm w-full shadow-lg relative">
             <button
               onClick={() => setShowSignIn(false)}
@@ -1508,7 +1508,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
       {/* Sign Out Modal */}
       {showSignOut && (
-        <div className="fixed inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full shadow-lg text-center relative">
             <button
               onClick={() => setShowSignOut(false)}

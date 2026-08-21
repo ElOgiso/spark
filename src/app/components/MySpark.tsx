@@ -371,7 +371,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
               </div>
 
               {showEditIdentity && (
-                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
                   <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl">
                     <h3 className="text-lg font-medium text-foreground">Edit Brand Identity</h3>
                     <form onSubmit={handleEditIdentitySubmit} className="space-y-3">

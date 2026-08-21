@@ -1,14 +1,8 @@
-export type ThemeMode = "system" | "violet" | "slate" | "light" | "spark_media";
+export type ThemeMode = "violet" | "slate" | "light" | "spark_media";
 
 export const THEME_KEY = "spark_app_theme";
 
 export const THEME_OPTIONS: { id: ThemeMode; name: string; desc: string; previewColor: string }[] = [
-  {
-    id: "system",
-    name: "System Preference",
-    desc: "Automatically syncs with your operating system's light or dark preference",
-    previewColor: "bg-gradient-to-r from-blue-500 via-indigo-600 to-purple-600",
-  },
   {
     id: "violet",
     name: "Obsidian & Electric Violet (Dark)",
@@ -38,9 +32,13 @@ export const THEME_OPTIONS: { id: ThemeMode; name: string; desc: string; preview
 export function getStoredTheme(): ThemeMode {
   if (typeof window === "undefined") return "violet";
   try {
-    const stored = localStorage.getItem(THEME_KEY) as ThemeMode | null;
-    if (stored && ["system", "violet", "slate", "light", "spark_media"].includes(stored)) {
-      return stored;
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "system") {
+      localStorage.setItem(THEME_KEY, "violet");
+      return "violet";
+    }
+    if (stored && ["violet", "slate", "light", "spark_media"].includes(stored)) {
+      return stored as ThemeMode;
     }
   } catch (e) {
     console.warn("Could not read stored theme:", e);
@@ -55,23 +53,18 @@ export function applyTheme(theme: ThemeMode) {
   // Remove existing theme classes
   root.classList.remove("theme-violet", "theme-slate", "theme-light", "dark", "light");
 
-  if (theme === "system") {
-    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (prefersDark) {
-      root.classList.add("theme-violet", "dark");
-    } else {
-      root.classList.add("theme-light", "light");
-    }
-  } else if (theme === "violet" || theme === "spark_media") {
+  const effectiveTheme: ThemeMode = (theme as string) === "system" ? "violet" : theme;
+
+  if (effectiveTheme === "violet" || effectiveTheme === "spark_media") {
     root.classList.add("theme-violet", "dark");
-  } else if (theme === "slate") {
+  } else if (effectiveTheme === "slate") {
     root.classList.add("theme-slate", "dark");
-  } else if (theme === "light") {
+  } else if (effectiveTheme === "light") {
     root.classList.add("theme-light", "light");
   }
 
   try {
-    localStorage.setItem(THEME_KEY, theme);
+    localStorage.setItem(THEME_KEY, effectiveTheme);
   } catch (e) {
     console.warn("Could not save theme preference:", e);
   }

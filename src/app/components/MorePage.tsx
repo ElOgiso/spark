@@ -443,7 +443,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
 
       {/* Edit Profile Modal */}
       {showEditProfile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -492,7 +492,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
       )}
 
       {showSignOut && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 space-y-4 shadow-xl text-center">
             <AlertCircle className="w-10 h-10 text-destructive mx-auto" />
             <h3 className="text-lg font-semibold">Sign out?</h3>
@@ -517,7 +517,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
       )}
 
       {showSignIn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-4 shadow-xl relative">
             <button
               onClick={() => setShowSignIn(false)}

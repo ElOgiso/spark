@@ -257,7 +257,7 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
       {selectedSpark && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-black/80 backdrop-blur-md"
             onClick={drawerState === "idle" ? closeDrawer : undefined}
           />
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
