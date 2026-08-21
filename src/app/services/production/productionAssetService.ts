@@ -328,7 +328,13 @@ export class ProductionAssetService {
           message,
           updatedAt: new Date().toISOString(),
           partialAssets: {
-            storyboard: partialOverride?.storyboard ?? (currentStoryboard.length > 0 ? currentStoryboard.map((s) => ({ ...s })) : undefined),
+            storyboard: (partialOverride?.storyboard ?? currentStoryboard).map((s) => ({
+              scene: s.scene,
+              description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
+              duration: s.duration,
+              image: s.image,
+              videoUrl: s.videoUrl,
+            })),
             thumbnails: partialOverride?.thumbnails ?? (currentThumbnails.length > 0 ? currentThumbnails.map((t) => ({ ...t })) : undefined),
             voiceUrl: partialOverride?.voiceUrl ?? realVoiceUrl,
             videoUrl: partialOverride?.videoUrl ?? realVideoUrl,
@@ -1011,7 +1017,13 @@ ${identityPack.combinedPromptPrefix}
           : `Video synthesis failed or incomplete. ${lastError || "Check error logs and click Regenerate."}`,
         updatedAt: renderCompletedAt,
         partialAssets: {
-          storyboard: currentStoryboard,
+          storyboard: currentStoryboard.map((s) => ({
+            scene: s.scene,
+            description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
+            duration: s.duration,
+            image: s.image,
+            videoUrl: s.videoUrl,
+          })),
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
