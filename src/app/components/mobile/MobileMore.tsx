@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
 import { ModelRouter } from "../../services/runtime/modelRouter";

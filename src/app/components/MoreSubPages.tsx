@@ -4,13 +4,16 @@ import { Button } from "./ds";
 import { AIPreferencesPanel } from "./ui/AIPreferencesPanel";
 import { useDeviceType, detectDevice } from "../hooks/useDeviceType";
 import { useSpark } from "../state/SparkContext";
+import { useAuth } from "../state/AuthContext";
 import {
   disconnectConnectedAccount,
   getOAuthAuthorizationUrl,
   listLiveConnectedAccounts,
   socialConnectorFramework,
+  getBrandWorkspaceId,
 } from "../services/socialIntegrationService";
 import { NotificationService } from "../notifications/notificationService";
+import type { MemoryItem } from "../domain/types";
 import { isUuid } from "../backend/mappers/workspaceMappers";
 import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../backend/workspaceSync";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../theme";
@@ -83,8 +86,9 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     }
   }, [subPath, onNavigate]);
 
+  const auth = useAuth();
   const spark = useSpark() as any;
-  const { state, addMemoryItem, removeMemoryItem } = spark;
+  const { state, addMemoryItem, removeMemoryItem, character, productions, reviewItems } = spark;
   const activeMemoryItems: MemoryItem[] = spark.memoryItems || state?.memoryItems || [];
 
   // Sub-pages states

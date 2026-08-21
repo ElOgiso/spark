@@ -188,13 +188,16 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    const selectedVoiceObj = voicesList.find((v) => v.voiceId === selectedVoiceId);
+
     try {
       const { persistCharacterUpdate, uploadVoicePreviewToStorage } = await import("../../backend/workspaceSync");
 
-      let finalPreviewUrl: string | null = selectedVoiceObj?.previewUrl || character?.voice?.previewUrl || null;
+      let finalPreviewUrl: string | undefined = selectedVoiceObj?.previewUrl || character?.voice?.previewUrl || undefined;
       if (sampleAudioUrl) {
         try {
-          finalPreviewUrl = await uploadVoicePreviewToStorage(activeBrandId, sampleAudioUrl);
+          const uploaded = await uploadVoicePreviewToStorage(activeBrandId, sampleAudioUrl);
+          if (uploaded) finalPreviewUrl = uploaded;
         } catch (upErr) {
           console.warn("[VoiceStudioModal] Preview upload notice:", upErr);
         }
