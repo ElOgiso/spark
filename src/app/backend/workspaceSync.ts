@@ -326,6 +326,14 @@ export async function persistProductionCreate(brandId: string, production: Produ
 
 export async function persistProductionUpdate(id: string, production: Partial<Production>) {
   if (!isSupabaseConfigured() || !/^[0-9a-f-]{36}$/i.test(id)) return;
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const { data: existing } = await (supabase.from("productions") as any).select("brief").eq("id", id).single();
+  const existingBrief = (existing?.brief && typeof existing.brief === "object" && !Array.isArray(existing.brief))
+    ? existing.brief
+    : {};
+
   const patch: Record<string, unknown> = {};
   if (production.status) {
     const statusMap: Record<string, string> = {
@@ -348,13 +356,14 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     (production as any).brief
   ) {
     patch.brief = {
-      aspectRatio: production.aspectRatio,
-      formats: production.formats,
-      scenes: production.scenes,
-      sparkId: production.sparkId,
-      audioUrl: (production as any).audioUrl,
-      videoUrl: (production as any).videoUrl,
-      briefObject: (production as any).brief,
+      ...existingBrief,
+      aspectRatio: production.aspectRatio || existingBrief.aspectRatio,
+      formats: production.formats || existingBrief.formats,
+      scenes: production.scenes || existingBrief.scenes,
+      sparkId: production.sparkId || existingBrief.sparkId,
+      audioUrl: (production as any).audioUrl || existingBrief.audioUrl,
+      videoUrl: (production as any).videoUrl || existingBrief.videoUrl,
+      briefObject: (production as any).brief || existingBrief.briefObject,
     };
   }
   if ((production as any).reasoning) {
@@ -365,6 +374,14 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
 
 export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const { data: existing } = await (supabase.from("review_items") as any).select("reasoning").eq("id", id).single();
+  const existingReasoning = (existing?.reasoning && typeof existing.reasoning === "object" && !Array.isArray(existing.reasoning))
+    ? existing.reasoning
+    : {};
+
   const patch: Record<string, unknown> = {};
   if (item.status) {
     const statusMap: Record<string, string> = {
@@ -374,7 +391,7 @@ export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>)
     };
     patch.status = statusMap[item.status] || item.status;
   }
-  const reasoningPatch: Record<string, unknown> = {};
+  const reasoningPatch: Record<string, unknown> = { ...existingReasoning };
   if (item.title) reasoningPatch.title = item.title;
   if (item.account) reasoningPatch.account = item.account;
   if (item.series) reasoningPatch.series = item.series;
@@ -389,9 +406,7 @@ export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>)
   if (item.videoUrl) reasoningPatch.videoUrl = item.videoUrl;
   if (item.audioUrl) reasoningPatch.audioUrl = item.audioUrl;
 
-  if (Object.keys(reasoningPatch).length > 0) {
-    patch.reasoning = reasoningPatch;
-  }
+  patch.reasoning = reasoningPatch;
 
   await updateReviewItem(id, patch as any);
 }

@@ -276,6 +276,37 @@ export class ProductionAssetService {
     let realVideoUrl: string | undefined = undefined;
     let lastError: string | undefined = undefined;
 
+    const bId = (brand as any)?.id || "default-brand";
+    const getStoragePath = (sub: string) => `brands/${bId}/${production.id}/${sub}`;
+
+    const persistCurrentStage = async (stageName: string) => {
+      try {
+        const { persistProductionUpdate, persistReviewUpdate } = await import("../../backend/workspaceSync");
+        const stageBrief: ProductionBrief = {
+          ...brief,
+          storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
+          generatedAssets: {
+            ...brief.generatedAssets,
+            thumbnails: currentThumbnails,
+            voiceoverUrl: realVoiceUrl,
+            generatedFrames: currentStoryboard.map((s) => s.image).filter(Boolean) as string[],
+            generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
+          },
+          audioUrl: realVoiceUrl,
+          videoUrl: realVideoUrl,
+        };
+        await persistProductionUpdate(production.id, {
+          brief: stageBrief,
+          audioUrl: realVoiceUrl,
+          videoUrl: realVideoUrl,
+          scenes: stageBrief.storyboard,
+        });
+        console.log(`[SPARK Pipeline] Persistent stage saved to Supabase -> ${stageName} (prod ${production.id})`);
+      } catch (stageSyncErr) {
+        console.warn(`[SPARK Pipeline] Stage ${stageName} cloud sync notice:`, stageSyncErr);
+      }
+    };
+
     const emitProgress = (
       percent: number,
       stage: string,
@@ -636,6 +667,7 @@ Return valid JSON with exactly this structure:
       }
 
       stages[1].status = realVoiceUrl ? "done" : "failed";
+      await persistCurrentStage("Voice");
       stages[2].status = "active";
       emitProgress(20, "Keyframes", `Rendering ${aspectRatio} scene keyframes (Target Hero Frames)...`);
 
@@ -718,6 +750,7 @@ Hook Context: "${brief.hook}". Brand: ${brand.name}
       }
 
       stages[2].status = sceneImages.length > 0 ? "done" : "failed";
+      await persistCurrentStage("Keyframes");
       stages[3].status = "active";
       emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
 
@@ -773,7 +806,7 @@ Brand: ${brand.name}
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "thumbnail",
-                  storagePath: `${production.id}/thumbnails/variant-${variantLetter.toLowerCase()}.png`,
+                  storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
                   dataUrlOrBlob: thumbImgData,
                   mimeType: "image/png",
                   prompt: thumbPrompt,
@@ -816,6 +849,7 @@ Brand: ${brand.name}
       }
 
       stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
+      await persistCurrentStage("Thumbnails");
       stages[4].status = "active";
       emitProgress(80, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on scene stills...`);
 
@@ -869,7 +903,7 @@ Script snippet: "${scene.scriptSnippet || brief.hook}"
                     productionId: production.id,
                     brandId: (brand as any).id,
                     assetType: "video",
-                    storagePath: `${production.id}/video/scene-0${sIdx + 1}.mp4`,
+                    storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
                     dataUrlOrBlob: generatedClip,
                     mimeType: "video/mp4",
                     prompt: stageMotionPrompt,
@@ -925,7 +959,7 @@ ${identityPack.combinedPromptPrefix}
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "video",
-                  storagePath: `${production.id}/video/master.mp4`,
+                  storagePath: getStoragePath("video/master.mp4"),
                   dataUrlOrBlob: fallbackMaster,
                   mimeType: "video/mp4",
                   prompt: masterPrompt,
@@ -950,26 +984,38 @@ ${identityPack.combinedPromptPrefix}
       }
 
       checkAborted();
-      stages[4].status = realVideoUrl ? "done" : "failed";
-      stages[5].status = "active";
-      emitProgress(96, "Saving", "Synchronizing storage assets & metadata...", { videoUrl: realVideoUrl, lastError });
+      const isVideoSuccess = Boolean(realVideoUrl && isValidMediaData(realVideoUrl));
+      stages[4].status = isVideoSuccess ? "done" : "failed";
+      stages[5].status = isVideoSuccess ? "done" : "failed";
+
+      await persistCurrentStage("Video");
+
+      emitProgress(
+        isVideoSuccess ? 96 : 85,
+        isVideoSuccess ? "Saving" : "Failed",
+        isVideoSuccess ? "Synchronizing storage assets & metadata..." : "Video synthesis stage failed to produce playable video.",
+        { videoUrl: realVideoUrl, lastError }
+      );
 
       const renderCompletedAt = new Date().toISOString();
 
       const finalProgress: import("../../domain/types").GenerationProgress = {
-        percent: 100,
-        stage: "Complete",
-        stages: stages.map((s) => ({ ...s, status: s.status === "active" ? "done" : s.status })),
-        message: realVideoUrl || sceneImages.length > 0
+        percent: isVideoSuccess ? 100 : 85,
+        stage: isVideoSuccess ? "Complete" : "Failed",
+        stages: stages.map((s) => ({
+          ...s,
+          status: s.status === "active" ? (isVideoSuccess ? "done" : "failed") : s.status,
+        })),
+        message: isVideoSuccess
           ? `${mode.toUpperCase()} media assets synthesized with continuous staged craft and ready for executive review.`
-          : "Asset synthesis complete. Some media stages failed — review error logs.",
+          : `Video synthesis failed or incomplete. ${lastError || "Check error logs and click Regenerate."}`,
         updatedAt: renderCompletedAt,
         partialAssets: {
           storyboard: currentStoryboard,
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
-          lastError,
+          lastError: isVideoSuccess ? lastError : (lastError || "Video stage failed to produce a valid video URL."),
         },
       };
 

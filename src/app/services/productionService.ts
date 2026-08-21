@@ -141,12 +141,44 @@ export class ProductionService implements IProductionService {
       throw new Error("Production brief must exist before generating assets.");
     }
 
+    const handleProgress = (prog: import("../domain/types").GenerationProgress) => {
+      if (onProgress) onProgress(prog);
+      const state = this.getFullState();
+      const currentProds: Production[] = state.productions || [];
+      const currentReviews: ReviewItem[] = state.reviewItems || [];
+      const partialVideoUrl = prog.partialAssets?.videoUrl || production.videoUrl;
+      const partialAudioUrl = prog.partialAssets?.voiceUrl || production.audioUrl;
+
+      this.saveFullState({
+        productions: currentProds.map((p) =>
+          p.id === production.id
+            ? {
+                ...p,
+                videoUrl: partialVideoUrl || p.videoUrl,
+                audioUrl: partialAudioUrl || p.audioUrl,
+                generationProgress: prog,
+                isGeneratingAssets: prog.stage !== "Complete" && prog.stage !== "Failed",
+              }
+            : p
+        ),
+        reviewItems: currentReviews.map((r) =>
+          r.productionId === production.id
+            ? {
+                ...r,
+                videoUrl: partialVideoUrl || r.videoUrl,
+                audioUrl: partialAudioUrl || r.audioUrl,
+              }
+            : r
+        ),
+      });
+    };
+
     const result = await ProductionAssetService.generateAssets({
       production,
       brief: production.brief,
       brand,
       character,
-      onProgress,
+      onProgress: handleProgress,
       forceRegenerate,
       signal,
     });
