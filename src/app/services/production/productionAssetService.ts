@@ -20,6 +20,7 @@ export interface LockedIdentityPack {
   aspectRatio: string;
   mode: "express" | "standard" | "deep";
   combinedPromptPrefix: string;
+  environmentString: string;
 }
 
 /**
@@ -50,9 +51,13 @@ export function buildLockedIdentityPack(params: {
       ? production.aspectRatio
       : production.aspectRatio || (mode === "deep" ? "16:9" : "9:16");
 
-  const identityBlock = `CHARACTER & WARDROBE LOCK: Primary subject is "${character?.name || "Host"}". Persona: ${character?.style || "Executive Presenter"}. Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}. CONTINUITY LAW: Exact same person, consistent facial structure, identical hair and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.${characterReferenceImageUrl ? ` Reference Sheet: ${characterReferenceImageUrl}` : ""}`;
+  const environmentString = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
 
-  const setBlock = `SET & LIGHTING CONTINUITY: Environment is "${brief.visualDirection || "a high-end executive studio with refined architectural lighting"}". Lighting: Premium cinematic studio lighting, coherent shadows and color temperature aligned with ${brand.name || "Brand"}. Same physical space and atmosphere across all scenes.`;
+  const identityBlock = `CHARACTER (LOCKED IDENTITY): Primary subject is "${character?.name || "Host"}" (Style: ${character?.style || "Executive Presenter"}, Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}).
+IDENTITY CONTINUITY LAW: Must be the exact same person in every panel. Consistent facial structure, hair, and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.${characterReferenceImageUrl ? ` Reference Sheet: ${characterReferenceImageUrl}` : ""}`;
+
+  const setBlock = `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".
+SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and lighting atmosphere across all panels. Do not change set location mid-board unless brief explicitly changes scene location. Lighting aligned with ${brand.name || "Brand"}.`;
 
   const styleBlock = `CINEMATIC DISCIPLINE: Format: ${aspectRatio} aspect ratio. 8K UHD photorealistic render, prime cinema optics, coherent color grade, natural depth of field, realistic skin texture, zero AI distortion.`;
 
@@ -66,6 +71,7 @@ export function buildLockedIdentityPack(params: {
     aspectRatio,
     mode,
     combinedPromptPrefix,
+    environmentString,
   };
 }
 
@@ -618,13 +624,13 @@ Return valid JSON with exactly this structure:
           checkAborted();
           console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
           const masterGridPrompt = `
-[9:16 MULTI-PANEL STORYBOARD GRID - ${storyboard.length} SEQUENTIAL SCENE PANELS]
-TITLE: "${brief.title}"
-PANEL 1 (Top / Scene 1): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"}
-PANEL 2 (Middle / Scene 2): ${storyboard[1]?.startState || storyboard[1]?.visualDescription || "Scene 2 transition"}
-PANEL 3 (Bottom / Scene 3): ${storyboard[2]?.endState || storyboard[2]?.visualDescription || "Scene 3 resolution"}
-${identityPack.combinedPromptPrefix}
-LAYOUT INSTRUCTION: Create a 9:16 vertical continuous multi-panel storyboard grid mapping Scene 1, Scene 2, and Scene 3 in exact order from top to bottom. The host subject "${character?.name || "Host"}" must look identical across all panels.
+Production storyboard master grid map, sequential visual map of ${storyboard.length} panels.
+PANEL 1 (Top / Scene 1 - Establishing): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"} (Framing: Wide/Medium establishing shot).
+PANEL 2 (Middle / Scene 2 - Action): ${storyboard[1]?.startState || storyboard[1]?.visualDescription || "Scene 2 transition"} (Framing: Medium action shot).
+PANEL 3 (Bottom / Scene 3 - Resolution): ${storyboard[2]?.endState || storyboard[2]?.visualDescription || "Scene 3 resolution"} (Framing: Medium close-up resolving shot).
+CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.${identityPack.characterReferenceImageUrl ? ` Reference Sheet: ${identityPack.characterReferenceImageUrl}.` : ""} Use reference image. Do not change face or outfit.
+ENVIRONMENT (locked): ${identityPack.environmentString}. Same set across all panels.
+LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid map showing Scene 1, Scene 2, Scene 3 in exact order from top to bottom. Clear readable scene progression with shot variety, not extreme facial close-ups.
 `.trim();
 
           const gridImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
@@ -750,13 +756,16 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous multi-panel storyboard gri
             continue;
           }
 
+          const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+
           const imagePrompt = `
-[${identityPack.aspectRatio} ${mode.toUpperCase()} PRODUCTION KEYFRAME - SCENE ${sIdx + 1} OF ${totalScenes}]
-TARGET HERO / END FRAME: ${scene.endState || scene.visualDescription || scene.shotList}
-SCENE ACTION: ${scene.primaryChange || scene.visualDescription}
-CAMERA FRAMING: ${scene.cameraDirection || "Cinematic framing"}
-${identityPack.combinedPromptPrefix}
-Hook Context: "${brief.hook}". Brand: ${brand.name}
+Production storyboard panel ${sIdx + 1} of ${totalScenes}, sequential visual map.
+CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.${identityPack.characterReferenceImageUrl ? ` Reference Sheet: ${identityPack.characterReferenceImageUrl}.` : ""} Use reference image. Do not change face or outfit.
+ENVIRONMENT (locked): ${identityPack.environmentString}. Same set every panel.
+ACTION THIS PANEL ONLY: ${scene.primaryChange || scene.visualDescription || scene.startState}.
+FRAMING: ${panelFraming} (shot variety across board — not extreme close-up for every panel).
+Style consistent across the full board. Clear readable scene progression.
+Hook context: "${brief.hook}". Brand: ${brand.name}.
 `.trim();
 
           try {
@@ -962,22 +971,15 @@ Brand: ${brand.name}
             const scene = currentStoryboard[sIdx];
             const sceneStill = scene.image || sceneImages[sIdx];
 
+            const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+
             const stageMotionPrompt = `
-[${identityPack.aspectRatio} STORYBOARD MAP ANIMATION - SCENE ${sIdx + 1} OF ${totalVideoStages}]
-STORYBOARD MAP CONTINUITY: Animate Scene ${sIdx + 1} from panel ${sIdx + 1} of the master storyboard map.
-panel 1 -> panel 2 -> panel 3 sequence MUST be maintained in exact order.
-START FRAME: ${scene.startState || "Host established in framing"}
-PRIMARY MOTION: ${scene.primaryChange || scene.visualDescription}
-END FRAME: ${scene.endState || "Target composition reached"}
-CAMERA MOTION: ${scene.cameraDirection || "Motivated smooth camera motion"}
-${identityPack.combinedPromptPrefix}
-ANIMATION RULES:
-1. Animate panels/scenes in exact sequential order (Scene ${sIdx + 1}).
-2. Character MUST remain identical to reference sheet throughout—no drifting, no outfit changes.
-3. Environment must remain continuous and locked.
-4. One primary action per scene beat.
-5. No resets, no reordered beats, no new identity.
-Script snippet: "${scene.scriptSnippet || brief.hook}"
+Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
+Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
+Environment must remain continuous (${identityPack.environmentString}).
+One primary action per scene: ${scene.primaryChange || scene.visualDescription}.
+Framing: ${panelFraming}.
+No resets, no new character, no scrambled order.
 `.trim();
 
             console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
