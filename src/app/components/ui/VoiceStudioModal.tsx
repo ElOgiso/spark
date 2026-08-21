@@ -44,11 +44,12 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
 
   useEffect(() => {
     if (isOpen) {
-      void getElevenLabsVoices().then((res: ElevenLabsVoiceSummary[]) => {
-        if (res && res.length > 0) {
+      void getElevenLabsVoices().then((res) => {
+        const fetched = res?.voices || [];
+        if (fetched.length > 0) {
           setVoicesList((prev) => {
             const existingIds = new Set(prev.map((v) => v.voiceId));
-            const newVoices = res.filter((v: ElevenLabsVoiceSummary) => !existingIds.has(v.voiceId));
+            const newVoices = fetched.filter((v) => !existingIds.has(v.voiceId));
             return [...prev, ...newVoices];
           });
         }
