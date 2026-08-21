@@ -22,7 +22,7 @@ import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
 import { getBrandWorkspaceId } from "./services/socialIntegrationService";
-import { isUuid } from "./backend/supabaseClient";
+import { isUuid } from "./backend/mappers/workspaceMappers";
 
 const requireAuth = import.meta.env.VITE_REQUIRE_AUTH === "true";
 
