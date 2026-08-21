@@ -253,7 +253,7 @@ export function InteractiveVideoPlayer({
     duration: "0–10s"
   };
 
-  const activeVideoUrl = activeScene.videoUrl || videoUrl;
+  const activeVideoUrl = activeScene.videoUrl || videoUrl || scenes.find((s) => Boolean(s.videoUrl))?.videoUrl;
   const activeImageUrl = activeScene.image;
 
   const togglePlay = () => {

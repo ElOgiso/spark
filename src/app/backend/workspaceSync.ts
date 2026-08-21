@@ -704,24 +704,36 @@ export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: st
   if (!supabase) return [];
 
   const results: { id: string; name: string; type: string; size: string; date: string; url: string }[] = [];
+  const seenPaths = new Set<string>();
 
-  try {
-    const { data: files, error } = await supabase.storage.from("Spark").list(`brands/${brandId}/uploads`, {
-      limit: 100,
-      sortBy: { column: "created_at", order: "desc" },
-    });
+  const listFolderRecursive = async (folderPath: string, depth = 0) => {
+    if (depth > 3) return;
+    try {
+      const { data: files, error } = await supabase.storage.from("Spark").list(folderPath, {
+        limit: 100,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+      if (error || !files || !Array.isArray(files)) return;
 
-    if (!error && files && Array.isArray(files)) {
       for (const f of files) {
         if (!f.name || f.name.startsWith(".")) continue;
-        const filePath = `brands/${brandId}/uploads/${f.name}`;
-        
+        const currentPath = `${folderPath}/${f.name}`;
+
+        const isFile = Boolean(f.metadata && typeof f.metadata.size === "number");
+        if (!isFile) {
+          await listFolderRecursive(currentPath, depth + 1);
+          continue;
+        }
+
+        if (seenPaths.has(currentPath)) continue;
+        seenPaths.add(currentPath);
+
         let publicOrSignedUrl = "";
-        const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(filePath, 60 * 60 * 24 * 7);
+        const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(currentPath, 60 * 60 * 24 * 7);
         if (signedData?.signedUrl) {
           publicOrSignedUrl = signedData.signedUrl;
         } else {
-          const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(filePath);
+          const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(currentPath);
           publicOrSignedUrl = pubData?.publicUrl || "";
         }
 
@@ -732,20 +744,25 @@ export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: st
         const dateFormatted = f.created_at ? new Date(f.created_at).toLocaleDateString() : "Today";
         const mimeType = f.metadata?.mimetype || (f.name.endsWith(".mp3") ? "Audio (MP3)" : f.name.endsWith(".mp4") ? "Video (MP4)" : f.name.endsWith(".png") || f.name.endsWith(".jpg") ? "Image" : "Document");
 
+        const displayName = folderPath.startsWith(`brands/${brandId}/uploads`)
+          ? f.name
+          : `${folderPath.replace(`brands/${brandId}/`, "")}/${f.name}`;
+
         results.push({
-          id: f.id || filePath,
-          name: f.name,
+          id: f.id || currentPath,
+          name: displayName,
           type: mimeType,
           size: sizeFormatted,
           date: dateFormatted,
           url: publicOrSignedUrl,
         });
       }
+    } catch (err) {
+      console.warn("[workspaceSync] listFolderRecursive notice:", err);
     }
-  } catch (err) {
-    console.warn("[workspaceSync] fetchBrandStorageAssets error:", err);
-  }
+  };
 
+  await listFolderRecursive(`brands/${brandId}`);
   return results;
 }
 

@@ -1354,7 +1354,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 ...prev,
                 productions: prev.productions.map((p: any) =>
                   p.id === prodId
-                    ? { ...p, ...updatedProd, id: prodId, sparkId: spark.id, isGeneratingAssets: false }
+                    ? {
+                        ...p,
+                        ...updatedProd,
+                        id: prodId,
+                        sparkId: spark.id,
+                        videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || p.videoUrl,
+                        audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || p.audioUrl,
+                        scenes: updatedProd.scenes || p.scenes,
+                        brief: updatedBrief,
+                        isGeneratingAssets: false,
+                      }
                     : p
                 ),
                 reviewItems: prev.reviewItems.map((r: any) =>
@@ -1363,11 +1373,31 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         ...r,
                         brief: updatedBrief,
                         videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || r.videoUrl,
+                        audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || r.audioUrl,
                         openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
                       }
                     : r
                 ),
               }));
+
+              const bId = getBrandWorkspaceId();
+              if (isSupabaseConfigured() && bId) {
+                void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
+                  void persistProductionUpdate(prodId, {
+                    ...updatedProd,
+                    videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
+                    audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
+                    brief: updatedBrief,
+                  });
+                  if (reviewId) {
+                    void persistReviewUpdate(reviewId, {
+                      videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
+                      audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
+                      brief: updatedBrief,
+                    });
+                  }
+                });
+              }
 
               eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
             } catch (assetErr: any) {

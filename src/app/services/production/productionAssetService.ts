@@ -1089,16 +1089,26 @@ ${identityPack.combinedPromptPrefix}
 
       checkAborted();
       const isVideoSuccess = Boolean(realVideoUrl && isValidMediaData(realVideoUrl));
+      if (!isVideoSuccess && !lastError) {
+        lastError = "Video synthesis completed but no valid playable video URL was generated.";
+      }
+
       stages[4].status = isVideoSuccess ? "done" : "failed";
       stages[5].status = isVideoSuccess ? "done" : "failed";
+
+      brief.videoUrl = realVideoUrl;
+      brief.audioUrl = realVoiceUrl;
+      if (!brief.generatedAssets) brief.generatedAssets = {};
+      brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
+      brief.generatedAssets.voiceoverUrl = realVoiceUrl;
 
       await persistCurrentStage("Video");
 
       emitProgress(
         isVideoSuccess ? 96 : 85,
         isVideoSuccess ? "Saving" : "Failed",
-        isVideoSuccess ? "Synchronizing storage assets & metadata..." : "Video synthesis stage failed to produce playable video.",
-        { videoUrl: realVideoUrl, lastError }
+        isVideoSuccess ? "Synchronizing storage assets & metadata..." : `Video synthesis failed to produce playable video. ${lastError}`,
+        { videoUrl: realVideoUrl, voiceUrl: realVoiceUrl, lastError }
       );
 
       const renderCompletedAt = new Date().toISOString();
