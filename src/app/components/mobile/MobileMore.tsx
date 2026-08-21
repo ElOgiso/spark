@@ -5,12 +5,9 @@ import { ModelRouter } from "../../services/runtime/modelRouter";
 import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../../services/runtime/modelCatalog";
 import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { Button } from "../ds";
-import {
-  disconnectConnectedAccount,
-  getOAuthAuthorizationUrl,
-  listLiveConnectedAccounts,
-  socialConnectorFramework,
-} from "../../services/socialIntegrationService";
+import { getBrandWorkspaceId, disconnectConnectedAccount, getOAuthAuthorizationUrl, listLiveConnectedAccounts, socialConnectorFramework } from "../../services/socialIntegrationService";
+import { isUuid } from "../../backend/mappers/workspaceMappers";
+import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/workspaceSync";
 import { AuthPanel } from "../auth/AuthPanel";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../../theme";
 import {
@@ -92,7 +89,74 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const [newKeyName, setNewKeyName] = useState("");
   const [showAddKey, setShowAddKey] = useState(false);
 
-  const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string }[]>([]);
+  const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; url?: string }[]>([]);
+
+  const { productions, reviewItems } = useSpark() as any;
+
+  useEffect(() => {
+    let isMounted = true;
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+
+    async function loadMobileAssets() {
+      const items: { id: string; name: string; type: string; size: string; url?: string }[] = [];
+
+      if (character?.characterSheetUrl || character?.imageUrl) {
+        items.push({
+          id: "char-sheet-asset-m",
+          name: `${character?.name || "Host"}_Character_Sheet.png`,
+          type: "Character Image",
+          size: "Cloud Persisted",
+          url: character.characterSheetUrl || character.imageUrl,
+        });
+      }
+
+      if (character?.voice?.previewUrl) {
+        items.push({
+          id: "voice-preview-asset-m",
+          name: `${character?.voice?.name || "Host"}_Voice_Preview.mp3`,
+          type: "Voice Audio (MP3)",
+          size: "Cloud Persisted",
+          url: character.voice.previewUrl,
+        });
+      }
+
+      const prodList = Array.isArray(productions) && productions.length > 0 ? productions : reviewItems || [];
+      if (Array.isArray(prodList)) {
+        prodList.forEach((p: any) => {
+          if (p.videoUrl || p.video_url) {
+            items.push({
+              id: `prod-vid-m-${p.id}`,
+              name: `${p.title || "Production"}_Video.mp4`,
+              type: "Production Video (MP4)",
+              size: "Rendered Media",
+              url: p.videoUrl || p.video_url,
+            });
+          }
+          if (p.audioUrl || p.voice_url) {
+            items.push({
+              id: `prod-aud-m-${p.id}`,
+              name: `${p.title || "Production"}_Voice.mp3`,
+              type: "Production Audio (MP3)",
+              size: "Rendered Voice",
+              url: p.audioUrl || p.voice_url,
+            });
+          }
+        });
+      }
+
+      if (brandId && isUuid(brandId)) {
+        const storageItems = await fetchBrandStorageAssets(brandId);
+        storageItems.forEach((st) => items.push(st));
+      }
+
+      if (isMounted) setAssets(items);
+    }
+
+    loadMobileAssets();
+    return () => {
+      isMounted = false;
+    };
+  }, [auth.brand?.id, character, productions, reviewItems]);
 
   const [accounts, setAccounts] = useState(() => {
     const live = listLiveConnectedAccounts();
@@ -247,10 +311,21 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   };
 
   const handleUploadAsset = () => {
-    const name = prompt("Enter asset name:", "stinger_intro.mp3");
-    if (name) {
-      setAssets([...assets, { id: Date.now().toString(), name, type: "Audio", size: "4.5 MB" }]);
-    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.onchange = async (e: any) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const brandId = auth.brand?.id || getBrandWorkspaceId();
+        const uploaded = await uploadBrandAssetFile(brandId, file);
+        if (uploaded) {
+          setAssets((prev) => [uploaded, ...prev]);
+        } else {
+          alert("Upload failed. Please check Supabase credentials.");
+        }
+      }
+    };
+    input.click();
   };
 
   const handleInvite = (e: React.FormEvent) => {
@@ -368,23 +443,37 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
           return (
             <div className="space-y-4">
               <Button onClick={handleUploadAsset} variant="accent" className="w-full text-xs py-2">
-                <Plus className="w-4 h-4 mr-1" /> Add Asset File
+                <Plus className="w-4 h-4 mr-1" /> Upload Asset File to Storage
               </Button>
               <div className="rounded-xl border border-border bg-card divide-y divide-border/50">
-                {assets.map((asset) => (
-                  <div key={asset.id} className="p-3.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{asset.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{asset.type} · {asset.size}</p>
+                {assets.length === 0 ? (
+                  <p className="p-5 text-center text-xs text-muted-foreground">No assets found in workspace storage.</p>
+                ) : (
+                  assets.map((asset) => (
+                    <div key={asset.id} className="p-3.5 flex items-center justify-between">
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="text-sm font-medium truncate">{asset.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{asset.type} · {asset.size}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {asset.url && (
+                          <button
+                            onClick={() => window.open(asset.url, "_blank")}
+                            className="p-1.5 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-foreground"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setAssets(assets.filter((a) => a.id !== asset.id))}
+                          className="text-muted-foreground hover:text-destructive p-1.5 rounded-lg hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => setAssets(assets.filter(a => a.id !== asset.id))}
-                      className="text-muted-foreground hover:text-destructive p-1.5 rounded-lg hover:bg-destructive/10"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           );

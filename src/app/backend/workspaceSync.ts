@@ -610,6 +610,155 @@ export async function uploadCharacterSheetToStorage(brandId: string, imageUri: s
   }
 }
 
+export async function uploadVoicePreviewToStorage(brandId: string, audioUri: string): Promise<string> {
+  if (!isSupabaseConfigured() || !isUuid(brandId) || !audioUri) return audioUri;
+  const supabase = getSupabaseClient();
+  if (!supabase) return audioUri;
+
+  try {
+    let uploadBlob: Blob | null = null;
+
+    if (audioUri.startsWith("data:")) {
+      const parts = audioUri.split(",");
+      const mime = parts[0].match(/:(.*?);/)?.[1] || "audio/mpeg";
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      uploadBlob = new Blob([u8arr], { type: mime });
+    } else if (audioUri.startsWith("blob:") || audioUri.startsWith("http")) {
+      const res = await fetch(audioUri);
+      if (res.ok) {
+        uploadBlob = await res.blob();
+      }
+    }
+
+    if (!uploadBlob) return audioUri;
+
+    const storagePath = `brands/${brandId}/voice/preview.mp3`;
+    const { error: uploadError } = await supabase.storage.from("Spark").upload(storagePath, uploadBlob, {
+      contentType: "audio/mpeg",
+      upsert: true,
+    });
+
+    if (uploadError) {
+      console.warn("[workspaceSync] Storage upload for voice preview notice:", uploadError);
+      return audioUri;
+    }
+
+    const { data: signedData } = await supabase.storage
+      .from("Spark")
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+    if (signedData?.signedUrl) return signedData.signedUrl;
+
+    const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
+    if (pubData?.publicUrl) return pubData.publicUrl;
+
+    return audioUri;
+  } catch (err) {
+    console.warn("[workspaceSync] uploadVoicePreviewToStorage notice:", err);
+    return audioUri;
+  }
+}
+
+export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: string; name: string; type: string; size: string; date: string; url: string }[]> {
+  if (!isSupabaseConfigured() || !isUuid(brandId)) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+
+  const results: { id: string; name: string; type: string; size: string; date: string; url: string }[] = [];
+
+  try {
+    const { data: files, error } = await supabase.storage.from("Spark").list(`brands/${brandId}/uploads`, {
+      limit: 100,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+
+    if (!error && files && Array.isArray(files)) {
+      for (const f of files) {
+        if (!f.name || f.name.startsWith(".")) continue;
+        const filePath = `brands/${brandId}/uploads/${f.name}`;
+        
+        let publicOrSignedUrl = "";
+        const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(filePath, 60 * 60 * 24 * 7);
+        if (signedData?.signedUrl) {
+          publicOrSignedUrl = signedData.signedUrl;
+        } else {
+          const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(filePath);
+          publicOrSignedUrl = pubData?.publicUrl || "";
+        }
+
+        const sizeFormatted = f.metadata?.size
+          ? (f.metadata.size / 1024 < 1024 ? `${(f.metadata.size / 1024).toFixed(1)} KB` : `${(f.metadata.size / 1024 / 1024).toFixed(1)} MB`)
+          : "—";
+
+        const dateFormatted = f.created_at ? new Date(f.created_at).toLocaleDateString() : "Today";
+        const mimeType = f.metadata?.mimetype || (f.name.endsWith(".mp3") ? "Audio (MP3)" : f.name.endsWith(".mp4") ? "Video (MP4)" : f.name.endsWith(".png") || f.name.endsWith(".jpg") ? "Image" : "Document");
+
+        results.push({
+          id: f.id || filePath,
+          name: f.name,
+          type: mimeType,
+          size: sizeFormatted,
+          date: dateFormatted,
+          url: publicOrSignedUrl,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[workspaceSync] fetchBrandStorageAssets error:", err);
+  }
+
+  return results;
+}
+
+export async function uploadBrandAssetFile(brandId: string, file: File): Promise<{ id: string; name: string; type: string; size: string; date: string; url: string } | null> {
+  if (!isSupabaseConfigured() || !isUuid(brandId)) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const storagePath = `brands/${brandId}/uploads/${Date.now()}_${cleanFileName}`;
+
+    const { error: uploadError } = await supabase.storage.from("Spark").upload(storagePath, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: true,
+    });
+
+    if (uploadError) {
+      console.warn("[workspaceSync] uploadBrandAssetFile storage notice:", uploadError);
+      return null;
+    }
+
+    let url = "";
+    const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+    if (signedData?.signedUrl) {
+      url = signedData.signedUrl;
+    } else {
+      const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
+      url = pubData?.publicUrl || "";
+    }
+
+    const sizeFormatted = file.size / 1024 < 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+
+    return {
+      id: storagePath,
+      name: file.name,
+      type: file.type || "File",
+      size: sizeFormatted,
+      date: new Date().toLocaleDateString(),
+      url,
+    };
+  } catch (err) {
+    console.warn("[workspaceSync] uploadBrandAssetFile error:", err);
+    return null;
+  }
+}
+
 export async function persistCharacterUpdate(brandId: string, character: Character): Promise<void> {
   if (!isSupabaseConfigured() || !isUuid(brandId)) return;
   const supabase = getSupabaseClient();

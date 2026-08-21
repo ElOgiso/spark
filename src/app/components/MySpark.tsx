@@ -3,6 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
 import { VoiceStudioModal } from "./ui/VoiceStudioModal";
+import { previewElevenLabsVoice } from "../services/runtime/providers/elevenLabsTTS";
 import {
   Brain,
   Mic,
@@ -105,6 +106,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [newPillarText, setNewPillarText] = useState("");
   const [isPlayingVoicePreview, setIsPlayingVoicePreview] = useState(false);
+  const [activeVoiceAudio, setActiveVoiceAudio] = useState<HTMLAudioElement | null>(null);
 
   const handleEditIdentitySubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,19 +166,55 @@ export function MySpark({ onNavigate }: MySparkProps) {
     setShowAddPillar(false);
   };
 
-  const handlePreviewVoice = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      alert("Audio speech synthesis unavailable in this browser environment.");
+  const handlePreviewVoice = async () => {
+    if (isPlayingVoicePreview && activeVoiceAudio) {
+      try {
+        activeVoiceAudio.pause();
+        activeVoiceAudio.currentTime = 0;
+      } catch {}
+      setActiveVoiceAudio(null);
+      setIsPlayingVoicePreview(false);
       return;
     }
-    window.speechSynthesis.cancel();
-    const text = `Hello! I am ${character?.name || "Spark"}, lead AI host for ${brand?.name || "your brand"}. ${character?.voice?.tone || ""}`;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.onstart = () => setIsPlayingVoicePreview(true);
-    utterance.onend = () => setIsPlayingVoicePreview(false);
-    utterance.onerror = () => setIsPlayingVoicePreview(false);
-    window.speechSynthesis.speak(utterance);
+
+    const voiceObj = character?.voice;
+    const voiceId = voiceObj?.voiceId || "21m00Tcm4TlvDq8ikWAM";
+    const savedPreviewUrl = voiceObj?.previewUrl;
+
+    setIsPlayingVoicePreview(true);
+
+    try {
+      let audioSrc: string | null = null;
+      if (savedPreviewUrl) {
+        audioSrc = savedPreviewUrl;
+      } else {
+        const text = `Hello! I am ${character?.name || "Spark"}, lead AI host for ${brand?.name || "your brand"}. ${voiceObj?.tone || ""}`;
+        audioSrc = await previewElevenLabsVoice(voiceId, text);
+      }
+
+      if (!audioSrc) {
+        alert(`ElevenLabs voice preview unavailable for voice "${voiceObj?.name || "Rachel"}" (${voiceId}). Please check ElevenLabs API key or select another voice in Voice Studio.`);
+        setIsPlayingVoicePreview(false);
+        return;
+      }
+
+      const audio = new Audio(audioSrc);
+      audio.onended = () => {
+        setIsPlayingVoicePreview(false);
+        setActiveVoiceAudio(null);
+      };
+      audio.onerror = () => {
+        alert(`Error playing ElevenLabs voice sample for ${voiceObj?.name || "Rachel"}.`);
+        setIsPlayingVoicePreview(false);
+        setActiveVoiceAudio(null);
+      };
+      setActiveVoiceAudio(audio);
+      await audio.play();
+    } catch (err) {
+      console.warn("[MySpark] Voice preview play error:", err);
+      setIsPlayingVoicePreview(false);
+      setActiveVoiceAudio(null);
+    }
   };
 
   const getRuleMeta = (text: string) => {

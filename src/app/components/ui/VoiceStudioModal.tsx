@@ -62,18 +62,27 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     if (isOpen) {
       void getElevenLabsVoices().then((res) => {
         const fetched = res?.voices || [];
-        if (fetched.length > 0) {
-          setVoicesList((prev) => {
-            const existingIds = new Set(prev.map((v) => v.voiceId));
-            const newVoices = fetched.filter((v) => !existingIds.has(v.voiceId));
-            return [...prev, ...newVoices];
-          });
-        }
+        setVoicesList((prev) => {
+          const list = fetched.length > 0 ? fetched : prev;
+          const existingIds = new Set(list.map((v) => v.voiceId));
+          // Inject active saved character voice if not present
+          if (character?.voice?.voiceId && !existingIds.has(character.voice.voiceId)) {
+            list.unshift({
+              voiceId: character.voice.voiceId,
+              name: character.voice.name || "Saved Custom Voice",
+              category: "saved",
+              accent: character.voice.tone || "Custom Brand Voice",
+              previewUrl: character.voice.previewUrl,
+            });
+          }
+          return list;
+        });
       });
     } else {
       stopAudio();
     }
-  }, [isOpen]);
+  }, [isOpen, character?.voice?.voiceId]);
+
   const handlePlayVoice = async (voiceObj: ElevenLabsVoiceSummary) => {
     if (playingVoiceId === voiceObj.voiceId) {
       stopAudio();
@@ -106,18 +115,12 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
         setSampleAudioUrl(synthesizedUrl);
         await audio.play();
       } else {
-        if (typeof window !== "undefined" && window.speechSynthesis) {
-          const utter = new SpeechSynthesisUtterance(text);
-          utter.onend = () => setPlayingVoiceId(null);
-          utter.onerror = () => setPlayingVoiceId(null);
-          window.speechSynthesis.speak(utter);
-        } else {
-          setPlayingVoiceId(null);
-        }
+        setErrorMsg(`ElevenLabs voice preview failed for "${voiceObj.name}". Please check ElevenLabs API key or select a curated voice.`);
+        setPlayingVoiceId(null);
       }
     } catch (err: any) {
       console.warn("[VoiceStudioModal] Play error:", err);
-      setErrorMsg("Voice preview unavailable for this ID.");
+      setErrorMsg(`Voice preview error: ${err?.message || "Generation failed"}`);
       setPlayingVoiceId(null);
     }
   };
@@ -185,19 +188,27 @@ export const VoiceStudioModal: React.FC<VoiceStudioModalProps> = ({ isOpen, onCl
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const selectedVoiceObj = voicesList.find((v) => v.voiceId === selectedVoiceId);
-
-    const voiceData = {
-      voiceId: selectedVoiceId,
-      name: selectedVoiceName,
-      language: "English",
-      tone: selectedVoiceObj?.accent || "Authoritative & Clear",
-      description: selectedVoiceObj?.description || "Production narrator voice",
-      locked: true,
-    };
-
     try {
-      const { persistCharacterUpdate } = await import("../../backend/workspaceSync");
+      const { persistCharacterUpdate, uploadVoicePreviewToStorage } = await import("../../backend/workspaceSync");
+
+      let finalPreviewUrl: string | null = selectedVoiceObj?.previewUrl || character?.voice?.previewUrl || null;
+      if (sampleAudioUrl) {
+        try {
+          finalPreviewUrl = await uploadVoicePreviewToStorage(activeBrandId, sampleAudioUrl);
+        } catch (upErr) {
+          console.warn("[VoiceStudioModal] Preview upload notice:", upErr);
+        }
+      }
+
+      const voiceData = {
+        voiceId: selectedVoiceId,
+        name: selectedVoiceName,
+        language: "English",
+        tone: selectedVoiceObj?.accent || "Authoritative & Clear",
+        description: selectedVoiceObj?.description || "Production narrator voice",
+        locked: true,
+        previewUrl: finalPreviewUrl,
+      };
 
       const updatedCharacterObj = {
         name: character?.name || "Lead Host",

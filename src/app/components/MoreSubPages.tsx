@@ -11,7 +11,8 @@ import {
   socialConnectorFramework,
 } from "../services/socialIntegrationService";
 import { NotificationService } from "../notifications/notificationService";
-import type { MemoryItem } from "../domain/types";
+import { isUuid } from "../backend/mappers/workspaceMappers";
+import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../backend/workspaceSync";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../theme";
 import { ModelRouter } from "../services/runtime/modelRouter";
 import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig, AIModelSelectionConfig } from "../domain/types";
@@ -112,9 +113,82 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const [newKeyName, setNewKeyName] = useState("");
   const [showAddKey, setShowAddKey] = useState(false);
 
-  // Assets states — production starts empty (user uploads only)
-  const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; date: string }[]>([]);
+  // Assets states — loaded dynamically from Supabase Storage, Character & Production assets
+  const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; date: string; url?: string }[]>([]);
   const [dragActive, setDragActive] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+
+    async function loadAssets() {
+      const items: { id: string; name: string; type: string; size: string; date: string; url?: string }[] = [];
+
+      // 1. Character Sheet
+      if (character?.characterSheetUrl || character?.imageUrl) {
+        items.push({
+          id: "char-sheet-asset",
+          name: `${character?.name || "Host"}_Character_Sheet.png`,
+          type: "Character Image",
+          size: "Cloud Persisted",
+          date: "Current Persona",
+          url: character.characterSheetUrl || character.imageUrl,
+        });
+      }
+
+      // 2. Voice Preview MP3
+      if (character?.voice?.previewUrl) {
+        items.push({
+          id: "voice-preview-asset",
+          name: `${character?.voice?.name || "Host"}_Voice_Preview.mp3`,
+          type: "Voice Audio (MP3)",
+          size: "Cloud Persisted",
+          date: "Current Voice",
+          url: character.voice.previewUrl,
+        });
+      }
+
+      // 3. Rendered Productions / Review Items
+      const prodList = Array.isArray(productions) && productions.length > 0 ? productions : reviewItems || [];
+      if (Array.isArray(prodList)) {
+        prodList.forEach((p: any) => {
+          if (p.videoUrl || p.video_url) {
+            items.push({
+              id: `prod-vid-${p.id}`,
+              name: `${p.title || "Production"}_Video.mp4`,
+              type: "Production Video (MP4)",
+              size: "Rendered Media",
+              date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+              url: p.videoUrl || p.video_url,
+            });
+          }
+          if (p.audioUrl || p.voice_url) {
+            items.push({
+              id: `prod-aud-${p.id}`,
+              name: `${p.title || "Production"}_Voice.mp3`,
+              type: "Production Audio (MP3)",
+              size: "Rendered Voice",
+              date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+              url: p.audioUrl || p.voice_url,
+            });
+          }
+        });
+      }
+
+      // 4. Supabase Storage Uploaded Files
+      if (brandId && isUuid(brandId)) {
+        const storageItems = await fetchBrandStorageAssets(brandId);
+        storageItems.forEach((st) => items.push(st));
+      }
+
+      if (isMounted) setAssets(items);
+    }
+
+    loadAssets();
+    return () => {
+      isMounted = false;
+    };
+  }, [auth.brand?.id, character, productions, reviewItems]);
 
   // Accounts — live OAuth tokens only
   const [accounts, setAccounts] = useState(() =>
@@ -278,37 +352,35 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      const newAsset = {
-        id: Date.now().toString(),
-        name: file.name,
-        type: file.type.split("/")[0].toUpperCase() || "Document",
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        date: new Date().toISOString().split("T")[0]
-      };
-      setAssets([newAsset, ...assets]);
+      const brandId = auth.brand?.id || getBrandWorkspaceId();
+      const uploaded = await uploadBrandAssetFile(brandId, file);
+      if (uploaded) {
+        setAssets((prev) => [uploaded, ...prev]);
+      } else {
+        alert("Upload failed. Please ensure Supabase credentials are configured.");
+      }
     }
   };
 
   const handleUploadClick = () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.onchange = (e: any) => {
+    input.onchange = async (e: any) => {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
-        const newAsset = {
-          id: Date.now().toString(),
-          name: file.name,
-          type: file.type.split("/")[0].toUpperCase() || "Document",
-          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          date: new Date().toISOString().split("T")[0]
-        };
-        setAssets([newAsset, ...assets]);
+        const brandId = auth.brand?.id || getBrandWorkspaceId();
+        const uploaded = await uploadBrandAssetFile(brandId, file);
+        if (uploaded) {
+          setAssets((prev) => [uploaded, ...prev]);
+        } else {
+          alert("Upload failed. Please ensure Supabase credentials are configured.");
+        }
       }
     };
     input.click();
@@ -676,53 +748,53 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Brand Assets ({assets.length})</h3>
                 </div>
                 <div className="divide-y divide-border/50">
-                  {assets.map((asset) => (
-                    <div key={asset.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-accent/5 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* Dynamic Asset Media Preview instead of just a generic letter icon */}
-                        <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-border/50 bg-background flex items-center justify-center select-none shadow-sm">
-                          {asset.name.includes("logo") ? (
-                            <div className="absolute inset-0 bg-gradient-to-tr from-violet-600 via-indigo-600 to-purple-600 flex items-center justify-center">
-                              <span className="text-[8px] font-black tracking-tight text-white uppercase">LOGO</span>
-                            </div>
-                          ) : asset.name.includes("synth") ? (
-                            <div className="absolute inset-0 bg-gradient-to-tr from-amber-500 via-rose-500 to-red-500 flex flex-col justify-end p-1 pb-1.5">
-                              <div className="flex items-end gap-[1px] h-4 justify-center">
-                                {[3, 5, 2, 6, 4, 3, 5].map((h, i) => (
-                                  <span key={i} className="w-[1px] bg-white rounded-full" style={{ height: `${h * 15}%` }} />
-                                ))}
-                              </div>
-                            </div>
-                          ) : asset.name.includes("overlay") ? (
-                            <div className="absolute inset-0 bg-gradient-to-tr from-teal-400 via-cyan-600 to-blue-600 flex items-center justify-center">
-                              <div className="w-5 h-5 rounded-full bg-white/95 flex items-center justify-center shadow-md">
-                                <Play className="w-2.5 h-2.5 text-cyan-600 fill-current translate-x-[0.5px]" />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="absolute inset-0 bg-gradient-to-tr from-red-500 to-orange-500 flex items-center justify-center">
-                              <span className="text-[8px] font-black text-white uppercase font-mono tracking-wider">PDF</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{asset.name}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{asset.type} · {asset.size} · Uploaded {asset.date}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button className="p-2 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-foreground transition-colors">
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setAssets(assets.filter(a => a.id !== asset.id))}
-                          className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                  {assets.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground text-xs">
+                      No assets found for this workspace. Drag & drop files above or generate persona character sheets and voice profiles.
                     </div>
-                  ))}
+                  ) : (
+                    assets.map((asset) => (
+                      <div key={asset.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-accent/5 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* Dynamic Asset Media Preview */}
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-border/50 bg-background flex items-center justify-center select-none shadow-sm">
+                            {asset.url && (asset.type.toLowerCase().includes("image") || asset.name.endsWith(".png") || asset.name.endsWith(".jpg")) ? (
+                              <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                            ) : asset.type.toLowerCase().includes("audio") || asset.name.endsWith(".mp3") ? (
+                              <div className="absolute inset-0 bg-gradient-to-tr from-amber-500 via-rose-500 to-red-500 flex items-center justify-center text-white">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white font-bold text-[9px]">
+                                FILE
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{asset.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{asset.type} · {asset.size} · {asset.date}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {asset.url && (
+                            <button
+                              onClick={() => window.open(asset.url, "_blank")}
+                              title="Download or View Media File"
+                              className="p-2 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setAssets(assets.filter(a => a.id !== asset.id))}
+                            className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
