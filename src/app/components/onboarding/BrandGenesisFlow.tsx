@@ -62,7 +62,6 @@ export interface BrandGenesisFlowProps {
   onComplete: (data: BrandGenesisData) => void;
 }
 
-import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 
 function MainLogo({ size = 24 }: { size?: number }) {
   return <img src={mainLogo} alt="Spark" style={{ width: size, height: size, objectFit: "contain", flexShrink: 0 }} />;
