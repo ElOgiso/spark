@@ -983,9 +983,34 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const {
           persistBrandUpdate,
           persistCharacterUpdate,
-          persistViralSparkCreate,
           persistResearchSourceCreate,
+          uploadCharacterSheetToStorage,
         } = await import("../backend/workspaceSync");
+
+        // Upload character sheet image to Supabase Storage bucket 'Spark' for durable persistence
+        const rawSheetUrl = data.characterSheetUrl || data.characterImageUrl || null;
+        let durableSheetUrl = rawSheetUrl;
+        if (rawSheetUrl) {
+          try {
+            durableSheetUrl = await uploadCharacterSheetToStorage(brandId, rawSheetUrl);
+          } catch (storageErr) {
+            console.warn("[SparkContext] Character sheet storage upload notice:", storageErr);
+          }
+        }
+
+        // Update local character state with durable storage URL
+        if (durableSheetUrl) {
+          setState((prev: any) => ({
+            ...prev,
+            character: {
+              ...prev.character,
+              avatarUrl: durableSheetUrl,
+              imageUrl: durableSheetUrl,
+              characterSheetUrl: durableSheetUrl,
+            },
+          }));
+        }
+
         await persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
@@ -1000,29 +1025,31 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           review_required: reviewRequired,
         });
 
+        const voiceProfileObj = {
+          name: data.voiceProfile?.name || data.voiceName || "Executive Presenter",
+          language: data.voiceProfile?.language || "English",
+          tone: tone,
+          locked: true,
+          voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
+          description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
+        };
+
         await persistCharacterUpdate(brandId, {
           name: creatorName,
           role: "Lead Host",
           style: `${visualStyle} — ${creatorName} representing ${brandName}`,
-          avatarUrl: data.characterSheetUrl || data.characterImageUrl || null,
-          imageUrl: data.characterSheetUrl || data.characterImageUrl || null,
-          characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || null,
+          avatarUrl: durableSheetUrl,
+          imageUrl: durableSheetUrl,
+          characterSheetUrl: durableSheetUrl,
           traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
-          voice: {
-            name: data.voiceProfile?.name || "Spark_Executive_Male",
-            language: data.voiceProfile?.language || "English (Executive Male Accent)",
-            tone: tone,
-            locked: true,
-            voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
-            description: data.voiceProfile?.accent || data.voiceProfile?.description,
-          },
+          voice: voiceProfileObj,
         });
 
         // Persist connected accounts to cloud
         if (data.connectedAccounts && Array.isArray(data.connectedAccounts)) {
           for (const acc of data.connectedAccounts) {
             if (acc && acc.connected && acc.username) {
-              void persistAccountToken(brandId, {
+              await persistAccountToken(brandId, {
                 platform: acc.platform,
                 handle: `@${acc.username.replace(/^@+/, "")}`,
                 status: "connected",
@@ -1034,7 +1061,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Persist research sources to research_sources table in cloud
         if (initialResearchSources.length > 0) {
           for (const src of initialResearchSources) {
-            void persistResearchSourceCreate(brandId, src);
+            await persistResearchSourceCreate(brandId, src);
           }
         }
       } catch (persistErr) {

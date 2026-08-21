@@ -41,7 +41,32 @@ export const CharacterSheetLightbox: React.FC<CharacterSheetLightboxProps> = ({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen || !imageUrl) return null;
+  if (!isOpen) return null;
+
+  if (!imageUrl) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6 animate-in fade-in duration-200">
+        <div className="max-w-sm w-full bg-[#0B0F17] border border-white/10 rounded-2xl p-6 text-center space-y-4 shadow-2xl">
+          <div className="w-12 h-12 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-foreground">Character sheet not available</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              No character sheet image was found for {characterName}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleDownload = () => {
     const a = document.createElement("a");

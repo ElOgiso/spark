@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
+import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
 import {
   Brain,
   Mic,
@@ -65,6 +66,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
   // Purpose Expand State
   const [isPurposeExpanded, setIsPurposeExpanded] = useState(false);
+  const [showSheetLightbox, setShowSheetLightbox] = useState(false);
 
   // Content Pillar Add State
   const [showAddPillar, setShowAddPillar] = useState(false);
@@ -378,15 +380,30 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
           {/* Host Profile */}
           <div className="flex items-start gap-3">
             {character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl ? (
-              <img
-                src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
-                alt={character.name}
-                className="w-11 h-11 rounded-xl object-cover border border-accent/40 shrink-0"
-              />
+              <button
+                type="button"
+                onClick={() => setShowSheetLightbox(true)}
+                className="relative group shrink-0 focus:outline-none cursor-pointer"
+                title="Tap to zoom character sheet"
+              >
+                <img
+                  src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
+                  alt={character.name}
+                  className="w-11 h-11 rounded-xl object-cover border border-accent/40 group-hover:border-accent transition-colors"
+                />
+                <span className="absolute -bottom-1 -right-1 bg-accent/90 text-foreground text-[9px] px-1 rounded font-mono">
+                  Zoom
+                </span>
+              </button>
             ) : (
-              <div className="w-11 h-11 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-foreground shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSheetLightbox(true)}
+                className="w-11 h-11 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-foreground shrink-0 cursor-pointer"
+                title="Tap to zoom character sheet"
+              >
                 {character?.name?.[0] || "S"}
-              </div>
+              </button>
             )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">{character?.name || "Host"}</p>
@@ -1165,6 +1182,14 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
           </form>
         </div>
       )}
+
+      <CharacterSheetLightbox
+        isOpen={showSheetLightbox}
+        onClose={() => setShowSheetLightbox(false)}
+        imageUrl={character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl}
+        characterName={character?.name || "Lead Host"}
+        brandName={brand?.name || "SPARK"}
+      />
     </div>
   );
 }

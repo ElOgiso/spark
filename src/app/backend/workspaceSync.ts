@@ -541,8 +541,8 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
 
 export async function uploadCharacterSheetToStorage(brandId: string, imageUri: string): Promise<string> {
   if (!isSupabaseConfigured() || !brandId || !imageUri) return imageUri;
-  // If already a persistent remote URL, skip upload
-  if ((imageUri.startsWith("http://") || imageUri.startsWith("https://")) && !imageUri.startsWith("blob:")) {
+  // If already hosted in our Supabase Storage bucket, skip re-upload
+  if (imageUri.includes(".supabase.co/storage/v1/object/")) {
     return imageUri;
   }
 
