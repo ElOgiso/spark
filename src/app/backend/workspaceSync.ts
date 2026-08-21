@@ -333,6 +333,9 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
   const existingBrief = (existing?.brief && typeof existing.brief === "object" && !Array.isArray(existing.brief))
     ? existing.brief
     : {};
+  const existingBriefObj = (existingBrief.briefObject && typeof existingBrief.briefObject === "object" && !Array.isArray(existingBrief.briefObject))
+    ? existingBrief.briefObject
+    : {};
 
   const patch: Record<string, unknown> = {};
   if (production.status) {
@@ -347,25 +350,41 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     patch.status = statusMap[production.status] || production.status;
   }
   if (production.title) patch.title = production.title;
-  if (
-    production.scenes ||
-    production.aspectRatio ||
-    production.formats ||
-    (production as any).audioUrl ||
-    (production as any).videoUrl ||
-    (production as any).brief
-  ) {
-    patch.brief = {
-      ...existingBrief,
-      aspectRatio: production.aspectRatio || existingBrief.aspectRatio,
-      formats: production.formats || existingBrief.formats,
-      scenes: production.scenes || existingBrief.scenes,
-      sparkId: production.sparkId || existingBrief.sparkId,
-      audioUrl: (production as any).audioUrl || existingBrief.audioUrl,
-      videoUrl: (production as any).videoUrl || existingBrief.videoUrl,
-      briefObject: (production as any).brief || existingBrief.briefObject,
-    };
-  }
+
+  const genProg =
+    production.generationProgress ||
+    (production as any).brief?.generationProgress ||
+    (production as any).brief?.generatedAssets?.generationProgress ||
+    existingBrief.generationProgress ||
+    existingBriefObj.generationProgress;
+
+  const audioUrl = (production as any).audioUrl || (production as any).brief?.audioUrl || existingBrief.audioUrl || existingBriefObj.audioUrl;
+  const videoUrl = (production as any).videoUrl || (production as any).brief?.videoUrl || existingBrief.videoUrl || existingBriefObj.videoUrl;
+  const storyboardGridUrl = (production as any).brief?.storyboardGridUrl || (production as any).brief?.generatedAssets?.storyboardGridUrl || existingBrief.storyboardGridUrl || existingBriefObj.storyboardGridUrl;
+
+  const briefObject = (production as any).brief
+    ? {
+        ...(production as any).brief,
+        audioUrl,
+        videoUrl,
+        storyboardGridUrl,
+        generationProgress: genProg,
+      }
+    : existingBriefObj;
+
+  patch.brief = {
+    ...existingBrief,
+    aspectRatio: production.aspectRatio || existingBrief.aspectRatio,
+    formats: production.formats || existingBrief.formats,
+    scenes: production.scenes || existingBrief.scenes,
+    sparkId: production.sparkId || existingBrief.sparkId,
+    audioUrl,
+    videoUrl,
+    storyboardGridUrl,
+    generationProgress: genProg,
+    briefObject,
+  };
+
   if ((production as any).reasoning) {
     (patch as any).reasoning = (production as any).reasoning;
   }

@@ -286,41 +286,7 @@ export class ProductionAssetService {
     const bId = (brand as any)?.id || "default-brand";
     const getStoragePath = (sub: string) => `brands/${bId}/${production.id}/${sub}`;
 
-    const persistCurrentStage = async (stageName: string) => {
-      try {
-        const { persistProductionUpdate, persistReviewUpdate } = await import("../../backend/workspaceSync");
-        const stageBrief: ProductionBrief = {
-          ...brief,
-          storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
-          storyboardGridUrl: realGridUrl,
-          generatedAssets: {
-            ...brief.generatedAssets,
-            storyboardGridUrl: realGridUrl,
-            thumbnails: currentThumbnails,
-            voiceoverUrl: realVoiceUrl,
-            generatedFrames: currentStoryboard.map((s) => s.image).filter(Boolean) as string[],
-            generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
-          },
-          audioUrl: realVoiceUrl,
-          videoUrl: realVideoUrl,
-        };
-        await persistProductionUpdate(production.id, {
-          brief: stageBrief,
-          audioUrl: realVoiceUrl,
-          videoUrl: realVideoUrl,
-          scenes: stageBrief.storyboard?.map((s) => ({
-            scene: s.scene,
-            description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
-            duration: s.duration,
-            image: s.image,
-            videoUrl: s.videoUrl,
-          })),
-        });
-        console.log(`[SPARK Pipeline] Persistent stage saved to Supabase -> ${stageName} (prod ${production.id})`);
-      } catch (stageSyncErr) {
-        console.warn(`[SPARK Pipeline] Stage ${stageName} cloud sync notice:`, stageSyncErr);
-      }
-    };
+    let latestProgressSnapshot: import("../../domain/types").GenerationProgress | undefined = undefined;
 
     const emitProgress = (
       percent: number,
@@ -335,21 +301,62 @@ export class ProductionAssetService {
       }
     ) => {
       if (signal?.aborted) return;
+      latestProgressSnapshot = {
+        percent: Math.min(100, Math.max(0, percent)),
+        stage,
+        stages: stages.map((s) => ({ ...s })),
+        message,
+        updatedAt: new Date().toISOString(),
+        partialAssets: {
+          storyboard: partialOverride?.storyboard ?? (currentStoryboard.length > 0 ? currentStoryboard : undefined),
+          thumbnails: partialOverride?.thumbnails ?? (currentThumbnails.length > 0 ? currentThumbnails.map((t) => ({ ...t })) : undefined),
+          voiceUrl: partialOverride?.voiceUrl ?? realVoiceUrl,
+          videoUrl: partialOverride?.videoUrl ?? realVideoUrl,
+          lastError: partialOverride?.lastError ?? lastError,
+        },
+      };
       if (onProgress) {
-        onProgress({
-          percent: Math.min(100, Math.max(0, percent)),
-          stage,
-          stages: stages.map((s) => ({ ...s })),
-          message,
-          updatedAt: new Date().toISOString(),
-          partialAssets: {
-            storyboard: partialOverride?.storyboard ?? (currentStoryboard.length > 0 ? currentStoryboard : undefined),
-            thumbnails: partialOverride?.thumbnails ?? (currentThumbnails.length > 0 ? currentThumbnails.map((t) => ({ ...t })) : undefined),
-            voiceUrl: partialOverride?.voiceUrl ?? realVoiceUrl,
-            videoUrl: partialOverride?.videoUrl ?? realVideoUrl,
-            lastError: partialOverride?.lastError ?? lastError,
+        onProgress(latestProgressSnapshot);
+      }
+    };
+
+    const persistCurrentStage = async (stageName: string) => {
+      try {
+        const { persistProductionUpdate, persistReviewUpdate } = await import("../../backend/workspaceSync");
+        const stageBrief: ProductionBrief = {
+          ...brief,
+          storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
+          storyboardGridUrl: realGridUrl,
+          generationProgress: latestProgressSnapshot,
+          generatedAssets: {
+            ...brief.generatedAssets,
+            storyboardGridUrl: realGridUrl,
+            thumbnails: currentThumbnails,
+            voiceoverUrl: realVoiceUrl,
+            generatedFrames: currentStoryboard.map((s) => s.image).filter(Boolean) as string[],
+            generatedVideos: realVideoUrl ? [realVideoUrl] : undefined,
+            generationProgress: latestProgressSnapshot,
           },
+          audioUrl: realVoiceUrl,
+          videoUrl: realVideoUrl,
+        };
+        await persistProductionUpdate(production.id, {
+          brief: stageBrief,
+          audioUrl: realVoiceUrl,
+          videoUrl: realVideoUrl,
+          generationProgress: latestProgressSnapshot,
+          isGeneratingAssets: latestProgressSnapshot ? (latestProgressSnapshot.stage !== "Complete" && latestProgressSnapshot.stage !== "Failed" && latestProgressSnapshot.percent < 100) : false,
+          scenes: stageBrief.storyboard?.map((s) => ({
+            scene: s.scene,
+            description: s.shotList || s.visualDescription || `Scene ${s.scene}`,
+            duration: s.duration,
+            image: s.image,
+            videoUrl: s.videoUrl,
+          })),
         });
+        console.log(`[SPARK Pipeline] Persistent stage saved to Supabase -> ${stageName} (prod ${production.id}, ${latestProgressSnapshot?.percent ?? 0}%)`);
+      } catch (stageSyncErr) {
+        console.warn(`[SPARK Pipeline] Stage ${stageName} cloud sync notice:`, stageSyncErr);
       }
     };
 

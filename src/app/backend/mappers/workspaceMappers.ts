@@ -170,12 +170,20 @@ export function productionRowToDomain(row: ProductionRow): Production {
   const brief = (row.brief && typeof row.brief === "object" && !Array.isArray(row.brief)
     ? row.brief
     : {}) as Record<string, unknown>;
+  const briefObj = (brief.briefObject && typeof brief.briefObject === "object" && !Array.isArray(brief.briefObject)
+    ? brief.briefObject
+    : {}) as Record<string, unknown>;
+
   const scenes = Array.isArray(brief.scenes)
     ? (brief.scenes as Production["scenes"])
+    : Array.isArray(briefObj.storyboard)
+    ? (briefObj.storyboard as Production["scenes"])
     : [];
+
   const formats = Array.isArray(brief.formats)
     ? (brief.formats as string[])
     : ["Short-form"];
+
   const statusMap: Record<string, Production["status"]> = {
     drafting: "Drafting",
     ready_for_review: "Ready for Review",
@@ -184,6 +192,73 @@ export function productionRowToDomain(row: ProductionRow): Production {
     published: "Published",
     failed: "Failed",
   };
+
+  const audioUrl =
+    typeof brief.audioUrl === "string" && brief.audioUrl
+      ? brief.audioUrl
+      : typeof briefObj.audioUrl === "string" && briefObj.audioUrl
+      ? briefObj.audioUrl
+      : undefined;
+
+  const videoUrl =
+    typeof brief.videoUrl === "string" && brief.videoUrl
+      ? brief.videoUrl
+      : typeof briefObj.videoUrl === "string" && briefObj.videoUrl
+      ? briefObj.videoUrl
+      : undefined;
+
+  const storyboardGridUrl =
+    typeof brief.storyboardGridUrl === "string" && brief.storyboardGridUrl
+      ? brief.storyboardGridUrl
+      : typeof briefObj.storyboardGridUrl === "string" && briefObj.storyboardGridUrl
+      ? briefObj.storyboardGridUrl
+      : (briefObj.generatedAssets as any)?.storyboardGridUrl;
+
+  // Extract canonical generation progress snapshot (brief.generationProgress is canonical)
+  const rawProgress =
+    (brief.generationProgress as any) ||
+    (briefObj.generationProgress as any) ||
+    (briefObj.generatedAssets && (briefObj.generatedAssets as any).generationProgress) ||
+    ((row.reasoning && typeof row.reasoning === "object") ? (row.reasoning as any).generationProgress : undefined);
+
+  let generationProgress: import("../../domain/types").GenerationProgress | undefined = undefined;
+  if (rawProgress && typeof rawProgress === "object") {
+    generationProgress = {
+      percent: typeof rawProgress.percent === "number" ? rawProgress.percent : 0,
+      stage: String(rawProgress.stage || "Drafting"),
+      stages: Array.isArray(rawProgress.stages) ? rawProgress.stages : [],
+      message: typeof rawProgress.message === "string" ? rawProgress.message : undefined,
+      updatedAt: typeof rawProgress.updatedAt === "string" ? rawProgress.updatedAt : undefined,
+      partialAssets: rawProgress.partialAssets || {
+        voiceUrl: audioUrl,
+        videoUrl: videoUrl,
+        storyboard: scenes,
+      },
+    };
+  }
+
+  // isGeneratingAssets: true ONLY IF progress exists, percent < 100, stage not Complete/Cancelled/Failed, and updatedAt is recent (last 45 mins)
+  let isGeneratingAssets = false;
+  if (generationProgress) {
+    const stageLower = (generationProgress.stage || "").toLowerCase();
+    const percent = generationProgress.percent || 0;
+    const isFinished = stageLower === "complete" || stageLower === "failed" || stageLower === "cancelled" || percent >= 100;
+    const updatedAtTime = generationProgress.updatedAt ? new Date(generationProgress.updatedAt).getTime() : 0;
+    const isRecent = Date.now() - updatedAtTime < 45 * 60 * 1000;
+    isGeneratingAssets = !isFinished && isRecent;
+  }
+
+  const mergedBrief: import("../../domain/types").ProductionBrief | undefined =
+    briefObj.title || briefObj.hook || Object.keys(briefObj).length > 0
+      ? {
+          ...(briefObj as any),
+          audioUrl: audioUrl || (briefObj as any).audioUrl,
+          videoUrl: videoUrl || (briefObj as any).videoUrl,
+          storyboardGridUrl: storyboardGridUrl || (briefObj as any).storyboardGridUrl,
+          generationProgress: generationProgress || (briefObj as any).generationProgress,
+        }
+      : undefined;
+
   return {
     id: row.id,
     title: row.title,
@@ -194,9 +269,11 @@ export function productionRowToDomain(row: ProductionRow): Production {
     aspectRatio: String(brief.aspectRatio ?? "9:16"),
     formats,
     scenes,
-    audioUrl: typeof brief.audioUrl === "string" ? brief.audioUrl : undefined,
-    videoUrl: typeof brief.videoUrl === "string" ? brief.videoUrl : undefined,
-    brief: (brief.briefObject as any) || undefined,
+    audioUrl,
+    videoUrl,
+    brief: mergedBrief,
+    generationProgress,
+    isGeneratingAssets,
     reasoning: (row.reasoning && typeof row.reasoning === "object" && !Array.isArray(row.reasoning)) ? (row.reasoning as any) : {},
   };
 }
@@ -220,6 +297,21 @@ export function domainProductionToInsert(
     Published: "published",
     Failed: "failed",
   };
+  const genProg = production.generationProgress || production.brief?.generationProgress || production.brief?.generatedAssets?.generationProgress;
+  const audioUrl = production.audioUrl || production.brief?.audioUrl;
+  const videoUrl = production.videoUrl || production.brief?.videoUrl;
+  const storyboardGridUrl = production.brief?.storyboardGridUrl || production.brief?.generatedAssets?.storyboardGridUrl;
+
+  const briefObject = production.brief
+    ? {
+        ...production.brief,
+        audioUrl,
+        videoUrl,
+        storyboardGridUrl,
+        generationProgress: genProg,
+      }
+    : undefined;
+
   return {
     brand_id: brandId,
     viral_spark_id: isUuid(production.sparkId) ? production.sparkId! : null,
@@ -231,9 +323,11 @@ export function domainProductionToInsert(
       formats: production.formats,
       scenes: production.scenes,
       sparkId: production.sparkId,
-      audioUrl: production.audioUrl,
-      videoUrl: production.videoUrl,
-      briefObject: production.brief,
+      audioUrl,
+      videoUrl,
+      storyboardGridUrl,
+      generationProgress: genProg,
+      briefObject,
     } as Json,
     assets: [],
     reasoning: (production.reasoning || {}) as Json,
@@ -250,6 +344,11 @@ export function reviewRowToDomain(row: ReviewItemRow): ReviewItem {
     approved: "Approved",
     needs_edit: "Needs Edit",
   };
+
+  const brief = (reasoning.brief as any) || undefined;
+  const videoUrl = typeof reasoning.videoUrl === "string" && reasoning.videoUrl ? reasoning.videoUrl : brief?.videoUrl;
+  const audioUrl = typeof reasoning.audioUrl === "string" && reasoning.audioUrl ? reasoning.audioUrl : brief?.audioUrl;
+
   return {
     id: row.id,
     productionId: row.production_id,
@@ -266,10 +365,10 @@ export function reviewRowToDomain(row: ReviewItemRow): ReviewItem {
       policyCheck: "Passed",
       technicalCheck: "Passed",
     },
-    brief: (reasoning.brief as any) || undefined,
+    brief,
     whyThisWorks: typeof reasoning.whyThisWorks === "string" ? reasoning.whyThisWorks : undefined,
-    videoUrl: typeof reasoning.videoUrl === "string" ? reasoning.videoUrl : undefined,
-    audioUrl: typeof reasoning.audioUrl === "string" ? reasoning.audioUrl : undefined,
+    videoUrl,
+    audioUrl,
   };
 }
 
