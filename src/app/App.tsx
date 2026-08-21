@@ -100,21 +100,8 @@ function AppContent() {
     reviewRequired: true,
   });
 
-  const [currentPage, setCurrentPage] = useState(() => {
-    if (typeof window !== "undefined" && window.location.pathname && window.location.pathname !== "/" && !window.location.pathname.startsWith("/auth")) {
-      return window.location.pathname;
-    }
-    return "/";
-  });
+  const [currentPage, setCurrentPage] = useState("/");
   const deviceType = useDeviceType();
-
-  const handleDesktopNavigate = (path: string) => {
-    const cleanPath = path.startsWith("/") ? path : `/${path}`;
-    if (typeof window !== "undefined" && window.history && window.history.pushState) {
-      window.history.pushState({}, "", cleanPath);
-    }
-    setCurrentPage(cleanPath);
-  };
 
   // Social Media OAuth detection (YouTube Shorts / X publishing connect ONLY — NOT Supabase Login)
   const getSocialOAuthProvider = (): "google" | "x" | null => {
@@ -188,6 +175,11 @@ function AppContent() {
       }
 
       if (isUserAuthenticated) {
+        if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
+          if (!search.includes("resume_onboarding") && pathname !== "/") {
+            window.history.replaceState({}, "", "/");
+          }
+        }
         if (!auth.isOnboardingComplete) {
           console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
@@ -346,7 +338,7 @@ function AppContent() {
         return (
           <ProtectedRoute>
             <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
-              <Navigation currentPath={currentPage} onNavigate={handleDesktopNavigate} />
+              <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
               <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {renderDesktopPage()}
               </div>
