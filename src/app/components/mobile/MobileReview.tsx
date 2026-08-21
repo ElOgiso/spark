@@ -373,9 +373,18 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                     </p>
 
                     {isDrafting && (
-                      <p className="text-xs text-accent font-mono mb-2">
-                        {progressPct ? `${progressPct}% — ${progressStage || "Generating"}` : "Spark is generating…"}
-                      </p>
+                      <div className="space-y-1 my-1.5">
+                        <div className="flex items-center justify-between text-xs text-accent font-mono">
+                          <span>{progressStage || "Synthesizing Media"}</span>
+                          <span className="font-bold">{progressPct ?? 15}%</span>
+                        </div>
+                        <div className="w-full h-1 bg-accent/20 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-accent to-emerald-400 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.max(progressPct ?? 15, 6)}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
 
                     {/* Stage + confidence + time */}

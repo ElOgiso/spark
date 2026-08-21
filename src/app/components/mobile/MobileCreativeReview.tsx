@@ -181,7 +181,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </div>
       </div>
 
-      {activeProd?.isGeneratingAssets && (
+      {(activeProd?.isGeneratingAssets || activeProd?.status === "drafting" || item?.stage === "drafting" || (activeProd?.generationProgress?.percent != null && activeProd.generationProgress.percent < 100)) && (
         <div className="mx-4 mt-4 p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

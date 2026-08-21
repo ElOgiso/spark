@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
+import { CharacterStudioModal } from "../ui/CharacterStudioModal";
+import { VoiceStudioModal } from "../ui/VoiceStudioModal";
 import {
   Brain,
   Mic,
@@ -67,6 +69,8 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   // Purpose Expand State
   const [isPurposeExpanded, setIsPurposeExpanded] = useState(false);
   const [showSheetLightbox, setShowSheetLightbox] = useState(false);
+  const [showCharacterStudio, setShowCharacterStudio] = useState(false);
+  const [showVoiceStudio, setShowVoiceStudio] = useState(false);
 
   // Content Pillar Add State
   const [showAddPillar, setShowAddPillar] = useState(false);
@@ -372,9 +376,18 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
       {/* 4. Character & Voice */}
       <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-          <Mic className="w-3.5 h-3.5 text-accent-foreground" /> Character & Voice
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+            <Mic className="w-3.5 h-3.5 text-accent-foreground" /> Character & Voice
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowCharacterStudio(true)}
+            className="text-[11px] text-accent-foreground font-medium flex items-center gap-1 hover:underline cursor-pointer"
+          >
+            <Edit3 className="w-3 h-3" /> Edit Character
+          </button>
+        </div>
 
         <div className="space-y-3">
           {/* Host Profile */}
@@ -382,9 +395,9 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             {character?.imageUrl || character?.avatarUrl || character?.characterSheetUrl ? (
               <button
                 type="button"
-                onClick={() => setShowSheetLightbox(true)}
+                onClick={() => setShowCharacterStudio(true)}
                 className="relative group shrink-0 focus:outline-none cursor-pointer"
-                title="Tap to zoom character sheet"
+                title="Tap to edit / generate character sheet"
               >
                 <img
                   src={character.imageUrl || character.avatarUrl || character.characterSheetUrl || ""}
@@ -392,15 +405,15 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                   className="w-11 h-11 rounded-xl object-cover border border-accent/40 group-hover:border-accent transition-colors"
                 />
                 <span className="absolute -bottom-1 -right-1 bg-accent/90 text-foreground text-[9px] px-1 rounded font-mono">
-                  Zoom
+                  Edit
                 </span>
               </button>
             ) : (
               <button
                 type="button"
-                onClick={() => setShowSheetLightbox(true)}
+                onClick={() => setShowCharacterStudio(true)}
                 className="w-11 h-11 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-foreground shrink-0 cursor-pointer"
-                title="Tap to zoom character sheet"
+                title="Tap to edit / generate character sheet"
               >
                 {character?.name?.[0] || "S"}
               </button>
@@ -429,18 +442,20 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 <p className="text-xs font-semibold text-foreground font-mono">{character?.voice?.name || "Default Voice"}</p>
                 <p className="text-[11px] text-muted-foreground">{character?.voice?.language || "English"}</p>
               </div>
-              {character?.voice?.locked && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-success/20 text-success text-[10px] font-semibold">
-                  <Lock className="w-2.5 h-2.5" /> Locked
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowVoiceStudio(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent-foreground text-[10px] font-semibold transition-colors cursor-pointer"
+              >
+                <Edit3 className="w-2.5 h-2.5" /> Edit Voice
+              </button>
             </div>
             {character?.voice?.tone && (
               <p className="text-xs text-muted-foreground italic">"{character.voice.tone}"</p>
             )}
             <button
               onClick={handlePreviewVoice}
-              className="w-full py-2 rounded-lg bg-background hover:bg-accent/20 text-xs font-semibold flex items-center justify-center gap-2 border border-border transition-colors min-h-[40px]"
+              className="w-full py-2 rounded-lg bg-background hover:bg-accent/20 text-xs font-semibold flex items-center justify-center gap-2 border border-border transition-colors min-h-[40px] cursor-pointer"
             >
               <Play className={`w-3.5 h-3.5 ${isPlayingVoicePreview ? "animate-pulse text-accent-foreground" : ""}`} />
               {isPlayingVoicePreview ? "Playing Voice..." : "Preview Voice"}
@@ -1189,6 +1204,16 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         imageUrl={character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl}
         characterName={character?.name || "Lead Host"}
         brandName={brand?.name || "SPARK"}
+      />
+
+      <CharacterStudioModal
+        isOpen={showCharacterStudio}
+        onClose={() => setShowCharacterStudio(false)}
+      />
+
+      <VoiceStudioModal
+        isOpen={showVoiceStudio}
+        onClose={() => setShowVoiceStudio(false)}
       />
     </div>
   );
