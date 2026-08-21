@@ -148,6 +148,7 @@ export interface ProductionBrief {
   storyboardGridUrl?: string;
   audioUrl?: string;
   videoUrl?: string;
+  generationProgress?: GenerationProgress;
   offerCta?: {
     id?: string;
     type?: OfferType;
