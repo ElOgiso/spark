@@ -28,8 +28,7 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
 
   const handleGenerateSheet = async () => {
