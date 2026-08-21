@@ -13,6 +13,7 @@ type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "s
 
 interface ReviewItem {
   id: string;
+  productionId: string;
   title: string;
   type: "creative" | "production" | "publishing";
   priority: "high" | "medium" | "low";
@@ -21,6 +22,12 @@ interface ReviewItem {
   timeWaiting: string;
   account: string;
   format: string;
+  videoUrl?: string;
+  audioUrl?: string;
+  brief?: any;
+  scenes?: any[];
+  generationProgress?: any;
+  isGeneratingAssets?: boolean;
 }
 
 const stageToChip: Record<ReviewItem["stage"], ChipVariant> = {
@@ -46,10 +53,13 @@ const stageTabs: { id: StageFilter; label: string }[] = [
 ];
 
 function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
-  const { approveReviewItem, rejectOrRequestEditReviewItem } = useSpark();
+  const { approveReviewItem, rejectOrRequestEditReviewItem, productions } = useSpark();
   const [approved, setApproved] = useState(false);
 
-  if (item.type === "creative") {
+  const activeProd = productions?.find((p) => p.id === item.productionId || p.id === item.id);
+  const hasMediaOrBrief = Boolean(activeProd || item.brief || item.videoUrl || item.audioUrl || (item.scenes && item.scenes.length > 0));
+
+  if (item.type === "creative" || hasMediaOrBrief) {
     return <MobileCreativeReview onBack={onBack} item={item} />;
   }
 
@@ -219,7 +229,7 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
 
   const reviews: ReviewItem[] = productions.map((p) => {
-    const rev = reviewItems.find((r) => r.productionId === p.id);
+    const rev = reviewItems.find((r) => r.productionId === p.id || r.id === p.id);
     
     let stage: "drafting" | "ready" | "needs_edit" | "approved" | "scheduled" = "drafting";
     if (["Ready for Review", "Awaiting Review", "Research Complete", "Planning Complete", "Storyboard Complete"].includes(p.status)) stage = "ready";
@@ -230,16 +240,29 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
     } else if (p.status === "Published") stage = "scheduled";
     else stage = "drafting";
 
+    const videoUrl = p.videoUrl || p.brief?.videoUrl || rev?.videoUrl || p.brief?.generatedAssets?.generatedVideos?.[0];
+    const audioUrl = p.audioUrl || p.brief?.audioUrl || rev?.audioUrl || p.brief?.generatedAssets?.voiceoverUrl;
+    const brief = p.brief || rev?.brief;
+    const scenes = p.scenes?.length ? p.scenes : p.brief?.storyboard;
+    const generationProgress = p.generationProgress || p.brief?.generationProgress || rev?.brief?.generationProgress;
+
     return {
       id: rev?.id || `rev-${p.id}`,
+      productionId: p.id,
       title: p.title,
-      type: (p.id === "p2" || p.id === "p5" ? "production" : "creative") as "creative" | "production" | "publishing",
-      priority: (p.id === "p1" || p.id === "p2" || p.id.includes("-")) ? "high" : "medium" as "high" | "medium" | "low",
-      stage: stage,
+      type: "creative",
+      priority: (p.id === "p1" || p.id === "p2" || p.id.includes("-")) ? "high" : "medium",
+      stage,
       aiConfidence: p.id === "p1" ? 94 : p.id === "p2" ? 88 : 85,
       timeWaiting: p.dateCreated === "2026-07-01" ? "2m" : "1h",
       account: rev?.account || (p.aspectRatio === "16:9" ? "YouTube" : "TikTok"),
-      format: p.formats.join(" + "),
+      format: p.formats ? p.formats.join(" + ") : "Short-form",
+      videoUrl,
+      audioUrl,
+      brief,
+      scenes,
+      generationProgress,
+      isGeneratingAssets: p.isGeneratingAssets,
     };
   });
 

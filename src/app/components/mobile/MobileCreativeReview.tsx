@@ -45,8 +45,18 @@ function clip(value: unknown, n: number, fallback: string): string {
 
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
   const { approveReviewItem, rejectOrRequestEditReviewItem, productions } = useSpark() as any;
-  const activeProd = productions?.find((p: any) => p.id === item?.productionId || p.id === item?.id);
+  const activeProd = productions?.find((p: any) =>
+    (item?.productionId && p.id === item.productionId) ||
+    (item?.id && p.id === item.id) ||
+    (item?.id && item.id.replace("rev-", "") === p.id)
+  );
   const brief = activeProd?.brief || item?.brief;
+  const genProgress = activeProd?.generationProgress || item?.generationProgress || brief?.generationProgress;
+  const isGenerating = Boolean(
+    activeProd?.isGeneratingAssets ||
+    item?.isGeneratingAssets ||
+    (genProgress && genProgress.stage !== "Complete" && genProgress.stage !== "Failed" && (genProgress.percent || 0) < 100)
+  );
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
@@ -181,34 +191,34 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </div>
       </div>
 
-      {(activeProd?.isGeneratingAssets || activeProd?.status === "drafting" || item?.stage === "drafting" || (activeProd?.generationProgress?.percent != null && activeProd.generationProgress.percent < 100)) && (
+      {isGenerating && genProgress && (
         <div className="mx-4 mt-4 p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <RotateCw className="w-3.5 h-3.5 text-accent animate-spin" />
               <span className="text-xs font-semibold text-foreground">
-                {activeProd.generationProgress?.stage ? `Stage: ${activeProd.generationProgress.stage}` : "Synthesizing Media"}
+                {genProgress?.stage ? `Stage: ${genProgress.stage}` : "Synthesizing Media"}
               </span>
             </div>
             <span className="text-[11px] font-mono font-bold text-accent bg-accent/20 px-2 py-0.5 rounded-full">
-              {activeProd.generationProgress?.percent ?? 15}%
+              {genProgress?.percent ?? 15}%
             </span>
           </div>
 
           <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-300"
-              style={{ width: `${Math.max(activeProd.generationProgress?.percent ?? 15, 6)}%` }}
+              style={{ width: `${Math.max(genProgress?.percent ?? 15, 6)}%` }}
             />
           </div>
 
           <p className="text-[11px] text-muted-foreground">
-            {activeProd.generationProgress?.message || "Synthesizing storyboard keyframes, thumbnails, and audio..."}
+            {genProgress?.message || "Synthesizing storyboard keyframes, thumbnails, and audio..."}
           </p>
 
-          {activeProd.generationProgress?.stages && (
+          {genProgress?.stages && (
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/40">
-              {activeProd.generationProgress.stages.map((stg: any) => (
+              {genProgress.stages.map((stg: any) => (
                 <div key={stg.id} className="flex items-center gap-1.5 text-[10px]">
                   {stg.status === "done" && <CheckCircle2 className="w-3 h-3 text-success flex-shrink-0" />}
                   {stg.status === "active" && <RotateCw className="w-3 h-3 text-accent animate-spin flex-shrink-0" />}
@@ -236,12 +246,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         {/* Playable Storyboard Draft Player */}
         <div className="p-0.5 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border overflow-hidden">
           <InteractiveVideoPlayer 
-            id={item?.id || "p1"} 
+            id={item?.id || activeProd?.id || "p1"} 
             title={proposal.title} 
             scenes={proposal.storyboard} 
             durationText="3:20"
-            videoUrl={activeProd?.videoUrl || item?.videoUrl || item?.brief?.videoUrl || item?.brief?.generatedAssets?.generatedVideos?.[0]}
-            audioUrl={activeProd?.audioUrl || item?.audioUrl || item?.brief?.audioUrl || item?.brief?.generatedAssets?.generatedAudio?.[0]}
+            videoUrl={activeProd?.videoUrl || item?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
+            audioUrl={activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0]}
             onApprove={() => {
               if (item?.id) {
                 approveReviewItem(item.id);
