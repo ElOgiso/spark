@@ -314,7 +314,11 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             scenes={proposal.storyboard} 
             durationText="3:20"
             videoUrl={activeProd?.videoUrl || item?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
-            audioUrl={activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0]}
+            audioUrl={
+              ((brief?.productionMode || activeProd?.mode || "standard") === "express" || !hasPlayableVideo)
+                ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])
+                : undefined
+            }
             onApprove={() => {
               if (item?.id) {
                 approveReviewItem(item.id);

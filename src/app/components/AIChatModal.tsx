@@ -1048,15 +1048,19 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                       }`}
                     />
 
-                    {/* Core Executive Glass Orb */}
-                    <div className="w-40 h-40 rounded-full border border-white/20 bg-card/80 backdrop-blur-2xl flex items-center justify-center shadow-2xl relative z-10">
-                      {sparkState.thinkingState ? (
-                        <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
-                      ) : isRecording ? (
-                        <AudioLines className="w-12 h-12 text-cyan-400 animate-pulse" />
-                      ) : (
-                        <Sparkles className="w-12 h-12 text-emerald-400 animate-pulse" />
-                      )}
+                    {/* Core Animated SPARK Logo Orb (Login + Onboard Exact Component) */}
+                    <div className="w-40 h-40 rounded-full border border-white/20 bg-card/80 backdrop-blur-2xl flex items-center justify-center shadow-2xl relative z-10 overflow-visible">
+                      <div className={`relative flex items-center justify-center transition-all duration-500 ${
+                        /haha|lol|😂|😄|great|viral|amazing|wow/i.test(messages.filter(m => m.sender === "spark").slice(-1)[0]?.text || "")
+                          ? "scale-125 drop-shadow-[0_0_55px_rgba(240,24,255,1)]"
+                          : isRecording
+                          ? "scale-115 animate-bounce drop-shadow-[0_0_40px_rgba(34,211,238,0.9)]"
+                          : sparkState.thinkingState
+                          ? "scale-120 saturate-150 animate-pulse drop-shadow-[0_0_50px_rgba(168,85,247,0.9)]"
+                          : "scale-100 opacity-90 drop-shadow-[0_0_25px_rgba(168,85,247,0.4)]"
+                      }`}>
+                        <SparkLogo variant="superspark" className="w-24 h-24" />
+                      </div>
                     </div>
                   </div>
 

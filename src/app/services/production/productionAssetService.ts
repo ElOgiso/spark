@@ -150,7 +150,7 @@ export class ProductionAssetService {
     brandId?: string;
     assetType: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
     storagePath: string;
-    dataUrlOrBlob: string;
+    dataUrlOrBlob: string | Blob;
     mimeType: string;
     prompt?: string;
     provider?: string;
@@ -159,13 +159,15 @@ export class ProductionAssetService {
     const assetId = `pa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    let finalPublicUrl = dataUrlOrBlob;
+    let finalPublicUrl = typeof dataUrlOrBlob === "string" ? dataUrlOrBlob : `blob:${assetId}`;
     let driveFileId: string | undefined = undefined;
     let driveWebViewLink: string | undefined = undefined;
     let uploadSuccess = false;
 
     let uploadBlob: Blob | null = null;
-    if (dataUrlOrBlob.startsWith("data:")) {
+    if (dataUrlOrBlob instanceof Blob) {
+      uploadBlob = dataUrlOrBlob;
+    } else if (typeof dataUrlOrBlob === "string" && dataUrlOrBlob.startsWith("data:")) {
       const base64Data = dataUrlOrBlob.split(",")[1];
       if (base64Data) {
         const byteCharacters = atob(base64Data);
@@ -745,14 +747,21 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
 
       stages[0].status = "done";
       stages[1].status = "active";
-      emitProgress(12, "Voice", "Synthesizing executive voiceover narration...");
 
-      // Synthesize real voiceover audio via ElevenLabs (with brand voiceId) -> Provider TTS pipeline (or reuse if present)
-      checkAborted();
-      if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
+      const isExpressMode = mode === "express";
+      const shouldSynthesizeExternalVoice = isExpressMode || Boolean((activeCreditSettings as any)?.generateExternalVoice);
+
+      if (!shouldSynthesizeExternalVoice) {
+        console.log(`[SPARK Pipeline] Mode is "${mode}" (standard/deep hybrid). Skipping separate ElevenLabs voiceover bed (narration/dialogue built into videoGeneration).`);
+        realVoiceUrl = undefined;
+        stages[1].status = "done";
+      } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         realVoiceUrl = production.audioUrl || brief.audioUrl;
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
+        stages[1].status = "done";
       } else {
+        emitProgress(12, "Voice", "Synthesizing express voiceover narration...");
+        checkAborted();
         try {
           const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
           const targetVoiceId = character?.voice?.voiceId;
@@ -807,9 +816,9 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
           console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
           if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
         }
+        stages[1].status = realVoiceUrl ? "done" : "failed";
       }
 
-      stages[1].status = realVoiceUrl ? "done" : "failed";
       await persistCurrentStage("Voice");
       stages[2].status = "active";
       emitProgress(20, "Keyframes", `Rendering ${aspectRatio} scene keyframes (Target Hero Frames)...`);
@@ -1071,21 +1080,61 @@ Brand: ${brand.name}
 
       if (!realVideoUrl) {
         try {
-          const { ModelRouter } = await import("../runtime/modelRouter");
-          const enablePerSceneClips = Boolean((params as any)?.enablePerSceneClips);
+          const isExpressNarrator = mode === "express";
 
-          if (enablePerSceneClips) {
-            // Optional path: per-scene clip generation
-            const totalVideoStages = currentStoryboard.length || 3;
+          if (isExpressNarrator) {
+            // NARRATOR PIPELINE (express): Compile stills + voiceover into video without calling videoGeneration provider
+            console.log(`[SPARK Pipeline] Mode is "${mode}" (Narrator). Compiling ordered stills + voiceover narration into master MP4 (0 AI video credits burned).`);
+            emitProgress(85, "Compile", "Compiling Narrator slideshow video from keyframe stills & voiceover...");
 
-            for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
-              checkAborted();
-              const scene = currentStoryboard[sIdx];
-              const sceneStill = scene.image || sceneImages[sIdx];
+            try {
+              const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+              const compiledBlob = await compileNarratorSlideshowVideo({
+                imageUrls: sceneImages.length > 0 ? sceneImages : (currentStoryboard.map(s => s.image).filter(Boolean) as string[]),
+                audioUrl: realVoiceUrl,
+                totalDurationSec: activeCreditSettings?.shortsDurationSec || 12,
+              });
 
-              const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+              if (compiledBlob) {
+                try {
+                  const storedCompiledVid = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "video",
+                    storagePath: getStoragePath("video/master.mp4"),
+                    dataUrlOrBlob: compiledBlob,
+                    mimeType: compiledBlob.type || "video/webm",
+                    prompt: "Narrator compiled slideshow video",
+                    provider: "NarratorSlideshowCompiler",
+                  });
+                  if (storedCompiledVid?.publicUrl) {
+                    realVideoUrl = storedCompiledVid.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video -> ${realVideoUrl}`);
+                  }
+                } catch (compileStorageErr: any) {
+                  console.warn("[SPARK Pipeline] Narrator compiled video storage upload failed:", compileStorageErr);
+                }
+              }
+            } catch (compilerErr: any) {
+              console.warn("[SPARK Pipeline] Narrator video compiler exception:", compilerErr);
+            }
+          } else {
+            // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion
+            const { ModelRouter } = await import("../runtime/modelRouter");
+            const enablePerSceneClips = Boolean((params as any)?.enablePerSceneClips);
 
-              const stageMotionPrompt = `
+            if (enablePerSceneClips) {
+              // Optional path: per-scene clip generation
+              const totalVideoStages = currentStoryboard.length || 3;
+
+              for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
+                checkAborted();
+                const scene = currentStoryboard[sIdx];
+                const sceneStill = scene.image || sceneImages[sIdx];
+
+                const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+
+                const stageMotionPrompt = `
 Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
 Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
 Environment must remain continuous (${identityPack.environmentString}).
@@ -1094,57 +1143,57 @@ Framing: ${panelFraming}.
 No resets, no new character, no scrambled order.
 `.trim();
 
-              console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
+                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
 
-              try {
-                checkAborted();
-                const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                  prompt: stageMotionPrompt,
-                  referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
-                  aspectRatio: identityPack.aspectRatio,
-                });
-                checkAborted();
+                try {
+                  checkAborted();
+                  const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
+                    prompt: stageMotionPrompt,
+                    referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
+                    aspectRatio: identityPack.aspectRatio,
+                  });
+                  checkAborted();
 
-                if (isValidMediaData(generatedClip)) {
-                  let finalClip = generatedClip;
-                  try {
-                    const storedClip = await this.uploadAssetToStorage({
-                      productionId: production.id,
-                      brandId: (brand as any).id,
-                      assetType: "video",
-                      storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
-                      dataUrlOrBlob: generatedClip,
-                      mimeType: "video/mp4",
-                      prompt: stageMotionPrompt,
-                      provider: "ModelRouter",
-                    });
-                    if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
-                  } catch (storageErr: any) {
-                    console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+                  if (isValidMediaData(generatedClip)) {
+                    let finalClip = generatedClip;
+                    try {
+                      const storedClip = await this.uploadAssetToStorage({
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        assetType: "video",
+                        storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
+                        dataUrlOrBlob: generatedClip,
+                        mimeType: "video/mp4",
+                        prompt: stageMotionPrompt,
+                        provider: "ModelRouter",
+                      });
+                      if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
+                      console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
+                    } catch (storageErr: any) {
+                      console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+                    }
+
+                    scene.videoUrl = finalClip;
+                    sceneClips.push(finalClip);
+                    if (!realVideoUrl) realVideoUrl = finalClip;
                   }
-
-                  scene.videoUrl = finalClip;
-                  sceneClips.push(finalClip);
-                  if (!realVideoUrl) realVideoUrl = finalClip;
+                } catch (stageVidErr: any) {
+                  if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
+                  console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
                 }
-              } catch (stageVidErr: any) {
-                if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
-                console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
+
+                const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
+                emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
               }
+            } else {
+              // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
+              const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
+              const videoDurationSec = activeCreditSettings?.shortsDurationSec || (mode === "standard" ? 8 : 10);
+              const sceneDescriptions = currentStoryboard
+                .map((s, i) => `Scene ${i + 1}: ${s.visualDescription || s.primaryChange || "Action"}`)
+                .join(" | ");
 
-              const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
-              emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
-            }
-          } else {
-            // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
-            const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
-            const videoDurationSec = activeCreditSettings?.shortsDurationSec || (mode === "express" ? 6 : mode === "standard" ? 8 : 10);
-            const sceneDescriptions = currentStoryboard
-              .map((s, i) => `Scene ${i + 1}: ${s.visualDescription || s.primaryChange || "Action"}`)
-              .join(" | ");
-
-            const masterMotionPrompt = `
+              const masterMotionPrompt = `
 Animate full storyboard sequence 1->N in exact order based on reference keyframes (Target Duration: ${videoDurationSec}s).
 TITLE: "${brief.title}"
 HOOK: "${brief.hook}"
@@ -1155,43 +1204,38 @@ Scenes: ${sceneDescriptions}.
 No resets, continuous camera motion, high retention visual pacing.
 `.trim();
 
-            console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(primaryRefImage)}]...`);
-            emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
+              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(primaryRefImage)}]...`);
+              emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
 
-            checkAborted();
-            const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
-              prompt: masterMotionPrompt,
-              referenceImageUrl: primaryRefImage,
-              aspectRatio: identityPack.aspectRatio,
-            });
-            checkAborted();
-
-            if (isValidMediaData(generatedMaster)) {
-              let finalMasterUrl = generatedMaster;
-              try {
-                const storedVid = await this.uploadAssetToStorage({
-                  productionId: production.id,
-                  brandId: (brand as any).id,
-                  assetType: "video",
-                  storagePath: getStoragePath("video/master.mp4"),
-                  dataUrlOrBlob: generatedMaster,
-                  mimeType: "video/mp4",
-                  prompt: masterMotionPrompt,
-                  provider: "ModelRouter",
-                });
-                if (storedVid?.publicUrl) finalMasterUrl = storedVid.publicUrl;
-                console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
-              } catch (storageErr: any) {
-                console.warn("[SPARK Pipeline] Master video storage upload failed, retaining provider URL:", storageErr);
-              }
-
-              realVideoUrl = finalMasterUrl;
-              sceneClips.push(finalMasterUrl);
-              currentStoryboard.forEach((s) => {
-                s.videoUrl = finalMasterUrl;
+              checkAborted();
+              const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
+                prompt: masterMotionPrompt,
+                referenceImageUrl: primaryRefImage,
+                aspectRatio: identityPack.aspectRatio,
               });
-            } else {
-              console.warn("[SPARK Pipeline] Master video returned empty/invalid video data");
+              checkAborted();
+
+              if (isValidMediaData(generatedMaster)) {
+                let finalMasterUrl = generatedMaster;
+                try {
+                  const storedVid = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "video",
+                    storagePath: getStoragePath("video/master.mp4"),
+                    dataUrlOrBlob: generatedMaster,
+                    mimeType: "video/mp4",
+                    prompt: masterMotionPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedVid?.publicUrl) finalMasterUrl = storedVid.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
+                } catch (storageErr: any) {
+                  console.warn("[SPARK Pipeline] Master video storage upload failed, retaining provider URL:", storageErr);
+                }
+
+                realVideoUrl = finalMasterUrl;
+              }
             }
           }
         } catch (vidErr: any) {
