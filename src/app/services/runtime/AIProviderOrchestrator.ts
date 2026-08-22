@@ -104,12 +104,23 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
   return undefined;
 }
 
-export function extractGrokVideoUrl(pollData: any): string {
-  if (!pollData) return "";
-  if (typeof pollData.video?.url === "string" && pollData.video.url) return pollData.video.url;
-  if (typeof pollData.video_url === "string" && pollData.video_url) return pollData.video_url;
-  if (typeof pollData.url === "string" && pollData.url) return pollData.url;
-  if (typeof pollData.data?.[0]?.url === "string" && pollData.data[0].url) return pollData.data[0].url;
+export function extractGrokVideoUrl(data: any): string {
+  if (!data) return "";
+  const candidates = [
+    data?.video?.url,
+    data?.response?.video?.url,
+    data?.logged?.video?.response?.video?.url,
+    data?.video_url,
+    data?.url,
+    data?.data?.[0]?.url,
+    data?.response?.url,
+    data?.result?.url,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim().length > 0) {
+      return c.trim();
+    }
+  }
   return "";
 }
 
@@ -1149,9 +1160,21 @@ export class AIProviderOrchestrator {
                   if (proxyPoll.ok) pollData = await proxyPoll.json();
                 }
 
-                if (pollData?.status === "done" || pollData?.status === "completed" || pollData?.status === "ready") {
+                const isFinished =
+                  pollData?.status === "done" ||
+                  pollData?.status === "completed" ||
+                  pollData?.status === "ready" ||
+                  pollData?.progress === 100 ||
+                  Boolean(extractGrokVideoUrl(pollData));
+
+                if (isFinished) {
                   finalVideoUrl = extractGrokVideoUrl(pollData);
-                  if (finalVideoUrl) break;
+                  if (finalVideoUrl) {
+                    console.log(`[Grok Provider] Grok video generation SUCCESS -> ${finalVideoUrl}`);
+                    break;
+                  } else {
+                    console.warn(`[Grok Provider] Poll indicates complete but extractGrokVideoUrl returned empty. Keys: ${Object.keys(pollData || {}).join(", ")}`);
+                  }
                 } else if (pollData?.status === "failed") {
                   throw new Error(`Grok video generation failed: ${pollData.error || "unknown"}`);
                 }
