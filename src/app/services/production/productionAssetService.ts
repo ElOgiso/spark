@@ -307,11 +307,20 @@ export class ProductionAssetService {
     brief: ProductionBrief;
     brand: Brand;
     character?: Character;
+    creditSettings?: import("../../domain/types").GenerationCreditSettings;
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character, onProgress, forceRegenerate, signal } = params;
+    const { production, brief, brand, character, creditSettings, onProgress, forceRegenerate, signal } = params;
+    const activeCreditSettings: import("../../domain/types").GenerationCreditSettings =
+      creditSettings || (brand as any)?.creditSettings || (production as any)?.creditSettings || {
+        thumbnailCount: 3,
+        keyframeCount: 3,
+        shortsDurationSec: 8,
+        cinematicDurationSec: 12,
+        maxVideoClips: 3,
+      };
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
@@ -811,10 +820,12 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
 
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
-        const totalScenes = storyboard.length || 3;
-        for (let sIdx = 0; sIdx < storyboard.length; sIdx++) {
+        const targetKeyframeCount = Math.min(Math.max(activeCreditSettings.keyframeCount || 3, 1), 6);
+        const effectiveStoryboard = storyboard.slice(0, targetKeyframeCount);
+        const totalScenes = effectiveStoryboard.length || 3;
+        for (let sIdx = 0; sIdx < effectiveStoryboard.length; sIdx++) {
           checkAborted();
-          const scene = storyboard[sIdx];
+          const scene = effectiveStoryboard[sIdx];
           if (!forceRegenerate && isValidMediaData(scene.image)) {
             console.log(`[SPARK Pipeline] Reusing existing Scene ${sIdx + 1} image -> ${scene.image}`);
             sceneImages.push(scene.image);
@@ -895,10 +906,12 @@ Hook context: "${brief.hook}". Brand: ${brand.name}.
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
-        const totalThumbs = thumbnails.length || 3;
-        for (let tIdx = 0; tIdx < thumbnails.length; tIdx++) {
+        const targetThumbCount = Math.min(Math.max(activeCreditSettings.thumbnailCount || 3, 1), 3);
+        const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
+        const totalThumbs = effectiveThumbnails.length || 3;
+        for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
           checkAborted();
-          const thumb = thumbnails[tIdx];
+          const thumb = effectiveThumbnails[tIdx];
           const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
           if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
             const existingThumbUrl = thumb.image || thumb.url;
