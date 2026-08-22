@@ -227,7 +227,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   }
 
   return (
-    <div className="min-h-screen bg-background pb-32">
+    <div className="min-h-screen bg-background pb-[340px]">
       <div className="sticky top-0 z-10 bg-background border-b border-border p-4">
         <button
           onClick={onBack}
@@ -479,68 +479,70 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       </div>
 
       {feedback && (
-        <div className="fixed bottom-36 left-4 right-4 bg-card border border-border px-4 py-3 rounded-xl flex items-center justify-between shadow-lg z-50 animate-pulse">
+        <div className="fixed bottom-[320px] left-4 right-4 bg-card border border-border px-4 py-3 rounded-2xl flex items-center justify-between shadow-xl z-50 animate-pulse">
           <span className="text-xs text-foreground font-medium">{feedback}</span>
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
-        {/* Row 1: Generation actions */}
-        <div className="grid grid-cols-2 gap-2">
-          {isGenerating ? (
-            <button
-              onClick={handleCancelGeneration}
-              className="py-3 px-3 bg-destructive/15 hover:bg-destructive/25 text-destructive rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-            >
-              <X className="w-4 h-4 animate-spin" />
-              Cancel Generation
-            </button>
-          ) : (
-            <button
-              onClick={() => handleGenerateAssets(false)}
-              className="py-3 px-3 bg-accent/20 hover:bg-accent/30 text-accent-foreground rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-            >
-              <Sparkles className="w-4 h-4 text-accent" />
-              {hasPlayableVideo ? "Generate Assets" : "Continue Generation"}
-            </button>
-          )}
-
+      {/* Solid Opaque Fixed Action Dock (Onboard Style) */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+      >
+        {/* 1) Continue generation / Generate Assets OR Cancel generation */}
+        {isGenerating ? (
           <button
-            onClick={() => handleGenerateAssets(true)}
-            disabled={isGenerating}
-            className="py-3 px-3 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+            onClick={handleCancelGeneration}
+            className="w-full py-3.5 px-4 rounded-2xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           >
-            <RotateCw className="w-3.5 h-3.5" />
-            Regenerate All
+            <X className="w-4 h-4 animate-spin text-red-400" />
+            <span>Cancel Generation</span>
           </button>
-        </div>
-
-        {/* Row 2: Management actions (Reject & Delete) */}
-        <div className="grid grid-cols-2 gap-2">
+        ) : (
           <button
-            onClick={handleReject}
-            className="py-3 px-3 bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+            onClick={() => handleGenerateAssets(false)}
+            className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           >
-            <Edit className="w-3.5 h-3.5" />
-            Request Revision
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>{hasPlayableVideo ? "Generate Assets" : "Continue Generation"}</span>
           </button>
+        )}
 
-          <button
-            onClick={handleDelete}
-            className="py-3 px-3 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete Production
-          </button>
-        </div>
+        {/* 2) Regenerate all */}
+        <button
+          onClick={() => handleGenerateAssets(true)}
+          disabled={isGenerating}
+          className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
+        >
+          <RotateCw className={`w-4 h-4 text-white/70 ${isGenerating ? "animate-spin" : ""}`} />
+          <span>Regenerate All</span>
+        </button>
 
-        {/* Row 3: Primary Approve Action */}
+        {/* 3) Reject / Request revision */}
+        <button
+          onClick={handleReject}
+          className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+        >
+          <Edit className="w-4 h-4 text-white/60" />
+          <span>Request Revision</span>
+        </button>
+
+        {/* 4) Delete production */}
+        <button
+          onClick={handleDelete}
+          className="w-full py-3.5 px-4 rounded-2xl border border-red-500/25 bg-red-500/5 hover:bg-red-500/15 text-red-400 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+        >
+          <Trash2 className="w-4 h-4 text-red-400/80" />
+          <span>Delete Production</span>
+        </button>
+
+        {/* 5) Approve production (PRIMARY — last, strongest purple CTA) */}
         <button
           onClick={handleApprove}
-          className="w-full py-4 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+          className="w-full py-4 rounded-2xl bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white text-base font-semibold tracking-wide flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(168,85,247,0.35)] transition-all active:scale-[0.98]"
         >
-          <CheckCircle2 className="w-5 h-5" />
-          Approve Production
+          <CheckCircle2 className="w-5 h-5 text-white" />
+          <span>Approve Production</span>
         </button>
       </div>
     </div>

@@ -155,7 +155,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-44 px-4 pt-5 space-y-4">
+      <div className="flex-1 overflow-y-auto pb-[340px] px-4 pt-5 space-y-4">
 
         {/* Title + AI score */}
         <div>
@@ -223,49 +223,74 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
       </div>
 
       {feedback && (
-        <div className="fixed bottom-44 left-4 right-4 bg-card border border-border px-4 py-3 rounded-xl flex items-center justify-between shadow-lg z-50 animate-pulse">
+        <div className="fixed bottom-[320px] left-4 right-4 bg-card border border-border px-4 py-3 rounded-2xl flex items-center justify-between shadow-xl z-50 animate-pulse">
           <span className="text-xs text-foreground font-medium">{feedback}</span>
         </div>
       )}
 
-      {/* Fixed action bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
-        <div className="grid grid-cols-2 gap-2">
-          {item.isGeneratingAssets ? (
-            <Button variant="danger" size="md" icon={<X className="w-4 h-4 animate-spin" />} onClick={handleCancel}>
-              Cancel Gen
-            </Button>
-          ) : (
-            <Button variant="secondary" size="md" icon={<Sparkles className="w-4 h-4 text-accent" />} onClick={() => handleGenerateAssets(false)}>
-              Continue Gen
-            </Button>
-          )}
-          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />} onClick={() => handleGenerateAssets(true)}>
-            Regenerate All
-          </Button>
-        </div>
+      {/* Solid Opaque Fixed Action Dock (Onboard Style) */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+      >
+        {/* 1) Continue generation / Generate Assets OR Cancel generation */}
+        {item.isGeneratingAssets ? (
+          <button
+            onClick={handleCancel}
+            className="w-full py-3.5 px-4 rounded-2xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          >
+            <X className="w-4 h-4 animate-spin text-red-400" />
+            <span>Cancel Generation</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => handleGenerateAssets(false)}
+            className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          >
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>Continue Generation</span>
+          </button>
+        )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />} onClick={() => { rejectOrRequestEditReviewItem(item.id); onBack(); }}>
-            Request Revision
-          </Button>
-          <Button variant="ghost" size="md" className="text-destructive border border-destructive/20 hover:bg-destructive/10" icon={<Trash2 className="w-4 h-4" />} onClick={handleDelete}>
-            Delete
-          </Button>
-        </div>
+        {/* 2) Regenerate all */}
+        <button
+          onClick={() => handleGenerateAssets(true)}
+          disabled={item.isGeneratingAssets}
+          className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
+        >
+          <RotateCw className={`w-4 h-4 text-white/70 ${item.isGeneratingAssets ? "animate-spin" : ""}`} />
+          <span>Regenerate All</span>
+        </button>
 
-        <Button
-          variant="approve"
-          size="xl"
-          fullWidth
-          icon={<CheckCircle2 className="w-5 h-5" />}
+        {/* 3) Reject / Request revision */}
+        <button
+          onClick={() => { rejectOrRequestEditReviewItem(item.id); onBack(); }}
+          className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+        >
+          <Pencil className="w-4 h-4 text-white/60" />
+          <span>Request Revision</span>
+        </button>
+
+        {/* 4) Delete production */}
+        <button
+          onClick={handleDelete}
+          className="w-full py-3.5 px-4 rounded-2xl border border-red-500/25 bg-red-500/5 hover:bg-red-500/15 text-red-400 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+        >
+          <Trash2 className="w-4 h-4 text-red-400/80" />
+          <span>Delete Production</span>
+        </button>
+
+        {/* 5) Approve production (PRIMARY — last, strongest purple CTA) */}
+        <button
           onClick={() => {
             approveReviewItem(item.id);
             setApproved(true);
           }}
+          className="w-full py-4 rounded-2xl bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white text-base font-semibold tracking-wide flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(168,85,247,0.35)] transition-all active:scale-[0.98]"
         >
-          Approve
-        </Button>
+          <CheckCircle2 className="w-5 h-5 text-white" />
+          <span>Approve Production</span>
+        </button>
       </div>
     </div>
   );
