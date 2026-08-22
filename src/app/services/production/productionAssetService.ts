@@ -1072,16 +1072,20 @@ Brand: ${brand.name}
       if (!realVideoUrl) {
         try {
           const { ModelRouter } = await import("../runtime/modelRouter");
-          const totalVideoStages = currentStoryboard.length || 3;
+          const enablePerSceneClips = Boolean((params as any)?.enablePerSceneClips);
 
-          for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
-            checkAborted();
-            const scene = currentStoryboard[sIdx];
-            const sceneStill = scene.image || sceneImages[sIdx];
+          if (enablePerSceneClips) {
+            // Optional path: per-scene clip generation
+            const totalVideoStages = currentStoryboard.length || 3;
 
-            const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+            for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
+              checkAborted();
+              const scene = currentStoryboard[sIdx];
+              const sceneStill = scene.image || sceneImages[sIdx];
 
-            const stageMotionPrompt = `
+              const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+
+              const stageMotionPrompt = `
 Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
 Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
 Environment must remain continuous (${identityPack.environmentString}).
@@ -1090,95 +1094,104 @@ Framing: ${panelFraming}.
 No resets, no new character, no scrambled order.
 `.trim();
 
-            console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
+              console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
 
-            try {
-              checkAborted();
-              const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                prompt: stageMotionPrompt,
-                referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
-                aspectRatio: identityPack.aspectRatio,
-              });
-              checkAborted();
+              try {
+                checkAborted();
+                const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
+                  prompt: stageMotionPrompt,
+                  referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
+                  aspectRatio: identityPack.aspectRatio,
+                });
+                checkAborted();
 
-              if (isValidMediaData(generatedClip)) {
-                let finalClip = generatedClip;
-                try {
-                  const storedClip = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "video",
-                    storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
-                    dataUrlOrBlob: generatedClip,
-                    mimeType: "video/mp4",
-                    prompt: stageMotionPrompt,
-                    provider: "ModelRouter",
-                  });
-                  if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
-                } catch (storageErr: any) {
-                  console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+                if (isValidMediaData(generatedClip)) {
+                  let finalClip = generatedClip;
+                  try {
+                    const storedClip = await this.uploadAssetToStorage({
+                      productionId: production.id,
+                      brandId: (brand as any).id,
+                      assetType: "video",
+                      storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
+                      dataUrlOrBlob: generatedClip,
+                      mimeType: "video/mp4",
+                      prompt: stageMotionPrompt,
+                      provider: "ModelRouter",
+                    });
+                    if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
+                  } catch (storageErr: any) {
+                    console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
+                  }
+
+                  scene.videoUrl = finalClip;
+                  sceneClips.push(finalClip);
+                  if (!realVideoUrl) realVideoUrl = finalClip;
                 }
-
-                scene.videoUrl = finalClip;
-                sceneClips.push(finalClip);
-                if (!realVideoUrl) realVideoUrl = finalClip;
-              } else {
-                console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} returned empty/invalid video data`);
+              } catch (stageVidErr: any) {
+                if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
+                console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
               }
-            } catch (stageVidErr: any) {
-              if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
-              console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
-              if (!lastError) lastError = `Video Stage ${sIdx + 1}: ${stageVidErr?.message || String(stageVidErr)}`;
+
+              const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
+              emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
             }
+          } else {
+            // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
+            const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
+            const videoDurationSec = activeCreditSettings?.shortsDurationSec || (mode === "express" ? 6 : mode === "standard" ? 8 : 10);
+            const sceneDescriptions = currentStoryboard
+              .map((s, i) => `Scene ${i + 1}: ${s.visualDescription || s.primaryChange || "Action"}`)
+              .join(" | ");
 
-            const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
-            emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
-          }
-
-          // If stage clips were generated, set primary video to first clip or master
-          if (sceneClips.length > 0 && !realVideoUrl) {
-            realVideoUrl = sceneClips[0];
-          }
-
-          // If no individual clips succeeded, perform single master fallback video request
-          if (!realVideoUrl) {
-            checkAborted();
-            const masterPrompt = `
-[${identityPack.aspectRatio} ${mode.toUpperCase()} MASTER VIDEO PREVIEW]
+            const masterMotionPrompt = `
+Animate full storyboard sequence 1->N in exact order based on reference keyframes (Target Duration: ${videoDurationSec}s).
 TITLE: "${brief.title}"
 HOOK: "${brief.hook}"
 VISUAL DIRECTION: "${brief.visualDirection}"
-${identityPack.combinedPromptPrefix}
+Character lock: ${character?.name || "Host"} (consistent appearance, identical face/hair).
+Environment lock: ${identityPack.environmentString}.
+Scenes: ${sceneDescriptions}.
+No resets, continuous camera motion, high retention visual pacing.
 `.trim();
-            const fallbackMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
-              prompt: masterPrompt,
-              referenceImageUrl: sceneImages[0] || undefined,
+
+            console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(primaryRefImage)}]...`);
+            emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
+
+            checkAborted();
+            const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
+              prompt: masterMotionPrompt,
+              referenceImageUrl: primaryRefImage,
               aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
-            if (isValidMediaData(fallbackMaster)) {
-              let finalVid = fallbackMaster;
+
+            if (isValidMediaData(generatedMaster)) {
+              let finalMasterUrl = generatedMaster;
               try {
                 const storedVid = await this.uploadAssetToStorage({
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "video",
                   storagePath: getStoragePath("video/master.mp4"),
-                  dataUrlOrBlob: fallbackMaster,
+                  dataUrlOrBlob: generatedMaster,
                   mimeType: "video/mp4",
-                  prompt: masterPrompt,
+                  prompt: masterMotionPrompt,
                   provider: "ModelRouter",
                 });
-                if (storedVid?.publicUrl) finalVid = storedVid.publicUrl;
+                if (storedVid?.publicUrl) finalMasterUrl = storedVid.publicUrl;
+                console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
               } catch (storageErr: any) {
-                console.warn("[SPARK Pipeline] Fallback video upload failed, retaining provider URL:", storageErr);
+                console.warn("[SPARK Pipeline] Master video storage upload failed, retaining provider URL:", storageErr);
               }
-              realVideoUrl = finalVid;
-              sceneClips.push(finalVid);
+
+              realVideoUrl = finalMasterUrl;
+              sceneClips.push(finalMasterUrl);
               currentStoryboard.forEach((s) => {
-                if (!s.videoUrl) s.videoUrl = finalVid;
+                s.videoUrl = finalMasterUrl;
               });
+            } else {
+              console.warn("[SPARK Pipeline] Master video returned empty/invalid video data");
             }
           }
         } catch (vidErr: any) {

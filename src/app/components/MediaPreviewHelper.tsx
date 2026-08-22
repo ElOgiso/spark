@@ -316,7 +316,7 @@ export function InteractiveVideoPlayer({
       if (videoRef.current) {
         videoRef.current.play().catch(() => {});
       }
-      if (audioRef.current) {
+      if (audioRef.current && !activeVideoUrl) {
         audioRef.current.play().catch(() => {});
       }
       timerRef.current = setInterval(() => {
@@ -336,7 +336,7 @@ export function InteractiveVideoPlayer({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPlaying, totalSeconds]);
+  }, [isPlaying, totalSeconds, activeVideoUrl]);
 
   useEffect(() => {
     const effectiveVolume = isMuted ? 0 : volume / 100;
@@ -347,7 +347,7 @@ export function InteractiveVideoPlayer({
   const handleSeek = (newSecs: number) => {
     setCurrentTime(newSecs);
     if (videoRef.current) videoRef.current.currentTime = newSecs;
-    if (audioRef.current) audioRef.current.currentTime = newSecs;
+    if (audioRef.current && !activeVideoUrl) audioRef.current.currentTime = newSecs;
   };
 
   const handleFullscreen = () => {
@@ -383,7 +383,7 @@ export function InteractiveVideoPlayer({
           src={audioUrl}
           onLoadedMetadata={(e) => {
             const dur = (e.target as HTMLAudioElement).duration;
-            if (dur && !isNaN(dur)) setDuration(Math.round(dur));
+            if (dur && !isNaN(dur) && !activeVideoUrl) setDuration(Math.round(dur));
           }}
           onEnded={() => setIsPlaying(false)}
         />
@@ -399,7 +399,7 @@ export function InteractiveVideoPlayer({
             playsInline
             onLoadedMetadata={(e) => {
               const dur = (e.target as HTMLVideoElement).duration;
-              if (dur && !isNaN(dur) && !audioUrl) setDuration(Math.round(dur));
+              if (dur && !isNaN(dur)) setDuration(Math.round(dur));
             }}
             className="absolute inset-0 w-full h-full object-cover"
           />
