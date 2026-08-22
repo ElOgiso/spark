@@ -52,6 +52,28 @@ const stageTabs: { id: StageFilter; label: string }[] = [
   { id: "drafting",  label: "Drafting" },
 ];
 
+function clipText(str: any, n = 35, fallback = ""): string {
+  if (typeof str !== "string" || !str.trim()) return fallback;
+  return str.length > n ? str.slice(0, n) + "…" : str;
+}
+
+function getPreviewMediaUrl(prod?: any, review?: any): string | undefined {
+  if (!prod && !review) return undefined;
+  const brief = prod?.brief || review?.brief;
+  const scenes = prod?.scenes?.length ? prod.scenes : brief?.storyboard;
+  const genAssets = brief?.generatedAssets;
+
+  if (scenes?.[0]?.image) return scenes[0].image;
+  if (genAssets?.generatedFrames?.[0]) return genAssets.generatedFrames[0];
+  if (genAssets?.thumbnails?.[0]?.image) return genAssets.thumbnails[0].image;
+  if (brief?.storyboard?.[0]?.image) return brief.storyboard[0].image;
+
+  if (prod?.videoUrl && (prod.videoUrl.startsWith("http") || prod.videoUrl.startsWith("data:"))) {
+    return prod.videoUrl;
+  }
+  return undefined;
+}
+
 function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
   const {
     approveReviewItem,
@@ -383,10 +405,26 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
       ) : (
         <div className="space-y-3">
           {filtered.map((review) => {
-            const isDrafting = review.stage === "drafting";
-            const prod = productions.find((p) => p.id === review.id);
-            const progressPct = prod?.generationProgress?.percent ?? prod?.brief?.generatedAssets?.generationProgress?.percent;
-            const progressStage = prod?.generationProgress?.stage ?? prod?.brief?.generatedAssets?.generationProgress?.stage;
+            const prod = productions.find(
+              (p) => p.id === review.productionId || p.id === review.id || p.id === review.id.replace("rev-", "")
+            );
+            const genProgress = prod?.generationProgress || prod?.brief?.generationProgress || review.generationProgress;
+            const progressPct = genProgress?.percent ?? (prod?.isGeneratingAssets || review.isGeneratingAssets ? 15 : 0);
+            const progressStage = genProgress?.stage || (prod?.isGeneratingAssets ? "Synthesizing Media" : "");
+
+            const isComplete = progressStage === "Complete" || progressPct >= 100;
+            const isFailed = progressStage === "Failed" || prod?.status === "Failed" || prod?.status === "Generation Failed";
+            const isCancelled = progressStage === "Cancelled" || prod?.status === "Cancelled";
+
+            const isDrafting = Boolean(
+              prod?.isGeneratingAssets ||
+              review.isGeneratingAssets ||
+              (genProgress && !isComplete && !isFailed && !isCancelled) ||
+              (review.stage === "drafting" && !isComplete && !isFailed && !isCancelled) ||
+              (["Drafting", "In Progress", "Synthesizing", "Queued"].includes(prod?.status || "") && !isComplete && !isFailed && !isCancelled)
+            );
+
+            const previewImage = getPreviewMediaUrl(prod, review);
 
             return (
               <div key={review.id} className="relative group">
@@ -403,12 +441,15 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                       <MiniMediaThumbnail
                         id={review.id}
                         title={review.title}
-                        isVideo={review.stage === "approved" || review.stage === "scheduled"}
+                        imageUrl={previewImage}
+                        isVideo={Boolean(prod?.videoUrl || review.videoUrl || isComplete)}
+                        aspectRatio={prod?.aspectRatio === "16:9" ? "16:9" : "9:16"}
                         className="shadow-md"
                       />
                       {isDrafting && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
-                          <Loader2 className="w-5 h-5 text-accent animate-spin" />
+                        <div className="absolute inset-0 bg-black/65 backdrop-blur-[0.5px] flex flex-col items-center justify-center rounded-lg p-0.5 text-center">
+                          <Loader2 className="w-4 h-4 text-accent animate-spin mb-0.5" />
+                          <span className="text-[9px] font-bold text-accent font-mono">{progressPct}%</span>
                         </div>
                       )}
                     </div>
@@ -425,24 +466,40 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                         {review.account} · {typeLabel[review.type]}
                       </p>
 
+                      {/* Progress Bar & Stage text while drafting */}
                       {isDrafting && (
-                        <div className="space-y-1 my-1.5">
+                        <div className="space-y-1 my-1.5 p-2 rounded-lg bg-accent/5 border border-accent/20">
                           <div className="flex items-center justify-between text-xs text-accent font-mono">
-                            <span>{progressStage || "Synthesizing Media"}</span>
-                            <span className="font-bold">{progressPct ?? 15}%</span>
+                            <span className="truncate max-w-[140px] font-semibold">{progressStage || "Synthesizing Media"}</span>
+                            <span className="font-bold">{progressPct}%</span>
                           </div>
-                          <div className="w-full h-1 bg-accent/20 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-accent/20 rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-gradient-to-r from-accent to-emerald-400 rounded-full transition-all duration-300"
-                              style={{ width: `${Math.max(progressPct ?? 15, 6)}%` }}
+                              className="h-full bg-gradient-to-r from-accent via-emerald-400 to-accent rounded-full transition-all duration-300 animate-pulse"
+                              style={{ width: `${Math.max(progressPct, 5)}%` }}
                             />
                           </div>
                         </div>
                       )}
 
+                      {/* Badges */}
+                      {isCancelled && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-muted-foreground text-xs font-medium my-1">
+                          <X className="w-3 h-3 text-muted-foreground" />
+                          Cancelled
+                        </div>
+                      )}
+
+                      {isFailed && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/15 text-destructive text-xs font-medium my-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {prod?.lastError ? clipText(prod.lastError, 30, "Generation Failed") : "Generation Failed"}
+                        </div>
+                      )}
+
                       {/* Stage + confidence + time */}
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <StatusChip variant={stageToChip[review.stage]} />
+                      <div className="flex items-center gap-3 flex-wrap mt-1">
+                        <StatusChip variant={isDrafting ? "drafting" : stageToChip[review.stage]} />
                         {!isDrafting && <ConfidenceBar value={review.aiConfidence} width="w-14" />}
                         <span className="text-xs text-muted-foreground">{review.timeWaiting}</span>
                       </div>

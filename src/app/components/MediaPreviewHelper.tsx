@@ -34,13 +34,14 @@ export function getMediaTheme(id: string) {
 interface MiniMediaThumbnailProps {
   id: string;
   title: string;
+  imageUrl?: string;
   aspectRatio?: "16:9" | "9:16" | "1:1";
   isVideo?: boolean;
   className?: string;
   duration?: string;
 }
 
-export function MiniMediaThumbnail({ id, title, aspectRatio = "16:9", isVideo = false, className = "", duration = "12:15" }: MiniMediaThumbnailProps) {
+export function MiniMediaThumbnail({ id, title, imageUrl, aspectRatio = "16:9", isVideo = false, className = "", duration = "12:15" }: MiniMediaThumbnailProps) {
   const theme = getMediaTheme(id);
   const isVertical = aspectRatio === "9:16";
   const isSquare = aspectRatio === "1:1";
@@ -53,19 +54,25 @@ export function MiniMediaThumbnail({ id, title, aspectRatio = "16:9", isVideo = 
 
   return (
     <div className={`relative ${sizeClass} rounded-lg overflow-hidden bg-background border border-border/60 flex-shrink-0 select-none ${className}`}>
-      {/* Background Gradient Layer with Grid pattern */}
-      <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} opacity-90`} />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/10 via-transparent to-black/30" />
-      
-      {/* Text Backdrop Panel */}
-      <div className="absolute inset-x-1 bottom-1 top-1 bg-black/25 backdrop-blur-[1px] rounded flex flex-col justify-between p-1">
-        <span className="text-[7px] font-bold text-white tracking-widest uppercase opacity-90 truncate">
-          {theme.tag}
-        </span>
-        <span className="text-[8px] font-black leading-none text-white tracking-tight break-all line-clamp-2 uppercase">
-          {theme.text}
-        </span>
-      </div>
+      {imageUrl ? (
+        <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
+      ) : (
+        <>
+          {/* Background Gradient Layer with Grid pattern */}
+          <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} opacity-90`} />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/10 via-transparent to-black/30" />
+          
+          {/* Text Backdrop Panel */}
+          <div className="absolute inset-x-1 bottom-1 top-1 bg-black/25 backdrop-blur-[1px] rounded flex flex-col justify-between p-1">
+            <span className="text-[7px] font-bold text-white tracking-widest uppercase opacity-90 truncate">
+              {theme.tag}
+            </span>
+            <span className="text-[8px] font-black leading-none text-white tracking-tight break-all line-clamp-2 uppercase">
+              {theme.text}
+            </span>
+          </div>
+        </>
+      )}
 
       {/* Overlay badges */}
       {isVideo && (
