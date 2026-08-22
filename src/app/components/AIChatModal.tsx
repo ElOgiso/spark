@@ -29,6 +29,7 @@ import { SparkLogo } from "./SparkLogo";
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { DepartmentActivity, DepartmentStep } from "./DepartmentActivity";
+import { getStoredTheme } from "../theme";
 import { ConversationSession, GenerationCreditSettings, DEFAULT_CREDIT_SETTINGS } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
 import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrator";
@@ -142,6 +143,7 @@ const FormattedText: React.FC<{ content: string }> = ({ content }) => {
 };
 
 export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
+  const isSparkMediaTheme = getStoredTheme() === "spark_media";
   const sparkState = useSpark() as any;
   const {
     brand,
@@ -930,10 +932,10 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex bg-background text-foreground font-sans overflow-hidden"
+        className={`fixed inset-0 z-[100] flex font-sans overflow-hidden ${isSparkMediaTheme ? "bg-[#0B0F17] text-white" : "bg-background text-foreground"}`}
       >
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-accent/10 blur-[150px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-success/5 blur-[150px] pointer-events-none" />
+        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[150px] pointer-events-none ${isSparkMediaTheme ? "bg-purple-600/15" : "bg-accent/10"}`} />
+        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[150px] pointer-events-none ${isSparkMediaTheme ? "bg-fuchsia-600/10" : "bg-success/5"}`} />
 
         {/* Phase 19C Desktop Left Sidebar (280–320px) */}
         {isSidebarOpen && (
@@ -1109,7 +1111,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
           </AnimatePresence>
           {/* Modal Header — Fixed h-16, shrink-0, zero reflow */}
           <header
-            className="relative flex items-center justify-between border-b border-border/50 px-4 sm:px-6 h-16 bg-card/40 backdrop-blur-md shrink-0 z-30"
+            className={`relative flex items-center justify-between px-4 sm:px-6 h-16 shrink-0 z-30 ${isSparkMediaTheme ? "bg-[#0B0F17]/90 border-b border-white/10 backdrop-blur-md" : "border-b border-border/50 bg-card/40 backdrop-blur-md"}`}
             style={{ paddingTop: "max(0px, env(safe-area-inset-top))" }}
           >
             <div className="flex items-center gap-3">
@@ -1163,7 +1165,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
           </header>
 
           {/* Messages Chat Area — Locked min-h-0 flex-1 scroll container */}
-          <main ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 scrollbar-none min-h-0">
+          <main ref={messagesContainerRef} className={`flex-1 overflow-y-auto px-4 sm:px-6 py-6 scrollbar-none min-h-0 ${isSparkMediaTheme ? "bg-[#0B0F17]" : ""}`}>
             <div className="max-w-3xl mx-auto space-y-6 min-h-full flex flex-col justify-start">
               {messages.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 max-w-md mx-auto my-auto space-y-4">
@@ -1194,8 +1196,8 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                         max-w-[85%] rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-lg flex flex-col gap-2.5
                         ${
                           isSpark
-                            ? "bg-card border border-border/60 text-foreground"
-                            : "bg-accent/15 border border-accent/30 text-foreground"
+                            ? (isSparkMediaTheme ? "bg-white/[0.04] border border-white/10 text-white/90" : "bg-card border border-border/60 text-foreground")
+                            : (isSparkMediaTheme ? "bg-purple-600/25 border border-purple-500/35 text-white" : "bg-accent/15 border border-accent/30 text-foreground")
                         }
                       `}
                     >
@@ -1393,28 +1395,28 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
 
           {/* Input Bar Area with Quick Actions */}
           <footer
-            className="border-t border-border/50 bg-card/95 backdrop-blur-md px-4 sm:px-6 pt-3 space-y-3 shrink-0 z-30"
+            className={`px-4 sm:px-6 pt-3 space-y-3 shrink-0 z-30 ${isSparkMediaTheme ? "bg-[#0B0F17]/95 border-t border-white/10 backdrop-blur-md" : "border-t border-border/50 bg-card/95 backdrop-blur-md"}`}
             style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 16px))" }}
           >
             {/* Quick Actions Pills */}
             <div className="max-w-3xl mx-auto flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
               <button
                 onClick={() => executeNaturalLanguageCommand("Create Vertical Short")}
-                className="px-3 py-1.5 rounded-full bg-accent/15 border border-accent/30 text-xs font-medium text-foreground hover:bg-accent/25 transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
+                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${isSparkMediaTheme ? "bg-purple-600/25 border-purple-500/40 text-purple-200 hover:bg-purple-600/40" : "bg-accent/15 border-accent/30 text-foreground hover:bg-accent/25"}`}
               >
-                <Sparkles className="w-3.5 h-3.5 text-accent-foreground" />
+                <Sparkles className="w-3.5 h-3.5 text-purple-300" />
                 Create Vertical Short
               </button>
               <button
                 onClick={() => executeNaturalLanguageCommand("Scan Market Trends")}
-                className="px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
+                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${isSparkMediaTheme ? "bg-white/[0.04] border-white/10 text-white/70 hover:text-white" : "bg-card border border-border text-muted-foreground hover:text-foreground"}`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-destructive" />
                 Scan Market Trends
               </button>
               <button
                 onClick={() => executeNaturalLanguageCommand("Review Pending Cuts")}
-                className="px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
+                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${isSparkMediaTheme ? "bg-white/[0.04] border-white/10 text-white/70 hover:text-white" : "bg-card border border-border text-muted-foreground hover:text-foreground"}`}
               >
                 <CheckCircle2 className="w-3.5 h-3.5 text-warning" />
                 Review Pending Cuts
@@ -1422,7 +1424,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
             </div>
 
             <div className="max-w-3xl mx-auto flex items-center gap-3">
-              <div className="relative flex-1 flex items-center bg-input-background border border-border rounded-2xl overflow-hidden focus-within:border-accent/50 transition-all duration-300">
+              <div className={`relative flex-1 flex items-center rounded-2xl overflow-hidden transition-all duration-300 ${isSparkMediaTheme ? "bg-white/[0.05] border border-white/15 focus-within:border-purple-500/60" : "bg-input-background border border-border focus-within:border-accent/50"}`}>
                 <input
                   type="text"
                   value={inputText}
@@ -1457,7 +1459,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                   ${
                     isVoiceModeOpen || isRecording
                       ? "bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-md shadow-purple-900/20"
-                      : "bg-input-background border-border text-muted-foreground hover:text-foreground hover:border-border-hover"
+                      : (isSparkMediaTheme ? "bg-white/[0.05] border-white/15 text-white/70 hover:text-white" : "bg-input-background border-border text-muted-foreground hover:text-foreground")
                   }
                 `}
                 title={isVoiceModeOpen ? "Exit Voice Mode" : "Open Super Spark Voice Mode"}
@@ -1469,7 +1471,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
               <button
                 onClick={handleSendMessage}
                 disabled={isRecording}
-                className="p-3.5 sm:p-4 rounded-2xl bg-foreground text-background transition-all duration-300 active:scale-95 disabled:opacity-50 hover:bg-foreground/90 shrink-0 cursor-pointer shadow-md shadow-black/25"
+                className={`p-3.5 sm:p-4 rounded-2xl transition-all duration-300 active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-md ${isSparkMediaTheme ? "bg-purple-600 hover:bg-purple-500 text-white" : "bg-foreground text-background hover:bg-foreground/90 shadow-black/25"}`}
               >
                 <Send className="w-5 h-5" />
               </button>
