@@ -75,7 +75,68 @@ SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and ligh
   };
 }
 
+export function isPlayableVideoUrl(val?: string | null): val is string {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (trimmed.length < 10) return false;
+  if (trimmed.includes("pending") || trimmed.includes("failed") || trimmed.includes("error")) return false;
+  return (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:video/")
+  );
+}
+
 export class ProductionAssetService {
+  /**
+   * Refetches existing video mp4 objects from Supabase Storage if UI state is missing playable URLs.
+   */
+  static async refetchVideoFromStorage(params: {
+    productionId: string;
+    brandId?: string;
+  }): Promise<{ videoUrl?: string; sceneClips?: string[] }> {
+    try {
+      const { getSupabaseClient } = await import("../../backend/supabaseClient");
+      const supabase = getSupabaseClient();
+      if (!supabase) return {};
+
+      const { brandId = "default-brand", productionId } = params;
+      const folderPaths = [
+        `brands/${brandId}/${productionId}/video`,
+        `${productionId}/video`,
+      ];
+
+      for (const folderPath of folderPaths) {
+        const { data: files, error } = await supabase.storage.from(SPARK_STORAGE_BUCKET).list(folderPath, {
+          limit: 20,
+          sortBy: { column: "created_at", order: "asc" },
+        });
+
+        if (!error && files && files.length > 0) {
+          const mp4Files = files.filter((f) => f.name && f.name.endsWith(".mp4"));
+          if (mp4Files.length > 0) {
+            const sceneClips: string[] = [];
+            for (const mp4 of mp4Files) {
+              const filePath = `${folderPath}/${mp4.name}`;
+              const { data: signedData } = await supabase.storage.from(SPARK_STORAGE_BUCKET).createSignedUrl(filePath, 60 * 60 * 24 * 7);
+              const clipUrl = signedData?.signedUrl || supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(filePath).data?.publicUrl;
+              if (clipUrl && isPlayableVideoUrl(clipUrl)) {
+                sceneClips.push(clipUrl);
+              }
+            }
+            if (sceneClips.length > 0) {
+              return { videoUrl: sceneClips[0], sceneClips };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[ProductionAssetService] Storage refetch notice:", err);
+    }
+    return {};
+  }
+
   /**
    * Complete Media Asset Pipeline:
    * 1. Working storage upload to verified Supabase bucket "Spark"
@@ -960,15 +1021,42 @@ Brand: ${brand.name}
       const sceneClips: string[] = [];
 
       checkAborted();
-      if (!forceRegenerate && isValidMediaData(production.videoUrl || brief.videoUrl)) {
-        realVideoUrl = production.videoUrl || brief.videoUrl;
-        console.log(`[SPARK Pipeline] Reusing existing master video -> ${realVideoUrl}`);
+      let existingVideoCandidate = [
+        production.videoUrl,
+        brief.videoUrl,
+        brief.generatedAssets?.generatedVideos?.[0],
+        ...(brief.storyboard?.map((s) => s.videoUrl) || []),
+      ].find(isPlayableVideoUrl);
+
+      if (!forceRegenerate && existingVideoCandidate) {
+        realVideoUrl = existingVideoCandidate;
+        console.log(`[SPARK Pipeline] Reusing existing playable master video -> ${realVideoUrl}`);
         if (currentStoryboard.length > 0) {
           currentStoryboard.forEach((s) => {
             if (!s.videoUrl) s.videoUrl = realVideoUrl;
           });
         }
-      } else {
+      } else if (!forceRegenerate) {
+        console.log("[SPARK Pipeline] No playable video in memory/brief. Attempting Storage refetch before AI video generation...");
+        const refetched = await ProductionAssetService.refetchVideoFromStorage({
+          productionId: production.id,
+          brandId: (brand as any).id,
+        });
+        if (refetched.videoUrl && isPlayableVideoUrl(refetched.videoUrl)) {
+          realVideoUrl = refetched.videoUrl;
+          if (refetched.sceneClips?.length) {
+            sceneClips.push(...refetched.sceneClips);
+          }
+          console.log(`[SPARK Pipeline] Refetched existing playable video from Storage -> ${realVideoUrl}`);
+          if (currentStoryboard.length > 0) {
+            currentStoryboard.forEach((s, idx) => {
+              s.videoUrl = refetched.sceneClips?.[idx] || realVideoUrl;
+            });
+          }
+        }
+      }
+
+      if (!realVideoUrl) {
         try {
           const { ModelRouter } = await import("../runtime/modelRouter");
           const totalVideoStages = currentStoryboard.length || 3;
@@ -1088,7 +1176,7 @@ ${identityPack.combinedPromptPrefix}
       }
 
       checkAborted();
-      const isVideoSuccess = Boolean(realVideoUrl && isValidMediaData(realVideoUrl));
+      const isVideoSuccess = Boolean(realVideoUrl && isPlayableVideoUrl(realVideoUrl));
       if (!isVideoSuccess && !lastError) {
         lastError = "Video synthesis completed but no valid playable video URL was generated.";
       }

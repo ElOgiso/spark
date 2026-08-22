@@ -124,7 +124,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const handleGenerateAssets = () => {
     if (activeProd?.id && generateProductionAssets) {
       setActionSuccess("Generating Assets...");
-      void generateProductionAssets(activeProd.id).then(() => {
+      void generateProductionAssets(activeProd.id, false).then(() => {
         setActionSuccess("Assets Generated");
         setTimeout(() => setActionSuccess(null), 3000);
       });
@@ -190,7 +190,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     setRegenerating(true);
     setActionSuccess("Regenerating Assets...");
     try {
-      await generateProductionAssets(prodId);
+      await generateProductionAssets(prodId, true);
       setActionSuccess("Regenerated");
     } catch (err) {
       console.warn("[CreativeReview] Regenerate notice:", err);

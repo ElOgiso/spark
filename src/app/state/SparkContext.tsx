@@ -1457,7 +1457,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const generateProductionAssets = async (productionId: string, forceRegenerate = true) => {
+  const generateProductionAssets = async (productionId: string, forceRegenerate = false) => {
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[SparkContext] Asset generation blocked: Production Generation is OFF.");
       return;
