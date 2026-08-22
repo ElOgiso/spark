@@ -930,7 +930,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex bg-background/98 backdrop-blur-2xl text-foreground font-sans overflow-hidden"
+        className="fixed inset-0 z-[100] flex bg-background text-foreground font-sans overflow-hidden"
       >
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-accent/10 blur-[150px] pointer-events-none" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-success/5 blur-[150px] pointer-events-none" />
@@ -985,7 +985,11 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ duration: 0.25, ease: "easeOut" }}
-                className="absolute inset-0 z-40 bg-background/95 backdrop-blur-3xl flex flex-col items-center justify-between p-8 text-center"
+                className="absolute inset-0 z-40 bg-background/95 backdrop-blur-3xl flex flex-col items-center justify-between p-6 sm:p-8 text-center"
+                style={{
+                  paddingTop: "max(1.5rem, env(safe-area-inset-top, 16px))",
+                  paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 16px))",
+                }}
               >
                 {/* Voice Mode Header */}
                 <div className="w-full max-w-2xl flex items-center justify-between pt-2">
@@ -1100,7 +1104,10 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
             )}
           </AnimatePresence>
           {/* Modal Header — Fixed h-16, shrink-0, zero reflow */}
-          <header className="relative flex items-center justify-between border-b border-border/50 px-6 h-16 bg-card/40 backdrop-blur-md shrink-0 z-30">
+          <header
+            className="relative flex items-center justify-between border-b border-border/50 px-4 sm:px-6 h-16 bg-card/40 backdrop-blur-md shrink-0 z-30"
+            style={{ paddingTop: "max(0px, env(safe-area-inset-top))" }}
+          >
             <div className="flex items-center gap-3">
               {/* Desktop Toggle Sidebar */}
               <button
@@ -1152,7 +1159,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
           </header>
 
           {/* Messages Chat Area — Locked min-h-0 flex-1 scroll container */}
-          <main ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-6 scrollbar-none min-h-0">
+          <main ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 scrollbar-none min-h-0">
             <div className="max-w-3xl mx-auto space-y-6 min-h-full flex flex-col justify-start">
               {messages.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 max-w-md mx-auto my-auto space-y-4">
@@ -1381,7 +1388,10 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
           </main>
 
           {/* Input Bar Area with Quick Actions */}
-          <footer className="border-t border-border/50 bg-card/45 backdrop-blur-md px-6 py-5 space-y-3 shrink-0">
+          <footer
+            className="border-t border-border/50 bg-card/95 backdrop-blur-md px-4 sm:px-6 pt-3 space-y-3 shrink-0 z-30"
+            style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 16px))" }}
+          >
             {/* Quick Actions Pills */}
             <div className="max-w-3xl mx-auto flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
               <button
@@ -1414,6 +1424,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  onFocus={(e) => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" })}
                   placeholder={
                     status === "error"
                       ? "Voice unavailable."
@@ -1422,7 +1433,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                       : "Ask Super Spark to play a video, approve drafts, or initialize options..."
                   }
                   disabled={isRecording}
-                  className="w-full bg-transparent px-5 py-4 text-sm outline-none border-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+                  className="w-full bg-transparent px-4 sm:px-5 py-3.5 sm:py-4 text-sm outline-none border-none placeholder:text-muted-foreground/60 disabled:opacity-50"
                 />
 
                 {isRecording && (
@@ -1438,7 +1449,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
               <button
                 onClick={toggleVoiceMode}
                 className={`
-                  relative p-4 rounded-2xl border transition-all duration-300 active:scale-95 overflow-hidden shrink-0 cursor-pointer
+                  relative p-3.5 sm:p-4 rounded-2xl border transition-all duration-300 active:scale-95 overflow-hidden shrink-0 cursor-pointer
                   ${
                     isVoiceModeOpen || isRecording
                       ? "bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-md shadow-purple-900/20"
@@ -1454,7 +1465,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
               <button
                 onClick={handleSendMessage}
                 disabled={isRecording}
-                className="p-4 rounded-2xl bg-foreground text-background transition-all duration-300 active:scale-95 disabled:opacity-50 hover:bg-foreground/90 shrink-0 cursor-pointer shadow-md shadow-black/25"
+                className="p-3.5 sm:p-4 rounded-2xl bg-foreground text-background transition-all duration-300 active:scale-95 disabled:opacity-50 hover:bg-foreground/90 shrink-0 cursor-pointer shadow-md shadow-black/25"
               >
                 <Send className="w-5 h-5" />
               </button>

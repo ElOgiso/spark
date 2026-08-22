@@ -227,27 +227,32 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   }
 
   return (
-    <div className="min-h-screen bg-background pb-[340px]">
-      <div className="sticky top-0 z-10 bg-background border-b border-border p-4">
+    <div className="fixed inset-0 z-[90] bg-[#0B0F17] text-white flex flex-col overflow-hidden">
+      <div
+        className="sticky top-0 z-10 bg-[#0B0F17]/95 backdrop-blur-md border-b border-white/10 p-4 shrink-0"
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top, 12px))" }}
+      >
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-muted-foreground mb-4"
+          className="flex items-center gap-2 text-white/70 hover:text-white mb-3 cursor-pointer active:scale-95 transition-all"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Back</span>
+          <span className="text-sm font-medium">Back to Review</span>
         </button>
-        <h1 className="text-xl font-medium mb-3">{proposal.title}</h1>
+        <h1 className="text-lg font-bold leading-snug mb-2 text-white line-clamp-2">{proposal.title}</h1>
         <div className="flex gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/20 text-success">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
             <TrendingUp className="w-3.5 h-3.5" />
-            <span className="text-xs font-medium">{proposal.opportunityScore}%</span>
+            <span className="text-xs font-semibold">{proposal.opportunityScore}% Fit</span>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/30">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
             <Sparkles className="w-3.5 h-3.5" />
-            <span className="text-xs font-medium">{proposal.aiConfidence}% AI</span>
+            <span className="text-xs font-semibold">{proposal.aiConfidence}% AI Confidence</span>
           </div>
         </div>
       </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 pb-[380px] min-h-0">
 
       {isGenerating && genProgress && (
         <div className="mx-4 mt-4 p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-2.5">
@@ -484,10 +489,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </div>
       )}
 
+      </div>
+
       {/* Solid Opaque Fixed Action Dock (Onboard Style) */}
       <div
         className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
-        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 16px))" }}
       >
         {/* 1) Continue generation / Generate Assets OR Cancel generation */}
         {isGenerating ? (

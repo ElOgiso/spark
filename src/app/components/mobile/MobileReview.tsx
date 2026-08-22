@@ -138,24 +138,27 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="fixed inset-0 z-[90] bg-[#0B0F17] text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border px-4 py-4 flex items-center gap-3">
+      <div
+        className="sticky top-0 z-10 bg-[#0B0F17]/95 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center gap-3 shrink-0"
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top, 12px))" }}
+      >
         <button
           onClick={onBack}
-          className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0 active:bg-accent/40 transition-colors"
+          className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 active:bg-white/20 transition-colors text-white"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-muted-foreground">{typeLabel[item.type]} Review</p>
-          <p className="text-sm font-medium truncate">{item.account}</p>
+          <p className="text-xs text-white/60">{typeLabel[item.type]} Review</p>
+          <p className="text-sm font-semibold truncate text-white">{item.account}</p>
         </div>
         <StatusChip variant={stageToChip[item.stage]} />
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-[340px] px-4 pt-5 space-y-4">
+      <div className="flex-1 overflow-y-auto pb-[380px] px-4 pt-5 space-y-4 min-h-0">
 
         {/* Title + AI score */}
         <div>
@@ -231,7 +234,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
       {/* Solid Opaque Fixed Action Dock (Onboard Style) */}
       <div
         className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
-        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 16px))" }}
       >
         {/* 1) Continue generation / Generate Assets OR Cancel generation */}
         {item.isGeneratingAssets ? (
