@@ -104,6 +104,15 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
   return undefined;
 }
 
+export function extractGrokVideoUrl(pollData: any): string {
+  if (!pollData) return "";
+  if (typeof pollData.video?.url === "string" && pollData.video.url) return pollData.video.url;
+  if (typeof pollData.video_url === "string" && pollData.video_url) return pollData.video_url;
+  if (typeof pollData.url === "string" && pollData.url) return pollData.url;
+  if (typeof pollData.data?.[0]?.url === "string" && pollData.data[0].url) return pollData.data[0].url;
+  return "";
+}
+
 export class AIProviderOrchestrator {
   private static plugins: Map<AIProviderId, AIProviderPlugin> = new Map();
   private static providerHealth: Map<AIProviderId, { healthy: boolean; latencyMs: number; errorCount: number }> = new Map();
@@ -139,15 +148,18 @@ export class AIProviderOrchestrator {
 
           const extractVeoUri = (data: any): string => {
             if (!data) return "";
-            if (typeof data.videoUrl === "string" && data.videoUrl) return data.videoUrl;
-            if (typeof data.url === "string" && data.url) return data.url;
-            if (typeof data.uri === "string" && data.uri) return data.uri;
-            if (typeof data.video?.uri === "string" && data.video.uri) return data.video.uri;
-            if (Array.isArray(data.generatedVideos) && data.generatedVideos[0]?.video?.uri) {
-              return data.generatedVideos[0].video.uri;
-            }
-            if (Array.isArray(data.generateVideoResponse?.generatedSamples) && data.generateVideoResponse.generatedSamples[0]?.video?.uri) {
-              return data.generateVideoResponse.generatedSamples[0].video.uri;
+            const paths = [
+              data?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri,
+              data?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri,
+              data?.response?.generatedVideos?.[0]?.video?.uri,
+              data?.generatedVideos?.[0]?.video?.uri,
+              data?.video?.uri,
+              data?.uri,
+              data?.videoUrl,
+              data?.url,
+            ];
+            for (const p of paths) {
+              if (typeof p === "string" && p.trim()) return p.trim();
             }
             if (data.response) {
               const nested = extractVeoUri(data.response);
@@ -163,30 +175,41 @@ export class AIProviderOrchestrator {
           const convertToPlayableUrl = async (rawUri: string): Promise<string> => {
             if (!rawUri) return "";
             if (rawUri.startsWith("data:") || rawUri.startsWith("blob:")) return rawUri;
+
+            const needsKey =
+              rawUri.includes("generativelanguage.googleapis.com") ||
+              rawUri.includes("files/") ||
+              rawUri.includes(":download");
+
+            const headers: Record<string, string> = {};
             let fetchUrl = rawUri;
-            if (apiKey && rawUri.includes("generativelanguage.googleapis.com") && !rawUri.includes("key=")) {
-              fetchUrl = `${rawUri}${rawUri.includes("?") ? "&" : "?"}key=${apiKey}`;
-            }
-            try {
-              const resp = await fetch(fetchUrl, {
-                headers: apiKey ? { "x-goog-api-key": apiKey } : undefined,
-              });
-              if (resp.ok) {
-                const blob = await resp.blob();
-                return new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    const base64data = reader.result as string;
-                    resolve(base64data);
-                  };
-                  reader.onerror = () => resolve(fetchUrl);
-                  reader.readAsDataURL(blob);
-                });
+            if (needsKey && apiKey) {
+              headers["x-goog-api-key"] = apiKey;
+              if (!fetchUrl.includes("key=")) {
+                fetchUrl = `${fetchUrl}${fetchUrl.includes("?") ? "&" : "?"}key=${encodeURIComponent(apiKey)}`;
               }
-            } catch (fetchErr) {
-              console.warn("[Gemini Provider] Veo video binary conversion notice:", fetchErr);
             }
-            return fetchUrl;
+
+            try {
+              const res = await fetch(fetchUrl, { headers });
+              if (!res.ok) {
+                console.warn(`[Veo Download] Download failed ${res.status}:`, fetchUrl.slice(0, 120));
+                return rawUri;
+              }
+              const buf = await res.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              let binary = "";
+              const chunkSize = 8192;
+              for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, i + chunkSize);
+                binary += String.fromCharCode.apply(null, chunk as any);
+              }
+              const b64 = btoa(binary);
+              return `data:video/mp4;base64,${b64}`;
+            } catch (err) {
+              console.warn("[Veo Download] Binary conversion notice:", err);
+              return rawUri;
+            }
           };
 
           let opName = "";
@@ -1059,7 +1082,7 @@ export class AIProviderOrchestrator {
                 if (vRes.ok) {
                   const vData = await vRes.json();
                   requestId = vData.id || vData.request_id || "";
-                  finalVideoUrl = vData.video_url || vData.url || "";
+                  finalVideoUrl = extractGrokVideoUrl(vData);
                   if (requestId || finalVideoUrl) break;
                 } else {
                   const errTxt = await vRes.text().catch(() => "");
@@ -1085,7 +1108,7 @@ export class AIProviderOrchestrator {
                 if (proxyRes.ok) {
                   const data = await proxyRes.json();
                   requestId = data.id || data.request_id || "";
-                  finalVideoUrl = data.video_url || data.url || "";
+                  finalVideoUrl = extractGrokVideoUrl(data);
                   if (requestId || finalVideoUrl) break;
                 } else {
                   const errTxt = await proxyRes.text().catch(() => "");
@@ -1127,7 +1150,7 @@ export class AIProviderOrchestrator {
                 }
 
                 if (pollData?.status === "done" || pollData?.status === "completed" || pollData?.status === "ready") {
-                  finalVideoUrl = pollData.video_url || pollData.url || pollData.data?.[0]?.url || "";
+                  finalVideoUrl = extractGrokVideoUrl(pollData);
                   if (finalVideoUrl) break;
                 } else if (pollData?.status === "failed") {
                   throw new Error(`Grok video generation failed: ${pollData.error || "unknown"}`);
