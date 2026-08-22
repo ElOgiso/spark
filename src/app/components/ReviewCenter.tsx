@@ -132,8 +132,8 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
   const { productions, reviewItems, brand, character } = useSpark() as any;
   const [activeStage, setActiveStage] = useState<Stage>("all");
 
-  const items: ProductionItem[] = productions.map((p) => {
-    const rev = reviewItems.find((r) => r.productionId === p.id);
+  const items: ProductionItem[] = productions.map((p: any) => {
+    const rev = reviewItems.find((r: any) => r.productionId === p.id);
     
     let stage: Stage = "drafting";
     if (["Ready for Review", "Awaiting Review", "Research Complete", "Planning Complete", "Storyboard Complete"].includes(p.status)) stage = "ready";

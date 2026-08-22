@@ -3,7 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { NotificationService } from "../notifications/notificationService";
 import { Button, WhySparkRecommends } from "./ds";
-import { InteractiveVideoPlayer, ThumbnailVariantCard } from "./MediaPreviewHelper";
+import { InteractiveVideoPlayer, ThumbnailVariantCard, MiniMediaThumbnail } from "./MediaPreviewHelper";
 import {
   ArrowLeft,
   TrendingUp,
