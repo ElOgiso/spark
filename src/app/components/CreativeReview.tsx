@@ -56,7 +56,7 @@ function clip(value: unknown, n: number, fallback: string): string {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
-  const { reviewItems, productions, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
+  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
 
   // 1. Resolve focus target ID from query params or sessionStorage
   const [focusId] = useState<string | null>(() => {
@@ -333,6 +333,99 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <ArrowLeft className="w-4 h-4" />
             Back to Review Queue
           </button>
+
+          {/* Quick Production Queue Strip */}
+          {productions.length > 1 && (
+            <div className="p-3.5 rounded-2xl bg-card border border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Production Queue ({productions.length})
+                </span>
+                <button
+                  onClick={onBack}
+                  className="text-xs text-accent hover:underline flex items-center gap-1"
+                >
+                  View Full Table
+                </button>
+              </div>
+              <div className="flex items-center gap-3 overflow-x-auto scrollbar-none pb-1">
+                {productions.map((p: any) => {
+                  const rev = reviewItems.find((r: any) => r.productionId === p.id || r.id === p.id);
+                  const brief = p.brief || rev?.brief;
+
+                  const videoUrl = p.videoUrl || rev?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
+
+                  const storyboardImage =
+                    p.scenes?.find((s: any) => s.image)?.image ||
+                    brief?.storyboard?.find((s: any) => s.image)?.image ||
+                    p.scenes?.[0]?.image ||
+                    brief?.storyboard?.[0]?.image ||
+                    brief?.generatedAssets?.generatedFrames?.[0];
+
+                  const thumbImage =
+                    p.thumbnails?.find((t: any) => t.image || t.url)?.image ||
+                    p.thumbnails?.find((t: any) => t.image || t.url)?.url ||
+                    brief?.thumbnails?.[0]?.url ||
+                    brief?.thumbnails?.[0]?.image;
+
+                  const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || undefined;
+
+                  const realMediaUrl = storyboardImage || thumbImage || fallbackImage;
+
+                  const isGenerating =
+                    Boolean(p.isGeneratingAssets) ||
+                    Boolean(
+                      p.generationProgress &&
+                      p.generationProgress.percent > 0 &&
+                      p.generationProgress.percent < 100 &&
+                      p.generationProgress.stage !== "Complete" &&
+                      p.generationProgress.stage !== "Cancelled" &&
+                      p.generationProgress.stage !== "Failed"
+                    );
+
+                  const stageLabel = p.generationProgress?.stage || "Generating";
+                  const percent = p.generationProgress?.percent || (p.isGeneratingAssets ? 15 : 0);
+                  const isSelected = p.id === activeProd?.id;
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        try {
+                          sessionStorage.setItem("spark_review_focus_id", p.id);
+                        } catch {}
+                        onNavigate?.(`/review/creative?productionId=${p.id}`);
+                      }}
+                      className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition-all flex-shrink-0 max-w-[240px] ${
+                        isSelected
+                          ? "border-accent bg-accent/15 text-foreground shadow-sm"
+                          : "border-border/60 bg-background hover:bg-accent/5 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <MiniMediaThumbnail
+                        id={p.id}
+                        title={p.title}
+                        imageUrl={realMediaUrl}
+                        videoUrl={videoUrl}
+                        aspectRatio={p.aspectRatio === "9:16" ? "9:16" : "16:9"}
+                        isVideo={Boolean(videoUrl)}
+                        isGenerating={isGenerating}
+                        stageLabel={stageLabel}
+                        percent={percent}
+                        className="w-16 h-10 rounded-lg"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold truncate text-foreground">{p.title}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {isGenerating ? `${stageLabel} · ${percent}%` : videoUrl ? "Playable MP4" : p.status || "Ready"}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Header */}
           <div className="flex items-start justify-between gap-6">

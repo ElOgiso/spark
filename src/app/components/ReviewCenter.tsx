@@ -129,7 +129,7 @@ function EmptyStageState({ stage }: { stage: Stage }) {
 }
 
 export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
-  const { productions, reviewItems } = useSpark();
+  const { productions, reviewItems, brand, character } = useSpark() as any;
   const [activeStage, setActiveStage] = useState<Stage>("all");
 
   const items: ProductionItem[] = productions.map((p) => {
@@ -244,10 +244,46 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                   </thead>
                   <tbody>
                     {filtered.map((item) => {
-                      const isDrafting = item.stage === "drafting";
-                      const prod = productions.find((p) => p.id === item.id);
-                      const progressPct = prod?.generationProgress?.percent ?? prod?.brief?.generatedAssets?.generationProgress?.percent;
-                      const progressStage = prod?.generationProgress?.stage ?? prod?.brief?.generatedAssets?.generationProgress?.stage;
+                      const prod = productions.find((p: any) => p.id === item.id);
+                      const rev = reviewItems.find((r: any) => r.productionId === item.id || r.id === item.id);
+                      const brief = prod?.brief || rev?.brief;
+
+                      // 1. Video URL
+                      const videoUrl = prod?.videoUrl || rev?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
+
+                      // 2. Storyboard keyframe image
+                      const storyboardImage =
+                        prod?.scenes?.find((s: any) => s.image)?.image ||
+                        brief?.storyboard?.find((s: any) => s.image)?.image ||
+                        prod?.scenes?.[0]?.image ||
+                        brief?.storyboard?.[0]?.image ||
+                        brief?.generatedAssets?.generatedFrames?.[0];
+
+                      // 3. Thumbnail variant image
+                      const thumbImage =
+                        prod?.thumbnails?.find((t: any) => t.image || t.url)?.image ||
+                        prod?.thumbnails?.find((t: any) => t.image || t.url)?.url ||
+                        brief?.thumbnails?.[0]?.url ||
+                        brief?.thumbnails?.[0]?.image;
+
+                      // 4. Character / brand fallback
+                      const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || undefined;
+
+                      const realMediaUrl = storyboardImage || thumbImage || fallbackImage;
+
+                      const isGenerating =
+                        Boolean(prod?.isGeneratingAssets) ||
+                        Boolean(
+                          prod?.generationProgress &&
+                          prod.generationProgress.percent > 0 &&
+                          prod.generationProgress.percent < 100 &&
+                          prod.generationProgress.stage !== "Complete" &&
+                          prod.generationProgress.stage !== "Cancelled" &&
+                          prod.generationProgress.stage !== "Failed"
+                        );
+
+                      const stageLabel = prod?.generationProgress?.stage || "Generating";
+                      const percent = prod?.generationProgress?.percent || (prod?.isGeneratingAssets ? 15 : 0);
 
                       return (
                         <tr
@@ -266,18 +302,24 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                             <div className="flex items-center gap-3">
                               <MiniMediaThumbnail 
                                 id={item.id} 
-                                title={item.title} 
-                                isVideo={item.stage === "approved" || item.stage === "scheduled" || item.stage === "export_ready"} 
+                                title={item.title}
+                                imageUrl={realMediaUrl}
+                                videoUrl={videoUrl}
+                                aspectRatio={prod?.aspectRatio === "9:16" ? "9:16" : "16:9"}
+                                isVideo={Boolean(videoUrl)}
+                                isGenerating={isGenerating}
+                                stageLabel={stageLabel}
+                                percent={percent}
                               />
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  {isDrafting && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
+                                  {isGenerating && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
                                   <p className="text-sm font-medium max-w-[220px] truncate">{item.title}</p>
                                 </div>
                                 {item.series && <p className="text-xs text-muted-foreground mt-0.5">{item.series}</p>}
-                                {isDrafting && (
+                                {isGenerating && (
                                   <p className="text-xs text-accent mt-0.5 font-mono">
-                                    {progressPct ? `${progressPct}% — ${progressStage || "Generating"}` : "Spark is generating…"}
+                                    {percent}% — {stageLabel}
                                   </p>
                                 )}
                               </div>

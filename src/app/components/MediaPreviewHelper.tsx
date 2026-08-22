@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -35,26 +35,51 @@ interface MiniMediaThumbnailProps {
   id: string;
   title: string;
   imageUrl?: string;
+  videoUrl?: string;
   aspectRatio?: "16:9" | "9:16" | "1:1";
   isVideo?: boolean;
+  isGenerating?: boolean;
+  stageLabel?: string;
+  percent?: number;
   className?: string;
   duration?: string;
 }
 
-export function MiniMediaThumbnail({ id, title, imageUrl, aspectRatio = "16:9", isVideo = false, className = "", duration = "12:15" }: MiniMediaThumbnailProps) {
+export function MiniMediaThumbnail({
+  id,
+  title,
+  imageUrl,
+  videoUrl,
+  aspectRatio = "16:9",
+  isVideo = false,
+  isGenerating = false,
+  stageLabel = "Generating",
+  percent = 15,
+  className = "",
+  duration = "12:15",
+}: MiniMediaThumbnailProps) {
   const theme = getMediaTheme(id);
   const isVertical = aspectRatio === "9:16";
   const isSquare = aspectRatio === "1:1";
 
   const sizeClass = isVertical 
-    ? "w-10 h-16" 
+    ? "w-12 h-18 sm:w-14 sm:h-20" 
     : isSquare 
-      ? "w-12 h-12" 
-      : "w-20 h-12";
+      ? "w-14 h-14" 
+      : "w-24 h-14 sm:w-28 sm:h-16";
 
   return (
-    <div className={`relative ${sizeClass} rounded-lg overflow-hidden bg-background border border-border/60 flex-shrink-0 select-none ${className}`}>
-      {imageUrl ? (
+    <div className={`relative ${sizeClass} rounded-xl overflow-hidden bg-slate-950 border border-border/80 flex-shrink-0 select-none ${className}`}>
+      {videoUrl && !isGenerating ? (
+        <video
+          src={videoUrl}
+          muted
+          loop
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+      ) : imageUrl ? (
         <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
       ) : (
         <>
@@ -74,9 +99,28 @@ export function MiniMediaThumbnail({ id, title, imageUrl, aspectRatio = "16:9", 
         </>
       )}
 
-      {/* Overlay badges */}
-      {isVideo && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/30 transition-all duration-200">
+      {/* Live Generation Load Overlay (P0 progress overlay) */}
+      {isGenerating && (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px] flex flex-col items-center justify-center p-1 z-10 text-center">
+          <Loader2 className="w-4 h-4 text-purple-400 animate-spin mb-0.5" />
+          <span className="text-[9px] font-bold font-mono text-purple-300 leading-none">
+            {percent}%
+          </span>
+          <span className="text-[7px] font-medium text-white/70 truncate max-w-full px-0.5 mt-0.5">
+            {stageLabel}
+          </span>
+          <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden mt-1 px-1">
+            <div
+              className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Play Icon Badge when video is ready & not generating */}
+      {isVideo && !isGenerating && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-all duration-200">
           <div className="w-5 h-5 rounded-full bg-white/90 shadow flex items-center justify-center">
             <Play className="w-2.5 h-2.5 text-black fill-current translate-x-0.5" />
           </div>
@@ -84,7 +128,7 @@ export function MiniMediaThumbnail({ id, title, imageUrl, aspectRatio = "16:9", 
       )}
 
       {/* Duration Badge */}
-      {!isVertical && (
+      {!isVertical && !isGenerating && (
         <span className="absolute bottom-0.5 right-1 bg-black/80 px-1 py-[1px] rounded text-[7px] font-mono text-white">
           {duration}
         </span>
