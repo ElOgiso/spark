@@ -4,7 +4,7 @@ import { MiniMediaThumbnail } from "../MediaPreviewHelper";
 import {
   Pencil, Video, Rocket, CheckCircle2, X, RotateCw, Check,
   Sparkles, Clock, ArrowLeft, Loader2, AlertTriangle, Brain,
-  ChevronRight, Download, Calendar,
+  ChevronRight, Download, Calendar, Trash2,
 } from "lucide-react";
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
@@ -53,8 +53,16 @@ const stageTabs: { id: StageFilter; label: string }[] = [
 ];
 
 function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
-  const { approveReviewItem, rejectOrRequestEditReviewItem, productions } = useSpark();
+  const {
+    approveReviewItem,
+    rejectOrRequestEditReviewItem,
+    generateProductionAssets,
+    cancelProduction,
+    deleteProduction,
+    productions,
+  } = useSpark();
   const [approved, setApproved] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const activeProd = productions?.find((p) => p.id === item.productionId || p.id === item.id);
   const hasMediaOrBrief = Boolean(activeProd || item.brief || item.videoUrl || item.audioUrl || (item.scenes && item.scenes.length > 0));
@@ -62,6 +70,33 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
   if (item.type === "creative" || hasMediaOrBrief) {
     return <MobileCreativeReview onBack={onBack} item={item} />;
   }
+
+  const handleGenerateAssets = (force = false) => {
+    if (!item.productionId || !generateProductionAssets) return;
+    setFeedback(force ? "Forcing full regeneration..." : "Continuing asset generation...");
+    void generateProductionAssets(item.productionId, force)
+      .then(() => {
+        setFeedback("Asset generation complete!");
+        setTimeout(() => setFeedback(null), 3000);
+      });
+  };
+
+  const handleCancel = () => {
+    if (item.productionId && cancelProduction) {
+      cancelProduction(item.productionId);
+      setFeedback("Generation cancelled.");
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  };
+
+  const handleDelete = () => {
+    if (window.confirm("Delete this production? Cannot be undone.")) {
+      if (item.productionId && deleteProduction) {
+        deleteProduction(item.productionId);
+      }
+      onBack();
+    }
+  };
 
   if (approved) {
     return (
@@ -98,7 +133,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-36 px-4 pt-5 space-y-4">
+      <div className="flex-1 overflow-y-auto pb-44 px-4 pt-5 space-y-4">
 
         {/* Title + AI score */}
         <div>
@@ -165,8 +200,38 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
 
       </div>
 
+      {feedback && (
+        <div className="fixed bottom-44 left-4 right-4 bg-card border border-border px-4 py-3 rounded-xl flex items-center justify-between shadow-lg z-50 animate-pulse">
+          <span className="text-xs text-foreground font-medium">{feedback}</span>
+        </div>
+      )}
+
       {/* Fixed action bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
+        <div className="grid grid-cols-2 gap-2">
+          {item.isGeneratingAssets ? (
+            <Button variant="danger" size="md" icon={<X className="w-4 h-4 animate-spin" />} onClick={handleCancel}>
+              Cancel Gen
+            </Button>
+          ) : (
+            <Button variant="secondary" size="md" icon={<Sparkles className="w-4 h-4 text-accent" />} onClick={() => handleGenerateAssets(false)}>
+              Continue Gen
+            </Button>
+          )}
+          <Button variant="regenerate" size="md" icon={<RotateCw className="w-4 h-4" />} onClick={() => handleGenerateAssets(true)}>
+            Regenerate All
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="danger" size="md" icon={<X className="w-4 h-4" />} onClick={() => { rejectOrRequestEditReviewItem(item.id); onBack(); }}>
+            Request Revision
+          </Button>
+          <Button variant="ghost" size="md" className="text-destructive border border-destructive/20 hover:bg-destructive/10" icon={<Trash2 className="w-4 h-4" />} onClick={handleDelete}>
+            Delete
+          </Button>
+        </div>
+
         <Button
           variant="approve"
           size="xl"
@@ -179,41 +244,6 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
         >
           Approve
         </Button>
-        <div className="grid grid-cols-3 gap-2">
-          <Button
-            variant="regenerate"
-            size="md"
-            icon={<RotateCw className="w-4 h-4" />}
-            onClick={() => {
-              rejectOrRequestEditReviewItem(item.id);
-              onBack();
-            }}
-          >
-            Regenerate
-          </Button>
-          <Button
-            variant="schedule"
-            size="md"
-            icon={<Calendar className="w-4 h-4" />}
-            onClick={() => {
-              approveReviewItem(item.id);
-              setApproved(true);
-            }}
-          >
-            Schedule
-          </Button>
-          <Button
-            variant="danger"
-            size="md"
-            icon={<X className="w-4 h-4" />}
-            onClick={() => {
-              rejectOrRequestEditReviewItem(item.id);
-              onBack();
-            }}
-          >
-            Reject
-          </Button>
-        </div>
       </div>
     </div>
   );
@@ -224,7 +254,7 @@ interface MobileReviewProps {
 }
 
 export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
-  const { productions, reviewItems } = useSpark();
+  const { productions, reviewItems, deleteProduction } = useSpark();
   const [activeFilter, setActiveFilter] = useState<StageFilter>("all");
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
 
@@ -359,68 +389,83 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
             const progressStage = prod?.generationProgress?.stage ?? prod?.brief?.generatedAssets?.generationProgress?.stage;
 
             return (
-              <button
-                key={review.id}
-                onClick={() => setSelectedReview(review)}
-                className={`w-full rounded-xl border p-4 text-left transition-all active:scale-[0.98] ${
-                  review.priority === "high" ? "border-destructive/25 bg-destructive/5" :
-                  "border-border bg-card hover:bg-accent/5"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Media Thumbnail */}
-                  <div className="relative flex-shrink-0">
-                    <MiniMediaThumbnail
-                      id={review.id}
-                      title={review.title}
-                      isVideo={review.stage === "approved" || review.stage === "scheduled"}
-                      className="shadow-md"
-                    />
-                    {isDrafting && (
-                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
-                        <Loader2 className="w-5 h-5 text-accent animate-spin" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    {/* Title */}
-                    <div className="flex items-center gap-1.5 mb-1">
-                      {isDrafting && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
-                      <p className="text-sm font-medium leading-snug truncate">{review.title}</p>
+              <div key={review.id} className="relative group">
+                <button
+                  onClick={() => setSelectedReview(review)}
+                  className={`w-full rounded-xl border p-4 pr-10 text-left transition-all active:scale-[0.98] ${
+                    review.priority === "high" ? "border-destructive/25 bg-destructive/5" :
+                    "border-border bg-card hover:bg-accent/5"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Media Thumbnail */}
+                    <div className="relative flex-shrink-0">
+                      <MiniMediaThumbnail
+                        id={review.id}
+                        title={review.title}
+                        isVideo={review.stage === "approved" || review.stage === "scheduled"}
+                        className="shadow-md"
+                      />
+                      {isDrafting && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
+                          <Loader2 className="w-5 h-5 text-accent animate-spin" />
+                        </div>
+                      )}
                     </div>
 
-                    {/* Account + type */}
-                    <p className="text-xs text-muted-foreground mb-1.5">
-                      {review.account} · {typeLabel[review.type]}
-                    </p>
-
-                    {isDrafting && (
-                      <div className="space-y-1 my-1.5">
-                        <div className="flex items-center justify-between text-xs text-accent font-mono">
-                          <span>{progressStage || "Synthesizing Media"}</span>
-                          <span className="font-bold">{progressPct ?? 15}%</span>
-                        </div>
-                        <div className="w-full h-1 bg-accent/20 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-accent to-emerald-400 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.max(progressPct ?? 15, 6)}%` }}
-                          />
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      {/* Title */}
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {isDrafting && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
+                        <p className="text-sm font-medium leading-snug truncate">{review.title}</p>
                       </div>
-                    )}
 
-                    {/* Stage + confidence + time */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <StatusChip variant={stageToChip[review.stage]} />
-                      {!isDrafting && <ConfidenceBar value={review.aiConfidence} width="w-14" />}
-                      <span className="text-xs text-muted-foreground">{review.timeWaiting}</span>
+                      {/* Account + type */}
+                      <p className="text-xs text-muted-foreground mb-1.5">
+                        {review.account} · {typeLabel[review.type]}
+                      </p>
+
+                      {isDrafting && (
+                        <div className="space-y-1 my-1.5">
+                          <div className="flex items-center justify-between text-xs text-accent font-mono">
+                            <span>{progressStage || "Synthesizing Media"}</span>
+                            <span className="font-bold">{progressPct ?? 15}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-accent/20 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-accent to-emerald-400 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.max(progressPct ?? 15, 6)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Stage + confidence + time */}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <StatusChip variant={stageToChip[review.stage]} />
+                        {!isDrafting && <ConfidenceBar value={review.aiConfidence} width="w-14" />}
+                        <span className="text-xs text-muted-foreground">{review.timeWaiting}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
-                </div>
-              </button>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete "${review.title}"? Cannot undo.`)) {
+                      if (deleteProduction && review.productionId) {
+                        deleteProduction(review.productionId);
+                      }
+                    }
+                  }}
+                  title="Delete production"
+                  className="absolute top-3 right-3 p-2 rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/15 active:bg-destructive/25 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             );
           })}
         </div>

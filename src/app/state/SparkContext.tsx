@@ -97,6 +97,7 @@ interface SparkContextType {
   createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   cancelProduction: (productionId: string) => void;
+  deleteProduction: (productionId: string) => void;
   productionGenerationEnabled?: boolean;
   toggleProductionGeneration?: (enabled?: boolean) => void;
   approveReviewItem: (reviewId: string) => void;
@@ -1730,6 +1731,39 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const deleteProduction = (productionId: string) => {
+    if (!productionId) return;
+
+    if (activeGenerationControllers.current.has(productionId)) {
+      try {
+        activeGenerationControllers.current.get(productionId)?.abort();
+        activeGenerationControllers.current.delete(productionId);
+      } catch {}
+    }
+
+    setState((prev: any) => {
+      const updatedProductions = (prev.productions || []).filter((p: any) => p.id !== productionId);
+      const updatedReviewItems = (prev.reviewItems || []).filter(
+        (r: any) => r.productionId !== productionId && r.id !== productionId && r.id !== `rev-${productionId}`
+      );
+      return {
+        ...prev,
+        productions: updatedProductions,
+        reviewItems: updatedReviewItems,
+      };
+    });
+
+    if (isSupabaseConfigured()) {
+      void import("../backend/repositories/productionRepository").then(({ deleteProduction: dbDeleteProd }) => {
+        dbDeleteProd(productionId).catch((err) => console.warn("[SparkContext] Delete production DB notice:", err));
+      });
+      void import("../backend/repositories/reviewRepository").then(({ deleteReviewItem: dbDeleteReview }) => {
+        dbDeleteReview(productionId).catch(() => {});
+        dbDeleteReview(`rev-${productionId}`).catch(() => {});
+      });
+    }
+  };
+
   const addMemoryItem = (text: string, type: "learned" | "rule", category?: any) => {
     const newItem: MemoryItem = {
       id: `m-${Date.now()}`,
@@ -2340,6 +2374,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createProductionFromSpark,
         generateProductionAssets,
         cancelProduction,
+        deleteProduction,
         productionGenerationEnabled,
         toggleProductionGeneration,
         approveReviewItem,

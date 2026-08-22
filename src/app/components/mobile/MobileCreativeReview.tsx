@@ -12,6 +12,9 @@ import {
   RotateCw,
   XCircle,
   AlertTriangle,
+  Play,
+  Trash2,
+  X,
 } from "lucide-react";
 
 interface MobileCreativeReviewProps {
@@ -44,7 +47,15 @@ function clip(value: unknown, n: number, fallback: string): string {
 }
 
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
-  const { approveReviewItem, rejectOrRequestEditReviewItem, productions } = useSpark() as any;
+  const {
+    approveReviewItem,
+    rejectOrRequestEditReviewItem,
+    generateProductionAssets,
+    cancelProduction,
+    deleteProduction,
+    productions,
+  } = useSpark() as any;
+
   const activeProd = productions?.find((p: any) =>
     (item?.productionId && p.id === item.productionId) ||
     (item?.id && p.id === item.id) ||
@@ -56,6 +67,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     activeProd?.isGeneratingAssets ||
     item?.isGeneratingAssets ||
     (genProgress && genProgress.stage !== "Complete" && genProgress.stage !== "Failed" && (genProgress.percent || 0) < 100)
+  );
+
+  const prodId = activeProd?.id || item?.productionId || (item?.id ? item.id.replace("rev-", "") : "");
+  const reviewId = item?.id || (prodId ? `rev-${prodId}` : "");
+  const hasPlayableVideo = Boolean(
+    activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]
   );
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -73,21 +90,62 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     setExpandedSections(newExpanded);
   };
 
-  const handleAction = (type: "changes" | "regenerate" | "reject") => {
-    if (item?.id) {
-      rejectOrRequestEditReviewItem(item.id);
+  const handleGenerateAssets = (forceRegenerate = false) => {
+    if (!prodId || !generateProductionAssets) {
+      setFeedback("Production ID not found.");
+      setTimeout(() => setFeedback(null), 3000);
+      return;
     }
-    if (type === "changes") {
-      setFeedback("Requesting storyboard adjustments...");
-    } else if (type === "regenerate") {
-      setFeedback("Regenerating new hooks and creative angles...");
-    } else if (type === "reject") {
-      setFeedback("Creative draft rejected and archived.");
+
+    setFeedback(forceRegenerate ? "Forcing full regeneration..." : "Continuing asset generation...");
+    void generateProductionAssets(prodId, forceRegenerate)
+      .then(() => {
+        setFeedback(forceRegenerate ? "Assets regenerated!" : "Asset generation complete!");
+        setTimeout(() => setFeedback(null), 3000);
+      })
+      .catch((err: any) => {
+        setFeedback(`Generation failed: ${err?.message || "Error"}`);
+        setTimeout(() => setFeedback(null), 3500);
+      });
+  };
+
+  const handleCancelGeneration = () => {
+    if (prodId && cancelProduction) {
+      cancelProduction(prodId);
+      setFeedback("Generation cancelled.");
+      setTimeout(() => setFeedback(null), 3000);
     }
+  };
+
+  const handleReject = () => {
+    if (reviewId) {
+      rejectOrRequestEditReviewItem(reviewId);
+    }
+    setFeedback("Draft marked for edit/revision.");
     setTimeout(() => {
       setFeedback(null);
       onBack?.();
-    }, 2000);
+    }, 1500);
+  };
+
+  const handleDelete = () => {
+    if (window.confirm("Delete this production? Cannot be undone.")) {
+      if (prodId && deleteProduction) {
+        deleteProduction(prodId);
+      }
+      setFeedback("Production deleted.");
+      setTimeout(() => {
+        setFeedback(null);
+        onBack?.();
+      }, 1000);
+    }
+  };
+
+  const handleApprove = () => {
+    if (reviewId) {
+      approveReviewItem(reviewId);
+    }
+    setApproved(true);
   };
 
   const proposal = {
@@ -426,42 +484,64 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl">
-        <button
-          onClick={() => {
-            if (item?.id) {
-              approveReviewItem(item.id);
-            }
-            setApproved(true);
-          }}
-          className="w-full py-5 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 mb-3 shadow-lg transition-all active:scale-[0.98]"
-        >
-          <CheckCircle2 className="w-6 h-6" />
-          Approve
-        </button>
-        <div className="grid grid-cols-3 gap-2">
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 pb-safe shadow-2xl space-y-2.5">
+        {/* Row 1: Generation actions */}
+        <div className="grid grid-cols-2 gap-2">
+          {isGenerating ? (
+            <button
+              onClick={handleCancelGeneration}
+              className="py-3 px-3 bg-destructive/15 hover:bg-destructive/25 text-destructive rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+            >
+              <X className="w-4 h-4 animate-spin" />
+              Cancel Generation
+            </button>
+          ) : (
+            <button
+              onClick={() => handleGenerateAssets(false)}
+              className="py-3 px-3 bg-accent/20 hover:bg-accent/30 text-accent-foreground rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+            >
+              <Sparkles className="w-4 h-4 text-accent" />
+              {hasPlayableVideo ? "Generate Assets" : "Continue Generation"}
+            </button>
+          )}
+
           <button
-            onClick={() => handleAction("changes")}
-            className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
-          >
-            <Edit className="w-3.5 h-3.5" />
-            Changes
-          </button>
-          <button
-            onClick={() => handleAction("regenerate")}
-            className="py-3 bg-accent hover:bg-accent/80 active:bg-accent/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+            onClick={() => handleGenerateAssets(true)}
+            disabled={isGenerating}
+            className="py-3 px-3 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
           >
             <RotateCw className="w-3.5 h-3.5" />
-            Regenerate
-          </button>
-          <button
-            onClick={() => handleAction("reject")}
-            className="py-3 bg-muted hover:bg-muted/80 active:bg-muted/70 rounded-xl text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            Reject
+            Regenerate All
           </button>
         </div>
+
+        {/* Row 2: Management actions (Reject & Delete) */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleReject}
+            className="py-3 px-3 bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+          >
+            <Edit className="w-3.5 h-3.5" />
+            Request Revision
+          </button>
+
+          <button
+            onClick={handleDelete}
+            className="py-3 px-3 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete Production
+          </button>
+        </div>
+
+        {/* Row 3: Primary Approve Action */}
+        <button
+          onClick={handleApprove}
+          className="w-full py-4 bg-success hover:bg-success/90 active:bg-success/80 text-white rounded-xl font-medium text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+        >
+          <CheckCircle2 className="w-5 h-5" />
+          Approve Production
+        </button>
       </div>
     </div>
   );

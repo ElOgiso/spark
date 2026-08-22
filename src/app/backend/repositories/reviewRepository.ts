@@ -1,5 +1,5 @@
 import type { ReviewItemRow } from "../database.types";
-import { insertRow, listByBrand, updateRow } from "./repositoryUtils";
+import { deleteRow, insertRow, listByBrand, updateRow } from "./repositoryUtils";
 import type { RepositoryResult } from "./repositoryTypes";
 
 export async function listReviewItems(brandId: string): Promise<RepositoryResult<ReviewItemRow[]>> {
@@ -29,4 +29,8 @@ export async function requestReviewEdits(id: string, notes?: string): Promise<Re
     notes,
     reviewed_at: new Date().toISOString(),
   });
+}
+
+export async function deleteReviewItem(id: string): Promise<RepositoryResult<true>> {
+  return deleteRow("review_items", id);
 }
