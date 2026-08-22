@@ -289,6 +289,8 @@ function AppContent() {
       case "/more/api":
       case "/more/integrations":
       case "/more/ai-preferences":
+      case "/more/credit-control":
+      case "/more/generation-controls":
       case "/more/production-settings":
       case "/more/team":
       case "/more/legal":

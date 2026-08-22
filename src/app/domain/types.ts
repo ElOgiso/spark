@@ -585,6 +585,22 @@ export interface AISettings {
   customBaseUrls?: Record<string, string>;
 }
 
+export interface GenerationCreditSettings {
+  thumbnailCount: number;       // default 3, min 1, max 3
+  keyframeCount: number;        // default 3, min 1, max 6
+  shortsDurationSec: number;    // default 8, allowed [5, 8, 10, 15]
+  cinematicDurationSec: number; // default 12, allowed [8, 12, 15, 20]
+  maxVideoClips?: number;       // default = keyframeCount
+}
+
+export const DEFAULT_CREDIT_SETTINGS: GenerationCreditSettings = {
+  thumbnailCount: 3,
+  keyframeCount: 3,
+  shortsDurationSec: 8,
+  cinematicDurationSec: 12,
+  maxVideoClips: 3,
+};
+
 export interface ThinkingState {
   step: string;
   timestamp: string;

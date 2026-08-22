@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { AIPreferencesPanel } from "./ui/AIPreferencesPanel";
+import { CreditControlPanel } from "./CreditControlPanel";
 import { useDeviceType, detectDevice } from "../hooks/useDeviceType";
 import { useSpark } from "../state/SparkContext";
 import { useAuth } from "../state/AuthContext";
@@ -25,6 +26,7 @@ import {
   Zap,
   FileText,
   Shield,
+  ShieldCheck,
   CreditCard,
   Code,
   Users,
@@ -580,6 +582,14 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
               </div>
             </div>
           ),
+        };
+      case "/more/credit-control":
+      case "/more/generation-controls":
+        return {
+          title: "Credit control",
+          icon: ShieldCheck,
+          description: "Limit how many assets SPARK generates per production",
+          content: <CreditControlPanel onNavigate={onNavigate} />,
         };
       case "/more/production-settings":
         return {

@@ -19,6 +19,8 @@ import {
   ResearchSource,
   ResearchPattern,
   AISettings,
+  GenerationCreditSettings,
+  DEFAULT_CREDIT_SETTINGS,
   ThinkingState,
   ConversationSession,
   Offer,
@@ -39,6 +41,7 @@ import {
   persistViralSparkCreate,
   persistPublishJobCreate,
   persistAISettings,
+  persistCreditSettings,
 } from "../backend/workspaceSync";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid } from "../backend/mappers/workspaceMappers";
@@ -80,6 +83,7 @@ interface SparkContextType {
   researchSources?: ResearchSource[];
   researchPatterns?: ResearchPattern[];
   aiSettings?: AISettings;
+  creditSettings: GenerationCreditSettings;
   thinkingState?: ThinkingState | null;
   
   chatMessages?: ChatMessage[];
@@ -94,6 +98,7 @@ interface SparkContextType {
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
   updateAISettings: (newSettings: AISettings) => void;
+  updateCreditSettings: (newSettings: Partial<GenerationCreditSettings>) => void;
   createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   cancelProduction: (productionId: string) => void;
@@ -236,6 +241,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...local,
         offers: Array.isArray(local.offers) ? local.offers : [],
         aiSettings: local.aiSettings || defaultAISettings,
+        creditSettings: local.creditSettings || DEFAULT_CREDIT_SETTINGS,
         chatMessages: Array.isArray(local.chatMessages) ? local.chatMessages : [],
       };
     }
@@ -258,6 +264,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       researchSources: [],
       researchPatterns: [],
       aiSettings: defaultAISettings,
+      creditSettings: DEFAULT_CREDIT_SETTINGS,
       thinkingState: null,
       chatMessages: [],
     };
@@ -291,6 +298,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       researchSources: [],
       researchPatterns: [],
       aiSettings: defaultAISettings,
+      creditSettings: DEFAULT_CREDIT_SETTINGS,
       thinkingState: null,
       chatMessages: [],
     });
@@ -304,6 +312,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const brandId = getBrandWorkspaceId();
     persistAISettings(brandId, newSettings);
   };
+
+  const updateCreditSettings = useCallback((newSettings: Partial<GenerationCreditSettings>) => {
+    setState((prev: any) => {
+      const updated = {
+        ...(prev.creditSettings || DEFAULT_CREDIT_SETTINGS),
+        ...newSettings,
+      };
+      const brandId = getBrandWorkspaceId();
+      persistCreditSettings(brandId, updated);
+      return { ...prev, creditSettings: updated };
+    });
+  }, []);
 
   // Hydrate conversation sessions on mount
   useEffect(() => {
@@ -469,6 +489,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
+            creditSettings: (cloudObjectives as any)?.credit_settings
+              ? { ...DEFAULT_CREDIT_SETTINGS, ...prev.creditSettings, ...(cloudObjectives as any).credit_settings }
+              : (prev.creditSettings || DEFAULT_CREDIT_SETTINGS),
 
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
             memoryItems: snap.memoryItems || [],

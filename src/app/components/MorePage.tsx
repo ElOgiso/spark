@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Bell,
   Shield,
+  ShieldCheck,
   ChevronRight,
   CheckCircle2,
   AlertCircle,
@@ -165,6 +166,13 @@ export function MorePage({ onNavigate }: MorePageProps) {
           description: "Task routing models (Super Spark, Research, Production, etc.)",
           meta: "Best Available (Default)",
           action: () => onNavigate("/more/ai-preferences"),
+        },
+        {
+          icon: ShieldCheck,
+          label: "Credit Control",
+          description: "Limit how many assets SPARK generates per production",
+          meta: "Generation limits",
+          action: () => onNavigate("/more/credit-control"),
         },
         {
           icon: Users,

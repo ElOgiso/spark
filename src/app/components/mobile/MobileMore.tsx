@@ -22,6 +22,7 @@ import {
   HelpCircle,
   Bell,
   Shield,
+  ShieldCheck,
   Palette,
   ChevronRight,
   CheckCircle2,
@@ -274,6 +275,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             return count === 0 ? "Best Available" : `${count} custom`;
           })()
         },
+        { icon: ShieldCheck, label: "Credit Control", badge: "Generation limits", path: "/more/credit-control" },
         { icon: Brain, label: "Integrations", badge: "Connected" },
         { icon: Users, label: "Team", badge: `${team.length} members` },
       ],

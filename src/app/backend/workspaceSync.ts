@@ -901,6 +901,22 @@ export async function persistAISettings(brandId: string, aiSettings: import("../
   }
 }
 
+export async function persistCreditSettings(brandId: string, settings: import("../domain/types").GenerationCreditSettings) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(`spark_credit_settings_${brandId || "default"}`, JSON.stringify(settings));
+    }
+    if (isSupabaseConfigured() && isUuid(brandId)) {
+      await executiveSummaryRepository.upsertSummary({
+        brand_id: brandId,
+        current_objectives: { credit_settings: settings } as any,
+      });
+    }
+  } catch (err) {
+    console.warn("[workspaceSync] Credit settings persist notice:", err);
+  }
+}
+
 export async function persistProductionAssetCreate(
   brandId: string,
   asset: import("../domain/types").ProductionAsset

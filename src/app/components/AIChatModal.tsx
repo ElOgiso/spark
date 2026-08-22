@@ -29,7 +29,7 @@ import { SparkLogo } from "./SparkLogo";
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { DepartmentActivity, DepartmentStep } from "./DepartmentActivity";
-import { ConversationSession } from "../domain/types";
+import { ConversationSession, GenerationCreditSettings, DEFAULT_CREDIT_SETTINGS } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
 import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrator";
 
@@ -440,6 +440,70 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
 
   const grouped = groupSessions(filteredSessions);
 
+function parseCreditSettingsCommand(text: string, current: GenerationCreditSettings): { updated: GenerationCreditSettings; message: string } | null {
+  const lower = text.toLowerCase();
+
+  if (lower.includes("thumb") || lower.includes("thumbnail")) {
+    let count: number | null = null;
+    if (/\b(1|one)\b/.test(lower)) count = 1;
+    else if (/\b(2|two)\b/.test(lower)) count = 2;
+    else if (/\b(3|three)\b/.test(lower)) count = 3;
+
+    if (count !== null) {
+      return {
+        updated: { ...current, thumbnailCount: count },
+        message: `Set thumbnail variant count to ${count} per production.`,
+      };
+    }
+  }
+
+  if (lower.includes("keyframe") || lower.includes("panel") || lower.includes("storyboard count")) {
+    const match = lower.match(/\b(1|2|3|4|5|6|one|two|three|four|five|six)\b/);
+    if (match) {
+      const numMap: Record<string, number> = { "1": 1, "one": 1, "2": 2, "two": 2, "3": 3, "three": 3, "4": 4, "four": 4, "5": 5, "five": 5, "6": 6, "six": 6 };
+      const count = numMap[match[1]];
+      if (count) {
+        return {
+          updated: { ...current, keyframeCount: count, maxVideoClips: count },
+          message: `Set keyframe panel count to ${count} per production.`,
+        };
+      }
+    }
+  }
+
+  if (lower.includes("short")) {
+    let sec: number | null = null;
+    if (lower.includes("5")) sec = 5;
+    else if (lower.includes("8")) sec = 8;
+    else if (lower.includes("10")) sec = 10;
+    else if (lower.includes("15")) sec = 15;
+
+    if (sec) {
+      return {
+        updated: { ...current, shortsDurationSec: sec },
+        message: `Set Shorts video duration to ${sec}s.`,
+      };
+    }
+  }
+
+  if (lower.includes("cinematic")) {
+    let sec: number | null = null;
+    if (lower.includes("8")) sec = 8;
+    else if (lower.includes("12")) sec = 12;
+    else if (lower.includes("15")) sec = 15;
+    else if (lower.includes("20")) sec = 20;
+
+    if (sec) {
+      return {
+        updated: { ...current, cinematicDurationSec: sec },
+        message: `Set Cinematic video duration to ${sec}s.`,
+      };
+    }
+  }
+
+  return null;
+}
+
   // Deep Live AI Department Swarm Pipeline Execution Streamer
   const executeNaturalLanguageCommand = (commandText: string) => {
     const userMessage: Message = {
@@ -454,6 +518,24 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
     const sparkMessageId = `spark-msg-${Date.now()}`;
     activeSparkMsgIdRef.current = sparkMessageId;
     const lower = commandText.toLowerCase();
+
+    // Check Credit / Generation Control commands
+    const currentCreditSettings = sparkState.creditSettings || DEFAULT_CREDIT_SETTINGS;
+    const creditMatch = parseCreditSettingsCommand(commandText, currentCreditSettings);
+    if (creditMatch) {
+      if (sparkState.updateCreditSettings) {
+        sparkState.updateCreditSettings(creditMatch.updated);
+      }
+      const confirmText = `Understood. ${creditMatch.message} Saved credit controls for ${sparkState.brand?.name || "your brand"}.`;
+      addChatMessage({
+        sender: "spark",
+        text: confirmText,
+        timestamp: new Date(),
+      });
+      void speakText(confirmText, isMuted);
+      return;
+    }
+
     const prodEnabled = ProductionGenerationGuard.isEnabled();
 
     const isConfirmationToEnable =
