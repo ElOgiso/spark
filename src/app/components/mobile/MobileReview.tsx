@@ -413,7 +413,7 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
             const progressStage = genProgress?.stage || (prod?.isGeneratingAssets ? "Synthesizing Media" : "");
 
             const isComplete = progressStage === "Complete" || progressPct >= 100;
-            const isFailed = progressStage === "Failed" || prod?.status === "Failed" || prod?.status === "Generation Failed";
+            const isFailed = progressStage === "Failed" || (prod?.status as any) === "Failed" || (prod?.status as any) === "Generation Failed";
             const isCancelled = progressStage === "Cancelled" || prod?.status === "Cancelled";
 
             const isDrafting = Boolean(
