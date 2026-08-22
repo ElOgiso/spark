@@ -467,6 +467,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
+          const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
           // CLOUD IS TRUTH FOR AUTHENTICATED USER — EMPTY CLOUD ARRAYS ARE TRUTH ([])
@@ -489,8 +490,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
-            creditSettings: (cloudObjectives as any)?.credit_settings
-              ? { ...DEFAULT_CREDIT_SETTINGS, ...prev.creditSettings, ...(cloudObjectives as any).credit_settings }
+            creditSettings: cloudCreditSettings
+              ? { ...DEFAULT_CREDIT_SETTINGS, ...prev.creditSettings, ...cloudCreditSettings }
               : (prev.creditSettings || DEFAULT_CREDIT_SETTINGS),
 
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION

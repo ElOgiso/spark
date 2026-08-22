@@ -8,6 +8,8 @@ import {
   AlertCircle,
   Flame,
   Search,
+  Loader2,
+  Play,
 } from "lucide-react";
 
 // Shared visual tokens from SPARK DONOR — same family as Brand Genesis
@@ -290,18 +292,13 @@ function MobileMetricTile({
   );
 }
 
-const OPPORTUNITY_PHOTOS = [
-  "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800&q=80&fit=crop",
-  "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=800&q=80&fit=crop",
-];
-
 export interface DonorSparkMediaHomeProps {
   onNavigate?: (path: string) => void;
 }
 
 export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHomeProps) {
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { productions = [], viralSparks = [], brand, character } = useSpark() as any;
+  const { productions = [], reviewItems = [], viralSparks = [], brand, character } = useSpark() as any;
   const auth = useAuth();
 
   const hour = new Date().getHours();
@@ -359,6 +356,133 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
 
   // Derive active pipeline stage index
   const activePipelineIndex = inProd > 0 ? 1 : pendingReviews.length > 0 ? 2 : approvedCount > 0 ? 3 : 0;
+
+  // Build mixed live cards for Opportunities & Media strip
+  const mixedItems = React.useMemo(() => {
+    const items: Array<{
+      id: string;
+      type: "generating_production" | "review_production" | "viral_spark";
+      title: string;
+      subtitle: string;
+      badge: string;
+      badgeColor: string;
+      score?: number;
+      isGenerating?: boolean;
+      stageLabel?: string;
+      percent?: number;
+      imageUrl?: string | null;
+      videoUrl?: string | null;
+      targetPath: string;
+    }> = [];
+
+    // 1. Productions (in progress & completed)
+    (productions || []).forEach((prod: any) => {
+      if (!prod || !prod.id) return;
+      const review = (reviewItems || []).find(
+        (r: any) => r.productionId === prod.id || r.id === prod.id || r.id === `rev-${prod.id}`
+      );
+      const brief = prod.brief || review?.brief;
+
+      const isGenerating =
+        prod.isGeneratingAssets ||
+        (prod.generationProgress &&
+          prod.generationProgress.percent > 0 &&
+          prod.generationProgress.percent < 100 &&
+          prod.generationProgress.stage !== "Complete" &&
+          prod.generationProgress.stage !== "Cancelled" &&
+          prod.generationProgress.stage !== "Failed");
+
+      const stageLabel = prod.generationProgress?.stage || "Generating";
+      const percent = prod.generationProgress?.percent || (prod.isGeneratingAssets ? 15 : 0);
+
+      // Asset priority:
+      // 1. videoUrl
+      const videoUrl = prod.videoUrl || review?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
+
+      // 2. keyframe / storyboard frame
+      const storyboardImage =
+        prod.scenes?.find((s: any) => s.image)?.image ||
+        brief?.storyboard?.find((s: any) => s.image)?.image ||
+        prod.scenes?.[0]?.image ||
+        brief?.storyboard?.[0]?.image ||
+        brief?.generatedAssets?.generatedFrames?.[0];
+
+      // 3. thumbnail variant
+      const thumbImage =
+        prod.thumbnails?.find((t: any) => t.image || t.url)?.image ||
+        prod.thumbnails?.find((t: any) => t.image || t.url)?.url ||
+        brief?.thumbnails?.[0]?.url ||
+        brief?.thumbnails?.[0]?.image;
+
+      // 4. character / brand avatar or clean fallback
+      const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || null;
+
+      const imageUrl = storyboardImage || thumbImage || fallbackImage;
+
+      if (isGenerating) {
+        items.push({
+          id: `gen-${prod.id}`,
+          type: "generating_production",
+          title: prod.title || brief?.title || "AI Production Loop",
+          subtitle: `${stageLabel} · ${percent}%`,
+          badge: "GENERATING",
+          badgeColor: M.magenta,
+          isGenerating: true,
+          stageLabel,
+          percent,
+          imageUrl,
+          videoUrl,
+          targetPath: "/review",
+        });
+      } else {
+        items.push({
+          id: `prod-${prod.id}`,
+          type: "review_production",
+          title: prod.title || brief?.title || "Production Review",
+          subtitle: videoUrl ? "Playable MP4 Ready" : "Storyboard Stills & Audio",
+          badge: videoUrl ? "VIDEO READY" : prod.status || "REVIEW READY",
+          badgeColor: videoUrl ? "#22c55e" : "#f59e0b",
+          isGenerating: false,
+          imageUrl,
+          videoUrl,
+          targetPath: "/review",
+        });
+      }
+    });
+
+    // 2. Viral Sparks
+    (viralSparks || []).forEach((spark: any, idx: number) => {
+      if (!spark || !spark.title || spark.id?.startsWith("vs-init-")) return;
+      const sparkThumb =
+        spark.thumbnail ||
+        spark.evidenceImage ||
+        spark.imageUrl ||
+        character?.avatarUrl ||
+        brand?.logoUrl ||
+        null;
+
+      items.push({
+        id: spark.id || `spark-${idx}`,
+        type: "viral_spark",
+        title: spark.title,
+        subtitle: spark.platform || "TikTok & Reels Trend",
+        badge: `${spark.window || "24h"} window`,
+        badgeColor: "#f59e0b",
+        score: spark.score || 94,
+        imageUrl: sparkThumb,
+        targetPath: "/viral-sparks",
+      });
+    });
+
+    // Sort: In-progress generating first -> Review ready -> Viral Sparks
+    return items.sort((a, b) => {
+      if (a.isGenerating && !b.isGenerating) return -1;
+      if (!a.isGenerating && b.isGenerating) return 1;
+      if (a.type === "review_production" && b.type === "viral_spark") return -1;
+      if (a.type === "viral_spark" && b.type === "review_production") return 1;
+      return 0;
+    }).slice(0, 8);
+  }, [productions, reviewItems, viralSparks, brand, character]);
 
   return (
     <>
@@ -583,7 +707,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
               </div>
             </section>
 
-            {/* Opportunities Section */}
+            {/* Opportunities & Media Section */}
             <section style={{ marginBottom: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <p
@@ -596,10 +720,10 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                     margin: 0,
                   }}
                 >
-                  Opportunities
+                  Opportunities & Media
                 </p>
                 <button
-                  onClick={() => onNavigate("/viral-sparks")}
+                  onClick={() => onNavigate(mixedItems[0]?.targetPath || "/viral-sparks")}
                   className="m-press"
                   style={{
                     display: "flex",
@@ -616,12 +740,12 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                 </button>
               </div>
 
-              {viralSparks.length > 0 ? (
+              {mixedItems.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {viralSparks.slice(0, 2).map((spark: any, idx: number) => (
+                  {mixedItems.map((item) => (
                     <button
-                      key={spark.id || idx}
-                      onClick={() => onNavigate("/viral-sparks")}
+                      key={item.id}
+                      onClick={() => onNavigate(item.targetPath)}
                       className="m-press"
                       style={{
                         width: "100%",
@@ -632,29 +756,100 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                         overflow: "hidden",
                         border: "1px solid rgba(255,255,255,0.1)",
                         display: "block",
+                        background: "linear-gradient(135deg, #111827 0%, #0f172a 100%)",
                       }}
                     >
-                      <img
-                        src={OPPORTUNITY_PHOTOS[idx % OPPORTUNITY_PHOTOS.length]}
-                        alt=""
-                        className="photo-zoom"
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          opacity: 0.65,
-                        }}
-                      />
+                      {/* Media Background: Video OR Real Image */}
+                      {item.videoUrl && !item.isGenerating ? (
+                        <video
+                          src={item.videoUrl}
+                          muted
+                          loop
+                          autoPlay
+                          playsInline
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            opacity: 0.75,
+                          }}
+                        />
+                      ) : item.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt=""
+                          className="photo-zoom"
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            opacity: item.isGenerating ? 0.45 : 0.65,
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: "radial-gradient(circle at 50% 30%, rgba(168,85,247,0.2) 0%, rgba(8,12,20,0.95) 75%)",
+                          }}
+                        />
+                      )}
+
+                      {/* Dark Gradient Overlay */}
                       <div
                         style={{
                           position: "absolute",
                           inset: 0,
-                          background:
-                            "linear-gradient(to top, rgba(8,12,20,0.95) 0%, rgba(8,12,20,0.45) 50%, transparent 100%)",
+                          background: "linear-gradient(to top, rgba(8,12,20,0.95) 0%, rgba(8,12,20,0.4) 55%, transparent 100%)",
                         }}
                       />
+
+                      {/* Generating Overlay (P0 progress overlay for live generation) */}
+                      {item.isGenerating && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: "rgba(11,15,23,0.72)",
+                            backdropFilter: "blur(3px)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 8,
+                            zIndex: 3,
+                            padding: 16,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Loader2 style={{ width: 18, height: 18, color: M.purple, animation: "spin 1.2s linear infinite" }} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "white" }}>
+                              {item.stageLabel}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+                            {item.percent}% complete
+                          </span>
+                          <div style={{ width: 140, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.12)", overflow: "hidden", marginTop: 4 }}>
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${item.percent}%`,
+                                background: "linear-gradient(90deg, #a855f7, #F018FF)",
+                                borderRadius: 2,
+                                transition: "width 0.3s ease",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Content Layout */}
                       <div
                         style={{
                           position: "absolute",
@@ -663,6 +858,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                           display: "flex",
                           flexDirection: "column",
                           justifyContent: "space-between",
+                          zIndex: 4,
                         }}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -670,47 +866,71 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                             style={{
                               fontSize: 10.5,
                               fontWeight: 700,
-                              color: "#f59e0b",
-                              background: "rgba(245,158,11,0.15)",
+                              color: item.badgeColor,
+                              background: `${item.badgeColor}20`,
                               padding: "3px 10px",
                               borderRadius: 50,
-                              border: "1px solid rgba(245,158,11,0.25)",
+                              border: `1px solid ${item.badgeColor}40`,
                               letterSpacing: "0.04em",
                             }}
                           >
-                            {spark.window || "24h"} window
+                            {item.badge}
                           </span>
-                          <div
-                            style={{
-                              fontSize: 15,
-                              fontWeight: 800,
-                              color: (spark.score || 90) >= 92 ? "#22c55e" : "#f59e0b",
-                              background: "rgba(8,12,20,0.6)",
-                              backdropFilter: "blur(8px)",
-                              padding: "4px 10px",
-                              borderRadius: 50,
-                              textShadow: `0 0 12px ${(spark.score || 90) >= 92 ? "#22c55e" : "#f59e0b"}88`,
-                            }}
-                          >
-                            {spark.score || 94}%
-                          </div>
+
+                          {item.videoUrl && !item.isGenerating ? (
+                            <div
+                              style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: "50%",
+                                background: "rgba(8,12,20,0.7)",
+                                backdropFilter: "blur(8px)",
+                                border: "1px solid rgba(255,255,255,0.2)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Play style={{ width: 14, height: 14, color: "white", fill: "white", marginLeft: 2 }} />
+                            </div>
+                          ) : item.score ? (
+                            <div
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 800,
+                                color: item.score >= 92 ? "#22c55e" : "#f59e0b",
+                                background: "rgba(8,12,20,0.6)",
+                                backdropFilter: "blur(8px)",
+                                padding: "4px 10px",
+                                borderRadius: 50,
+                              }}
+                            >
+                              {item.score}%
+                            </div>
+                          ) : null}
                         </div>
+
                         <div>
                           <p
                             style={{
                               fontSize: 15,
                               fontWeight: 700,
                               color: "white",
-                              margin: "0 0 6px",
+                              margin: "0 0 4px",
                               lineHeight: 1.3,
                               letterSpacing: "-0.01em",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
                             }}
                           >
-                            {spark.title}
+                            {item.title}
                           </p>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.5)" }}>
-                              {spark.platform || "TikTok & Reels"}
+                            <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {item.subtitle}
                             </span>
                             <div
                               style={{
@@ -721,9 +941,12 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                                 borderRadius: 50,
                                 background: "rgba(168,85,247,0.25)",
                                 border: "1px solid rgba(168,85,247,0.4)",
+                                flexShrink: 0,
                               }}
                             >
-                              <span style={{ fontSize: 12, fontWeight: 700, color: M.purple }}>Open</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: M.purple }}>
+                                {item.type === "viral_spark" ? "Open" : "Review"}
+                              </span>
                               <ArrowRight style={{ width: 12, height: 12, color: M.purple }} />
                             </div>
                           </div>
@@ -734,14 +957,14 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                 </div>
               ) : (
                 <div
-                  className="rounded-xl border border-dashed border-border/60 bg-card/40 p-6 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]"
+                  className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-muted/30 flex items-center justify-center">
-                    <Search className="w-5 h-5 text-muted-foreground/50" />
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
+                    <Search className="w-5 h-5 text-white/40" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Scanning for opportunities</p>
-                    <p className="text-xs text-muted-foreground/60 mt-1">Spark is indexing new viral signals in your niche</p>
+                    <p className="text-sm font-semibold text-white/70">No active opportunities or productions</p>
+                    <p className="text-xs text-white/40 mt-1">Super Spark is monitoring trends and ready for your next campaign</p>
                   </div>
                 </div>
               )}
