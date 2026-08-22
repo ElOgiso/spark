@@ -63,11 +63,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "";
       if (supabaseUrl && supabaseKey) {
         const supabase = createClient(supabaseUrl, supabaseKey);
-        const { data: row } = await (supabase.from("accounts") as any)
+        const { data: rows } = await (supabase.from("accounts") as any)
           .select("id, permissions")
           .eq("brand_id", workspace_id)
-          .eq("platform", "YouTube Shorts")
-          .maybeSingle();
+          .in("platform", ["youtube", "YouTube Shorts", "YouTube"])
+          .limit(1);
+        const row = rows?.[0];
         if (row?.id) {
           const prev =
             row.permissions && typeof row.permissions === "object"

@@ -452,17 +452,26 @@ export function domainPublishJobToInsert(
 
 export function accountRowToDomain(row: any): Account {
   const statusRaw = String(row.status || "").toLowerCase();
-  const connected =
-    statusRaw === "connected" ||
-    row.connected === true ||
-    statusRaw === "active";
+  const perms = (row.permissions && typeof row.permissions === "object" && !Array.isArray(row.permissions))
+    ? row.permissions
+    : {};
+  const isConnected = statusRaw === "connected" || statusRaw === "active" || row.connected === true;
+  const isNeedsReconnect = statusRaw === "needs_reconnect" || statusRaw === "expired" || statusRaw === "permission lost" || statusRaw === "reconnect_required";
   const pKey = normalizePlatformKey(row.platform || "");
+  const expiresAtSec = typeof perms.expires_at === "number" ? perms.expires_at : undefined;
+
   return {
     platform: pKey,
-    handle: row.username || row.handle || row.display_name || "",
-    status: connected ? "connected" : "disconnected",
+    handle: row.handle || row.username || row.display_name || "",
+    displayName: row.display_name || row.handle || pKey,
+    status: isConnected ? "connected" : isNeedsReconnect ? "needs_reconnect" : "disconnected",
     posts: 0,
-  };
+    accessToken: perms.access_token || undefined,
+    refreshToken: perms.refresh_token || undefined,
+    expiresAt: expiresAtSec ? expiresAtSec * 1000 : undefined,
+    channelId: perms.platform_user_id || undefined,
+    avatar: perms.avatar || undefined,
+  } as any;
 }
 
 export function analyticsRowToDomain(row: AnalyticsSnapshotRow): AnalyticsInsight {

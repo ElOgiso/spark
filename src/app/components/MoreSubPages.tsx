@@ -965,7 +965,8 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                       (plat.key.includes("Twitter") &&
                         (String(a.platform).includes("Twitter") || a.platform === "X"))
                   );
-                  const isConnected = Boolean(conn?.active);
+                  const isConnected = Boolean(conn && (conn.status === "connected" || conn.active));
+                  const needsReconnect = Boolean(conn && conn.status === "needs_reconnect");
                   const Icon = plat.icon;
                   const isBusy = disconnectingPlatform === plat.key || connectingPlatform === plat.displayName;
 
@@ -980,13 +981,17 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-base">{plat.displayName}</span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                                isConnected ? "bg-success/10 text-success" : "bg-muted/50 text-muted-foreground"
+                                isConnected
+                                  ? "bg-success/10 text-success"
+                                  : needsReconnect
+                                  ? "bg-amber-500/15 text-amber-400 font-semibold"
+                                  : "bg-muted/50 text-muted-foreground"
                               }`}>
-                                {isConnected ? "CONNECTED" : "DISCONNECTED"}
+                                {isConnected ? "CONNECTED" : needsReconnect ? "RECONNECT REQUIRED" : "DISCONNECTED"}
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1 font-mono">
-                              {isConnected ? conn!.handle || "Connected" : "Not Connected"}
+                              {isConnected || needsReconnect ? conn!.handle || "Linked Account" : "Not Connected"}
                             </p>
                           </div>
                         </div>
@@ -996,6 +1001,8 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                         <span className="text-xs text-muted-foreground">
                           {isConnected ? (
                             <>Status: <strong className="text-success">Live OAuth</strong></>
+                          ) : needsReconnect ? (
+                            <>Status: <strong className="text-amber-400">Token Expired</strong></>
                           ) : (
                             <>Status: <strong className="text-foreground">Not connected</strong></>
                           )}
@@ -1013,9 +1020,9 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           </Button>
                         ) : (
                           <Button
-                            variant="accent"
+                            variant={needsReconnect ? "outline" : "accent"}
                             size="sm"
-                            className="text-xs h-8"
+                            className={`text-xs h-8 ${needsReconnect ? "border-amber-500/40 text-amber-400 hover:bg-amber-500/10" : ""}`}
                             disabled={isBusy}
                             onClick={() => {
                               setConnectingPlatform(plat.displayName);
@@ -1037,7 +1044,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                               });
                             }}
                           >
-                            Connect
+                            {needsReconnect ? "Reconnect" : "Connect"}
                           </Button>
                         )}
                       </div>

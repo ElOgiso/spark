@@ -4,6 +4,7 @@ import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
 import { VoiceStudioModal } from "./ui/VoiceStudioModal";
 import { previewElevenLabsVoice } from "../services/runtime/providers/elevenLabsTTS";
+import { getOAuthAuthorizationUrl } from "../services/socialIntegrationService";
 import {
   Brain,
   Mic,
@@ -729,7 +730,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Connected Accounts</h2>
             {(() => {
-              const connected = accounts ? accounts.filter((a: any) => a.status?.toLowerCase() === "connected") : [];
+              const connected = accounts ? accounts.filter((a: any) => a.status?.toLowerCase() === "connected" || a.status?.toLowerCase() === "needs_reconnect") : [];
               if (connected.length === 0) {
                 return (
                   <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-muted-foreground">
@@ -746,24 +747,39 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
               return (
                 <div className="rounded-xl border border-border bg-card overflow-hidden">
-                  {connected.map((account: any, i: number) => (
-                    <div
-                      key={account.platform}
-                      className={`flex items-center justify-between px-6 py-4 ${i < connected.length - 1 ? "border-b border-border/50" : ""} hover:bg-accent/5 transition-colors`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-success" />
-                        <div>
-                          <p className="text-sm font-medium">{account.platform}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{account.handle}</p>
+                  {connected.map((account: any, i: number) => {
+                    const isConn = account.status?.toLowerCase() === "connected";
+                    return (
+                      <div
+                        key={account.platform}
+                        className={`flex items-center justify-between px-6 py-4 ${i < connected.length - 1 ? "border-b border-border/50" : ""} hover:bg-accent/5 transition-colors`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${isConn ? "bg-success" : "bg-amber-500"}`} />
+                          <div>
+                            <p className="text-sm font-medium">{account.platform}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{account.handle}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {isConn ? (
+                            <span className="text-xs text-success font-semibold">Connected</span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                const url = getOAuthAuthorizationUrl(account.platform);
+                                if (url && url !== "#") window.location.href = url;
+                              }}
+                              className="text-xs px-2.5 py-1 rounded bg-amber-500/20 text-amber-400 font-semibold hover:bg-amber-500/30 transition-colors"
+                            >
+                              Reconnect
+                            </button>
+                          )}
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs text-success font-semibold">Connected</span>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}

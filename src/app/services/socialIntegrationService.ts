@@ -748,20 +748,23 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
 
   async getValidAccessToken(platform: string): Promise<string> {
     const tokens = this.getStoredTokens();
-    const token = tokens[platform];
+    const pKey = normalizePlatformKey(platform);
+    const token = tokens[pKey] || tokens[platform];
     if (!token) return "";
 
     // If expired or about to expire (within 60 seconds)
     if (token.expiresAt && token.expiresAt < Date.now() + 60 * 1000 && token.refreshToken) {
       console.log(`[SocialConnectorFramework] Access token for ${platform} is expired or expiring soon. Refreshing...`);
       try {
-        const endpoint = (platform === "YouTube Shorts" || platform === "YouTube") ? "/api/auth/google/refresh" : "/api/auth/x/refresh";
+        const isGoogle = pKey.includes("youtube") || platform.toLowerCase().includes("youtube");
+        const endpoint = isGoogle ? "/api/auth/google/refresh" : "/api/auth/x/refresh";
+        const brandId = getBrandWorkspaceId();
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             refresh_token: token.refreshToken,
-            workspace_id: getBrandWorkspaceId(),
+            workspace_id: brandId,
           }),
         });
 
@@ -772,13 +775,26 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
             token.refreshToken = data.refresh_token;
           }
           token.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+          token.status = "Connected";
           this.saveToken(token);
+          if (brandId) {
+            const { persistAccountToken } = await import("../backend/workspaceSync");
+            void persistAccountToken(brandId, token);
+          }
+        } else {
+          console.warn(`[SocialConnectorFramework] Token refresh failed for ${platform}. Marking needs reauthorization.`);
+          token.status = "Needs Reauthorization";
+          this.saveToken(token);
+          if (brandId) {
+            const { persistAccountToken } = await import("../backend/workspaceSync");
+            void persistAccountToken(brandId, { ...token, status: "needs_reconnect" });
+          }
         }
       } catch (err) {
         console.warn("[SocialConnectorFramework] Automatic token refresh failed:", err);
       }
     }
-    return token.accessToken || "";
+    return token.status === "Needs Reauthorization" || token.status === "Disconnected" ? "" : (token.accessToken || "");
   }
 
   // IOAuthManager
@@ -835,6 +851,12 @@ export function getOAuthAuthorizationUrl(platform: string): string {
 
 export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
   socialConnectorFramework.saveToken(token);
+  const brandId = getBrandWorkspaceId();
+  if (brandId) {
+    void import("../backend/workspaceSync").then(({ persistAccountToken }) => {
+      void persistAccountToken(brandId, token);
+    });
+  }
   // Notify workspace UI to merge connected account into live accounts list
   try {
     eventBus.emit("ACCOUNT_CONNECTED", {
@@ -946,18 +968,21 @@ export function listLiveConnectedAccounts(): Array<{
   platform: string;
   handle: string;
   displayName: string;
-  status: "connected";
-  active: true;
+  status: "connected" | "needs_reconnect";
+  active: boolean;
 }> {
   return Object.values(getStoredAccountTokens())
-    .filter((t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase()))
-    .map((t) => ({
-      platform: t.platform,
-      handle: t.handle || "",
-      displayName: t.displayName || t.handle || t.platform,
-      status: "connected" as const,
-      active: true as const,
-    }));
+    .map((t) => {
+      const statusLower = String(t.status || "").toLowerCase();
+      const isConn = !t.status || ["connected", "refreshing", "active"].includes(statusLower);
+      return {
+        platform: t.platform,
+        handle: t.handle || "",
+        displayName: t.displayName || t.handle || t.platform,
+        status: isConn ? ("connected" as const) : ("needs_reconnect" as const),
+        active: isConn,
+      };
+    });
 }
 
 function formatCount(n?: number): string {

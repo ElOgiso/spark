@@ -46,7 +46,7 @@ export type ProductionMode = "express" | "standard" | "deep";
 export interface Account {
   platform: string;
   handle: string;
-  status: "connected" | "disconnected";
+  status: "connected" | "needs_reconnect" | "disconnected";
   posts: number;
 }
 

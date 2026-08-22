@@ -159,7 +159,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     };
   }, [auth.brand?.id, character, productions, reviewItems]);
 
-  const [accounts, setAccounts] = useState(() => {
+  const [accounts, setAccounts] = useState<{ id: string; platform: string; handle: string; followers: string; active: boolean; status: string }[]>(() => {
     const live = listLiveConnectedAccounts();
     if (live.length > 0) {
       return live.map((a, idx) => ({
@@ -167,21 +167,22 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         platform: a.platform,
         handle: a.handle,
         followers: "—",
-        active: true as boolean,
+        active: a.active,
+        status: a.status,
       }));
     }
     if (contextAccounts && Array.isArray(contextAccounts)) {
       return contextAccounts
-        .filter((a: any) => a.status === "connected")
         .map((a: any, idx: number) => ({
           id: String(idx + 1),
           platform: a.platform,
           handle: a.handle || "",
           followers: "—",
-          active: true as boolean,
+          active: String(a.status || "").toLowerCase() === "connected",
+          status: a.status || "disconnected",
         }));
     }
-    return [] as { id: string; platform: string; handle: string; followers: string; active: boolean }[];
+    return [];
   });
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
 
@@ -193,7 +194,8 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         platform: a.platform,
         handle: a.handle,
         followers: "—",
-        active: true,
+        active: a.active,
+        status: a.status,
       }))
     );
   };
@@ -925,7 +927,8 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                       (plat.key.includes("Twitter") &&
                         (String(a.platform).includes("Twitter") || a.platform === "X"))
                   );
-                  const isConnected = Boolean(conn?.active);
+                  const isConnected = Boolean(conn && (conn.status === "connected" || conn.active));
+                  const needsReconnect = Boolean(conn && conn.status === "needs_reconnect");
 
                   return (
                     <div key={plat.key} className="p-4 flex items-center justify-between gap-3">
@@ -933,13 +936,17 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold">{plat.displayName}</span>
                           <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${
-                            isConnected ? "bg-success/15 text-success" : "bg-muted/50 text-muted-foreground"
+                            isConnected
+                              ? "bg-success/15 text-success"
+                              : needsReconnect
+                              ? "bg-amber-500/15 text-amber-400 font-semibold"
+                              : "bg-muted/50 text-muted-foreground"
                           }`}>
-                            {isConnected ? "CONNECTED" : "DISCONNECTED"}
+                            {isConnected ? "CONNECTED" : needsReconnect ? "RECONNECT REQUIRED" : "DISCONNECTED"}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-                          {isConnected ? conn!.handle || "Connected" : "Not Connected"}
+                          {isConnected || needsReconnect ? conn!.handle || "Linked Account" : "Not Connected"}
                         </p>
                       </div>
                       
@@ -985,9 +992,13 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                               }
                             }).catch(() => {});
                           }}
-                          className="py-1.5 px-3 rounded-lg border border-border bg-background hover:bg-accent/10 text-xs font-semibold text-center transition-colors shrink-0"
+                          className={`py-1.5 px-3 rounded-lg border text-xs font-semibold text-center transition-colors shrink-0 ${
+                            needsReconnect
+                              ? "border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                              : "border-border bg-background hover:bg-accent/10"
+                          }`}
                         >
-                          Connect
+                          {needsReconnect ? "Reconnect" : "Connect"}
                         </button>
                       )}
                     </div>

@@ -445,24 +445,53 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isCancelled) return;
         setState((prev: any) => {
           const byPlatform = new Map<string, Account>();
-          // Hydrate with Supabase accounts that are connected
-          (snap.accounts || [])
-            .filter((a: any) => String(a.status || "").toLowerCase() === "connected")
-            .forEach((a: any) => {
-              const pKey = normalizePlatformKey(a.platform);
-              byPlatform.set(pKey, {
-                platform: pKey,
-                handle: a.handle || "",
-                status: "connected",
-                posts: a.posts || 0,
-              });
+          // Hydrate with Supabase accounts (both connected and needs_reconnect)
+          (snap.accounts || []).forEach((a: any) => {
+            const pKey = normalizePlatformKey(a.platform);
+            const statusStr = String(a.status || "").toLowerCase();
+            const isConn = statusStr === "connected" || statusStr === "active";
+            byPlatform.set(pKey, {
+              platform: pKey,
+              handle: a.handle || a.displayName || "",
+              status: isConn ? "connected" : "needs_reconnect",
+              posts: a.posts || 0,
             });
+
+            // Seed local token cache if tokens exist in cloud row
+            if (a.accessToken || a.refreshToken) {
+              const stored = socialConnectorFramework.getStoredTokens();
+              const existing = stored[pKey];
+              if (!existing || !existing.accessToken) {
+                socialConnectorFramework.saveToken({
+                  platform: pKey,
+                  handle: a.handle || "",
+                  displayName: a.displayName || a.handle || pKey,
+                  avatar: a.avatar || "",
+                  channelId: a.channelId || "",
+                  verified: true,
+                  status: isConn ? "Connected" : "Needs Reauthorization",
+                  accessToken: a.accessToken,
+                  refreshToken: a.refreshToken,
+                  expiresAt: a.expiresAt || (Date.now() + 3600000),
+                  scopes: [],
+                  permissionsGranted: [],
+                  connectedAt: new Date().toISOString(),
+                  lastSyncAt: new Date().toISOString(),
+                }, { silent: true });
+              }
+            }
+          });
+
           // Merge local tokens
           tokenAccounts.forEach((a) => {
             const pKey = normalizePlatformKey(a.platform);
+            const statusStr = String(a.status || "").toLowerCase();
+            const isConn = statusStr === "connected" || statusStr === "active";
             byPlatform.set(pKey, {
-              ...a,
               platform: pKey,
+              handle: a.handle || "",
+              status: isConn ? "connected" : "needs_reconnect",
+              posts: 0,
             });
           });
           
