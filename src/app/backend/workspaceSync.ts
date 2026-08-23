@@ -499,7 +499,11 @@ export async function persistPublishJobCreate(brandId: string, job: PublishJob) 
 }
 
 export async function persistResearchSourceCreate(brandId: string, source: ResearchSource) {
-  if (!isSupabaseConfigured() || !isUuid(brandId)) return null;
+  if (!isSupabaseConfigured() || !brandId) return null;
+  if (!isUuid(brandId)) {
+    console.error("[workspaceSync] persistResearchSourceCreate failed: brandId is not a valid UUID", brandId);
+    return null;
+  }
   const result = await createResearchSource({ ...source, brand_id: brandId });
   return result.data || null;
 }

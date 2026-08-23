@@ -359,17 +359,12 @@ export interface ResearchSourceRow {
   id: string;
   brand_id: string;
   platform: string;
-  platform_account_id: string | null;
+  platform_account_id?: string | null;
   url: string;
-  username: string;
-  display_name: string;
-  avatar: string | null;
-  followers: number | null;
-  followers_status: string | null;
-  verified: boolean | null;
-  description: string | null;
-  status: string;
-  last_synced_at: string | null;
+  handle: string | null;
+  status: string | null;
+  display_name: string | null;
+  metadata: Json | null;
   created_at: string;
   updated_at: string | null;
 }

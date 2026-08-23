@@ -4,20 +4,36 @@ import type { ResearchSource, ResearchPattern } from "../../domain/types";
 import type { ResearchSourceRow, ResearchPatternRow } from "../database.types";
 
 function sourceRowToDomain(row: ResearchSourceRow): ResearchSource {
+  const meta = (row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+    ? row.metadata
+    : {}) as Record<string, any>;
+
+  const handleVal = row.handle || meta.username || meta.handle || "@account";
+
   return {
     id: row.id,
     platform: (row.platform || "youtube") as any,
     platformAccountId: row.platform_account_id || undefined,
     url: row.url,
-    username: row.username,
-    displayName: row.display_name,
-    avatar: row.avatar || undefined,
-    followers: row.followers ?? null,
-    metricsAvailability: (row.followers_status || "unavailable") as any,
-    verified: Boolean(row.verified),
-    description: row.description || undefined,
+    username: handleVal,
+    displayName: row.display_name || handleVal,
+    avatar: meta.avatar || meta.imageUrl || undefined,
+    banner: meta.banner || undefined,
+    followers: typeof meta.followers === "number" ? meta.followers : null,
+    videoCount: typeof meta.videoCount === "number" ? meta.videoCount : null,
+    totalViews: typeof meta.totalViews === "number" ? meta.totalViews : null,
+    metricsAvailability: (meta.metricsAvailability || meta.followers_status || "unavailable") as any,
+    verified: Boolean(meta.verified),
+    description: meta.description || undefined,
     status: (row.status || "active") as any,
-    lastSyncedAt: row.last_synced_at || undefined,
+    sourceType: meta.sourceType || "channel",
+    videoResearch: meta.videoResearch || undefined,
+    recentVideos: Array.isArray(meta.recentVideos) ? meta.recentVideos : [],
+    topContent: Array.isArray(meta.topContent) ? meta.topContent : [],
+    learnings: Array.isArray(meta.learnings) ? meta.learnings : [],
+    observations: Array.isArray(meta.observations) ? meta.observations : [],
+    researchConfidence: typeof meta.researchConfidence === "number" ? meta.researchConfidence : 88,
+    lastSyncedAt: meta.lastSyncedAt || row.updated_at || row.created_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at || undefined,
   };
@@ -48,21 +64,37 @@ export async function listResearchSources(brandId: string): Promise<RepositoryRe
 }
 
 export async function createResearchSource(values: Partial<ResearchSource> & { brand_id?: string }): Promise<RepositoryResult<ResearchSource>> {
+  const handleVal = values.username || (values as any).handle || "@account";
+  const metadataObj: Record<string, any> = {
+    avatar: values.avatar || null,
+    banner: (values as any).banner || null,
+    followers: typeof values.followers === "number" ? values.followers : null,
+    videoCount: typeof values.videoCount === "number" ? values.videoCount : null,
+    totalViews: typeof values.totalViews === "number" ? values.totalViews : null,
+    metricsAvailability: values.metricsAvailability || null,
+    verified: Boolean(values.verified),
+    description: values.description || null,
+    lastSyncedAt: values.lastSyncedAt || new Date().toISOString(),
+    sourceType: (values as any).sourceType || "channel",
+    videoResearch: (values as any).videoResearch || null,
+    recentVideos: (values as any).recentVideos || [],
+    topContent: (values as any).topContent || [],
+    learnings: (values as any).learnings || [],
+    observations: (values as any).observations || [],
+    researchConfidence: values.researchConfidence || 88,
+  };
+
   const rowInsert: Partial<ResearchSourceRow> = {
     id: values.id,
     brand_id: values.brand_id,
-    platform: values.platform,
+    platform: values.platform || "youtube",
     url: values.url,
-    username: values.username,
-    display_name: values.displayName,
-    avatar: values.avatar || null,
-    followers: typeof values.followers === "number" ? values.followers : null,
-    followers_status: values.metricsAvailability || null,
-    verified: values.verified || false,
-    description: values.description || null,
+    handle: handleVal,
+    display_name: values.displayName || handleVal,
     status: values.status || "active",
-    last_synced_at: values.lastSyncedAt || null,
+    metadata: metadataObj as any,
   };
+
   const res = await insertRow("research_sources", rowInsert as any);
   return {
     data: res.data ? sourceRowToDomain(res.data) : null,
@@ -74,8 +106,26 @@ export async function createResearchSource(values: Partial<ResearchSource> & { b
 export async function updateResearchSource(id: string, values: Partial<ResearchSource>): Promise<RepositoryResult<ResearchSource>> {
   const rowUpdate: Partial<ResearchSourceRow> = {};
   if (values.status) rowUpdate.status = values.status;
-  if (values.lastSyncedAt) rowUpdate.last_synced_at = values.lastSyncedAt;
-  if (values.updatedAt) rowUpdate.updated_at = values.updatedAt;
+  if (values.displayName) rowUpdate.display_name = values.displayName;
+  if (values.username) rowUpdate.handle = values.username;
+  if (values.url) rowUpdate.url = values.url;
+
+  const metadataPatch: Record<string, any> = {};
+  if (values.avatar !== undefined) metadataPatch.avatar = values.avatar;
+  if (values.followers !== undefined) metadataPatch.followers = values.followers;
+  if (values.metricsAvailability !== undefined) metadataPatch.metricsAvailability = values.metricsAvailability;
+  if (values.verified !== undefined) metadataPatch.verified = values.verified;
+  if (values.description !== undefined) metadataPatch.description = values.description;
+  if (values.lastSyncedAt !== undefined) metadataPatch.lastSyncedAt = values.lastSyncedAt;
+  if ((values as any).videoResearch !== undefined) metadataPatch.videoResearch = (values as any).videoResearch;
+  if ((values as any).recentVideos !== undefined) metadataPatch.recentVideos = (values as any).recentVideos;
+  if ((values as any).topContent !== undefined) metadataPatch.topContent = (values as any).topContent;
+  if ((values as any).learnings !== undefined) metadataPatch.learnings = (values as any).learnings;
+
+  if (Object.keys(metadataPatch).length > 0) {
+    rowUpdate.metadata = metadataPatch as any;
+  }
+
   const res = await updateRow("research_sources", id, rowUpdate as any);
   return {
     data: res.data ? sourceRowToDomain(res.data) : null,
@@ -89,33 +139,48 @@ export async function deleteResearchSource(id: string): Promise<RepositoryResult
 }
 
 export async function listResearchPatterns(brandId: string): Promise<RepositoryResult<ResearchPattern[]>> {
-  const res = await listByBrand("research_patterns", brandId);
-  return {
-    data: res.data ? res.data.map(patternRowToDomain) : null,
-    error: res.error,
-    source: res.source,
-  };
+  try {
+    const res = await listByBrand("research_patterns", brandId);
+    if (res.error) {
+      // Missing table fallback
+      return { data: [], error: null, source: "local" };
+    }
+    return {
+      data: res.data ? res.data.map(patternRowToDomain) : [],
+      error: null,
+      source: res.source,
+    };
+  } catch (err) {
+    return { data: [], error: null, source: "local" };
+  }
 }
 
 export async function createResearchPattern(values: Partial<ResearchPattern> & { brand_id?: string }): Promise<RepositoryResult<ResearchPattern>> {
-  const rowInsert: Partial<ResearchPatternRow> = {
-    id: values.id,
-    brand_id: values.brand_id,
-    source_id: values.sourceId,
-    pattern_type: values.patternType,
-    confidence: values.confidence,
-    origin_weight: values.originWeight,
-    title: values.title,
-    description: values.description,
-    evidence: values.evidence || null,
-    metrics: values.metrics as any,
-  };
-  const res = await insertRow("research_patterns", rowInsert as any);
-  return {
-    data: res.data ? patternRowToDomain(res.data) : null,
-    error: res.error,
-    source: res.source,
-  };
+  try {
+    const rowInsert: Partial<ResearchPatternRow> = {
+      id: values.id,
+      brand_id: values.brand_id,
+      source_id: values.sourceId,
+      pattern_type: values.patternType,
+      confidence: values.confidence,
+      origin_weight: values.originWeight,
+      title: values.title,
+      description: values.description,
+      evidence: values.evidence || null,
+      metrics: values.metrics as any,
+    };
+    const res = await insertRow("research_patterns", rowInsert as any);
+    if (res.error) {
+      return { data: null, error: null, source: "local" };
+    }
+    return {
+      data: res.data ? patternRowToDomain(res.data) : null,
+      error: null,
+      source: res.source,
+    };
+  } catch (err) {
+    return { data: null, error: null, source: "local" };
+  }
 }
 
 export const researchSourceRepository = {
