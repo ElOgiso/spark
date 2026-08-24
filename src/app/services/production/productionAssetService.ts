@@ -23,6 +23,41 @@ export interface LockedIdentityPack {
   environmentString: string;
 }
 
+export function buildCompleteVoiceScript(brief: ProductionBrief): string {
+  const hook = typeof brief.hook === "string" ? brief.hook.trim() : "";
+  const outline = typeof brief.scriptOutline === "string" ? brief.scriptOutline.trim() : "";
+
+  let cta = "";
+  if (typeof brief.caption === "string" && brief.caption.trim()) {
+    const firstSentence = brief.caption.split(/[.!?\n]/)[0]?.trim();
+    if (firstSentence && firstSentence.length > 5 && firstSentence.length < 120) {
+      cta = firstSentence;
+    }
+  }
+  if (!cta && brief.storyboard && brief.storyboard.length > 0) {
+    const lastScene = brief.storyboard[brief.storyboard.length - 1];
+    cta = lastScene?.onScreenText || lastScene?.scriptSnippet || "";
+  }
+  if (!cta) {
+    cta = "Follow for more strategies.";
+  }
+
+  const clean = (str: string) =>
+    str
+      .replace(/[*_#`~\[\]()]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const cleanHook = clean(hook);
+  const cleanOutline = clean(outline);
+  const cleanCta = clean(cta);
+
+  const parts = [cleanHook, cleanOutline, cleanCta].filter(Boolean);
+  const fullScript = parts.join(". ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
+
+  return fullScript.slice(0, 600);
+}
+
 /**
  * PART 1 & 4 — Locked Identity Pack Helper
  * Enforces reference-led identity consistency, locked wardrobe, set continuity,
@@ -749,7 +784,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
       stages[1].status = "active";
 
       const isExpressMode = mode === "express";
-      const shouldSynthesizeExternalVoice = isExpressMode || Boolean((activeCreditSettings as any)?.generateExternalVoice);
+      const shouldSynthesizeExternalVoice = true; // Synthesize voiceover bed across ALL modes for guaranteed speech audio
 
       if (!shouldSynthesizeExternalVoice) {
         console.log(`[SPARK Pipeline] Mode is "${mode}" (standard/deep hybrid). Skipping separate ElevenLabs voiceover bed (narration/dialogue built into videoGeneration).`);
@@ -760,10 +795,10 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
         stages[1].status = "done";
       } else {
-        emitProgress(12, "Voice", "Synthesizing express voiceover narration...");
+        emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
         checkAborted();
         try {
-          const voiceScript = `${brief.hook}. ${brief.scriptOutline}`.trim();
+          const voiceScript = buildCompleteVoiceScript(brief);
           const targetVoiceId = character?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal);
@@ -845,12 +880,14 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
           }
 
           const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+          const sceneText = (scene.onScreenText || scene.scriptSnippet || brief.hook || "").slice(0, 60);
 
           const imagePrompt = `
 Production storyboard panel ${sIdx + 1} of ${totalScenes}, sequential visual map.
 CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.${identityPack.characterReferenceImageUrl ? ` Reference Sheet: ${identityPack.characterReferenceImageUrl}.` : ""} Use reference image. Do not change face or outfit.
 ENVIRONMENT (locked): ${identityPack.environmentString}. Same set every panel.
 ACTION THIS PANEL ONLY: ${scene.primaryChange || scene.visualDescription || scene.startState}.
+ON-SCREEN TEXT OVERLAY LAW: Render bold, readable, high-contrast typography overlay on the image: "${sceneText}" (bold typography, safe margins, high contrast).
 FRAMING: ${panelFraming} (shot variety across board — not extreme close-up for every panel).
 Style consistent across the full board. Clear readable scene progression.
 Hook context: "${brief.hook}". Brand: ${brand.name}.
@@ -1090,9 +1127,12 @@ Brand: ${brand.name}
             try {
               const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
               const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map(s => s.image).filter(Boolean) as string[]);
+              const targetTexts = currentStoryboard.map((s) => s.onScreenText || s.scriptSnippet || brief.hook || "");
+
               const compileResult = await compileNarratorSlideshowVideo({
                 imageUrls: targetImages,
                 audioUrl: realVoiceUrl,
+                onScreenTexts: targetTexts,
                 totalDurationSec: activeCreditSettings?.shortsDurationSec || 12,
               });
 

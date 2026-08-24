@@ -7,6 +7,7 @@
 export interface CompileNarratorVideoOptions {
   imageUrls: string[];
   audioUrl?: string;
+  onScreenTexts?: string[];
   totalDurationSec?: number;
   width?: number;
   height?: number;
@@ -150,6 +151,7 @@ export async function compileNarratorSlideshowVideo(
   const {
     imageUrls,
     audioUrl,
+    onScreenTexts,
     totalDurationSec: fallbackDuration = 12,
     width = 1080,
     height = 1920,
@@ -321,6 +323,68 @@ export async function compileNarratorSlideshowVideo(
         }
 
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+        // Draw lower-third on-screen text overlay
+        const currentText = onScreenTexts && onScreenTexts[imageIdx] ? onScreenTexts[imageIdx].trim() : "";
+        if (currentText) {
+          const fontSize = Math.round(width * 0.038);
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          const maxWidth = width * 0.82;
+          const words = currentText.split(" ");
+          const lines: string[] = [];
+          let currentLine = "";
+
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const testWidth = ctx.measureText(testLine).width;
+            if (testWidth > maxWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine) lines.push(currentLine);
+
+          const paddingX = Math.round(width * 0.035);
+          const paddingY = Math.round(height * 0.012);
+          const lineHeight = fontSize * 1.35;
+          const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+          const boxWidth = Math.min(width * 0.88, maxLineWidth + paddingX * 2);
+          const boxHeight = lines.length * lineHeight + paddingY * 2;
+          const boxX = (width - boxWidth) / 2;
+          const boxY = height * 0.80 - boxHeight / 2;
+
+          ctx.fillStyle = "rgba(11, 15, 23, 0.82)";
+          ctx.beginPath();
+          const radius = 14;
+          if (typeof ctx.roundRect === "function") {
+            ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+          } else {
+            ctx.rect(boxX, boxY, boxWidth, boxHeight);
+          }
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetY = 2;
+
+          lines.forEach((line, idx) => {
+            const lineY = boxY + paddingY + (idx + 0.5) * lineHeight;
+            ctx.fillText(line, width / 2, lineY);
+          });
+
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+        }
 
         currentFrame++;
         setTimeout(drawNextFrame, 1000 / fps);
