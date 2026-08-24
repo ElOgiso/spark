@@ -48,7 +48,7 @@ import {
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
-import { evaluateSparkForProduction, autoRepairViralSpark } from "../services/production/sparkQualityGate";
+import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
@@ -1231,14 +1231,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // Quality Gate Evaluation
-    const evalRes = evaluateSparkForProduction(spark, state.brand);
+    const evalRes = isProductionReadySpark(spark, state.brand);
     if (!evalRes.ok) {
-      console.log(`[SparkContext] Spark quality gate triggered auto-repair for "${spark.title}". Failures:`, evalRes.criticalFailures);
-      const repaired = autoRepairViralSpark(spark, state.brand);
-      const secondEval = evaluateSparkForProduction(repaired, state.brand);
+      console.log(`[SparkContext] Spark quality gate triggered auto-repair for "${spark.title}". Reasons:`, evalRes.reasons);
+      const repaired = autoRepairViralSparkDeterministic(spark, state.brand);
+      const secondEval = isProductionReadySpark(repaired, state.brand);
 
       if (!secondEval.ok) {
-        const failureMsg = secondEval.criticalFailures.join("; ");
+        const failureMsg = secondEval.reasons.join("; ");
         NotificationService.addNotification({
           title: "Spark Needs Strengthening",
           message: `Cannot start production: ${failureMsg}. Click 'Strengthen Spark' on card to upgrade.`,
@@ -1629,7 +1629,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const targetSpark = state.viralSparks?.find((s: any) => s.id === sparkId);
       if (!targetSpark) return undefined;
 
-      const repaired = autoRepairViralSpark(targetSpark, state.brand);
+      const repaired = autoRepairViralSparkDeterministic(targetSpark, state.brand);
       setState((prev: any) => ({
         ...prev,
         viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? repaired : s)),
