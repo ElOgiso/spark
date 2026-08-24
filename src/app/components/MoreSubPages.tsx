@@ -2370,6 +2370,15 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
             </div>
           )
         };
+      case "/more/credit-control":
+      case "/more/generation-controls":
+      case "/more/production-settings":
+        return {
+          title: "Credit Control & Generation Limits",
+          icon: Zap,
+          description: "Limit how many assets SPARK synthesizes per production to control credit consumption.",
+          content: <CreditControlPanel onNavigate={onNavigate} isMobile={false} />
+        };
 
       default:
         return {
@@ -2387,6 +2396,10 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
   if (subPath === "/more/ai-preferences" && isMobileDevice) {
     return <AIPreferencesPanel onNavigate={onNavigate} />;
+  }
+
+  if ((subPath === "/more/credit-control" || subPath === "credit-control" || subPath === "/more/generation-controls" || subPath === "/more/production-settings") && isMobileDevice) {
+    return <CreditControlPanel onNavigate={onNavigate} isMobile={true} />;
   }
 
   const page = getSubPageDetails();
