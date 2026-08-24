@@ -12,6 +12,7 @@ import {
   Film,
 } from "lucide-react";
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
+import { useSpark } from "../../state/SparkContext";
 
 export interface ProductionSceneItem {
   id: string;
@@ -90,24 +91,51 @@ export function MobileProductionAssetsGallery({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const { fixProductionScene, mergeProductionScenes } = useSpark() as any;
+
   const handleFixSubmit = () => {
     if (!fixTargetScene) return;
+    const targetIdx = fixTargetScene.index;
+    const notes = fixNotes.trim();
+
     setScenes((prev) =>
-      prev.map((s) =>
-        s.id === fixTargetScene.id
-          ? { ...s, status: "Needs fix", beatLine: fixNotes.trim() ? `Fix requested: ${fixNotes.slice(0, 40)}` : s.beatLine }
-          : s
-      )
+      prev.map((s) => (s.id === fixTargetScene.id ? { ...s, status: "Generating" } : s))
     );
-    showToast(`Fix requested for Scene ${fixTargetScene.index}. Marked for revision.`);
+    showToast(`Generating revision for Scene ${targetIdx}...`);
     setFixTargetScene(null);
     setFixNotes("");
+
+    if (activeProd?.id && fixProductionScene) {
+      void fixProductionScene(activeProd.id, targetIdx, notes).then((res: any) => {
+        if (res) {
+          setScenes((prev) =>
+            prev.map((s) =>
+              s.index === targetIdx
+                ? {
+                    ...s,
+                    status: res.status === "ready" ? "Ready" : "Needs fix",
+                    videoUrl: res.videoUrl || s.videoUrl,
+                    beatLine: notes ? `Revised: ${notes.slice(0, 40)}` : s.beatLine,
+                  }
+                : s
+            )
+          );
+          showToast(`Scene ${targetIdx} revision complete!`);
+        }
+      });
+    }
   };
 
   const handleApproveMerge = () => {
     setScenes((prev) => prev.map((s) => ({ ...s, status: "Approved" })));
     setApprovedMaster(true);
-    showToast(isOneTake ? "Master video approved for publishing!" : "Approved scenes merged into master video!");
+    showToast("Merging scenes into master video...");
+
+    if (activeProd?.id && mergeProductionScenes) {
+      void mergeProductionScenes(activeProd.id).then((masterUrl: string | null) => {
+        showToast(isOneTake ? "Master video approved!" : "Scenes concatenated into single master video!");
+      });
+    }
   };
 
   return (

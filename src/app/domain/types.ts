@@ -79,6 +79,8 @@ export interface ViralSpark {
   syncCount?: number;
 }
 
+export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
+
 export interface ProductionScene {
   scene: number;
   duration: string;
@@ -96,6 +98,22 @@ export interface ProductionScene {
   thumbnailUrl?: string;
   image?: string;
   videoUrl?: string;
+
+  id?: string;
+  productionId?: string;
+  brandId?: string;
+  index?: number;
+  durationSec?: number;
+  action?: string;
+  camera?: string;
+  scriptBeat?: string;
+  keyframeImageUrl?: string;
+  lastFrameUrl?: string;
+  status?: SceneStatus;
+  editNotes?: string;
+  lastError?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface GenerationProgressStage {
@@ -187,6 +205,7 @@ export interface Production {
   aspectRatio: string;
   formats: string[];
   scenes: { scene: number; description: string; duration: string; image?: string; videoUrl?: string }[];
+  productionScenes?: ProductionScene[];
   reasoning?: any;
   brief?: ProductionBrief;
   audioUrl?: string;

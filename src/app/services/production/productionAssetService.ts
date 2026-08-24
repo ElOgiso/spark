@@ -1,4 +1,4 @@
-import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset } from "../../domain/types";
+import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
@@ -1479,6 +1479,203 @@ No resets, no new character, no scrambled order.
       };
 
       return fallbackResult;
+    }
+  }
+
+  /**
+   * Plan sequential production scenes based on targetDurationSec vs provider max clip length
+   */
+  public static planProductionScenes(params: {
+    production: Production;
+    brief: ProductionBrief;
+    brand: Brand;
+    formatSettings?: ProductionFormatSettings;
+    creditSettings?: GenerationCreditSettings;
+  }): ProductionScene[] {
+    const { production, brief, brand, formatSettings } = params;
+    const targetSec = formatSettings?.targetDurationSec || 60;
+    const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
+    const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
+
+    // Provider max clip length limit: Veo/Gemini ~ 8s, Grok ~ 15s, fallback 8s
+    const providerMaxClipSec = mode === "deep" ? 12 : 8;
+    const isOneTake = targetSec <= providerMaxClipSec;
+    const totalScenesCount = isOneTake ? 1 : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
+    const perSceneSec = Math.max(4, Math.floor(targetSec / totalScenesCount));
+
+    const storyboard: any[] = (brief.storyboard as any[]) || [];
+    const scenesList: ProductionScene[] = [];
+
+    for (let i = 0; i < totalScenesCount; i++) {
+      const idx = i + 1;
+      const sbItem: any = storyboard[i] || storyboard[storyboard.length - 1];
+      const clipUrl = brief.generatedAssets?.generatedVideos?.[i] || (i === 0 ? production.videoUrl || brief.videoUrl : undefined);
+
+      scenesList.push({
+        scene: idx,
+        duration: `${perSceneSec}s`,
+        shotList: sbItem?.shotList || `Scene ${idx} framing`,
+        cameraDirection: sbItem?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+        transitions: sbItem?.transitions || "Seamless flow",
+        onScreenText: sbItem?.onScreenText || sbItem?.scriptSnippet || `Scene ${idx}`,
+        pacing: sbItem?.pacing || "Balanced",
+        scriptSnippet: sbItem?.scriptSnippet || brief.hook || "",
+        visualDescription: sbItem?.visualDescription || brief.visualDirection || `Scene ${idx} beat`,
+        startState: sbItem?.startState || `Scene ${idx} start state`,
+        endState: sbItem?.endState || `Scene ${idx} end state`,
+        primaryChange: sbItem?.primaryChange || sbItem?.visualDescription || `Physical action beat ${idx}`,
+        image: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
+        videoUrl: clipUrl,
+        id: `scene-${production.id}-${idx}`,
+        productionId: production.id,
+        brandId: (brand as any).id,
+        index: idx,
+        durationSec: perSceneSec,
+        action: sbItem?.primaryChange || sbItem?.visualDescription || `Physical action beat ${idx}`,
+        camera: sbItem?.cameraDirection || (mode === "deep" ? "Continuous tracking shot" : "Host-on-camera medium frame"),
+        scriptBeat: sbItem?.scriptSnippet || brief.hook || "",
+        keyframeImageUrl: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
+        status: clipUrl ? "ready" : "pending",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return scenesList;
+  }
+
+  /**
+   * Fix / regenerate a specific scene index with editNotes without touching neighboring scenes
+   */
+  public static async fixProductionScene(params: {
+    productionId: string;
+    sceneIndex: number;
+    editNotes: string;
+    brand: Brand;
+    character?: Character;
+    production: Production;
+  }): Promise<ProductionScene | null> {
+    const { productionId, sceneIndex, editNotes, brand, character, production } = params;
+    const brief = production.brief || ({} as ProductionBrief);
+    const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({ production, brief, brand });
+    const targetSceneIdx = existingScenes.findIndex((s) => (s.index || s.scene) === sceneIndex);
+
+    if (targetSceneIdx < 0) return null;
+    const sceneToFix = existingScenes[targetSceneIdx];
+    sceneToFix.status = "generating";
+    sceneToFix.editNotes = editNotes;
+
+    try {
+      const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
+      const promptPack = getProductionPromptPack({
+        brand,
+        character,
+        brief,
+        production,
+        aspectRatio: identityPack.aspectRatio,
+        characterRefUrl: identityPack.characterReferenceImageUrl,
+      });
+
+      // Adjacent continuity seed: previous scene's last frame or keyframe
+      const prevScene = existingScenes[targetSceneIdx - 1];
+      const continuitySeed = prevScene?.lastFrameUrl || prevScene?.keyframeImageUrl || prevScene?.image || identityPack.characterReferenceImageUrl;
+
+      const beatPrompt = `
+${promptPack.globalLockBlock}
+
+FIX REVISION FOR SCENE ${sceneIndex}:
+Original Beat Action: ${sceneToFix.action || sceneToFix.scriptBeat || sceneToFix.visualDescription}
+EXECUTIVE REVISION REASON: "${editNotes}"
+Apply revision while maintaining 100% subject identity and set continuity.
+`.trim();
+
+      const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
+        prompt: beatPrompt,
+        referenceImageUrl: continuitySeed,
+        aspectRatio: identityPack.aspectRatio,
+      });
+
+      let finalClipUrl = generatedClip;
+      if (isPlayableVideoUrl(generatedClip)) {
+        try {
+          const storedAsset = await ProductionAssetService.uploadAssetToStorage({
+            productionId,
+            brandId: (brand as any).id,
+            assetType: "video",
+            storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/scenes/scene_${sceneIndex}_rev_${Date.now()}.mp4`,
+            dataUrlOrBlob: generatedClip,
+            mimeType: "video/mp4",
+            prompt: beatPrompt,
+            provider: "ModelRouter",
+          });
+          if (storedAsset?.publicUrl) finalClipUrl = storedAsset.publicUrl;
+        } catch {}
+      }
+
+      sceneToFix.videoUrl = finalClipUrl;
+      sceneToFix.status = isPlayableVideoUrl(finalClipUrl) ? "ready" : "needs_edit";
+      sceneToFix.updatedAt = new Date().toISOString();
+
+      return sceneToFix;
+    } catch (err: any) {
+      sceneToFix.status = "needs_edit";
+      sceneToFix.lastError = err?.message || String(err);
+      return sceneToFix;
+    }
+  }
+
+  /**
+   * Concatenate ready scene video clips in index order into one master video
+   */
+  public static async mergeProductionScenes(params: {
+    productionId: string;
+    production: Production;
+    brand: Brand;
+  }): Promise<string | null> {
+    const { productionId, production, brand } = params;
+    const brief = production.brief || ({} as ProductionBrief);
+    const scenes = production.productionScenes || [];
+
+    const readyClips = scenes
+      .filter((s) => (s.status === "ready" || s.status === "approved") && s.videoUrl)
+      .sort((a, b) => (a.index || a.scene) - (b.index || b.scene))
+      .map((s) => s.videoUrl!);
+
+    if (readyClips.length === 0) return production.videoUrl || brief.videoUrl || null;
+
+    try {
+      const { mergeSceneVideos } = await import("./sceneVideoMerger");
+      const mergeResult = await mergeSceneVideos({
+        videoUrls: readyClips,
+        audioUrl: brief.audioUrl || production.audioUrl,
+      });
+
+      if (!mergeResult) {
+        return readyClips[0] || production.videoUrl || null;
+      }
+
+      const storedMaster = await ProductionAssetService.uploadAssetToStorage({
+        productionId,
+        brandId: (brand as any).id,
+        assetType: "video",
+        storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.mp4`,
+        dataUrlOrBlob: mergeResult.blob,
+        mimeType: mergeResult.mimeType,
+        prompt: "Merged Master Video from Approved Scene Sequence",
+        provider: "SceneVideoMerger",
+      });
+
+      const masterUrl = storedMaster?.publicUrl || readyClips[0];
+      production.videoUrl = masterUrl;
+      brief.videoUrl = masterUrl;
+      if (!brief.generatedAssets) brief.generatedAssets = {};
+      brief.generatedAssets.generatedVideos = [masterUrl];
+      production.status = "Ready for Review";
+
+      return masterUrl;
+    } catch (err) {
+      console.error("[ProductionAssetService] Merge execution notice:", err);
+      return readyClips[0] || production.videoUrl || null;
     }
   }
 }

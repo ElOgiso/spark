@@ -105,6 +105,8 @@ interface SparkContextType {
   updateFormatSettings: (newSettings: Partial<ProductionFormatSettings>) => Promise<boolean>;
   createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
+  fixProductionScene: (productionId: string, sceneIndex: number, editNotes: string) => Promise<any>;
+  mergeProductionScenes: (productionId: string) => Promise<string | null>;
   cancelProduction: (productionId: string) => void;
   deleteProduction: (productionId: string) => void;
   productionGenerationEnabled?: boolean;
@@ -1514,6 +1516,75 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { production: initialProduction, reviewItem: initialReviewItem };
   };
 
+  const fixProductionScene = useCallback(
+    async (productionId: string, sceneIndex: number, editNotes: string) => {
+      const prod = state.productions?.find((p: any) => p.id === productionId);
+      if (!prod) return null;
+
+      const { ProductionAssetService } = await import("../services/production/productionAssetService");
+      const updatedScene = await ProductionAssetService.fixProductionScene({
+        productionId,
+        sceneIndex,
+        editNotes,
+        brand: state.brand,
+        character: state.character,
+        production: prod,
+      });
+
+      if (updatedScene) {
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) => {
+            if (p.id !== productionId) return p;
+            const currentScenes = p.productionScenes || [];
+            const updatedScenes = currentScenes.map((s: any) => (s.index === sceneIndex ? updatedScene : s));
+            return { ...p, productionScenes: updatedScenes };
+          }),
+        }));
+      }
+      return updatedScene;
+    },
+    [state.productions, state.brand, state.character]
+  );
+
+  const mergeProductionScenes = useCallback(
+    async (productionId: string) => {
+      const prod = state.productions?.find((p: any) => p.id === productionId);
+      if (!prod) return null;
+
+      const { ProductionAssetService } = await import("../services/production/productionAssetService");
+      const masterUrl = await ProductionAssetService.mergeProductionScenes({
+        productionId,
+        production: prod,
+        brand: state.brand,
+      });
+
+      if (masterUrl) {
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) => {
+            if (p.id !== productionId) return p;
+            return {
+              ...p,
+              videoUrl: masterUrl,
+              status: "Ready for Review",
+              brief: {
+                ...(p.brief || {}),
+                videoUrl: masterUrl,
+                generatedAssets: {
+                  ...(p.brief?.generatedAssets || {}),
+                  generatedVideos: [masterUrl],
+                },
+              },
+            };
+          }),
+        }));
+      }
+      return masterUrl;
+    },
+    [state.productions, state.brand]
+  );
+
   const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
     return ProductionGenerationGuard.isEnabled();
   });
@@ -2487,6 +2558,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateAISettings,
         createProductionFromSpark,
         generateProductionAssets,
+        fixProductionScene,
+        mergeProductionScenes,
         cancelProduction,
         deleteProduction,
         productionGenerationEnabled,
