@@ -47,7 +47,9 @@ import type {
   ViralSpark,
   ResearchSource,
   ResearchPattern,
+  GenerationCreditSettings,
 } from "../domain/types";
+import { DEFAULT_CREDIT_SETTINGS } from "../domain/types";
 import {
   accountRowToDomain,
   analyticsRowToDomain,
@@ -67,6 +69,7 @@ import { ExecutiveContext, createEmptyExecutiveContext } from "../state/Executiv
 export type WorkspaceSnapshot = {
   brand?: Brand;
   character?: Character;
+  creditSettings?: GenerationCreditSettings;
   accounts: Account[];
   memoryItems: MemoryItem[];
   viralSparks: ViralSpark[];
@@ -199,9 +202,12 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     ? characterRowToDomain(characters.data[0])
     : undefined;
 
+  const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
+
   return {
     brand,
     character: firstCharacter,
+    creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
     memoryItems: (memory.data ?? []).map(memoryRowToDomain),
     viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
@@ -528,6 +534,49 @@ export async function persistResearchPatternCreate(brandId: string, pattern: Res
 export async function persistMemoryDeleteSafe(id: string) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
   await deleteMemoryItem(id);
+}
+
+export async function persistCreditSettings(
+  brandId: string,
+  settings: GenerationCreditSettings
+): Promise<boolean> {
+  if (!isSupabaseConfigured() || !brandId) return false;
+  if (!isUuid(brandId)) {
+    console.error("[workspaceSync] persistCreditSettings failed: brandId is not a valid UUID", brandId);
+    return false;
+  }
+
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+
+    const { data: brandRow } = await (supabase.from("brands") as any)
+      .select("settings")
+      .eq("id", brandId)
+      .single();
+
+    const existingSettings =
+      brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
+        ? { ...brandRow.settings }
+        : {};
+
+    existingSettings.credit_settings = { ...settings };
+
+    const { error } = await (supabase.from("brands") as any)
+      .update({ settings: existingSettings, updated_at: new Date().toISOString() })
+      .eq("id", brandId);
+
+    if (error) {
+      console.error("[workspaceSync] persistCreditSettings update error:", error.message);
+      return false;
+    }
+
+    console.log("[workspaceSync] Credit settings persisted to brands.settings in Supabase:", settings);
+    return true;
+  } catch (err) {
+    console.error("[workspaceSync] persistCreditSettings error:", err);
+    return false;
+  }
 }
 
 export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> & Record<string, any>): Promise<boolean> {
@@ -902,22 +951,6 @@ export async function persistAISettings(brandId: string, aiSettings: import("../
     }
   } catch (err) {
     console.warn("[workspaceSync] AI settings persist notice:", err);
-  }
-}
-
-export async function persistCreditSettings(brandId: string, settings: import("../domain/types").GenerationCreditSettings) {
-  try {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(`spark_credit_settings_${brandId || "default"}`, JSON.stringify(settings));
-    }
-    if (isSupabaseConfigured() && isUuid(brandId)) {
-      await executiveSummaryRepository.upsertSummary({
-        brand_id: brandId,
-        current_objectives: { credit_settings: settings } as any,
-      });
-    }
-  } catch (err) {
-    console.warn("[workspaceSync] Credit settings persist notice:", err);
   }
 }
 

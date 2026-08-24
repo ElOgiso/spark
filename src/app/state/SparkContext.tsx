@@ -313,17 +313,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     persistAISettings(brandId, newSettings);
   };
 
-  const updateCreditSettings = useCallback((newSettings: Partial<GenerationCreditSettings>) => {
-    setState((prev: any) => {
-      const updated = {
-        ...(prev.creditSettings || DEFAULT_CREDIT_SETTINGS),
-        ...newSettings,
-      };
-      const brandId = getBrandWorkspaceId();
-      persistCreditSettings(brandId, updated);
-      return { ...prev, creditSettings: updated };
-    });
-  }, []);
+  const updateCreditSettings = useCallback(async (newSettings: Partial<GenerationCreditSettings>): Promise<boolean> => {
+    const updated = {
+      ...(state.creditSettings || DEFAULT_CREDIT_SETTINGS),
+      ...newSettings,
+    };
+    setState((prev: any) => ({ ...prev, creditSettings: updated }));
+
+    const brandId = getBrandWorkspaceId();
+    if (brandId) {
+      const { persistCreditSettings } = await import("../backend/workspaceSync");
+      return await persistCreditSettings(brandId, updated);
+    }
+    return true;
+  }, [state.creditSettings]);
 
   // Hydrate conversation sessions on mount
   useEffect(() => {
@@ -1313,6 +1316,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 production: stableEnrichedProd,
                 brand: state.brand,
                 character: state.character,
+                creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
                 signal: controller.signal,
                 onProgress: (progress) => {
                   if (controller.signal.aborted) return;
@@ -1541,6 +1545,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         production: prod,
         brand: state.brand,
         character: state.character,
+        creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
         forceRegenerate,
         signal: controller.signal,
         onProgress: (progress) => {
@@ -2423,6 +2428,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         initializeBrandGenesis,
         updateAutomationMode,
         updateProductionMode,
+        updateCreditSettings,
         updateAISettings,
         createProductionFromSpark,
         generateProductionAssets,

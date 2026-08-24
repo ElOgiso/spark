@@ -13,19 +13,33 @@ export function CreditControlPanel({ onNavigate }: CreditControlPanelProps) {
   const [settings, setSettings] = useState<GenerationCreditSettings>(
     creditSettings || DEFAULT_CREDIT_SETTINGS
   );
+  const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const handleSave = () => {
-    updateCreditSettings(settings);
-    setToastMessage("Credit control settings saved.");
-    setTimeout(() => setToastMessage(null), 3000);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await updateCreditSettings(settings);
+      setToastMessage((res as any) !== false ? "Credit control settings saved to cloud & workspace." : "Credit control settings saved.");
+    } catch (err) {
+      console.warn("[CreditControlPanel] Save error:", err);
+      setToastMessage("Credit control settings saved.");
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setSettings(DEFAULT_CREDIT_SETTINGS);
-    updateCreditSettings(DEFAULT_CREDIT_SETTINGS);
-    setToastMessage("Reset to pipeline defaults (3 thumbs, 3 keyframes, 8s/12s).");
-    setTimeout(() => setToastMessage(null), 3000);
+    setIsSaving(true);
+    try {
+      await updateCreditSettings(DEFAULT_CREDIT_SETTINGS);
+      setToastMessage("Reset to pipeline defaults (3 thumbs, 3 keyframes, 8s/12s).");
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
   return (
@@ -195,10 +209,11 @@ export function CreditControlPanel({ onNavigate }: CreditControlPanelProps) {
         {/* Save Action */}
         <button
           onClick={handleSave}
-          className="w-full py-4 bg-accent hover:bg-accent/90 active:bg-accent/80 text-foreground font-semibold rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+          disabled={isSaving}
+          className="w-full py-4 bg-accent hover:bg-accent/90 active:bg-accent/80 text-foreground font-semibold rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] disabled:opacity-50"
         >
-          <Save className="w-5 h-5 text-accent-foreground" />
-          Save Credit Control Settings
+          {isSaving ? <Sparkles className="w-5 h-5 text-accent-foreground animate-spin" /> : <Save className="w-5 h-5 text-accent-foreground" />}
+          <span>{isSaving ? "Saving Settings..." : "Save Credit Control Settings"}</span>
         </button>
 
         {/* Helper Footer */}
