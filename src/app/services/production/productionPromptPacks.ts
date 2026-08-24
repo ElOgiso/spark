@@ -113,7 +113,7 @@ Clear sequential storytelling. Crisp lower-third text backdrop.
   }
 
   if (mode === "deep") {
-    // DEEP / CINEMATIC RECIPE
+    // DEEP / CINEMATIC RECIPE (Lam One-Take System)
     return {
       mode: "deep",
       globalLockBlock,
@@ -123,20 +123,24 @@ ${globalLockBlock}
 
 CINEMATIC MASTER KEYFRAME (Scene ${sIdx + 1} of ${totalScenes}):
 Sequence Beat: ${actionDesc}
-Camera Optics & Movement: ${framing}, anamorphic lens prime optics, dynamic camera tracking.
+Camera Optics & Movement: ${framing}, anamorphic prime optics, dynamic tracking.
 ON-SCREEN TYPOGRAPHY LAW: Render high-contrast crisp text overlay: "${sceneText}" (bold typography, safe bottom margins).
 Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic render.
 `.trim(),
       videoPromptTemplate: (durationSec, sceneDescriptions) => `
 ${globalLockBlock}
 
-SINGLE-PASS CINEMATIC MOTION SYNTHESIS (Duration: ${durationSec}s):
-Animate the complete storyboard in one continuous, seamless motion pass (Scene 1 -> Scene N).
-Story Sequence: ${sceneDescriptions}
-Character Lock: ${charName} (must remain identical in face, hair, and wardrobe throughout full duration).
-Set Lock: ${environmentStr} (continuous camera movement, zero environment resets).
-Visual Pacing: Smooth cinematic transitions between scenes, matching audio timing.
-No AI distortion, no morphing faces, no extra limbs.
+LAM ONE-TAKE CONTINUOUS CINEMATIC SEQUENCE (${aspectRatio}, Duration: ${durationSec}s):
+GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}".
+
+TIMELINE & STAGED CONTINUITY BEATS:
+${sceneDescriptions}
+
+ONE-TAKE MOTION LAWS:
+- Single continuous camera move across all stages (Scene 1 -> Scene 2 -> Scene 3).
+- Scene N MUST open on Scene N-1's exact end state.
+- Exactly ONE primary change per stage.
+- Absolute identity, hair, and wardrobe lock; zero face morphing or AI slop.
 `.trim(),
     };
   }
@@ -158,13 +162,17 @@ Clear host-on-camera perspective with high-impact visual engagement.
     videoPromptTemplate: (durationSec, sceneDescriptions) => `
 ${globalLockBlock}
 
-SINGLE-PASS MASTER HYBRID VIDEO SYNTHESIS (Target Duration: ${durationSec}s):
-Animate sequential storyboard beats from reference keyframes in exact order 1->N.
-Story Arc: ${sceneDescriptions}
-Character Lock: ${charName} (locked identity on camera).
-Set Lock: ${environmentStr}.
-Motion Pacing: Host on-camera presentation with clean scene transitions matching narration.
-Zero face morphing, zero visual slop.
+LAM ONE-TAKE HYBRID PRESENTATION SEQUENCE (${aspectRatio}, Target Duration: ${durationSec}s):
+GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}".
+
+TIMELINE & BEAT STRUCTURE:
+${sceneDescriptions}
+
+HYBRID PRESENTATION LAWS:
+- Host-on-camera perspective with high retention visual engagement.
+- Sequential beat animation from reference keyframes in exact order (1 -> N).
+- Continuous set lighting and atmosphere; zero random environment resets.
+- Clean host presentation pacing matching audio narration.
 `.trim(),
   };
 }
