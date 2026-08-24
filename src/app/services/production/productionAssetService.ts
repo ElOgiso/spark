@@ -28,8 +28,8 @@ export function buildCompleteVoiceScript(brief: ProductionBrief): string {
   const hook = typeof brief.hook === "string" ? brief.hook.trim() : "";
   const outline = typeof brief.scriptOutline === "string" ? brief.scriptOutline.trim() : "";
 
-  let cta = "";
-  if (typeof brief.caption === "string" && brief.caption.trim()) {
+  let cta = brief.spokenCta?.trim() || "";
+  if (!cta && typeof brief.caption === "string" && brief.caption.trim()) {
     const firstSentence = brief.caption.split(/[.!?\n]/)[0]?.trim();
     if (firstSentence && firstSentence.length > 5 && firstSentence.length < 120) {
       cta = firstSentence;

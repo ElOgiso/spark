@@ -157,6 +157,8 @@ export interface ProductionBrief {
   productionMode: string;
   hook: string;
   scriptOutline: string;
+  spokenCta?: string;
+  onScreenCta?: string;
   visualDirection: string;
   caption: string;
   platformRecommendation: string;
