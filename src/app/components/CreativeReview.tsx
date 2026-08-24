@@ -25,7 +25,9 @@ import {
   Clock,
   Download,
   Trash2,
+  Film,
 } from "lucide-react";
+import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -121,6 +123,17 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
+  const [showAssetsGallery, setShowAssetsGallery] = useState(false);
+
+  if (showAssetsGallery) {
+    return (
+      <DesktopProductionAssetsGallery
+        onBack={() => setShowAssetsGallery(false)}
+        production={activeProd}
+        item={activeReview}
+      />
+    );
+  }
 
   const handleGenerateAssets = () => {
     if (activeProd?.id && generateProductionAssets) {
@@ -559,6 +572,17 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 }
                 onApprove={handleApprove}
               />
+            </div>
+            
+            {/* Open Production Assets Action Button */}
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => setShowAssetsGallery(true)}
+                className="px-5 py-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+              >
+                <Film className="w-4 h-4 text-purple-400" />
+                <span>Open Production Assets</span>
+              </button>
             </div>
             
             <div>
