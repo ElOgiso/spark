@@ -34,7 +34,27 @@ export interface ModePromptPack {
   voiceScript: string;
 }
 
-export function buildCompleteVoiceScript(brief: ProductionBrief): string {
+export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationSec: number = 45): string {
+  const clean = (str: string) =>
+    str
+      .replace(/[*_#`~\[\]()]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // If structured beats exist, assemble the voice script directly from beat spoken lines
+  if (brief.beats && brief.beats.length > 0) {
+    const beatLines = brief.beats
+      .map((b) => clean(b.spokenLines))
+      .filter((line) => line.length > 0);
+
+    if (beatLines.length > 0) {
+      const fullScript = beatLines.join(" ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
+      // Allow ~15-20 characters per second of target duration (e.g. 300s -> ~5000 chars, 60s -> ~1000 chars)
+      const maxCharBudget = Math.max(800, targetDurationSec * 18);
+      return fullScript.slice(0, maxCharBudget);
+    }
+  }
+
   const hook = typeof brief.hook === "string" ? brief.hook.trim() : "";
   const outline = typeof brief.scriptOutline === "string" ? brief.scriptOutline.trim() : "";
 
@@ -53,12 +73,6 @@ export function buildCompleteVoiceScript(brief: ProductionBrief): string {
     cta = "Follow for more strategies.";
   }
 
-  const clean = (str: string) =>
-    str
-      .replace(/[*_#`~\[\]()]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
   const cleanHook = clean(hook);
   const cleanOutline = clean(outline);
   const cleanCta = clean(cta);
@@ -66,7 +80,8 @@ export function buildCompleteVoiceScript(brief: ProductionBrief): string {
   const parts = [cleanHook, cleanOutline, cleanCta].filter(Boolean);
   const fullScript = parts.join(". ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
 
-  return fullScript.slice(0, 600);
+  const maxCharBudget = Math.max(800, targetDurationSec * 18);
+  return fullScript.slice(0, maxCharBudget);
 }
 
 export function getProductionPromptPack(options: PromptPackOptions): ModePromptPack {

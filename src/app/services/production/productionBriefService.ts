@@ -245,63 +245,131 @@ function compileDeterministicBrief(params: {
         cameraDirection: "Static lock-off direct to camera",
       }
     );
-  } else {
+  } else if (durationSec <= 200) {
+    // 120-180s (2-3 min) Mid-Deep Dive (8 Value Beats)
     beats.push(
       {
-        timecode: "[00:00-00:12]",
+        timecode: "[00:00-00:15]",
         valueJob: "hook",
         spokenLines: cleanHook,
         onScreenText: `EXECUTIVE BRIEFING`,
         cameraDirection: "Cinematic wide-to-tight camera push",
       },
       {
-        timecode: "[00:12-00:30]",
+        timecode: "[00:15-00:35]",
         valueJob: "problem",
         spokenLines: `Here is the systemic breakdown happening right now across ${niche || brand.niche || "this industry"}. Traditional methods are decaying faster than ever.`,
         onScreenText: `SYSTEMIC FAILURE MODES`,
         cameraDirection: "Slow tracking pan over studio set",
       },
       {
-        timecode: "[00:30-00:50]",
+        timecode: "[00:35-00:55]",
         valueJob: "myth_bust",
         spokenLines: `Common wisdom tells you to just work harder or increase volume. That is the fastest route to burnout and margin erosion.`,
         onScreenText: `MYTH: MORE VOLUME = BETTER RESULTS`,
         cameraDirection: "Medium close-up authority frame",
       },
       {
-        timecode: "[00:50-00:80]",
+        timecode: "[00:55-01:25]",
         valueJob: "context",
         spokenLines: `At ${brand.name}, we operate on a completely different architecture. We decouple input effort from high-leverage output.`,
         onScreenText: `THE NEW OPERATING MODEL`,
         cameraDirection: "Dynamic angle with lower-third visual overlay",
       },
       {
-        timecode: "[00:80-01:15]",
+        timecode: "[01:25-01:55]",
         valueJob: "proof",
         spokenLines: `Let us break down the exact math: when you optimize the core conversion engine first, every subsequent metric scales exponentially.`,
         onScreenText: `THE MATHEMATICS OF LEVERAGE`,
         cameraDirection: "Presenter explaining breakdown",
       },
       {
-        timecode: "[01:15-01:45]",
+        timecode: "[01:55-02:20]",
         valueJob: "example",
         spokenLines: `Here is how you implement this starting today: audit your primary friction points, automate repetitive cycles, and protect focus.`,
         onScreenText: `3-STEP IMPLEMENTATION AUDIT`,
         cameraDirection: "Medium tracking shot",
       },
       {
-        timecode: "[01:45-02:10]",
+        timecode: "[02:20-02:45]",
         valueJob: "payoff",
         spokenLines: `When this architecture is locked in, you gain total clarity, speed, and unbeatable market positioning.`,
         onScreenText: `PREDICTABLE SCALING`,
         cameraDirection: "Tight framing with cinematic depth",
       },
       {
-        timecode: "[02:10-02:30]",
+        timecode: "[02:45-03:00]",
         valueJob: "cta",
         spokenLines: spokenCta,
         onScreenText: onScreenCta,
         cameraDirection: "Static lock-off direct to lens",
+      }
+    );
+  } else {
+    // 300s+ (5 min - 60 min) Long-Form Master Blueprint (10 Executive Chapter Beats)
+    beats.push(
+      {
+        timecode: "[00:00-00:25]",
+        valueJob: "hook",
+        spokenLines: `${cleanHook} In this complete masterclass, we will deconstruct why traditional playbooks in ${niche || brand.niche || "this space"} are failing, and install the exact high-leverage architecture ${brand.name} uses.`,
+        onScreenText: `EXECUTIVE MASTERCLASS`,
+        cameraDirection: "Cinematic push-in establishing host in architectural studio",
+      },
+      {
+        timecode: "[00:25-00:55]",
+        valueJob: "problem",
+        spokenLines: `Look across the landscape today: operators are running faster on the treadmill while margins shrink. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`,
+        onScreenText: `STRUCTURAL FRICTION AUDIT`,
+        cameraDirection: "Slow motivated tracking shot with illuminated data overlay",
+      },
+      {
+        timecode: "[00:55-01:30]",
+        valueJob: "myth_bust",
+        spokenLines: `The biggest misconception in ${niche || brand.niche || "this market"} is that adding more personnel or buying more software fixes process debt. It does the opposite—it multiplies complexity and slows decision velocity.`,
+        onScreenText: `MYTH: SOFTWARE SOLVES BROKEN SYSTEMS`,
+        cameraDirection: "Close-up direct-to-lens authority delivery",
+      },
+      {
+        timecode: "[01:30-02:15]",
+        valueJob: "context",
+        spokenLines: `To achieve genuine compounding, you must transition from reactive hustle to systematic leverage. At ${brand.name}, our core thesis rests on three non-negotiable pillars: signal clarity, frictionless conversion, and automated distribution.`,
+        onScreenText: `THE 3 PILLARS OF COMPOUNDING LEVERAGE`,
+        cameraDirection: "Medium tracking shot revealing schematic diagram",
+      },
+      {
+        timecode: "[02:15-03:00]",
+        valueJob: "proof",
+        spokenLines: `Let us examine the data: when you remove intermediary friction and streamline your core value proposition, customer acquisition efficiency improves by 300% without increasing top-of-funnel spend.`,
+        onScreenText: `ACQUISITION EFFICIENCY: +300%`,
+        cameraDirection: "Split composition with key performance metrics",
+      },
+      {
+        timecode: "[03:00-03:45]",
+        valueJob: "example",
+        spokenLines: `Step one is auditing your delivery pipeline. Map every single touchpoint where prospects stall, and eliminate every requirement that does not directly contribute to immediate value realization.`,
+        onScreenText: `STEP 1: PIPELINE FRICTION AUDIT`,
+        cameraDirection: "Dynamic presenter walk-and-talk in studio set",
+      },
+      {
+        timecode: "[03:45-04:20]",
+        valueJob: "example",
+        spokenLines: `Step two is deploying modular automated workflows. By systematizing repetitive operational loops, your core team focuses 100% of their bandwidth on high-conviction strategic initiatives.`,
+        onScreenText: `STEP 2: MODULAR WORKFLOW AUTOMATION`,
+        cameraDirection: "Medium close-up with visual interface graphics",
+      },
+      {
+        timecode: "[04:20-04:45]",
+        valueJob: "payoff",
+        spokenLines: `When these systems lock into place, you unlock total operational freedom, predictable pipeline velocity, and an unassailable competitive moat in ${niche || brand.niche || "your industry"}.`,
+        onScreenText: `THE COMPOUNDING ADVANTAGE`,
+        cameraDirection: "Cinematic low-angle authority shot",
+      },
+      {
+        timecode: "[04:45-05:00]",
+        valueJob: "cta",
+        spokenLines: spokenCta,
+        onScreenText: onScreenCta,
+        cameraDirection: "Static lock-off direct into camera with brand resolution",
       }
     );
   }
@@ -350,7 +418,7 @@ function compileDeterministicBrief(params: {
       ? `Built on strategic opportunity: ${spark.whyNow}. Adapted directly to ${brand.name}'s niche authority.`
       : `High curiosity gap paired with ${brand.name}'s executive authority.`,
     brandFitScore: spark.brandFitScore || 90,
-    suggestedDuration: durationSec >= 120 ? "120-180s" : durationSec >= 60 ? "60-90s" : "30-45s",
+    suggestedDuration: durationSec >= 300 ? "300-600s" : durationSec >= 120 ? "120-180s" : durationSec >= 60 ? "60-90s" : "30-45s",
     offerCta,
   };
 }

@@ -1478,7 +1478,11 @@ No resets, no new character, no scrambled order.
     creditSettings?: GenerationCreditSettings;
   }): ProductionScene[] {
     const { production, brief, brand, formatSettings } = params;
-    const targetSec = formatSettings?.targetDurationSec || 60;
+    const targetSec =
+      formatSettings?.targetDurationSec ||
+      (brief as any)?.targetDurationSec ||
+      (production as any)?.targetDurationSec ||
+      (brief.suggestedDuration?.includes("300") ? 300 : brief.suggestedDuration?.includes("120") ? 120 : brief.suggestedDuration?.includes("60") ? 60 : 45);
     const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
     const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
 
