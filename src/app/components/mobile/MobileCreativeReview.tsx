@@ -15,7 +15,9 @@ import {
   Play,
   Trash2,
   X,
+  Film,
 } from "lucide-react";
+import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -79,6 +81,17 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const [approved, setApproved] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
+  const [showAssetsGallery, setShowAssetsGallery] = useState(false);
+
+  if (showAssetsGallery) {
+    return (
+      <MobileProductionAssetsGallery
+        onBack={() => setShowAssetsGallery(false)}
+        production={activeProd}
+        item={item}
+      />
+    );
+  }
 
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections);
@@ -327,6 +340,15 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             }}
           />
         </div>
+
+        {/* Open Production Assets Action Button */}
+        <button
+          onClick={() => setShowAssetsGallery(true)}
+          className="w-full py-3.5 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+        >
+          <Film className="w-4 h-4 text-purple-400" />
+          <span>Open Production Assets</span>
+        </button>
 
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-sm text-muted-foreground mb-2">Concept</p>
