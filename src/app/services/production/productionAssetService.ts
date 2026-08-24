@@ -128,6 +128,13 @@ SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and ligh
   };
 }
 
+export interface VisualLockRefsResult {
+  imageUrls: string[];
+  primaryRefUrl?: string;
+  charSheetUrls: string[];
+  refPromptHeader: string;
+}
+
 export function isPlayableVideoUrl(val?: string | null): val is string {
   if (!val || typeof val !== "string") return false;
   const trimmed = val.trim();
@@ -139,6 +146,93 @@ export function isPlayableVideoUrl(val?: string | null): val is string {
     trimmed.startsWith("blob:") ||
     trimmed.startsWith("data:video/")
   );
+}
+
+export function isValidMediaData(val?: string | null): val is string {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  return (
+    trimmed.startsWith("data:image/") ||
+    trimmed.startsWith("data:video/") ||
+    trimmed.startsWith("data:audio/") ||
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://")
+  );
+}
+
+/**
+ * Builds a deterministic, positional visual reference list for image/video models:
+ * 1. Character Sheet URL(s) (always top priority)
+ * 2. Master Storyboard Grid Reference Map
+ * 3. Current Scene Keyframe Still
+ * 4. Preceding Scene End-State Continuity Reference
+ */
+export function buildVisualLockRefs(params: {
+  character?: Character;
+  storyboardGridUrl?: string;
+  sceneKeyframeUrl?: string;
+  previousLastFrameUrl?: string;
+}): VisualLockRefsResult {
+  const { character, storyboardGridUrl, sceneKeyframeUrl, previousLastFrameUrl } = params;
+
+  const charSheetUrls: string[] = [];
+  if (character) {
+    const directSheet = character.characterSheetUrl;
+    if (directSheet && isValidMediaData(directSheet)) charSheetUrls.push(directSheet);
+
+    const sheetList = (character as any).sheet_image_urls;
+    if (Array.isArray(sheetList)) {
+      for (const url of sheetList) {
+        if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) {
+          charSheetUrls.push(url);
+        }
+      }
+    }
+
+    const imgUrl = character.imageUrl || character.avatarUrl;
+    if (imgUrl && isValidMediaData(imgUrl) && !charSheetUrls.includes(imgUrl)) {
+      charSheetUrls.push(imgUrl);
+    }
+  }
+
+  const orderedRefs: string[] = [];
+  const labelLines: string[] = [];
+  let refCounter = 1;
+
+  for (const sheetUrl of charSheetUrls) {
+    orderedRefs.push(sheetUrl);
+    labelLines.push(`INPUT REF [${refCounter}]: Character Reference Sheet (${character?.name || "Host"})`);
+    refCounter++;
+  }
+
+  if (storyboardGridUrl && isValidMediaData(storyboardGridUrl) && !orderedRefs.includes(storyboardGridUrl)) {
+    orderedRefs.push(storyboardGridUrl);
+    labelLines.push(`INPUT REF [${refCounter}]: Master Multi-Panel Storyboard Grid Reference Map`);
+    refCounter++;
+  }
+
+  if (sceneKeyframeUrl && isValidMediaData(sceneKeyframeUrl) && !orderedRefs.includes(sceneKeyframeUrl)) {
+    orderedRefs.push(sceneKeyframeUrl);
+    labelLines.push(`INPUT REF [${refCounter}]: Scene Hero Keyframe Still Reference`);
+    refCounter++;
+  }
+
+  if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
+    orderedRefs.push(previousLastFrameUrl);
+    labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
+    refCounter++;
+  }
+
+  const refPromptHeader = labelLines.length > 0
+    ? `${labelLines.join("\n")}\nVISUAL LOCK LAW: The physical identity, face, outfit, and studio set look strictly lives in the reference images above. Text describes physical action and camera motion only.\n`
+    : "";
+
+  return {
+    imageUrls: orderedRefs,
+    primaryRefUrl: orderedRefs[0],
+    charSheetUrls,
+    refPromptHeader,
+  };
 }
 
 export class ProductionAssetService {
@@ -878,13 +972,17 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
           const sceneText = (scene.onScreenText || scene.scriptSnippet || brief.hook || "").slice(0, 60);
           const actionDesc = scene.primaryChange || scene.visualDescription || scene.startState || "Host addressing viewer";
 
-          const imagePrompt = promptPack.imagePromptTemplate(sIdx, totalScenes, sceneText, actionDesc, panelFraming);
+          const visualLock = buildVisualLockRefs({
+            character,
+            storyboardGridUrl: realGridUrl,
+            previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
+          });
 
-          const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || (character as any)?.sheet_image_urls?.[0];
-          const keyframeRefs: string[] = [charSheetUrl, realGridUrl || identityPack.characterReferenceImageUrl].filter(Boolean) as string[];
+          const imagePrompt = `${visualLock.refPromptHeader}\n${promptPack.imagePromptTemplate(sIdx, totalScenes, sceneText, actionDesc, panelFraming)}`;
+          const keyframeRefs = visualLock.imageUrls;
 
-          if (!charSheetUrl) {
-            console.warn("[SPARK Pipeline Warning] Character sheet URL missing for character; defaulting to identity text block.");
+          if (visualLock.charSheetUrls.length === 0) {
+            console.warn("[SPARK Pipeline Warning] Character sheet image missing for character; defaulting to identity text block.");
           }
 
           try {
@@ -892,7 +990,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
             console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} hero keyframe via ModelRouter ("storyboardImages") [Refs: ${keyframeRefs.length}]...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
-              referenceImageUrl: keyframeRefs[0],
+              referenceImageUrl: visualLock.primaryRefUrl,
               referenceImageUrls: keyframeRefs,
               aspectRatio: identityPack.aspectRatio,
             });
@@ -995,7 +1093,14 @@ COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight gl
 
           const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
 
+          const thumbVisualLock = buildVisualLockRefs({
+            character,
+            storyboardGridUrl: realGridUrl,
+            sceneKeyframeUrl: sceneImages[0],
+          });
+
           const thumbPrompt = `
+${thumbVisualLock.refPromptHeader}
 [${identityPack.aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
 CONCEPT: ${thumb.concept}
 ${formulaSpec}
@@ -1012,7 +1117,8 @@ Brand: ${brand.name}
             console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
             const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: thumbPrompt,
-              referenceImageUrl: realGridUrl || identityPack.characterReferenceImageUrl,
+              referenceImageUrl: thumbVisualLock.primaryRefUrl,
+              referenceImageUrls: thumbVisualLock.imageUrls,
               aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
@@ -1231,7 +1337,6 @@ No resets, no new character, no scrambled order.
               }
             } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
-              const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
               const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 12) : (activeCreditSettings?.shortsDurationSec || 8);
               const beatInterval = Math.max(3, Math.floor(videoDurationSec / Math.max(1, currentStoryboard.length)));
               const sceneDescriptions = currentStoryboard
@@ -1246,14 +1351,18 @@ No resets, no new character, no scrambled order.
                 })
                 .join("\n");
 
-              const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || (character as any)?.sheet_image_urls?.[0];
-              const motionRefImages: string[] = [
-                charSheetUrl,
-                realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl,
-                sceneImages[1],
-              ].filter(Boolean) as string[];
+              const masterMotionVisualLock = buildVisualLockRefs({
+                character,
+                storyboardGridUrl: realGridUrl,
+                sceneKeyframeUrl: sceneImages[0] || currentStoryboard[0]?.image,
+                previousLastFrameUrl: sceneImages[1] || currentStoryboard[1]?.image,
+              });
 
-              const masterMotionPrompt = promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions);
+              const motionRefImages = masterMotionVisualLock.imageUrls;
+              const masterMotionPrompt = `
+${masterMotionVisualLock.refPromptHeader}
+${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
+`.trim();
 
               console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Refs: ${motionRefImages.length}]...`);
               emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
@@ -1261,7 +1370,7 @@ No resets, no new character, no scrambled order.
               checkAborted();
               const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
                 prompt: masterMotionPrompt,
-                referenceImageUrl: motionRefImages[0],
+                referenceImageUrl: masterMotionVisualLock.primaryRefUrl,
                 referenceImageUrls: motionRefImages,
                 aspectRatio: identityPack.aspectRatio,
               });
@@ -1579,9 +1688,15 @@ No resets, no new character, no scrambled order.
 
       // Adjacent continuity seed: previous scene's last frame or keyframe
       const prevScene = existingScenes[targetSceneIdx - 1];
-      const continuitySeed = prevScene?.lastFrameUrl || prevScene?.keyframeImageUrl || prevScene?.image || identityPack.characterReferenceImageUrl;
+      const fixVisualLock = buildVisualLockRefs({
+        character,
+        storyboardGridUrl: (brief as any).storyboardGridUrl,
+        sceneKeyframeUrl: sceneToFix.image || sceneToFix.keyframeImageUrl,
+        previousLastFrameUrl: prevScene?.lastFrameUrl || prevScene?.keyframeImageUrl || prevScene?.image,
+      });
 
       const beatPrompt = `
+${fixVisualLock.refPromptHeader}
 ${promptPack.globalLockBlock}
 
 FIX REVISION FOR SCENE ${sceneIndex}:
@@ -1592,7 +1707,8 @@ Apply revision while maintaining 100% subject identity and set continuity.
 
       const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
         prompt: beatPrompt,
-        referenceImageUrl: continuitySeed,
+        referenceImageUrl: fixVisualLock.primaryRefUrl,
+        referenceImageUrls: fixVisualLock.imageUrls,
         aspectRatio: identityPack.aspectRatio,
       });
 
