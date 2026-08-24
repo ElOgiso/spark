@@ -1,7 +1,28 @@
-import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, Offer } from "../../domain/types";
+import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, Offer, StructuredResearchContext } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { loadPersistedState } from "../../state/persistence";
+
+function formatResearchContextBlock(context?: StructuredResearchContext): string {
+  if (!context) return "";
+
+  const lines: string[] = ["STRUCTURED INSPIRATION & RESEARCH PATTERNS (ADAPT PATTERN TO BRAND, DO NOT CLONE CREATOR IDENTITY):"];
+  if (context.sourceName) lines.push(`- Inspiration Creator/Account: ${context.sourceName} (${context.platform || "Video"})`);
+  if (context.hookPattern) lines.push(`- Proven Hook Pattern: "${context.hookPattern}"`);
+  if (context.titlePattern) lines.push(`- Title Structure Pattern: "${context.titlePattern}"`);
+  if (context.format) lines.push(`- Content Format Type: ${context.format}`);
+  if (context.ctaStyle) lines.push(`- High-Converting CTA Style: "${context.ctaStyle}"`);
+  if (context.provenStructure) lines.push(`- Proven Storytelling Structure: ${context.provenStructure}`);
+  if (context.nicheLanguage && context.nicheLanguage.length > 0) {
+    lines.push(`- High-Value Niche Terminology: ${context.nicheLanguage.join(", ")}`);
+  }
+  if (context.viralReasons && context.viralReasons.length > 0) {
+    lines.push(`- Retention Signals: ${context.viralReasons.join("; ")}`);
+  }
+
+  lines.push(`DIRECTIVE: Translate this exact engagement pattern into ${context.nicheLanguage?.length ? "niche-authentic" : "brand-tailored"} spoken lines while adhering 100% to the brand voice.`);
+  return lines.join("\n");
+}
 
 function asText(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
@@ -63,13 +84,15 @@ function compileDeterministicBrief(params: {
   defaultOffer?: Offer;
   productionMode?: string;
   niche?: string;
+  researchContext?: StructuredResearchContext;
 }): ProductionBrief {
-  const { spark, brand, character, defaultOffer, productionMode = "standard", niche } = params;
+  const { spark, brand, character, defaultOffer, productionMode = "standard", niche, researchContext = spark.researchContext } = params;
   const rawMode = (productionMode || spark.suggestedProductionMode || "standard").toLowerCase();
   const modeKey = rawMode.includes("deep") || rawMode.includes("cinematic") ? "deep" : rawMode.includes("express") || rawMode.includes("narrator") ? "express" : "standard";
 
   const hostTitle = character?.name || brand.name;
-  const sparkHook = spark.hook ? spark.hook.trim() : `The ${niche || brand.niche || "industry"} shift nobody is talking about.`;
+  const patternHook = researchContext?.hookPattern || spark.hook;
+  const sparkHook = patternHook ? patternHook.trim() : `The ${niche || brand.niche || "industry"} shift nobody is talking about.`;
   const cleanHook = sparkHook.length > 5 && !sparkHook.toLowerCase().startsWith("hook:") ? sparkHook : `Here is why ${brand.name} does things differently in ${niche || brand.niche || "this market"}.`;
 
   const spokenCta = defaultOffer
@@ -151,8 +174,9 @@ export class ProductionBriefService {
     niche?: string;
     memoryItems?: MemoryItem[];
     productionMode?: string;
+    researchContext?: StructuredResearchContext;
   }): Promise<ProductionBrief> {
-    const { spark, brand, character, niche, memoryItems = [], productionMode = "standard" } = params;
+    const { spark, brand, character, niche, memoryItems = [], productionMode = "standard", researchContext = spark.researchContext } = params;
 
     // Resolve active offer
     const defaultOffer: Offer | undefined = (() => {
@@ -168,7 +192,7 @@ export class ProductionBriefService {
     // Check system generation guard
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
-      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode, niche });
+      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode, niche, researchContext });
       return {
         ...fallback,
         scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
@@ -176,6 +200,7 @@ export class ProductionBriefService {
     }
 
     const rankedMemory = rankAndFormatMemory(memoryItems);
+    const researchPromptBlock = formatResearchContextBlock(researchContext);
     const hostStyle = character?.style || character?.name || brand.name;
     const charTraits = character?.traits ? character.traits.join(", ") : "Authoritative, direct, engaging";
     const pillars = brand.contentPillars ? brand.contentPillars.map((p) => p.label).join(", ") : "Strategy, Insights";
@@ -218,7 +243,7 @@ SOURCE SPARK DATA:
 - Target Platform: ${spark.platformFit || (modeKey === "deep" ? "YouTube Long-form (16:9)" : "YouTube Shorts (9:16)")}
 - Viral Score: ${sparkScore}/100
 
-BRAND IDENTITY & ENVIRONMENT:
+${researchPromptBlock ? `${researchPromptBlock}\n` : ""}BRAND IDENTITY & ENVIRONMENT:
 - Brand Name: ${brand.name}
 - Industry Niche: ${niche || brand.niche || "General"}
 - Archetype: ${brand.archetype}

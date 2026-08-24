@@ -204,6 +204,17 @@ export class ResearchDepartmentService {
           lastSeenAt: now,
           lastSyncedAt: now,
           syncCount: 1,
+          researchContext: {
+            sourceName: source.displayName || source.username,
+            platform: source.platform,
+            hookPattern: patternMetrics.hookPattern || p.description,
+            titlePattern: patternMetrics.titlePattern,
+            format: patternMetrics.format,
+            ctaStyle: patternMetrics.ctaStyle,
+            nicheLanguage: patternMetrics.nicheLanguage ? [patternMetrics.nicheLanguage] : undefined,
+            viralReasons: [p.evidence || "High public engagement"],
+            provenStructure: patternMetrics.format,
+          },
         };
         viralSparks.push(spark);
 

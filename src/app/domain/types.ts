@@ -51,6 +51,19 @@ export interface Account {
   posts: number;
 }
 
+export interface StructuredResearchContext {
+  sourceName?: string;
+  platform?: string;
+  hookPattern?: string;
+  titlePattern?: string;
+  format?: string;
+  ctaStyle?: string;
+  nicheLanguage?: string[];
+  viralReasons?: string[];
+  retentionSignals?: string[];
+  provenStructure?: string;
+}
+
 export interface ViralSpark {
   id: string;
   title: string;
@@ -77,6 +90,7 @@ export interface ViralSpark {
   lastSeenAt?: string;
   lastSyncedAt?: string;
   syncCount?: number;
+  researchContext?: StructuredResearchContext;
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
