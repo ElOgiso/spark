@@ -257,17 +257,17 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
       {selectedSpark && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md"
             onClick={drawerState === "idle" ? closeDrawer : undefined}
           />
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
+          <div className="fixed bottom-0 left-0 right-0 z-[101] bg-card border-t border-border rounded-t-2xl shadow-2xl max-h-[min(88vh,100dvh)] flex flex-col overflow-hidden">
             {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
               <div className="w-10 h-1 rounded-full bg-border" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
               <div>
                 <h2 className="text-base font-medium">Create Production</h2>
                 <p className="text-xs text-muted-foreground">Spark will draft this for your review</p>
@@ -278,9 +278,12 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {drawerState === "created" ? (
-                <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                <div
+                  className="flex flex-col items-center justify-center px-6 py-10 text-center"
+                  style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 32px))" }}
+                >
                   <div className="w-14 h-14 rounded-full bg-success/15 border border-success/30 flex items-center justify-center mb-4">
                     <CheckCircle2 className="w-7 h-7 text-success" />
                   </div>
@@ -289,13 +292,16 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                   <p className="text-xs text-muted-foreground mb-8">You'll see it in Review when it's ready.</p>
                   <button
                     onClick={closeDrawer}
-                    className="w-full py-3.5 rounded-xl bg-foreground text-background text-sm font-medium"
+                    className="w-full py-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold shadow-lg active:scale-[0.98] transition-all"
                   >
                     Back to Viral Sparks
                   </button>
                 </div>
               ) : drawerState === "creating" ? (
-                <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                <div
+                  className="flex flex-col items-center justify-center px-6 py-10 text-center"
+                  style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 32px))" }}
+                >
                   <div className="w-14 h-14 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center mb-4">
                     <Loader2 className="w-7 h-7 text-accent-foreground animate-spin" />
                   </div>
@@ -303,7 +309,7 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                   <p className="text-sm text-muted-foreground">Spark is setting up the production queue.</p>
                 </div>
               ) : (
-                <div className="p-5 space-y-4">
+                <div className="p-5 space-y-4 pb-6">
                   {/* Opportunity */}
                   <div className="p-3.5 rounded-xl bg-background border border-border">
                     <div className="flex items-center justify-between mb-1.5">
@@ -389,15 +395,18 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
               )}
             </div>
 
-            {/* CTA */}
+            {/* CTA Sticky Footer */}
             {drawerState === "idle" && (
-              <div className="p-4 border-t border-border flex-shrink-0">
+              <div
+                className="p-4 border-t border-border shrink-0 bg-card/95 backdrop-blur-md z-[102]"
+                style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 20px))" }}
+              >
                 <button
                   onClick={handleConfirm}
-                  className="w-full py-4 rounded-xl bg-foreground text-background text-sm font-medium flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
+                  className="w-full py-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-base font-semibold tracking-wide flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(168,85,247,0.35)] active:scale-[0.98] transition-all cursor-pointer"
                 >
-                  <Zap className="w-4 h-4" />
-                  Confirm & Start Production
+                  <Zap className="w-5 h-5 text-white" />
+                  <span>Confirm & Start Production</span>
                 </button>
                 <p className="text-xs text-muted-foreground text-center mt-2">Spark will notify you when it's ready for review</p>
               </div>

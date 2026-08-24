@@ -233,7 +233,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
 
       {/* Solid Opaque Fixed Action Dock (Onboard Style) */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
+        className="fixed bottom-0 left-0 right-0 z-[95] bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 16px))" }}
       >
         {/* 1) Continue generation / Generate Assets OR Cancel generation */}
