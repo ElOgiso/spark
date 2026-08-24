@@ -48,8 +48,9 @@ import type {
   ResearchSource,
   ResearchPattern,
   GenerationCreditSettings,
+  ProductionFormatSettings,
 } from "../domain/types";
-import { DEFAULT_CREDIT_SETTINGS } from "../domain/types";
+import { DEFAULT_CREDIT_SETTINGS, DEFAULT_FORMAT_SETTINGS } from "../domain/types";
 import {
   accountRowToDomain,
   analyticsRowToDomain,
@@ -70,6 +71,7 @@ export type WorkspaceSnapshot = {
   brand?: Brand;
   character?: Character;
   creditSettings?: GenerationCreditSettings;
+  formatSettings?: ProductionFormatSettings;
   accounts: Account[];
   memoryItems: MemoryItem[];
   viralSparks: ViralSpark[];
@@ -203,11 +205,13 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     : undefined;
 
   const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
+  const cloudFormatSettings = (brandRes?.data?.settings as any)?.format_settings;
 
   return {
     brand,
     character: firstCharacter,
     creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
+    formatSettings: cloudFormatSettings ? { ...DEFAULT_FORMAT_SETTINGS, ...cloudFormatSettings } : undefined,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
     memoryItems: (memory.data ?? []).map(memoryRowToDomain),
     viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
@@ -575,6 +579,43 @@ export async function persistCreditSettings(
     return true;
   } catch (err) {
     console.error("[workspaceSync] persistCreditSettings error:", err);
+    return false;
+  }
+}
+
+export async function persistFormatSettings(
+  brandId: string,
+  settings: ProductionFormatSettings
+): Promise<boolean> {
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(settings));
+  }
+  if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) return true;
+
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return true;
+
+    const { data: brandRow } = await (supabase.from("brands") as any)
+      .select("settings")
+      .eq("id", brandId)
+      .single();
+
+    const existingSettings =
+      brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
+        ? { ...brandRow.settings }
+        : {};
+
+    existingSettings.format_settings = { ...settings };
+
+    await (supabase.from("brands") as any)
+      .update({ settings: existingSettings, updated_at: new Date().toISOString() })
+      .eq("id", brandId);
+
+    console.log("[workspaceSync] Format settings persisted to brands.settings in Supabase:", settings);
+    return true;
+  } catch (err) {
+    console.error("[workspaceSync] persistFormatSettings error:", err);
     return false;
   }
 }

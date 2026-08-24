@@ -21,6 +21,8 @@ import {
   AISettings,
   GenerationCreditSettings,
   DEFAULT_CREDIT_SETTINGS,
+  ProductionFormatSettings,
+  DEFAULT_FORMAT_SETTINGS,
   ThinkingState,
   ConversationSession,
   Offer,
@@ -84,6 +86,7 @@ interface SparkContextType {
   researchPatterns?: ResearchPattern[];
   aiSettings?: AISettings;
   creditSettings: GenerationCreditSettings;
+  formatSettings: ProductionFormatSettings;
   thinkingState?: ThinkingState | null;
   
   chatMessages?: ChatMessage[];
@@ -99,6 +102,7 @@ interface SparkContextType {
   updateProductionMode: (mode: ProductionMode) => void;
   updateAISettings: (newSettings: AISettings) => void;
   updateCreditSettings: (newSettings: Partial<GenerationCreditSettings>) => void;
+  updateFormatSettings: (newSettings: Partial<ProductionFormatSettings>) => Promise<boolean>;
   createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   cancelProduction: (productionId: string) => void;
@@ -327,6 +331,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return true;
   }, [state.creditSettings]);
+
+  const updateFormatSettings = useCallback(async (newSettings: Partial<ProductionFormatSettings>): Promise<boolean> => {
+    const updated = {
+      ...(state.formatSettings || DEFAULT_FORMAT_SETTINGS),
+      ...newSettings,
+    };
+    setState((prev: any) => ({ ...prev, formatSettings: updated }));
+
+    const brandId = getBrandWorkspaceId();
+    if (brandId) {
+      const { persistFormatSettings } = await import("../backend/workspaceSync");
+      return await persistFormatSettings(brandId, updated);
+    }
+    return true;
+  }, [state.formatSettings]);
 
   // Hydrate conversation sessions on mount
   useEffect(() => {
@@ -2186,6 +2205,41 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const isResearchReq = /\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch;
     const isMemoryReq = /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
 
+    const isFormatCommand =
+      /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*min|\d+\s*minute|\d+\s*m\b)\b/i.test(lower) &&
+      /\b(format|aspect|duration|length|set|mode|video|style|target)\b/i.test(lower);
+
+    if (isFormatCommand) {
+      let aspectMode: import("../domain/types").AspectMode | undefined = undefined;
+      if (/\b(landscape|16:9|youtube long)\b/i.test(lower)) aspectMode = "landscape";
+      else if (/\b(portrait|9:16|shorts|tiktok)\b/i.test(lower)) aspectMode = "portrait";
+      else if (/\b(dynamic|auto)\b/i.test(lower)) aspectMode = "dynamic";
+
+      let targetDurationSec: number | undefined = undefined;
+      const minMatch = lower.match(/(\d+)\s*(min|minute|m\b)/i);
+      if (minMatch) {
+        const mins = parseInt(minMatch[1], 10);
+        const validSecs = [60, 180, 300, 600, 900, 1200, 1800, 2700, 3600];
+        const closest = validSecs.reduce((prev, curr) => (Math.abs(curr - mins * 60) < Math.abs(prev - mins * 60) ? curr : prev));
+        targetDurationSec = closest;
+      }
+
+      if (aspectMode || targetDurationSec) {
+        const patch: Partial<import("../domain/types").ProductionFormatSettings> = {};
+        if (aspectMode) patch.aspectMode = aspectMode;
+        if (targetDurationSec) patch.targetDurationSec = targetDurationSec;
+        void updateFormatSettings(patch);
+
+        const currentSettings = { ...(state.formatSettings || DEFAULT_FORMAT_SETTINGS), ...patch };
+        const aspectStr = currentSettings.aspectMode.toUpperCase();
+        const durStr = `${Math.round(currentSettings.targetDurationSec / 60)}m`;
+        const formatNotice = `Production format settings updated: ${aspectStr} aspect ratio strategy, ${durStr} target video length.`;
+        if (onChunk) onChunk(formatNotice);
+        activeAiRequestRef.current = false;
+        return formatNotice;
+      }
+    }
+
     if (isProdTurnOn) {
       toggleProductionGeneration(true);
       taskMedia = {
@@ -2429,6 +2483,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateAutomationMode,
         updateProductionMode,
         updateCreditSettings,
+        updateFormatSettings,
         updateAISettings,
         createProductionFromSpark,
         generateProductionAssets,

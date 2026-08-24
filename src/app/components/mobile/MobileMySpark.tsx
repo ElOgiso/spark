@@ -49,11 +49,13 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     accounts,
     automationMode,
     productionMode,
+    formatSettings,
     memoryItems,
     researchSources = [],
     updateBrand,
     updateAutomationMode,
     updateProductionMode,
+    updateFormatSettings,
     addMemoryItem,
     removeMemoryItem,
     pinMemoryItem,
@@ -630,6 +632,68 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               </button>
             );
           })}
+        </div>
+      </section>
+
+      {/* Production Settings (Aspect Ratio + Target Video Length) */}
+      <section className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-accent-foreground" /> Production Settings
+        </h2>
+
+        {/* Aspect Ratio Strategy */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground">Aspect Ratio Strategy</p>
+          {[
+            { id: "landscape" as const, label: "Landscape (16:9)", badge: "YouTube long" },
+            { id: "portrait" as const, label: "Portrait (9:16)", badge: "Shorts / TikTok" },
+            { id: "dynamic" as const, label: "Dynamic (Auto)", badge: "Best for content" },
+          ].map((opt) => {
+            const active = (formatSettings?.aspectMode || "portrait") === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => updateFormatSettings && updateFormatSettings({ aspectMode: opt.id })}
+                className={`w-full p-3 rounded-xl border text-left flex items-center justify-between gap-2 transition-all ${
+                  active ? "bg-purple-600/20 border-purple-500/50 shadow-sm" : "bg-background border-border"
+                }`}
+              >
+                <span className={`text-xs font-semibold ${active ? "text-purple-200" : "text-muted-foreground"}`}>{opt.label}</span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${active ? "bg-purple-500/30 text-purple-200" : "bg-muted text-muted-foreground"}`}>{opt.badge}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Target Video Length */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground">Target Video Length</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { sec: 60, label: "1m" },
+              { sec: 180, label: "3m" },
+              { sec: 300, label: "5m" },
+              { sec: 600, label: "10m" },
+              { sec: 900, label: "15m" },
+              { sec: 1200, label: "20m" },
+              { sec: 1800, label: "30m" },
+              { sec: 2700, label: "45m" },
+              { sec: 3600, label: "60m" },
+            ].map((dur) => {
+              const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
+              return (
+                <button
+                  key={dur.sec}
+                  onClick={() => updateFormatSettings && updateFormatSettings({ targetDurationSec: dur.sec })}
+                  className={`py-2 rounded-lg border text-xs font-semibold transition-all ${
+                    active ? "bg-purple-600 text-white border-purple-400" : "bg-background border-border text-muted-foreground"
+                  }`}
+                >
+                  {dur.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 

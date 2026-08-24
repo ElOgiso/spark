@@ -50,11 +50,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
     accounts,
     automationMode,
     productionMode,
+    formatSettings,
     memoryItems,
     researchSources = [],
     updateBrand,
     updateAutomationMode,
     updateProductionMode,
+    updateFormatSettings,
     addMemoryItem,
     removeMemoryItem,
     pinMemoryItem,
@@ -838,6 +840,107 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          </section>
+
+          {/* Production Format Settings */}
+          <section>
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Production settings</h2>
+            <div className="rounded-xl border border-border bg-card p-6 space-y-6">
+              {/* Aspect Strategy */}
+              <div>
+                <p className="text-sm font-medium mb-1">Aspect Ratio Strategy</p>
+                <p className="text-sm text-muted-foreground mb-4">Controls video frame dimensions for target platforms</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    {
+                      id: "landscape" as const,
+                      label: "Landscape",
+                      badge: "YouTube long",
+                      desc: "16:9 widescreen format",
+                      icon: (
+                        <svg className="w-5 h-5 text-red-500 fill-current" viewBox="0 0 24 24">
+                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                        </svg>
+                      )
+                    },
+                    {
+                      id: "portrait" as const,
+                      label: "Portrait",
+                      badge: "Shorts / TikTok",
+                      desc: "9:16 vertical short-form",
+                      icon: (
+                        <svg className="w-5 h-5 text-purple-400 fill-current" viewBox="0 0 24 24">
+                          <path d="M17.77 10.32c-.77-.32-1.2-.5-1.2-.5s.43-.2.77-.32a3.86 3.86 0 0 0 2.16-3.48A3.88 3.88 0 0 0 15.62 2h-.12a3.86 3.86 0 0 0-3.38 2.02L11 6.27 9.88 4.02A3.86 3.86 0 0 0 6.5 2H6.38A3.88 3.88 0 0 0 2.5 5.88a3.86 3.86 0 0 0 2.16 3.48c.34.12.77.32.77.32s-.43.2-.77.32a3.86 3.86 0 0 0-2.16 3.48A3.88 3.88 0 0 0 6.38 19.5h.12a3.86 3.86 0 0 0 3.38-2.02L11 15.23l1.12 2.25A3.86 3.86 0 0 0 15.5 19.5h.12a3.88 3.88 0 0 0 3.88-3.88 3.86 3.86 0 0 0-2.16-3.48z"/>
+                        </svg>
+                      )
+                    },
+                    {
+                      id: "dynamic" as const,
+                      label: "Dynamic",
+                      badge: "Best for content",
+                      desc: "Auto 16:9 or 9:16 recommendation",
+                      icon: <Sparkles className="w-5 h-5 text-amber-400" />
+                    }
+                  ].map((opt) => {
+                    const active = (formatSettings?.aspectMode || "portrait") === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => updateFormatSettings && updateFormatSettings({ aspectMode: opt.id })}
+                        className={`p-4 rounded-xl border text-left transition-all duration-200 flex flex-col justify-between ${
+                          active ? "bg-purple-600/20 border-purple-500/50 shadow-lg shadow-purple-500/10" : "bg-background border-border hover:border-accent/30"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            {opt.icon}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${active ? "bg-purple-500/30 text-purple-200" : "bg-muted text-muted-foreground"}`}>
+                              {opt.badge}
+                            </span>
+                          </div>
+                          <p className={`text-sm font-semibold mb-1 ${active ? "text-foreground" : "text-muted-foreground"}`}>{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Target Video Length */}
+              <div>
+                <p className="text-sm font-medium mb-1">Target Video Length</p>
+                <p className="text-sm text-muted-foreground mb-3">Longer videos use more generation credit & multi-segment render passes.</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { sec: 60, label: "1m" },
+                    { sec: 180, label: "3m" },
+                    { sec: 300, label: "5m" },
+                    { sec: 600, label: "10m" },
+                    { sec: 900, label: "15m" },
+                    { sec: 1200, label: "20m" },
+                    { sec: 1800, label: "30m" },
+                    { sec: 2700, label: "45m" },
+                    { sec: 3600, label: "60m" },
+                  ].map((dur) => {
+                    const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
+                    return (
+                      <button
+                        key={dur.sec}
+                        onClick={() => updateFormatSettings && updateFormatSettings({ targetDurationSec: dur.sec })}
+                        className={`px-4 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                          active
+                            ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/30"
+                            : "bg-background border-border text-muted-foreground hover:border-accent/40"
+                        }`}
+                      >
+                        {dur.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>

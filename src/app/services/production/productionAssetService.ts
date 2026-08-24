@@ -82,10 +82,27 @@ export function buildLockedIdentityPack(params: {
       ? "express"
       : "standard";
 
-  const aspectRatio =
-    mode === "deep" && production.aspectRatio
-      ? production.aspectRatio
-      : production.aspectRatio || (mode === "deep" ? "16:9" : "9:16");
+  const formatSettings = (params as any).formatSettings || (brand as any)?.formatSettings;
+  const aspectMode = formatSettings?.aspectMode || "portrait";
+
+  let aspectRatio = "9:16";
+  if (aspectMode === "landscape") {
+    aspectRatio = "16:9";
+  } else if (aspectMode === "portrait") {
+    aspectRatio = "9:16";
+  } else if (aspectMode === "dynamic") {
+    const briefAny = brief as any;
+    if (briefAny.aspectRatio === "16:9" || briefAny.aspectRatio === "9:16") {
+      aspectRatio = briefAny.aspectRatio;
+    } else if (mode === "deep") {
+      aspectRatio = "16:9";
+    } else if (mode === "express") {
+      aspectRatio = "9:16";
+    } else {
+      const platform = (briefAny.platformRecommendation || briefAny.platform || "").toLowerCase();
+      aspectRatio = platform.includes("youtube long") || platform.includes("16:9") ? "16:9" : "9:16";
+    }
+  }
 
   const environmentString = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
 

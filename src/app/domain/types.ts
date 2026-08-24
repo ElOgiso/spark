@@ -12,6 +12,7 @@ export interface Brand {
   tone: { label: string; active: boolean }[];
   // Future backend and automation configuration fields
   automation_mode?: AutomationMode;
+  formatSettings?: ProductionFormatSettings;
   review_required?: boolean;
   publish_requires_approval?: boolean;
   autonomous_publishing_enabled?: boolean;
@@ -599,6 +600,18 @@ export const DEFAULT_CREDIT_SETTINGS: GenerationCreditSettings = {
   shortsDurationSec: 8,
   cinematicDurationSec: 12,
   maxVideoClips: 3,
+};
+
+export type AspectMode = "landscape" | "portrait" | "dynamic";
+
+export interface ProductionFormatSettings {
+  aspectMode: AspectMode;
+  targetDurationSec: number; // 60, 180, 300, 600, 900, 1200, 1800, 2700, 3600
+}
+
+export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
+  aspectMode: "portrait",
+  targetDurationSec: 60,
 };
 
 export interface ThinkingState {

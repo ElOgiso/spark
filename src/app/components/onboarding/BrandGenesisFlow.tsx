@@ -9,7 +9,7 @@ import mainLogo from "@/imports/MAIN_LOGO.png";
 import chatLogo from "@/imports/CHAT_LOGO.png";
 import { useAuth } from "../../state/AuthContext";
 import { useSpark } from "../../state/SparkContext";
-import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../services/socialIntegrationService";
+import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId } from "../../services/socialIntegrationService";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -772,6 +772,8 @@ interface GenesisInternalState {
   researchSources: string[];
   productionMode: string;
   automationMode: string;
+  aspectMode: "portrait" | "landscape" | "dynamic";
+  targetDurationSec: number;
 }
 
 const DEFAULT_STATE: GenesisInternalState = {
@@ -794,6 +796,8 @@ const DEFAULT_STATE: GenesisInternalState = {
   researchSources: [],
   productionMode: "Hybrid",
   automationMode: "Balanced",
+  aspectMode: "portrait",
+  targetDurationSec: 60,
 };
 
 const DIRECTORS: Record<number, string> = {
@@ -1366,6 +1370,54 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
               onSelect={() => onChange({ automationMode: m.id })}
             />
           ))}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Aspect Ratio Strategy</label>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "portrait", label: "Portrait", desc: "9:16 Shorts/TikTok" },
+            { id: "landscape", label: "Landscape", desc: "16:9 YouTube long" },
+            { id: "dynamic", label: "Dynamic", desc: "Best recommendation" },
+          ].map((m) => (
+            <ModeCard
+              key={m.id}
+              label={m.label}
+              desc={m.desc}
+              selected={(data.aspectMode || "portrait") === m.id}
+              onSelect={() => onChange({ aspectMode: m.id as any })}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Target Video Length</label>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { sec: 60, label: "1m" },
+            { sec: 180, label: "3m" },
+            { sec: 300, label: "5m" },
+            { sec: 600, label: "10m" },
+            { sec: 900, label: "15m" },
+            { sec: 1200, label: "20m" },
+            { sec: 1800, label: "30m" },
+            { sec: 2700, label: "45m" },
+            { sec: 3600, label: "60m" },
+          ].map((dur) => {
+            const active = (data.targetDurationSec || 60) === dur.sec;
+            return (
+              <button
+                key={dur.sec}
+                type="button"
+                onClick={() => onChange({ targetDurationSec: dur.sec })}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                  active ? "bg-purple-600 text-white border-purple-400" : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
+                }`}
+              >
+                {dur.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -2024,6 +2076,14 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
 
     try {
       await initializeBrandGenesis(genesisData);
+      const brandId = getBrandWorkspaceId();
+      if (brandId) {
+        const { persistFormatSettings } = await import("../../backend/workspaceSync");
+        await persistFormatSettings(brandId, {
+          aspectMode: data.aspectMode || "portrait",
+          targetDurationSec: data.targetDurationSec || 60,
+        });
+      }
       await auth.markOnboardingComplete(auth.brand?.id);
     } catch (persistErr) {
       console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);
