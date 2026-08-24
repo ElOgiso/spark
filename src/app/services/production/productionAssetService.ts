@@ -501,11 +501,30 @@ export class ProductionAssetService {
     let systemInstruction = "";
     let prompt = "";
 
+    const formattedBeatsBlock = brief.beats && brief.beats.length > 0
+      ? `
+STRUCTURED PRODUCTION BEATS (MANDATORY 1-TO-1 PANEL MAPPING):
+${brief.beats
+  .map(
+    (b, i) =>
+      `Beat ${i + 1} ${b.timecode} [${b.valueJob.toUpperCase()}]: "${b.spokenLines}" | ONSCREEN: "${b.onScreenText}" | CAMERA: ${b.cameraDirection || "Standard"}`
+  )
+  .join("\n")}
+`
+      : "";
+
     if (mode === "deep") {
-      systemInstruction = `You are SPARK's Senior Film Director specializing in Continuous One-Take Cinematic Craft. Structure a seamless 3-stage continuous sequence where every stage opens exactly where the previous stage ended, with locked identity, set continuity, and exactly one primary change per stage. Forbid montage cuts, teleportation, or unrelated B-roll cuts. Output valid JSON only.`;
+      systemInstruction = `You are SPARK's Senior Film Director specializing in Continuous One-Take Cinematic Craft.
+Structure a seamless continuous one-take sequence matching the brief's duration and beats.
+CONTINUITY LAWS:
+1. Stage N's startState MUST open EXACTLY on Stage N-1's endState.
+2. Exactly ONE primary physical/story change per stage.
+3. Locked character identity, wardrobe, and studio set across all panels.
+4. Concrete camera direction required every panel.
+5. Forbid montage cuts, teleportation, or stock cutaways. Return valid JSON only.`;
 
       prompt = `
-Create a 3-stage continuous one-take cinematic storyboard (${aspectRatio}) for:
+Create a continuous one-take cinematic storyboard (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
@@ -513,22 +532,23 @@ HOST: "${character?.name || "Host"}" (${character?.style || "Executive Director"
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
-
+${formattedBeatsBlock}
 CONTINUITY LAWS FOR DEEP / CINEMATIC MODE:
-- 3 continuous stages:
-  * Stage 1 (0-8s): Opening action establishing host & setting -> explicit endState.
-  * Stage 2 (8-16s): Opens EXACTLY on Stage 1's endState -> introduces ONE primary change -> explicit endState.
-  * Stage 3 (16-24s): Opens EXACTLY on Stage 2's endState -> introduces ONE final primary change -> final resolution endState.
-- Exactly ONE primary change per stage.
-- Locked identity, wardrobe, and studio set across all 3 stages.
-- No unrelated hard-cut montage or stock cutaways.
+- Continuous one-take staging across all beats.
+- Every panel has:
+  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
+  * spokenLines: Complete substantive spoken line for host/VO
+  * onScreenText: <=6-8 uppercase words
+  * startState -> primaryChange -> endState (one change only)
+  * cameraDirection: Specific cinematic motion (e.g. slow push-in, motivated tracking)
 
-Return valid JSON with exactly this structure:
+Return valid JSON with this exact structure:
 {
   "storyboard": [
     {
       "scene": 1,
       "duration": "0-8s",
+      "valueJob": "hook",
       "shotList": "Presenter direct-to-camera ${aspectRatio} master shot establishing scene",
       "cameraDirection": "Slow cinematic push-in with subtle lateral glide",
       "transitions": "Continuous one-take flow",
@@ -537,36 +557,9 @@ Return valid JSON with exactly this structure:
       "endState": "Host centered in frame, gesturing right, backlight highlighting focused expression",
       "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
       "pacing": "Deliberate and cinematic",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
       "visualDescription": "High contrast executive opening shot with locked lighting and host presence"
-    },
-    {
-      "scene": 2,
-      "duration": "8-16s",
-      "shotList": "Medium-close continuation with subtle camera drift",
-      "cameraDirection": "Motivated lateral tracking following host movement",
-      "transitions": "Seamless continuous motion",
-      "startState": "Host centered in frame, gesturing right from Stage 1 end state",
-      "primaryChange": "Host steps toward camera as holographic analytical breakdown illuminates beside them",
-      "endState": "Host in medium close-up, hand raised near interactive holographic interface",
-      "onScreenText": "CORE STRATEGY BREAKDOWN",
-      "pacing": "Controlled build",
-      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
-      "visualDescription": "Seamless continuation in same studio set, showcasing strategic revelation"
-    },
-    {
-      "scene": 3,
-      "duration": "16-24s",
-      "shotList": "Hero climax resolution and closing authority stance",
-      "cameraDirection": "Lock-off settling into authoritative master composition",
-      "transitions": "Subtle light fade to brand insignia",
-      "startState": "Host in medium close-up beside interactive interface from Stage 2 end state",
-      "primaryChange": "Holographic graphic resolves into clear conversion call to action as host faces camera directly",
-      "endState": "Host firmly addressing viewer with definitive closing expression in balanced studio light",
-      "onScreenText": "TAKE ACTION NOW",
-      "pacing": "Decisive closing impact",
-      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
-      "visualDescription": "Final authoritative delivery in unchanged set with clear brand resolution"
     }
   ],
   "thumbnails": [
@@ -577,28 +570,36 @@ Return valid JSON with exactly this structure:
 }
 `;
     } else if (mode === "express") {
-      systemInstruction = `You are SPARK's Rapid Short-Form Creative Director. Structure a fast, punchy 2-to-3 stage vertical 9:16 social production with staged continuity and high hook retention. Return valid JSON only.`;
+      systemInstruction = `You are SPARK's Rapid Short-Form Creative Director.
+Structure an Express Narrator storyboard where high-impact visual stills support a FULL spoken VO script.
+EXPRESS LAWS:
+1. Every panel has a concrete valueJob, full substantive spokenLines, and <=6-8 word onScreenText.
+2. Clean sequential visual storytelling with crisp typography safe margins.
+3. Locked host identity and studio set. Return valid JSON only.`;
 
       prompt = `
-Create a rapid short-form production storyboard (9:16 vertical) for:
+Create an express narrator production storyboard (9:16 vertical) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
 HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
+${formattedBeatsBlock}
+EXPRESS NARRATOR RULES:
+- Every panel has:
+  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
+  * spokenLines: Full VO sentence(s) for that beat
+  * onScreenText: <=6-8 words, high-contrast lower-third ready
+  * visualDescription / startState / primaryChange / endState for continuity
 
-CONTINUITY RULES FOR EXPRESS MODE:
-- 2–3 stages (~15–30s total duration).
-- High visual hook energy, immediate engagement, and continuous staged state progression.
-- Exact same host identity and outfit across scenes.
-
-Return valid JSON with exactly this structure:
+Return valid JSON with this exact structure:
 {
   "storyboard": [
     {
       "scene": 1,
       "duration": "0-6s",
+      "valueJob": "hook",
       "shotList": "Presenter direct-to-camera dynamic hook",
       "cameraDirection": "Quick snap push-in",
       "transitions": "Continuous flow",
@@ -607,36 +608,9 @@ Return valid JSON with exactly this structure:
       "endState": "Host holding position pointing to key visual",
       "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 45)}",
       "pacing": "Fast hook",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
       "visualDescription": "High energy vertical framing with clean studio lighting"
-    },
-    {
-      "scene": 2,
-      "duration": "6-20s",
-      "shotList": "Presenter demonstration in same environment",
-      "cameraDirection": "Steady medium frame",
-      "transitions": "Smooth momentum",
-      "startState": "Host continuing from hook end state",
-      "primaryChange": "Demonstrates the core insight directly to viewer",
-      "endState": "Host delivers the core solution conclusion",
-      "onScreenText": "THE SOLUTION",
-      "pacing": "High retention",
-      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
-      "visualDescription": "Direct demonstration in locked studio set"
-    },
-    {
-      "scene": 3,
-      "duration": "20-30s",
-      "shotList": "Closing CTA and action prompt",
-      "cameraDirection": "Lock-off",
-      "transitions": "Snap to brand insignia",
-      "startState": "Host in delivery position from scene 2",
-      "primaryChange": "Direct conversion call to action",
-      "endState": "Host smiling with definitive closing gesture",
-      "onScreenText": "FOLLOW FOR MORE",
-      "pacing": "Decisive",
-      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
-      "visualDescription": "Crisp closing frame with high contrast brand highlight"
     }
   ],
   "thumbnails": [
@@ -648,10 +622,16 @@ Return valid JSON with exactly this structure:
 `;
     } else {
       // standard mode
-      systemInstruction = `You are SPARK's Senior Production Producer. Structure a balanced 3-stage video production (9:16 vertical) with staged continuity between scenes. Return valid JSON only.`;
+      systemInstruction = `You are SPARK's Senior Production Producer.
+Structure a balanced Hybrid Presentation storyboard (host-on-camera + overlay text).
+HYBRID LAWS:
+1. Every panel has valueJob, exact host spokenLines, and onScreenText overlay.
+2. startState -> primaryChange -> endState with clear single action focus.
+3. Concrete camera direction per panel (no generic descriptors).
+4. Locked character identity, wardrobe, and studio set across all panels. Return valid JSON only.`;
 
       prompt = `
-Create a 3-stage vertical (9:16) production storyboard and asset manifest for:
+Create a hybrid presentation storyboard (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
@@ -659,20 +639,23 @@ HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
+${formattedBeatsBlock}
+HYBRID PRESENTATION RULES:
+- Every panel has:
+  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
+  * spokenLines: Exact lines for host on camera
+  * onScreenText: <=6-8 words in uppercase
+  * startState -> primaryChange -> endState
+  * cameraDirection: Concrete camera framing
 
-CONTINUITY RULES FOR STANDARD MODE:
-- Stage 1 (0-8s): Hook & establishing opening state -> endState.
-- Stage 2 (8-18s): Solution delivery continuing from Stage 1 endState -> endState.
-- Stage 3 (18-30s): Resolution & CTA continuing from Stage 2 endState -> final endState.
-- Exact same host identity and studio set throughout.
-
-Return valid JSON with exactly this structure:
+Return valid JSON with this exact structure:
 {
   "storyboard": [
     {
       "scene": 1,
       "duration": "0-8s",
-      "shotList": "Presenter direct-to-camera vertical 9:16 framing",
+      "valueJob": "hook",
+      "shotList": "Presenter direct-to-camera vertical framing",
       "cameraDirection": "Push-in slow zoom",
       "transitions": "Continuous flow",
       "startState": "Host standing in executive studio addressing viewer",
@@ -680,36 +663,9 @@ Return valid JSON with exactly this structure:
       "endState": "Host centered with focused expression holding visual aid",
       "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
       "pacing": "Fast hook",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 60)}",
+      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
+      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
       "visualDescription": "High contrast executive presenter opening frame"
-    },
-    {
-      "scene": 2,
-      "duration": "8-18s",
-      "shotList": "Analytical breakdown in same studio set",
-      "cameraDirection": "Smooth tracking pan",
-      "transitions": "Seamless motion",
-      "startState": "Host established from scene 1 end state",
-      "primaryChange": "Core solution graphics appear beside host",
-      "endState": "Host gestures toward key strategic takeaway",
-      "onScreenText": "THE FORMULA",
-      "pacing": "Rhythmic",
-      "scriptSnippet": "${(typeof brief.scriptOutline === 'string' ? brief.scriptOutline : '').slice(0, 80)}",
-      "visualDescription": "Visual breakdown in sleek studio setting"
-    },
-    {
-      "scene": 3,
-      "duration": "18-30s",
-      "shotList": "Presenter conversion CTA card",
-      "cameraDirection": "Static lock-off",
-      "transitions": "Fade to brand logo",
-      "startState": "Host in position from scene 2 end state",
-      "primaryChange": "Host delivers final call to action",
-      "endState": "Host delivering definitive closing statement",
-      "onScreenText": "START TODAY",
-      "pacing": "High impact closing",
-      "scriptSnippet": "${(typeof brief.caption === 'string' ? brief.caption : '').slice(0, 60)}",
-      "visualDescription": "End screen card with clear brand resolution"
     }
   ],
   "thumbnails": [
@@ -735,10 +691,21 @@ Return valid JSON with exactly this structure:
       const cleanJson = rawResponse.replace(/```json/gi, "").replace(/```/g, "").trim();
       const parsed = JSON.parse(cleanJson);
 
-      const storyboard: ProductionScene[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
+      const parsedStoryboard: any[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
-      currentStoryboard = storyboard;
+      // Ensure every parsed scene has valueJob and spokenLines
+      const storyboard: ProductionScene[] = parsedStoryboard.map((s, idx) => ({
+        ...s,
+        scene: typeof s.scene === "number" ? s.scene : idx + 1,
+        valueJob: s.valueJob || brief.beats?.[idx]?.valueJob || "context",
+        spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+        scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+        onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
+        cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+      }));
+
+      currentStoryboard = storyboard.length > 0 ? storyboard : ProductionAssetService.planProductionScenes({ production, brief, brand });
       currentThumbnails = thumbnails.map((t: any, idx: number) => ({
         id: t.id || `t${idx + 1}`,
         variant: t.variant || ["A", "B", "C"][idx] || "A",
@@ -1518,13 +1485,16 @@ No resets, no new character, no scrambled order.
     // Provider max clip length limit: Veo/Gemini ~ 8s, Grok ~ 15s, fallback 8s
     const providerMaxClipSec = mode === "deep" ? 12 : 8;
     const isOneTake = targetSec <= providerMaxClipSec;
-    const totalScenesCount = isOneTake ? 1 : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
+    const briefBeats = brief.beats || [];
+    const totalScenesCount = briefBeats.length > 0
+      ? briefBeats.length
+      : isOneTake
+      ? 1
+      : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
     const perSceneSec = Math.max(4, Math.floor(targetSec / totalScenesCount));
 
     const storyboard: any[] = (brief.storyboard as any[]) || [];
     const scenesList: ProductionScene[] = [];
-
-    const briefBeats = brief.beats || [];
 
     for (let i = 0; i < totalScenesCount; i++) {
       const idx = i + 1;

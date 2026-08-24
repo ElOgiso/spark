@@ -106,6 +106,8 @@ export interface ProductionScene {
   onScreenText: string;
   pacing: string;
   scriptSnippet: string;
+  spokenLines?: string;
+  valueJob?: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
   visualDescription: string;
   startState?: string;
   endState?: string;
