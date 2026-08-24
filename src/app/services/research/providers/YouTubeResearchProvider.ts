@@ -13,25 +13,63 @@ export class YouTubeResearchProvider {
    */
   static parseHandleOrId(url: string): { handle?: string; channelId?: string; username?: string } | null {
     try {
-      const cleanUrl = url.trim();
-      const matchHandle = cleanUrl.match(/youtube\.com\/@([a-zA-Z0-9._-]+)/i);
-      if (matchHandle) {
-        return { handle: `@${matchHandle[1]}` };
+      let clean = url.trim();
+      if (!clean) return null;
+
+      // Strip enclosing quotes or brackets
+      clean = clean.replace(/^[<"']+|[>"']+$/g, "").trim();
+
+      // Direct channel ID (UC...)
+      if (/^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
+        return { channelId: clean };
       }
-      const matchChannel = cleanUrl.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/i);
+
+      // URLs with /channel/UC...
+      const matchChannel = clean.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/i);
       if (matchChannel) {
         return { channelId: matchChannel[1] };
       }
-      const matchCustom = cleanUrl.match(/youtube\.com\/c\/([a-zA-Z0-9._-]+)/i);
+
+      // URLs with /@handle (strip trailing subpaths like /videos, /featured, etc.)
+      const matchHandle = clean.match(/youtube\.com\/@([a-zA-Z0-9._-]+)/i);
+      if (matchHandle) {
+        return { handle: `@${matchHandle[1]}` };
+      }
+
+      // URLs with /c/custom
+      const matchCustom = clean.match(/youtube\.com\/c\/([a-zA-Z0-9._-]+)/i);
       if (matchCustom) {
         return { handle: `@${matchCustom[1]}`, username: matchCustom[1] };
       }
-      const matchUser = cleanUrl.match(/youtube\.com\/user\/([a-zA-Z0-9._-]+)/i);
+
+      // URLs with /user/legacy
+      const matchUser = clean.match(/youtube\.com\/user\/([a-zA-Z0-9._-]+)/i);
       if (matchUser) {
         return { username: matchUser[1] };
       }
-      if (cleanUrl.startsWith("@")) {
-        return { handle: cleanUrl };
+
+      // Generic URLs youtube.com/handle (ignore platform routes)
+      const matchGenericUrl = clean.match(/youtube\.com\/([a-zA-Z0-9._-]+)/i);
+      if (matchGenericUrl) {
+        const segment = matchGenericUrl[1];
+        const reserved = ["watch", "shorts", "feed", "results", "playlist", "live", "about", "gaming", "channel"];
+        if (!reserved.includes(segment.toLowerCase())) {
+          const strippedSeg = segment.replace(/^@+/, "");
+          return { handle: `@${strippedSeg}`, username: strippedSeg };
+        }
+      }
+
+      // Raw handle input: @@CoinBureau, @CoinBureau, CoinBureau
+      if (clean.includes("@")) {
+        const stripped = clean.replace(/^@+/, "");
+        if (stripped) {
+          return { handle: `@${stripped}`, username: stripped };
+        }
+      }
+
+      // Raw username / handle string (e.g. "CoinBureau")
+      if (/^[a-zA-Z0-9._-]+$/.test(clean)) {
+        return { handle: `@${clean}`, username: clean };
       }
     } catch {
       // return null if invalid
@@ -45,19 +83,47 @@ export class YouTubeResearchProvider {
   static async extract(url: string, sourceId: string): Promise<ExtractedSourceResult> {
     const parsed = this.parseHandleOrId(url);
     const handle = parsed?.handle || (parsed?.channelId ? `@${parsed.channelId}` : "@creator");
-    const rawCleanHandle = handle.replace("@", "");
+    const rawCleanHandle = handle.replace(/^@+/, "");
     const displayName = handle.startsWith("@")
       ? handle.substring(1).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       : handle;
 
     // Resolve YouTube Data API credentials in priority order:
-    // 1. import.meta.env.VITE_YOUTUBE_API_KEY / VITE_GOOGLE_API_KEY
-    // 2. process.env equivalents mapped via vite.config define
-    // 3. Connected YouTube OAuth access token ("YouTube Shorts", "YouTube", "google")
+    // 1. import.meta.env.VITE_YOUTUBE_API_KEY / VITE_GOOGLE_API_KEY / VITE_GOOGLE_AI_API_KEY
+    // 2. process.env equivalents
+    // 3. localStorage keys (youtube_api_key, google_api_key, spark_ai_keys)
+    // 4. Connected YouTube OAuth access token ("YouTube Shorts", "YouTube", "google")
     const googleApiKey =
-      (typeof import.meta !== "undefined" && ((import.meta as any).env?.VITE_YOUTUBE_API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY || (import.meta as any).env?.YOUTUBE_API_KEY || (import.meta as any).env?.GOOGLE_API_KEY)) ||
-      (typeof process !== "undefined" && (process.env?.VITE_YOUTUBE_API_KEY || process.env?.VITE_GOOGLE_API_KEY || process.env?.YOUTUBE_API_KEY || process.env?.GOOGLE_API_KEY)) ||
-      (typeof localStorage !== "undefined" ? localStorage.getItem("youtube_api_key") || localStorage.getItem("google_api_key") : null);
+      (typeof import.meta !== "undefined" && (
+        (import.meta as any).env?.VITE_YOUTUBE_API_KEY ||
+        (import.meta as any).env?.VITE_GOOGLE_API_KEY ||
+        (import.meta as any).env?.VITE_GOOGLE_AI_API_KEY ||
+        (import.meta as any).env?.YOUTUBE_API_KEY ||
+        (import.meta as any).env?.GOOGLE_API_KEY ||
+        (import.meta as any).env?.GOOGLE_AI_API_KEY
+      )) ||
+      (typeof process !== "undefined" && (
+        process.env?.VITE_YOUTUBE_API_KEY ||
+        process.env?.VITE_GOOGLE_API_KEY ||
+        process.env?.VITE_GOOGLE_AI_API_KEY ||
+        process.env?.YOUTUBE_API_KEY ||
+        process.env?.GOOGLE_API_KEY ||
+        process.env?.GOOGLE_AI_API_KEY
+      )) ||
+      (typeof localStorage !== "undefined" ? (
+        localStorage.getItem("youtube_api_key") ||
+        localStorage.getItem("google_api_key") ||
+        localStorage.getItem("spark_youtube_key") ||
+        localStorage.getItem("spark_google_key") ||
+        (() => {
+          try {
+            const parsedKeys = JSON.parse(localStorage.getItem("spark_ai_keys") || "{}");
+            return parsedKeys.youtube || parsedKeys.google || parsedKeys.gemini || null;
+          } catch {
+            return null;
+          }
+        })()
+      ) : null);
 
     const storedTokens = getStoredAccountTokens() as Record<string, any>;
     const ytTokenObj = storedTokens["YouTube Shorts"] || storedTokens["YouTube"] || storedTokens["youtube"] || storedTokens["google"];
@@ -77,6 +143,7 @@ export class YouTubeResearchProvider {
     let status: "active" | "syncing" | "error" | "unavailable" = "active";
     let channelId = parsed?.channelId || null;
     let uploadsPlaylistId: string | null = null;
+    let lastApiError: string | null = null;
 
     const recentVideos: RecentVideo[] = [];
     const topContent: CuratedContentItem[] = [];
@@ -96,16 +163,28 @@ export class YouTubeResearchProvider {
         fullUrl += `${separator}key=${googleApiKey}`;
       }
 
-      const res = await fetch(fullUrl, { headers });
-      const data = await res.json();
-      return { ok: res.ok, status: res.status, data };
+      try {
+        const res = await fetch(fullUrl, { headers });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const errMsg = data?.error?.message || data?.error?.errors?.[0]?.message || `HTTP ${res.status}`;
+          lastApiError = errMsg;
+          console.warn(`[YouTubeResearchProvider] API Error (${res.status}):`, errMsg);
+        }
+
+        return { ok: res.ok, status: res.status, data };
+      } catch (err: any) {
+        lastApiError = err?.message || String(err);
+        return { ok: false, status: 0, data: null };
+      }
     };
 
     if (!googleApiKey && !googleOAuthToken) {
       status = "unavailable";
       metricsAvailability = "unavailable";
       description =
-        "YouTube API Key or connected YouTube account required. Add VITE_YOUTUBE_API_KEY to your environment or connect a YouTube account in Settings.";
+        "YouTube API key not configured. Add VITE_YOUTUBE_API_KEY or VITE_GOOGLE_API_KEY to your environment or connect a YouTube account in Settings.";
     } else {
       try {
         let channelItem: any = null;
@@ -149,10 +228,22 @@ export class YouTubeResearchProvider {
                 channelItem = chRes.data.items[0];
               }
             }
+          } else if (rawCleanHandle) {
+            const searchFallback = await fetchYouTube(`search?part=snippet&type=channel&q=${encodeURIComponent(rawCleanHandle)}&maxResults=1`);
+            if (searchFallback.ok && searchFallback.data?.items?.[0]) {
+              const foundChId = searchFallback.data.items[0].id?.channelId || searchFallback.data.items[0].snippet?.channelId;
+              if (foundChId) {
+                channelId = foundChId;
+                const chRes = await fetchYouTube(`channels?part=snippet,statistics,contentDetails,brandingSettings&id=${foundChId}`);
+                if (chRes.ok && chRes.data?.items?.[0]) {
+                  channelItem = chRes.data.items[0];
+                }
+              }
+            }
           }
         }
 
-        // Stage 4: Try forUsername fallback
+        // Stage 4: Try forUsername fallback (legacy)
         if (!channelItem && (parsed?.username || rawCleanHandle)) {
           const uName = parsed?.username || rawCleanHandle;
           const chRes = await fetchYouTube(`channels?part=snippet,statistics,contentDetails,brandingSettings&forUsername=${encodeURIComponent(uName)}`);
@@ -165,7 +256,11 @@ export class YouTubeResearchProvider {
         if (!channelItem) {
           status = "error";
           metricsAvailability = "unavailable";
-          description = `YouTube Channel not found for handle "${handle}". Verify handle or channel URL.`;
+          if (lastApiError) {
+            description = `YouTube API quota or key error: ${lastApiError}`;
+          } else {
+            description = `YouTube Channel not found for handle "${handle}". Verify handle or channel URL.`;
+          }
         } else {
           status = "active";
           channelId = channelItem.id || channelId;
