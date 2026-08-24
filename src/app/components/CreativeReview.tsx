@@ -24,6 +24,7 @@ import {
   Calendar,
   Clock,
   Download,
+  Trash2,
 } from "lucide-react";
 
 interface CreativeReviewProps {
@@ -56,7 +57,7 @@ function clip(value: unknown, n: number, fallback: string): string {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
-  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction } = useSpark() as any;
+  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction } = useSpark() as any;
 
   // 1. Resolve focus target ID from query params or sessionStorage
   const [focusId] = useState<string | null>(() => {
@@ -209,6 +210,29 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       setActionSuccess("Exported");
       setTimeout(() => setActionSuccess(null), 3500);
     }, 1800);
+  };
+
+  const handleDeleteProduction = () => {
+    const targetId = activeProd?.id || activeReview?.productionId || activeReview?.id;
+    if (!targetId) return;
+    if (window.confirm("Delete this production? Cannot be undone.")) {
+      if (deleteProduction) {
+        deleteProduction(targetId);
+      }
+      setActionSuccess("Deleted");
+      NotificationService.addNotification({
+        title: "Production Deleted",
+        description: `"${proposal.title}" has been deleted from review queue.`,
+        type: "system_update",
+        priority: "medium",
+        actionLabel: "Back to Review Queue",
+        relatedRoute: "/review"
+      });
+      setTimeout(() => {
+        if (onBack) onBack();
+        else if (onNavigate) onNavigate("/review");
+      }, 500);
+    }
   };
 
   const brief = activeProd?.brief || activeReview?.brief;
@@ -863,11 +887,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 : actionSuccess}
             </div>
           )}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button
               variant="approve"
               size="lg"
-              className="flex-1"
+              className="flex-1 min-w-[160px]"
               icon={<CheckCircle2 className="w-5 h-5" />}
               onClick={handleApprove}
               disabled={regenerating || exporting || activeProd?.isGeneratingAssets}
@@ -881,17 +905,39 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={handleGenerateAssets}
               disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
             >
-              {activeProd?.isGeneratingAssets ? "Synthesizing Storyboard..." : "Generate Assets"}
+              {activeProd?.isGeneratingAssets
+                ? "Synthesizing Storyboard..."
+                : (brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.length)
+                ? "Generate Assets"
+                : "Continue Generation"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              icon={<RotateCw className={`w-4 h-4 ${regenerating ? "animate-spin text-purple-400" : ""}`} />}
+              onClick={handleRegenerate}
+              disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
+            >
+              {regenerating ? "Regenerating..." : "Regenerate All"}
             </Button>
             <Button
               variant="ghost"
               size="lg"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive border border-destructive/20"
+              icon={<Trash2 className="w-4 h-4" />}
+              onClick={handleDeleteProduction}
+              disabled={regenerating || exporting || activeProd?.isGeneratingAssets}
+            >
+              Delete Production
+            </Button>
+            <Button
+              variant="ghost"
+              size="lg"
               icon={<XCircle className="w-4 h-4" />}
               onClick={handleCancelProduction}
               disabled={regenerating || exporting}
             >
-              Cancel Production
+              Cancel
             </Button>
             <Button
               variant="secondary"
