@@ -69,6 +69,8 @@ export class ProductionService implements IProductionService {
     productionMode?: string;
     productionId?: string;
     reviewId?: string;
+    researchContext?: any;
+    targetDurationSec?: number;
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
     const brief = await ProductionBriefService.generateBrief(params);
 

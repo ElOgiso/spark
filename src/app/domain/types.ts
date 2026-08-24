@@ -168,11 +168,20 @@ export interface Offer {
   updatedAt?: string;
 }
 
+export interface ProductionBriefBeat {
+  timecode: string;
+  valueJob: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta";
+  spokenLines: string;
+  onScreenText: string;
+  cameraDirection?: string;
+}
+
 export interface ProductionBrief {
   title: string;
   productionMode: string;
   hook: string;
   scriptOutline: string;
+  beats?: ProductionBriefBeat[];
   spokenCta?: string;
   onScreenCta?: string;
   visualDirection: string;

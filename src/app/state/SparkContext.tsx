@@ -1333,6 +1333,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           productionMode: state.productionMode,
           productionId: prodId,
           reviewId: reviewId,
+          researchContext: spark.researchContext,
+          targetDurationSec: state.brand?.formatSettings?.targetDurationSec || (state.productionMode === "deep" ? 120 : 45),
         })
         .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
           const stableEnrichedProd: Production = {
