@@ -296,7 +296,7 @@ function MobileMetricTile({
   );
 }
 
-function VideoFullscreenModal({
+export function VideoFullscreenModal({
   videoUrl,
   title,
   onClose,

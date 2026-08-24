@@ -7,7 +7,7 @@ import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
 import { AIChatPill } from "../AIChatPill";
 import { AIChatModal } from "../AIChatModal";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { getStoredTheme } from "../../theme";
 import { DonorSparkMediaHome } from "./DonorSparkMediaHome";
@@ -24,7 +24,18 @@ interface MobileHomeProps {
 }
 
 export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
-  const currentTheme = getStoredTheme();
+  const [currentTheme, setCurrentTheme] = useState(() => getStoredTheme());
+
+  useEffect(() => {
+    const handleThemeChange = () => setCurrentTheme(getStoredTheme());
+    window.addEventListener("spark_theme_change", handleThemeChange);
+    window.addEventListener("storage", handleThemeChange);
+    return () => {
+      window.removeEventListener("spark_theme_change", handleThemeChange);
+      window.removeEventListener("storage", handleThemeChange);
+    };
+  }, []);
+
   if (currentTheme === "spark_media") {
     return <DonorSparkMediaHome onNavigate={onNavigate} />;
   }

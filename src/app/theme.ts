@@ -65,6 +65,7 @@ export function applyTheme(theme: ThemeMode) {
 
   try {
     localStorage.setItem(THEME_KEY, effectiveTheme);
+    window.dispatchEvent(new Event("spark_theme_change"));
   } catch (e) {
     console.warn("Could not save theme preference:", e);
   }

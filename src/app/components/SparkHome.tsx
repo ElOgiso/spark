@@ -11,11 +11,34 @@ import {
   ArrowRight, Zap, Brain, Flame, AlertCircle, CheckCircle2,
 } from "lucide-react";
 
+import { getStoredTheme, type ThemeMode } from "../theme";
+import { DesktopSparkMediaHome } from "./DesktopSparkMediaHome";
+
 interface SparkHomeProps {
   onNavigate: (path: string) => void;
 }
 
 export function SparkHome({ onNavigate }: SparkHomeProps) {
+  const [currentTheme, setCurrentTheme] = useState<ThemeMode>(() => getStoredTheme());
+
+  useEffect(() => {
+    const handleThemeChange = () => setCurrentTheme(getStoredTheme());
+    window.addEventListener("spark_theme_change", handleThemeChange);
+    window.addEventListener("storage", handleThemeChange);
+    return () => {
+      window.removeEventListener("spark_theme_change", handleThemeChange);
+      window.removeEventListener("storage", handleThemeChange);
+    };
+  }, []);
+
+  if (currentTheme === "spark_media") {
+    return <DesktopSparkMediaHome onNavigate={onNavigate} />;
+  }
+
+  return <DefaultSparkHome onNavigate={onNavigate} />;
+}
+
+function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
   const auth = useAuth();
   const { productions = [], reviewItems = [], viralSparks = [], character, brand, accounts = [], memoryItems = [], researchSources = [] } = useSpark() as any;
   const connectedAccounts = (accounts || []).filter((a: any) => String(a.status || "").toLowerCase() === "connected");
