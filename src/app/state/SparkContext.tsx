@@ -50,6 +50,7 @@ import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { evaluateSparkForProduction, autoRepairViralSpark } from "../services/production/sparkQualityGate";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
+import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
   getBrandWorkspaceId,
@@ -1903,8 +1904,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       ];
 
+      const targetProd = prev.productions.find((p: any) => p.id === review.productionId);
+      let updatedMemories = prev.memoryItems;
+
+      if (targetProd) {
+        const bId = getBrandWorkspaceId() || "default-brand";
+        const winRes = recordBrandPerformanceWin({
+          brandId: bId,
+          production: targetProd,
+          brief: review.brief || targetProd.brief,
+          platform: review.account,
+          existingMemories: prev.memoryItems,
+        });
+        updatedMemories = winRes.updatedMemories;
+
+        if (winRes.isNew && isSupabaseConfigured()) {
+          void import("../backend/workspaceSync").then(({ persistMemoryCreate }) => {
+            void persistMemoryCreate(bId, winRes.memoryItem);
+          });
+        }
+      }
+
       return {
         ...prev,
+        memoryItems: updatedMemories,
         reviewItems: updatedReviewItems,
         productions: updatedProductions,
         publishJobs: newPublishJobs,

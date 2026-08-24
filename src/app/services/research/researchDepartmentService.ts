@@ -164,8 +164,17 @@ export class ResearchDepartmentService {
         (s) => (s.fingerprint && s.fingerprint === sparkFingerprint) || (s.sourceId === source.id && s.title === sparkTitle)
       );
 
+      const brandWinMemories = existingMemories.filter((m) => m.text?.includes("[BRAND WIN]"));
+      const hasProvenWinMatch = brandWinMemories.some(
+        (m) =>
+          (p.patternType && m.text.toLowerCase().includes(p.patternType.toLowerCase())) ||
+          (patternMetrics.format && m.text.toLowerCase().includes(patternMetrics.format.toLowerCase())) ||
+          (source.platform && m.text.toLowerCase().includes(source.platform.toLowerCase()))
+      );
+
       const newViewsStr = p.metrics?.viewCount ? `${p.metrics.viewCount.toLocaleString()}` : "Unavailable from Platform";
-      const newScore = Math.round((p.confidence || 0.5) * 100);
+      const baseScore = Math.round((p.confidence || 0.5) * 100);
+      const newScore = Math.min(99, baseScore + (hasProvenWinMatch ? 10 : 0));
       const patternMetrics: any = p.metrics && typeof p.metrics === "object" ? p.metrics : {};
 
       if (existingSpark) {
