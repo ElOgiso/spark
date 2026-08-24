@@ -377,13 +377,13 @@ export function InteractiveVideoPlayer({
 
   return (
     <div ref={containerRef} className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[430px] shadow-2xl">
-      {audioUrl && (
+      {audioUrl && !activeVideoUrl && (
         <audio
           ref={audioRef}
           src={audioUrl}
           onLoadedMetadata={(e) => {
             const dur = (e.target as HTMLAudioElement).duration;
-            if (dur && !isNaN(dur) && !activeVideoUrl) setDuration(Math.round(dur));
+            if (dur && !isNaN(dur)) setDuration(Math.round(dur));
           }}
           onEnded={() => setIsPlaying(false)}
         />
@@ -501,14 +501,16 @@ export function InteractiveVideoPlayer({
             </div>
           )}
 
-          <div className="max-w-md bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl text-center shadow-2xl">
-            <span className="text-[10px] font-bold text-accent tracking-widest uppercase block mb-0.5">
-              {hostName} • Scene {activeScene.scene}
-            </span>
-            <p className="text-xs font-medium text-white leading-relaxed line-clamp-2">
-              {activeScene.description}
-            </p>
-          </div>
+          {!activeVideoUrl && (
+            <div className="max-w-md bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl text-center shadow-2xl">
+              <span className="text-[10px] font-bold text-accent tracking-widest uppercase block mb-0.5">
+                {hostName} • Scene {activeScene.scene}
+              </span>
+              <p className="text-xs font-medium text-white leading-relaxed line-clamp-2">
+                {activeScene.description}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="p-3 bg-gradient-to-t from-black via-black/80 to-transparent pt-8 relative z-20">

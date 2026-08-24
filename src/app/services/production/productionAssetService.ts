@@ -2,6 +2,7 @@ import type { Production, ProductionBrief, ProductionScene, Brand, Character, Pr
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
+import { getProductionPromptPack } from "./productionPromptPacks";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -373,6 +374,14 @@ export class ProductionAssetService {
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     const { mode, aspectRatio } = identityPack;
+    const promptPack = getProductionPromptPack({
+      brand,
+      character,
+      brief,
+      production,
+      aspectRatio,
+      characterRefUrl: identityPack.characterReferenceImageUrl,
+    });
 
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
@@ -798,7 +807,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
         emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
         checkAborted();
         try {
-          const voiceScript = buildCompleteVoiceScript(brief);
+          const voiceScript = promptPack.voiceScript;
           const targetVoiceId = character?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal);
@@ -881,17 +890,9 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
 
           const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
           const sceneText = (scene.onScreenText || scene.scriptSnippet || brief.hook || "").slice(0, 60);
+          const actionDesc = scene.primaryChange || scene.visualDescription || scene.startState || "Host addressing viewer";
 
-          const imagePrompt = `
-Production storyboard panel ${sIdx + 1} of ${totalScenes}, sequential visual map.
-CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.${identityPack.characterReferenceImageUrl ? ` Reference Sheet: ${identityPack.characterReferenceImageUrl}.` : ""} Use reference image. Do not change face or outfit.
-ENVIRONMENT (locked): ${identityPack.environmentString}. Same set every panel.
-ACTION THIS PANEL ONLY: ${scene.primaryChange || scene.visualDescription || scene.startState}.
-ON-SCREEN TEXT OVERLAY LAW: Render bold, readable, high-contrast typography overlay on the image: "${sceneText}" (bold typography, safe margins, high contrast).
-FRAMING: ${panelFraming} (shot variety across board — not extreme close-up for every panel).
-Style consistent across the full board. Clear readable scene progression.
-Hook context: "${brief.hook}". Brand: ${brand.name}.
-`.trim();
+          const imagePrompt = promptPack.imagePromptTemplate(sIdx, totalScenes, sceneText, actionDesc, panelFraming);
 
           try {
             checkAborted();
@@ -1237,21 +1238,12 @@ No resets, no new character, no scrambled order.
             } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
               const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
-              const videoDurationSec = activeCreditSettings?.shortsDurationSec || (mode === "standard" ? 8 : 10);
+              const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 12) : (activeCreditSettings?.shortsDurationSec || 8);
               const sceneDescriptions = currentStoryboard
                 .map((s, i) => `Scene ${i + 1}: ${s.visualDescription || s.primaryChange || "Action"}`)
                 .join(" | ");
 
-              const masterMotionPrompt = `
-Animate full storyboard sequence 1->N in exact order based on reference keyframes (Target Duration: ${videoDurationSec}s).
-TITLE: "${brief.title}"
-HOOK: "${brief.hook}"
-VISUAL DIRECTION: "${brief.visualDirection}"
-Character lock: ${character?.name || "Host"} (consistent appearance, identical face/hair).
-Environment lock: ${identityPack.environmentString}.
-Scenes: ${sceneDescriptions}.
-No resets, continuous camera motion, high retention visual pacing.
-`.trim();
+              const masterMotionPrompt = promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions);
 
               console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(primaryRefImage)}]...`);
               emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
