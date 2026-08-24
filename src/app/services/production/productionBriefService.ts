@@ -2,6 +2,7 @@ import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, Offer, 
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { loadPersistedState } from "../../state/persistence";
+import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 
 function formatResearchContextBlock(context?: StructuredResearchContext): string {
   if (!context) return "";
@@ -199,7 +200,7 @@ export class ProductionBriefService {
       };
     }
 
-    const rankedMemory = rankAndFormatMemory(memoryItems);
+    const rankedMemory = buildRankedBrandLaws(memoryItems).lawsBlock;
     const researchPromptBlock = formatResearchContextBlock(researchContext);
     const hostStyle = character?.style || character?.name || brand.name;
     const charTraits = character?.traits ? character.traits.join(", ") : "Authoritative, direct, engaging";
