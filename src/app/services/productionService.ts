@@ -134,12 +134,13 @@ export class ProductionService implements IProductionService {
     production: Production;
     brand: Brand;
     character?: Character;
+    memoryItems?: MemoryItem[];
     creditSettings?: import("../domain/types").GenerationCreditSettings;
     onProgress?: (progress: import("../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
-    const { production, brand, character, creditSettings, onProgress, forceRegenerate, signal } = params;
+    const { production, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -170,6 +171,7 @@ export class ProductionService implements IProductionService {
                 ...r,
                 videoUrl: partialVideoUrl || r.videoUrl,
                 audioUrl: partialAudioUrl || r.audioUrl,
+                status: "Pending Review",
               }
             : r
         ),
@@ -181,6 +183,7 @@ export class ProductionService implements IProductionService {
       brief: production.brief,
       brand,
       character,
+      memoryItems,
       creditSettings,
       onProgress: handleProgress,
       forceRegenerate,

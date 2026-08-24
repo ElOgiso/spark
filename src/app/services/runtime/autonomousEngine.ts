@@ -111,33 +111,50 @@ export class AutonomousEngine {
         const prodId = `p-auto-${Date.now()}`;
         const reviewId = `r-auto-${Date.now()}`;
 
+        const { ProductionBriefService } = await import("../production/productionBriefService");
+        const brief = await ProductionBriefService.generateBrief({
+          spark: sparkToDraft,
+          brand,
+          character,
+          memoryItems: state.memoryItems || [],
+          productionMode: "standard",
+          targetDurationSec: 45,
+        });
+
         const newProduction: Production = {
           id: prodId,
-          title: sparkToDraft.title,
+          title: brief.title || sparkToDraft.title,
           sparkId: sparkToDraft.id,
           status: "Ready for Review",
           mode: "standard",
           dateCreated: new Date().toISOString().split("T")[0],
           aspectRatio: "9:16",
           formats: ["YouTube Shorts", "TikTok"],
-          scenes: [
-            { scene: 1, description: `Hook: ${sparkToDraft.hook} (${character?.style || "Executive"} presenter)`, duration: "0-5s" },
+          brief,
+          scenes: brief.beats?.map((b, idx) => ({
+            scene: idx + 1,
+            description: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+            duration: b.timecode,
+          })) || [
+            { scene: 1, description: `Hook: ${brief.hook}`, duration: "0-5s" },
             { scene: 2, description: `Body: Strategy deep dive into ${sparkToDraft.angle}`, duration: "5-25s" },
-            { scene: 3, description: `CTA: Follow ${brand.name} for daily executive content`, duration: "25-30s" },
+            { scene: 3, description: `CTA: ${brief.spokenCta || `Follow ${brand.name}`}`, duration: "25-30s" },
           ],
         };
 
         const newReviewItem: ReviewItem = {
           id: reviewId,
           productionId: prodId,
-          title: sparkToDraft.title,
+          title: brief.title || sparkToDraft.title,
           account: "YouTube Shorts",
           series: "Autonomous Daily Series",
           status: "Pending Review",
           dateCreated: new Date().toISOString().split("T")[0],
-          scriptSnippet: sparkToDraft.hook,
-          conceptText: sparkToDraft.whyNow,
+          scriptSnippet: brief.hook || sparkToDraft.hook,
+          conceptText: brief.whyThisWorks || sparkToDraft.whyNow,
           openingMoment: sparkToDraft.angle,
+          brief,
+          whyThisWorks: brief.whyThisWorks,
           qualityCheck: { brandSafety: "Passed", policyCheck: "Passed", technicalCheck: "Passed" },
         };
 

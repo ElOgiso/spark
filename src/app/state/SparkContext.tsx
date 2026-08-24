@@ -1376,6 +1376,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 production: stableEnrichedProd,
                 brand: state.brand,
                 character: state.character,
+                memoryItems: state.memoryItems || [],
                 creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
                 signal: controller.signal,
                 onProgress: (progress) => {
@@ -1568,6 +1569,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         brand: state.brand,
         character: state.character,
         production: prod,
+        memoryItems: state.memoryItems || [],
       });
 
       if (updatedScene) {
@@ -1583,7 +1585,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return updatedScene;
     },
-    [state.productions, state.brand, state.character]
+    [state.productions, state.brand, state.character, state.memoryItems]
   );
 
   const mergeProductionScenes = useCallback(

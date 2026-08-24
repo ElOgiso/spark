@@ -4,7 +4,8 @@
  * 90% fixed style/discipline pack + 10% injected story content.
  */
 
-import type { Brand, Character, ProductionBrief, Production } from "../../domain/types";
+import type { Brand, Character, ProductionBrief, Production, MemoryItem } from "../../domain/types";
+import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 
 export const ANTI_SLOP_RULES = `
 ANTI-SLOP & CONTINUITY LAWS:
@@ -22,6 +23,7 @@ export interface PromptPackOptions {
   production: Production;
   aspectRatio: string;
   characterRefUrl?: string;
+  memoryItems?: MemoryItem[];
 }
 
 export interface ModePromptPack {
@@ -68,7 +70,7 @@ export function buildCompleteVoiceScript(brief: ProductionBrief): string {
 }
 
 export function getProductionPromptPack(options: PromptPackOptions): ModePromptPack {
-  const { brand, character, brief, production, aspectRatio, characterRefUrl } = options;
+  const { brand, character, brief, production, aspectRatio, characterRefUrl, memoryItems = [] } = options;
   const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
   const mode: "express" | "standard" | "deep" =
     rawMode === "deep" || rawMode === "cinematic"
@@ -81,12 +83,15 @@ export function getProductionPromptPack(options: PromptPackOptions): ModePromptP
   const charStyle = character?.style || "Executive Presenter";
   const charTraits = (character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ");
   const environmentStr = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
+  const rankedLaws = buildRankedBrandLaws(memoryItems).lawsBlock;
 
   const globalLockBlock = `
 CHARACTER (LOCKED): Primary subject is "${charName}" (Style: ${charStyle}, Traits: ${charTraits}).${characterRefUrl ? ` Reference Sheet: ${characterRefUrl}` : ""}
 ENVIRONMENT (LOCKED SET): Location is "${environmentStr}".
 BRAND IDENTITY: ${brand.name} (${brand.niche || "Media OS"}).
 ASPECT RATIO: ${aspectRatio}.
+RANKED BRAND MEMORY & EXECUTIVE LAWS:
+${rankedLaws}
 ${ANTI_SLOP_RULES}
 `.trim();
 

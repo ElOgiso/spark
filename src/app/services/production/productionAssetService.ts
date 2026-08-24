@@ -362,12 +362,13 @@ export class ProductionAssetService {
     brief: ProductionBrief;
     brand: Brand;
     character?: Character;
+    memoryItems?: import("../../domain/types").MemoryItem[];
     creditSettings?: import("../../domain/types").GenerationCreditSettings;
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character, creditSettings, onProgress, forceRegenerate, signal } = params;
+    const { production, brief, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     const activeCreditSettings: import("../../domain/types").GenerationCreditSettings =
       creditSettings || (brand as any)?.creditSettings || (production as any)?.creditSettings || {
         thumbnailCount: 3,
@@ -398,6 +399,7 @@ export class ProductionAssetService {
       production,
       aspectRatio,
       characterRefUrl: identityPack.characterReferenceImageUrl,
+      memoryItems,
     });
 
     const stages: import("../../domain/types").GenerationProgressStage[] = [
@@ -1522,24 +1524,31 @@ No resets, no new character, no scrambled order.
     const storyboard: any[] = (brief.storyboard as any[]) || [];
     const scenesList: ProductionScene[] = [];
 
+    const briefBeats = brief.beats || [];
+
     for (let i = 0; i < totalScenesCount; i++) {
       const idx = i + 1;
       const sbItem: any = storyboard[i] || storyboard[storyboard.length - 1];
+      const beatItem = briefBeats[i] || briefBeats[briefBeats.length - 1];
       const clipUrl = brief.generatedAssets?.generatedVideos?.[i] || (i === 0 ? production.videoUrl || brief.videoUrl : undefined);
+
+      const resolvedSpoken = beatItem?.spokenLines || sbItem?.scriptSnippet || (idx === 1 ? brief.hook : brief.spokenCta || "");
+      const resolvedOnScreen = beatItem?.onScreenText || sbItem?.onScreenText || (idx === 1 ? "HOOK" : `SCENE ${idx}`);
+      const resolvedCamera = beatItem?.cameraDirection || sbItem?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot");
 
       scenesList.push({
         scene: idx,
         duration: `${perSceneSec}s`,
-        shotList: sbItem?.shotList || `Scene ${idx} framing`,
-        cameraDirection: sbItem?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+        shotList: sbItem?.shotList || `Scene ${idx} framing (${beatItem?.valueJob || "content"})`,
+        cameraDirection: resolvedCamera,
         transitions: sbItem?.transitions || "Seamless flow",
-        onScreenText: sbItem?.onScreenText || sbItem?.scriptSnippet || `Scene ${idx}`,
+        onScreenText: resolvedOnScreen,
         pacing: sbItem?.pacing || "Balanced",
-        scriptSnippet: sbItem?.scriptSnippet || brief.hook || "",
-        visualDescription: sbItem?.visualDescription || brief.visualDirection || `Scene ${idx} beat`,
+        scriptSnippet: resolvedSpoken,
+        visualDescription: sbItem?.visualDescription || `[${(beatItem?.valueJob || "beat").toUpperCase()}] ${resolvedSpoken}`,
         startState: sbItem?.startState || `Scene ${idx} start state`,
         endState: sbItem?.endState || `Scene ${idx} end state`,
-        primaryChange: sbItem?.primaryChange || sbItem?.visualDescription || `Physical action beat ${idx}`,
+        primaryChange: sbItem?.primaryChange || resolvedSpoken,
         image: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
         videoUrl: clipUrl,
         id: `scene-${production.id}-${idx}`,
@@ -1547,9 +1556,9 @@ No resets, no new character, no scrambled order.
         brandId: (brand as any).id,
         index: idx,
         durationSec: perSceneSec,
-        action: sbItem?.primaryChange || sbItem?.visualDescription || `Physical action beat ${idx}`,
-        camera: sbItem?.cameraDirection || (mode === "deep" ? "Continuous tracking shot" : "Host-on-camera medium frame"),
-        scriptBeat: sbItem?.scriptSnippet || brief.hook || "",
+        action: sbItem?.primaryChange || resolvedSpoken,
+        camera: resolvedCamera,
+        scriptBeat: resolvedSpoken,
         keyframeImageUrl: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
         status: clipUrl ? "ready" : "pending",
         createdAt: new Date().toISOString(),
@@ -1570,8 +1579,9 @@ No resets, no new character, no scrambled order.
     brand: Brand;
     character?: Character;
     production: Production;
+    memoryItems?: import("../../domain/types").MemoryItem[];
   }): Promise<ProductionScene | null> {
-    const { productionId, sceneIndex, editNotes, brand, character, production } = params;
+    const { productionId, sceneIndex, editNotes, brand, character, production, memoryItems = [] } = params;
     const brief = production.brief || ({} as ProductionBrief);
     const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({ production, brief, brand });
     const targetSceneIdx = existingScenes.findIndex((s) => (s.index || s.scene) === sceneIndex);
@@ -1590,6 +1600,7 @@ No resets, no new character, no scrambled order.
         production,
         aspectRatio: identityPack.aspectRatio,
         characterRefUrl: identityPack.characterReferenceImageUrl,
+        memoryItems,
       });
 
       // Adjacent continuity seed: previous scene's last frame or keyframe
