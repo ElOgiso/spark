@@ -49,6 +49,7 @@ import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { evaluateSparkForProduction, autoRepairViralSpark } from "../services/production/sparkQualityGate";
+import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
   getBrandWorkspaceId,
@@ -1263,9 +1264,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
 
+    const resolvedMode = resolveProductionMode({ spark, brand: state.brand, modeOverride: state.productionMode });
     const hostStyle = state.character?.style || "Executive Creator";
     const status = state.automationMode === "autonomous" ? "Ready for Review" : "Drafting";
-    const platformFit = spark.platformFit || "YouTube Shorts";
+    const platformFit = spark.platformFit || (resolvedMode === "deep" ? "YouTube Long-form" : "YouTube Shorts");
     const formats = platformFit.split(" + ").map((s: string) => s.trim()).filter(Boolean);
 
     // Initial optimistic state creation
@@ -1274,7 +1276,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       title: spark.title,
       sparkId: spark.id,
       status: status,
-      mode: state.productionMode,
+      mode: resolvedMode as any,
       dateCreated: new Date().toISOString().split("T")[0],
       aspectRatio: platformFit.includes("YouTube") && !platformFit.includes("TikTok") ? "16:9" : "9:16",
       formats,

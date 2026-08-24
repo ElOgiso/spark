@@ -3,6 +3,7 @@ import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { loadPersistedState } from "../../state/persistence";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
+import { resolveProductionMode } from "./resolveProductionMode";
 
 function formatResearchContextBlock(context?: StructuredResearchContext): string {
   if (!context) return "";
@@ -207,8 +208,7 @@ export class ProductionBriefService {
     const pillars = brand.contentPillars ? brand.contentPillars.map((p) => p.label).join(", ") : "Strategy, Insights";
     const tones = brand.tone ? brand.tone.map((t) => t.label).join(", ") : "Professional, executive";
     const sparkScore = spark.brandFitScore || 92;
-    const rawMode = (productionMode || spark.suggestedProductionMode || "standard").toLowerCase();
-    const modeKey = rawMode.includes("deep") || rawMode.includes("cinematic") ? "deep" : rawMode.includes("express") || rawMode.includes("narrator") ? "express" : "standard";
+    const modeKey = resolveProductionMode({ modeOverride: productionMode, spark, brand });
 
     const offerPromptSection = defaultOffer
       ? `

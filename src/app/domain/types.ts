@@ -12,6 +12,7 @@ export interface Brand {
   tone: { label: string; active: boolean }[];
   // Future backend and automation configuration fields
   automation_mode?: AutomationMode;
+  productionMode?: string;
   formatSettings?: ProductionFormatSettings;
   review_required?: boolean;
   publish_requires_approval?: boolean;
@@ -83,6 +84,7 @@ export interface ViralSpark {
   riskLevel: "Low" | "Medium" | "High";
   suggestedFormat: string;
   suggestedProductionMode: string;
+  suggestedMode?: "express" | "standard" | "deep";
   origin?: "TREND" | "SOURCE" | "HYBRID";
   sourceId?: string;
   fingerprint?: string;
