@@ -1089,34 +1089,43 @@ Brand: ${brand.name}
 
             try {
               const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
-              const compiledBlob = await compileNarratorSlideshowVideo({
-                imageUrls: sceneImages.length > 0 ? sceneImages : (currentStoryboard.map(s => s.image).filter(Boolean) as string[]),
+              const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map(s => s.image).filter(Boolean) as string[]);
+              const compileResult = await compileNarratorSlideshowVideo({
+                imageUrls: targetImages,
                 audioUrl: realVoiceUrl,
                 totalDurationSec: activeCreditSettings?.shortsDurationSec || 12,
               });
 
-              if (compiledBlob) {
+              if (compileResult && compileResult.blob && compileResult.blob.size > 0) {
                 try {
+                  const ext = compileResult.extension || (compileResult.mimeType.includes("mp4") ? "mp4" : "webm");
                   const storedCompiledVid = await this.uploadAssetToStorage({
                     productionId: production.id,
                     brandId: (brand as any).id,
                     assetType: "video",
-                    storagePath: getStoragePath("video/master.mp4"),
-                    dataUrlOrBlob: compiledBlob,
-                    mimeType: compiledBlob.type || "video/webm",
-                    prompt: "Narrator compiled slideshow video",
+                    storagePath: getStoragePath(`video/master.${ext}`),
+                    dataUrlOrBlob: compileResult.blob,
+                    mimeType: compileResult.mimeType || `video/${ext}`,
+                    prompt: "Narrator compiled slideshow video with voiceover muxing",
                     provider: "NarratorSlideshowCompiler",
                   });
                   if (storedCompiledVid?.publicUrl) {
                     realVideoUrl = storedCompiledVid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video -> ${realVideoUrl}`);
+                    console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
+                  } else {
+                    lastError = "Narrator compiled video upload succeeded but returned empty public URL.";
                   }
                 } catch (compileStorageErr: any) {
                   console.warn("[SPARK Pipeline] Narrator compiled video storage upload failed:", compileStorageErr);
+                  lastError = `Narrator video storage upload failed: ${compileStorageErr.message || String(compileStorageErr)}`;
                 }
+              } else {
+                console.warn("[SPARK Pipeline] Narrator slideshow video compilation returned null (CORS or missing images/audio).");
+                lastError = "Narrator slideshow compiler failed (CORS or missing images/audio).";
               }
             } catch (compilerErr: any) {
               console.warn("[SPARK Pipeline] Narrator video compiler exception:", compilerErr);
+              lastError = `Narrator video compiler error: ${compilerErr.message || String(compilerErr)}`;
             }
           } else {
             // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion
