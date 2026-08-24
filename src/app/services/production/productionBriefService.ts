@@ -5,24 +5,81 @@ import { loadPersistedState } from "../../state/persistence";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
 
-function formatResearchContextBlock(context?: StructuredResearchContext): string {
-  if (!context) return "";
+/**
+ * Deterministically resolves the best available research structure for a spark.
+ * Priority: params.researchContext -> spark.researchContext -> rebuild from spark pattern fields -> null.
+ */
+export function resolveResearchContext(
+  spark: ViralSpark,
+  params?: { researchContext?: StructuredResearchContext }
+): StructuredResearchContext | null {
+  // 1) Explicit params.researchContext
+  if (params?.researchContext && Object.keys(params.researchContext).length > 0) {
+    return params.researchContext;
+  }
 
-  const lines: string[] = ["STRUCTURED INSPIRATION & RESEARCH PATTERNS (ADAPT PATTERN TO BRAND, DO NOT CLONE CREATOR IDENTITY):"];
-  if (context.sourceName) lines.push(`- Inspiration Creator/Account: ${context.sourceName} (${context.platform || "Video"})`);
+  // 2) Attached spark.researchContext
+  if (spark?.researchContext && Object.keys(spark.researchContext).length > 0) {
+    return spark.researchContext;
+  }
+
+  // 3) Rebuild from spark fields if source / pattern data exists
+  const hasPatternData = Boolean(
+    spark.origin === "SOURCE" ||
+      spark.sourceId ||
+      (spark.hook && (spark.hook.toLowerCase().includes("opener") || spark.hook.toLowerCase().includes("pattern")))
+  );
+
+  if (hasPatternData) {
+    const hookPattern = spark.hook || undefined;
+    const titlePattern = spark.title ? `Title structure (${spark.title.slice(0, 40)}...)` : undefined;
+    const format = spark.suggestedFormat || (spark.suggestedProductionMode === "express" ? "Vertical Short-Form (Shorts)" : "Host Presentation");
+    const ctaStyle = spark.whyNow?.includes("comment") ? "Organic comment discussion bridge" : "Direct value CTA";
+    const nicheLanguage = spark.whyNow ? spark.whyNow.split(/\s+/).filter((w) => w.length > 5).slice(0, 3) : undefined;
+    const viralReasons = spark.whyNow ? [spark.whyNow] : undefined;
+
+    return {
+      sourceName: spark.sourceId ? `Inspiration Source (${spark.sourceId})` : "Inspiration Account",
+      platform: spark.platformFit?.includes("Shorts") ? "YouTube Shorts" : "Video",
+      hookPattern,
+      titlePattern,
+      format,
+      ctaStyle,
+      nicheLanguage,
+      viralReasons,
+      provenStructure: format,
+    };
+  }
+
+  // 4) If pure trend or general spark without research context -> null (do not fabricate)
+  return null;
+}
+
+function formatResearchContextBlock(context: StructuredResearchContext | null, brandName: string): string {
+  if (!context) {
+    return `RESEARCH CONTEXT: None attached. (Do NOT fabricate source metrics or claim external inspiration in whyThisWorks).`;
+  }
+
+  const lines: string[] = ["RESEARCH STRUCTURE (EVIDENCE-BACKED — TRANSLATE, DO NOT CLONE):"];
+  if (context.sourceName) lines.push(`- Inspiration Source: ${context.sourceName} (${context.platform || "Video"})`);
   if (context.hookPattern) lines.push(`- Proven Hook Pattern: "${context.hookPattern}"`);
   if (context.titlePattern) lines.push(`- Title Structure Pattern: "${context.titlePattern}"`);
-  if (context.format) lines.push(`- Content Format Type: ${context.format}`);
-  if (context.ctaStyle) lines.push(`- High-Converting CTA Style: "${context.ctaStyle}"`);
+  if (context.format) lines.push(`- Content Format that Worked: ${context.format}`);
+  if (context.ctaStyle) lines.push(`- CTA Style that Worked: "${context.ctaStyle}"`);
   if (context.provenStructure) lines.push(`- Proven Storytelling Structure: ${context.provenStructure}`);
   if (context.nicheLanguage && context.nicheLanguage.length > 0) {
-    lines.push(`- High-Value Niche Terminology: ${context.nicheLanguage.join(", ")}`);
+    lines.push(`- High-Value Niche Language to Prefer: ${context.nicheLanguage.join(", ")}`);
   }
   if (context.viralReasons && context.viralReasons.length > 0) {
-    lines.push(`- Retention Signals: ${context.viralReasons.join("; ")}`);
+    lines.push(`- Retention & Viral Evidence: ${context.viralReasons.join("; ")}`);
   }
 
-  lines.push(`DIRECTIVE: Translate this exact engagement pattern into ${context.nicheLanguage?.length ? "niche-authentic" : "brand-tailored"} spoken lines while adhering 100% to the brand voice.`);
+  lines.push(`COMPILER ORDERS:`);
+  lines.push(`- Translate this engagement STRUCTURE into niche-authentic spoken lines for ${brandName}.`);
+  lines.push(`- Adapt to brand tone, pillars, character, and offer — do NOT copy the source creator's identity.`);
+  lines.push(`- Hook output must be ready-to-speak, not a meta description of the pattern.`);
+  lines.push(`- whyThisWorks must cite the research evidence in 1-3 sentences.`);
+
   return lines.join("\n");
 }
 
@@ -287,9 +344,11 @@ function compileDeterministicBrief(params: {
     visualDirection,
     caption,
     platformRecommendation: spark.platformFit || (modeKey === "deep" ? "YouTube Long-form (16:9)" : "YouTube Shorts (9:16)"),
-    whyThisWorks: spark.whyNow
-      ? `Based on proven pattern: ${spark.whyNow}. Adapted to ${brand.name}'s voice.`
-      : `High curiosity gap paired with ${brand.name}'s niche authority.`,
+    whyThisWorks: researchContext
+      ? `Based on proven inspiration pattern (${researchContext.sourceName || "Inspiration Account"}: ${researchContext.format || "Structured format"}). Cites verified retention signals translated for ${brand.name}.`
+      : spark.whyNow
+      ? `Built on strategic opportunity: ${spark.whyNow}. Adapted directly to ${brand.name}'s niche authority.`
+      : `High curiosity gap paired with ${brand.name}'s executive authority.`,
     brandFitScore: spark.brandFitScore || 90,
     suggestedDuration: durationSec >= 120 ? "120-180s" : durationSec >= 60 ? "60-90s" : "30-45s",
     offerCta,
@@ -319,9 +378,11 @@ export class ProductionBriefService {
       }
     })();
 
+    const resolvedResearch = resolveResearchContext(spark, { researchContext });
+
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
-      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode, niche, researchContext, targetDurationSec });
+      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode, niche, researchContext: resolvedResearch || undefined, targetDurationSec });
       return {
         ...fallback,
         scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
@@ -329,7 +390,7 @@ export class ProductionBriefService {
     }
 
     const rankedMemory = buildRankedBrandLaws(memoryItems).lawsBlock;
-    const researchPromptBlock = formatResearchContextBlock(researchContext);
+    const researchPromptBlock = formatResearchContextBlock(resolvedResearch, brand.name);
     const hostStyle = character?.style || character?.name || brand.name;
     const charTraits = character?.traits ? character.traits.join(", ") : "Authoritative, direct, engaging";
     const pillars = brand.contentPillars ? brand.contentPillars.map((p) => p.label).join(", ") : "Strategy, Insights";
