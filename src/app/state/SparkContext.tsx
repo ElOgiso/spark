@@ -48,6 +48,7 @@ import {
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
+import { evaluateSparkForProduction, autoRepairViralSpark } from "../services/production/sparkQualityGate";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
   getBrandWorkspaceId,
@@ -104,6 +105,7 @@ interface SparkContextType {
   updateCreditSettings: (newSettings: Partial<GenerationCreditSettings>) => void;
   updateFormatSettings: (newSettings: Partial<ProductionFormatSettings>) => Promise<boolean>;
   createProductionFromSpark: (sparkOrId: string | ViralSpark) => { production: Production; reviewItem: ReviewItem } | void;
+  strengthenSpark: (sparkId: string) => ViralSpark | undefined;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   fixProductionScene: (productionId: string, sceneIndex: number, editNotes: string) => Promise<any>;
   mergeProductionScenes: (productionId: string) => Promise<string | null>;
@@ -1217,13 +1219,45 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const createProductionFromSpark = (sparkOrId: string | ViralSpark) => {
-    const spark =
+    let spark =
       typeof sparkOrId === "string"
         ? state.viralSparks.find((s: any) => s.id === sparkOrId) || state.viralSparks[0]
         : sparkOrId;
     if (!spark) {
       console.warn("[SparkContext] createProductionFromSpark: Spark not found for:", sparkOrId);
       return;
+    }
+
+    // Quality Gate Evaluation
+    const evalRes = evaluateSparkForProduction(spark, state.brand);
+    if (!evalRes.ok) {
+      console.log(`[SparkContext] Spark quality gate triggered auto-repair for "${spark.title}". Failures:`, evalRes.criticalFailures);
+      const repaired = autoRepairViralSpark(spark, state.brand);
+      const secondEval = evaluateSparkForProduction(repaired, state.brand);
+
+      if (!secondEval.ok) {
+        const failureMsg = secondEval.criticalFailures.join("; ");
+        NotificationService.addNotification({
+          title: "Spark Needs Strengthening",
+          message: `Cannot start production: ${failureMsg}. Click 'Strengthen Spark' on card to upgrade.`,
+          type: "warning",
+        });
+        return;
+      }
+
+      // Save repaired spark to state & persistence
+      spark = repaired;
+      setState((prev: any) => ({
+        ...prev,
+        viralSparks: prev.viralSparks.map((s: any) => (s.id === spark.id ? repaired : s)),
+      }));
+
+      const bId = getBrandWorkspaceId();
+      if (isSupabaseConfigured() && bId) {
+        void import("../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
+          void persistViralSparkCreate(bId, repaired);
+        });
+      }
     }
 
     const prodId = `p-${Date.now()}`;
@@ -1583,6 +1617,35 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return masterUrl;
     },
     [state.productions, state.brand]
+  );
+
+  const strengthenSpark = useCallback(
+    (sparkId: string): ViralSpark | undefined => {
+      const targetSpark = state.viralSparks?.find((s: any) => s.id === sparkId);
+      if (!targetSpark) return undefined;
+
+      const repaired = autoRepairViralSpark(targetSpark, state.brand);
+      setState((prev: any) => ({
+        ...prev,
+        viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? repaired : s)),
+      }));
+
+      const bId = getBrandWorkspaceId();
+      if (isSupabaseConfigured() && bId) {
+        void import("../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
+          void persistViralSparkCreate(bId, repaired);
+        });
+      }
+
+      NotificationService.addNotification({
+        title: "Spark Strengthened",
+        message: `Upgraded "${repaired.title}" with brand-spoken hook & CTA. Ready for production!`,
+        type: "success",
+      });
+
+      return repaired;
+    },
+    [state.viralSparks, state.brand]
   );
 
   const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
@@ -2557,6 +2620,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateFormatSettings,
         updateAISettings,
         createProductionFromSpark,
+        strengthenSpark,
         generateProductionAssets,
         fixProductionScene,
         mergeProductionScenes,
