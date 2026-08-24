@@ -1239,9 +1239,18 @@ No resets, no new character, no scrambled order.
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
               const primaryRefImage = realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl;
               const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 12) : (activeCreditSettings?.shortsDurationSec || 8);
+              const beatInterval = Math.max(3, Math.floor(videoDurationSec / Math.max(1, currentStoryboard.length)));
               const sceneDescriptions = currentStoryboard
-                .map((s, i) => `Scene ${i + 1}: ${s.visualDescription || s.primaryChange || "Action"}`)
-                .join(" | ");
+                .map((s, i) => {
+                  const startSec = i * beatInterval;
+                  const endSec = (i + 1) * beatInterval;
+                  const timeStr = `[00:${startSec.toString().padStart(2, "0")}-00:${endSec.toString().padStart(2, "0")}]`;
+                  const actionStr = s.primaryChange || s.visualDescription || s.startState || "Action beat";
+                  const cameraStr = s.cameraDirection || (mode === "deep" ? "Continuous tracking shot" : "Host-on-camera medium frame");
+                  const quoteStr = s.scriptSnippet ? ` | DIALOGUE: "${s.scriptSnippet.replace(/"/g, "'")}"` : "";
+                  return `${timeStr} ACTION: ${actionStr} | CAMERA: ${cameraStr}${quoteStr}`;
+                })
+                .join("\n");
 
               const masterMotionPrompt = promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions);
 

@@ -122,8 +122,10 @@ Clear sequential storytelling. Crisp lower-third text backdrop.
 ${globalLockBlock}
 
 CINEMATIC MASTER KEYFRAME (Scene ${sIdx + 1} of ${totalScenes}):
-Sequence Beat: ${actionDesc}
-Camera Optics & Movement: ${framing}, anamorphic prime optics, dynamic tracking.
+INPUT REF [1]: Character Reference Sheet (${charName})
+INPUT REF [2]: Master Storyboard Grid Reference
+ACTION: ${actionDesc}
+CAMERA: ${framing}, anamorphic prime optics, dynamic tracking.
 ON-SCREEN TYPOGRAPHY LAW: Render high-contrast crisp text overlay: "${sceneText}" (bold typography, safe bottom margins).
 Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic render.
 `.trim(),
@@ -131,7 +133,9 @@ Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic
 ${globalLockBlock}
 
 LAM ONE-TAKE CONTINUOUS CINEMATIC SEQUENCE (${aspectRatio}, Duration: ${durationSec}s):
-GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}".
+INPUT REF [1]: Primary Character Reference Sheet (${charName})
+INPUT REF [2]: Master Storyboard Grid / Keyframe Reference
+GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}". Look lives in reference images — text describes physical change only.
 
 TIMELINE & STAGED CONTINUITY BEATS:
 ${sceneDescriptions}
@@ -139,8 +143,13 @@ ${sceneDescriptions}
 ONE-TAKE MOTION LAWS:
 - Single continuous camera move across all stages (Scene 1 -> Scene 2 -> Scene 3).
 - Scene N MUST open on Scene N-1's exact end state.
-- Exactly ONE primary change per stage.
+- Exactly ONE primary physical change per stage. Do not rewrite character identity per beat.
 - Absolute identity, hair, and wardrobe lock; zero face morphing or AI slop.
+
+AUDIO & SPEECH POLICY:
+- Ambient sound design and synchronized SFX in chronological beat order.
+- Explicit "no background music" unless brand settings enable music.
+- Short quoted dialogue occurs only inside timestamp beats.
 `.trim(),
     };
   }
@@ -154,8 +163,10 @@ ONE-TAKE MOTION LAWS:
 ${globalLockBlock}
 
 HYBRID STORYBOARD PANEL (Panel ${sIdx + 1} of ${totalScenes}):
-Action: ${actionDesc}
-Camera Framing: ${framing}
+INPUT REF [1]: Character Reference Sheet (${charName})
+INPUT REF [2]: Master Storyboard Grid Reference
+ACTION: ${actionDesc}
+CAMERA: ${framing}
 ON-SCREEN TEXT OVERLAY LAW: Render bold typography overlay: "${sceneText}" (high contrast, safe lower-third margin).
 Clear host-on-camera perspective with high-impact visual engagement.
 `.trim(),
@@ -163,7 +174,9 @@ Clear host-on-camera perspective with high-impact visual engagement.
 ${globalLockBlock}
 
 LAM ONE-TAKE HYBRID PRESENTATION SEQUENCE (${aspectRatio}, Target Duration: ${durationSec}s):
-GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}".
+INPUT REF [1]: Primary Character Reference Sheet (${charName})
+INPUT REF [2]: Master Storyboard Grid / Keyframe Reference
+GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}". Look lives in reference images — text describes physical change only.
 
 TIMELINE & BEAT STRUCTURE:
 ${sceneDescriptions}
@@ -173,6 +186,11 @@ HYBRID PRESENTATION LAWS:
 - Sequential beat animation from reference keyframes in exact order (1 -> N).
 - Continuous set lighting and atmosphere; zero random environment resets.
 - Clean host presentation pacing matching audio narration.
+
+AUDIO & SPEECH POLICY:
+- Ambient sound design and synchronized SFX in chronological sequence.
+- Explicit "no background music" unless brand settings enable music.
+- Short quoted dialogue occurs only inside timestamp beats.
 `.trim(),
   };
 }
