@@ -911,12 +911,20 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
 
           const imagePrompt = promptPack.imagePromptTemplate(sIdx, totalScenes, sceneText, actionDesc, panelFraming);
 
+          const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || (character as any)?.sheet_image_urls?.[0];
+          const keyframeRefs: string[] = [charSheetUrl, realGridUrl || identityPack.characterReferenceImageUrl].filter(Boolean) as string[];
+
+          if (!charSheetUrl) {
+            console.warn("[SPARK Pipeline Warning] Character sheet URL missing for character; defaulting to identity text block.");
+          }
+
           try {
             checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} hero keyframe via ModelRouter ("storyboardImages")...`);
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${sIdx + 1} hero keyframe via ModelRouter ("storyboardImages") [Refs: ${keyframeRefs.length}]...`);
             const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
               prompt: imagePrompt,
-              referenceImageUrl: realGridUrl || identityPack.characterReferenceImageUrl,
+              referenceImageUrl: keyframeRefs[0],
+              referenceImageUrls: keyframeRefs,
               aspectRatio: identityPack.aspectRatio,
             });
             checkAborted();
@@ -1269,15 +1277,23 @@ No resets, no new character, no scrambled order.
                 })
                 .join("\n");
 
+              const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || (character as any)?.sheet_image_urls?.[0];
+              const motionRefImages: string[] = [
+                charSheetUrl,
+                realGridUrl || sceneImages[0] || currentStoryboard[0]?.image || identityPack.characterReferenceImageUrl,
+                sceneImages[1],
+              ].filter(Boolean) as string[];
+
               const masterMotionPrompt = promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions);
 
-              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(primaryRefImage)}]...`);
+              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Refs: ${motionRefImages.length}]...`);
               emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
 
               checkAborted();
               const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
                 prompt: masterMotionPrompt,
-                referenceImageUrl: primaryRefImage,
+                referenceImageUrl: motionRefImages[0],
+                referenceImageUrls: motionRefImages,
                 aspectRatio: identityPack.aspectRatio,
               });
               checkAborted();

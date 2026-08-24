@@ -13,6 +13,7 @@ export interface AIExecutionOptions {
   customApiKeys?: Record<string, string>;
   frames?: string[];
   referenceImageUrl?: string;
+  referenceImageUrls?: string[];
   aspectRatio?: string;
 }
 
