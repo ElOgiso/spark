@@ -10,6 +10,7 @@ export const SPARK_STORAGE_BUCKET = "Spark";
 export interface ProductionAssetGenerationResult {
   brief: ProductionBrief;
   scenes: { scene: number; description: string; duration: string }[];
+  productionScenes?: ProductionScene[];
   audioUrl?: string;
   videoUrl?: string;
 }
@@ -1501,11 +1502,42 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
         videoUrl: s.videoUrl,
       }));
 
+      const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => ({
+        scene: sb.scene || idx + 1,
+        index: sb.scene || idx + 1,
+        id: `scene-${production.id}-${sb.scene || idx + 1}`,
+        productionId: production.id,
+        brandId: (brand as any)?.id,
+        duration: sb.duration || "5s",
+        durationSec: parseInt(sb.duration) || 5,
+        shotList: sb.shotList || `Scene ${idx + 1} framing`,
+        cameraDirection: sb.cameraDirection || "Medium shot",
+        camera: sb.cameraDirection || "Medium shot",
+        transitions: sb.transitions || "Seamless flow",
+        onScreenText: sb.onScreenText || `SCENE ${idx + 1}`,
+        pacing: sb.pacing || "Balanced",
+        scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
+        spokenLines: sb.spokenLines || sb.scriptSnippet || "",
+        scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
+        visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
+        action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,
+        startState: sb.startState || `Scene ${idx + 1} start`,
+        endState: sb.endState || `Scene ${idx + 1} end`,
+        primaryChange: sb.primaryChange || sb.visualDescription,
+        image: sb.image || sceneImages[idx] || (thumbnails[idx] as any)?.image,
+        keyframeImageUrl: sb.image || sceneImages[idx] || (thumbnails[idx] as any)?.image,
+        videoUrl: sb.videoUrl || sceneClips[idx] || (idx === 0 ? realVideoUrl : undefined),
+        status: (sb.videoUrl || sceneClips[idx] || (idx === 0 && realVideoUrl)) ? "ready" : sb.image ? "ready" : "pending",
+        createdAt: renderStartedAt,
+        updatedAt: renderCompletedAt,
+      }));
+
       emitProgress(100, "Complete", `${mode.toUpperCase()} media assets synthesized and ready for executive review.`);
 
       return {
         brief: updatedBrief,
         scenes: updatedScenes,
+        productionScenes: fullProductionScenes,
         audioUrl: realVoiceUrl,
         videoUrl: realVideoUrl,
       };

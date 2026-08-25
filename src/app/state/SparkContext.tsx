@@ -1494,6 +1494,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || p.videoUrl,
                         audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || p.audioUrl,
                         scenes: updatedProd.scenes || p.scenes,
+                        productionScenes: updatedProd.productionScenes || p.productionScenes,
                         brief: updatedBrief,
                         isGeneratingAssets: false,
                       }
@@ -1821,7 +1822,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setState((prev: any) => ({
         ...prev,
         productions: prev.productions.map((p: any) =>
-          p.id === productionId ? { ...p, ...updatedProd, id: productionId, isGeneratingAssets: false } : p
+          p.id === productionId
+            ? {
+                ...p,
+                ...updatedProd,
+                id: productionId,
+                productionScenes: updatedProd.productionScenes || p.productionScenes,
+                isGeneratingAssets: false,
+              }
+            : p
         ),
         reviewItems: prev.reviewItems.map((r: any) =>
           r.productionId === productionId

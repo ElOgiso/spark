@@ -195,6 +195,7 @@ export class ProductionService implements IProductionService {
       id: production.id,
       brief: result.brief,
       scenes: result.scenes,
+      productionScenes: result.productionScenes || production.productionScenes,
       audioUrl: result.audioUrl,
       videoUrl: result.videoUrl,
       isGeneratingAssets: false,
