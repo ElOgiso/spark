@@ -1,7 +1,7 @@
 import {
   Eye, DollarSign, Tv, Video, AlertCircle, Lightbulb,
   TrendingUp, CheckCircle2, Rocket, BarChart3, Flame,
-  ArrowRight, Loader2, Clock, Package,
+  ArrowRight, Loader2, Clock, Package, Play,
 } from "lucide-react";
 import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
@@ -10,13 +10,18 @@ import { AIChatModal } from "../AIChatModal";
 import { useState, useEffect } from "react";
 
 import { getStoredTheme } from "../../theme";
-import { DonorSparkMediaHome } from "./DonorSparkMediaHome";
+import { DonorSparkMediaHome, VideoFullscreenModal } from "./DonorSparkMediaHome";
 
 interface ActivityItem {
   id: string;
   type: "opportunity" | "approved" | "completed" | "published" | "analytics";
   title: string;
   time: string;
+  thumbnailUrl?: string;
+  videoUrl?: string;
+  isGenerating?: boolean;
+  statusLabel?: string;
+  path?: string;
 }
 
 interface MobileHomeProps {
@@ -45,6 +50,10 @@ export function MobileHome({ onNavigate }: MobileHomeProps = {}) {
 
 function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [activeFullscreenVideo, setActiveFullscreenVideo] = useState<{
+    videoUrl: string;
+    title?: string;
+  } | null>(null);
   const auth = useAuth();
   const { productions, reviewItems, viralSparks, character, brand, accounts } = useSpark() as any;
   const userDisplayName = auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || character?.name || "Creator";
@@ -117,20 +126,52 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
     { label: "Viral Sparks", value: String(viralSparks.length), icon: Flame, trend: viralSparks.length > 0 ? "live" : "", path: "/viral-sparks" },
   ];
 
-  const activities: ActivityItem[] = [
-    ...(viralSparks.slice(0, 2).map((s: any, idx: number) => ({
-      id: `sp-${idx}`,
-      type: "opportunity" as const,
-      title: `Opportunity: "${s.title || s.topic || "Trending Topic"}" (${s.brandFitScore || 95}% fit)`,
-      time: "Just now",
-    }))),
-    ...(productions.slice(0, 2).map((p: any, idx: number) => ({
-      id: `pr-${idx}`,
+  // Media activity items from real productions (max 4 on mobile)
+  const mediaActivities: ActivityItem[] = productions.slice(0, 4).map((p: any, idx: number) => {
+    const vUrl = p.videoUrl || p.brief?.videoUrl || p.brief?.generatedAssets?.generatedVideos?.[0];
+    const imgUrl =
+      p.thumbnailUrl ||
+      p.thumbnail ||
+      p.imageUrl ||
+      p.scenes?.[0]?.image ||
+      p.brief?.generatedAssets?.generatedFrames?.[0] ||
+      p.brief?.generatedAssets?.thumbnails?.[0]?.image ||
+      p.brief?.generatedAssets?.thumbnails?.[0]?.url;
+    const isGenerating = Boolean(
+      p.isGeneratingAssets ||
+        p.status === "Generating" ||
+        (p.status === "Drafting" && p.generationProgress && p.generationProgress.percent < 100)
+    );
+
+    let statusLabel = "In Production";
+    if (p.status === "Approved") statusLabel = "Approved • Ready";
+    else if (p.status === "Ready for Review" || p.status === "Pending Review") statusLabel = "Ready for Review";
+    else if (p.status === "Published") statusLabel = "Published";
+    else if (p.status === "Scheduled") statusLabel = "Scheduled";
+    else if (p.status === "Needs Edit") statusLabel = "Needs Edit";
+    else if (isGenerating) statusLabel = "Rendering...";
+
+    return {
+      id: `pr-${p.id || idx}`,
       type: (p.status === "Published" ? "published" : p.status === "Approved" ? "approved" : "completed") as any,
-      title: `${p.status}: "${p.title || "Production Draft"}"`,
-      time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString() : "Recent",
-    }))),
-  ];
+      title: p.title || "Untitled Production",
+      time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent",
+      thumbnailUrl: imgUrl,
+      videoUrl: typeof vUrl === "string" && vUrl.startsWith("http") ? vUrl : undefined,
+      isGenerating,
+      statusLabel,
+      path: "/review",
+    };
+  });
+
+  // Non-media opportunity signals
+  const systemActivities: ActivityItem[] = (viralSparks || []).slice(0, 2).map((s: any, idx: number) => ({
+    id: `sp-${s.id || idx}`,
+    type: "opportunity" as const,
+    title: `Opportunity: "${s.title || s.topic || "Trending Topic"}" (${s.brandFitScore || 95}% fit)`,
+    time: "Just now",
+    path: "/viral-sparks",
+  }));
 
   const activityIcons = {
     opportunity: { icon: Lightbulb, color: "text-accent-foreground", path: "/viral-sparks" },
@@ -273,50 +314,165 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity — Existing block enhanced with Spark Media Video Cards */}
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recent Activity</p>
+          <div className="flex items-center justify-between mb-3.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recent Activity</p>
             {!isEmpty && (
               <button
                 onClick={() => onNavigate?.("/review")}
-                className="text-xs text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-95"
+                className="text-xs text-purple-400 font-medium hover:text-purple-300 transition-colors active:scale-95 cursor-pointer"
               >
                 View all
               </button>
             )}
           </div>
-          <div className="space-y-3">
+
+          <div className="space-y-3.5">
             {isEmpty ? (
-              <div className="text-center py-2 text-xs text-muted-foreground">
+              <div className="text-center py-4 text-xs text-muted-foreground">
                 No activity recorded yet.
               </div>
             ) : (
-              activities.map((activity) => {
-                const config = activityIcons[activity.type];
-                const Icon = config.icon;
-                return (
-                  <button
-                    key={activity.id}
-                    onClick={() => onNavigate?.(config.path)}
-                    className="w-full flex items-start gap-3 text-left transition-colors duration-150 active:bg-accent/5 p-1 -m-1 rounded-lg"
-                  >
-                    <div className="w-7 h-7 rounded-lg bg-accent/30 flex items-center justify-center flex-shrink-0">
-                      <Icon className={`w-3.5 h-3.5 ${config.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm leading-snug">{activity.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
-                    </div>
-                  </button>
-                );
-              })
+              <>
+                {/* Media Video Cards Stack (Single column for mobile) */}
+                {mediaActivities.length > 0 && (
+                  <div className="space-y-3">
+                    {mediaActivities.map((item) => {
+                      const isPlayable = Boolean(
+                        item.videoUrl &&
+                          !item.isGenerating &&
+                          typeof item.videoUrl === "string" &&
+                          item.videoUrl.startsWith("http")
+                      );
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => onNavigate?.(item.path || "/review")}
+                          className="relative rounded-2xl bg-white/[0.035] border border-white/10 active:border-purple-500/40 p-3.5 flex flex-col justify-between overflow-hidden shadow-lg transition-all cursor-pointer group"
+                        >
+                          {/* Aspect Thumbnail Box */}
+                          <div className="relative w-full aspect-video rounded-xl bg-black/60 border border-white/10 overflow-hidden mb-2.5 flex items-center justify-center">
+                            {item.thumbnailUrl ? (
+                              <img
+                                src={item.thumbnailUrl}
+                                alt={item.title}
+                                className="w-full h-full object-cover group-active:scale-105 transition-transform duration-300"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center p-3 text-center">
+                                <Tv className="w-7 h-7 text-white/30 mb-1" />
+                                <span className="text-[9px] text-white/40 font-mono uppercase tracking-wider">
+                                  Spark Production
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Play Button on playable cards */}
+                            {isPlayable && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveFullscreenVideo({
+                                    videoUrl: item.videoUrl!,
+                                    title: item.title,
+                                  });
+                                }}
+                                className="cursor-pointer active:scale-95"
+                                title="Play Video"
+                                style={{
+                                  position: "absolute",
+                                  width: 42,
+                                  height: 42,
+                                  borderRadius: "50%",
+                                  background: "rgba(168,85,247,0.9)",
+                                  backdropFilter: "blur(8px)",
+                                  border: "1.5px solid rgba(255,255,255,0.5)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  boxShadow: "0 0 16px rgba(168,85,247,0.8)",
+                                  zIndex: 10,
+                                }}
+                              >
+                                <Play style={{ width: 16, height: 16, color: "white", fill: "white", marginLeft: 2 }} />
+                              </button>
+                            )}
+
+                            {/* Generating Overlay */}
+                            {item.isGenerating && (
+                              <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5 z-20">
+                                <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
+                                <span className="text-[9px] font-bold text-purple-300 uppercase tracking-widest animate-pulse">
+                                  Rendering...
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Title & Subline */}
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-semibold leading-snug text-white line-clamp-2">
+                              {item.title}
+                            </h4>
+                            <div className="flex items-center justify-between text-xs text-white/50 pt-0.5">
+                              <span className="text-white/70 font-medium truncate max-w-[70%]">
+                                {item.statusLabel}
+                              </span>
+                              <span className="text-[11px] text-white/40 whitespace-nowrap">
+                                {item.time}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Non-Media Timeline Activity Rows */}
+                {systemActivities.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {systemActivities.map((act) => {
+                      const Icon = act.type === "opportunity" ? Lightbulb : CheckCircle2;
+                      const color = act.type === "opportunity" ? "text-accent-foreground" : "text-success";
+                      const bg = act.type === "opportunity" ? "bg-accent/30" : "bg-success/20";
+                      return (
+                        <button
+                          key={act.id}
+                          onClick={() => onNavigate?.(act.path || "/viral-sparks")}
+                          className="w-full flex items-center justify-between gap-3 text-left transition-colors active:bg-white/[0.04] p-2.5 rounded-xl border border-white/5 bg-white/[0.02]"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                              <Icon className={`w-3.5 h-3.5 ${color}`} />
+                            </div>
+                            <p className="text-xs text-white/90 font-medium truncate">{act.title}</p>
+                          </div>
+                          <span className="text-[10px] text-white/40 whitespace-nowrap flex-shrink-0">{act.time}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
 
       <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} onNavigate={onNavigate} />
+
+      {/* Fullscreen Video Player Modal Reuse */}
+      {activeFullscreenVideo && (
+        <VideoFullscreenModal
+          videoUrl={activeFullscreenVideo.videoUrl}
+          title={activeFullscreenVideo.title}
+          onClose={() => setActiveFullscreenVideo(null)}
+        />
+      )}
     </div>
   );
 }
