@@ -31,6 +31,7 @@ import {
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
 import { eventBus } from "../services/runtime/eventBus";
+import { resolveSeriesBible } from "../services/memory/seriesBibleService";
 import {
   hydrateWorkspace,
   persistAccountToken,
@@ -1323,18 +1324,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
     void import("../services/productionService").then(({ productionService }) => {
+      const seriesBible = resolveSeriesBible({
+        brand: state.brand,
+        character: state.character,
+        characters: state.characters,
+        memoryItems: state.memoryItems || [],
+        formatSettings: state.brand?.formatSettings,
+      });
+
+      const effectiveCharacter = seriesBible.character || state.character;
+      const effectiveMode = state.productionMode || seriesBible.productionMode;
+      const effectiveDuration = state.brand?.formatSettings?.targetDurationSec || (effectiveMode === "deep" ? 120 : 45);
+
       void productionService
         .createProductionFromSpark({
           spark,
           brand: state.brand,
-          character: state.character,
+          character: effectiveCharacter,
           niche: state.brand.niche,
           memoryItems: state.memoryItems || [],
-          productionMode: state.productionMode,
+          productionMode: effectiveMode,
           productionId: prodId,
           reviewId: reviewId,
           researchContext: spark.researchContext,
-          targetDurationSec: state.brand?.formatSettings?.targetDurationSec || (state.productionMode === "deep" ? 120 : 45),
+          targetDurationSec: effectiveDuration,
         })
         .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
           const stableEnrichedProd: Production = {
@@ -1701,10 +1714,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const { productionService } = await import("../services/productionService");
+      const seriesBible = resolveSeriesBible({
+        brand: state.brand,
+        character: state.character,
+        characters: state.characters,
+        memoryItems: state.memoryItems || [],
+        formatSettings: state.brand?.formatSettings,
+      });
+
+      const effectiveCharacter = seriesBible.character || state.character;
+
       const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
         production: prod,
         brand: state.brand,
-        character: state.character,
+        character: effectiveCharacter,
+        memoryItems: state.memoryItems || [],
         creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
         forceRegenerate,
         signal: controller.signal,

@@ -1457,16 +1457,19 @@ export class AIProviderOrchestrator {
       }
     }
 
-    // Default Priority Table:
-    // Video Generation: Gemini (default) -> Grok (never OpenAI/Claude)
-    // Image Generation: OpenAI (default) -> Gemini -> Grok
-    // Video Understanding: Grok -> Gemini -> OpenAI -> Claude
-    // Chat / Reasoning / Others: OpenAI -> Gemini -> Claude -> Grok
+    // Default Priority Table per Modality & Physics:
+    // Video Generation: Gemini (Veo default) -> Grok -> Kling -> Runway -> Luma -> Higgsfield (Never OpenAI/Claude)
+    // Image Generation: OpenAI (default) -> Gemini (Imagen) -> Grok (Imagine) -> Kling
+    // Text To Speech: ElevenLabs (default) -> Grok (Eve) -> OpenAI -> Gemini
+    // Video Understanding: Grok (default) -> Gemini -> OpenAI -> Claude
+    // Chat / Reasoning / Production: OpenAI -> Gemini -> Claude -> Grok
     let categoryPriority: AIProviderId[];
     if (capability === "Video Generation") {
-      categoryPriority = ["gemini", "grok"];
+      categoryPriority = ["gemini", "grok", "kling", "runway", "luma", "higgsfield"];
     } else if (capability === "Image Generation") {
-      categoryPriority = ["openai", "gemini", "grok"];
+      categoryPriority = ["openai", "gemini", "grok", "kling"];
+    } else if (capability === "Text To Speech") {
+      categoryPriority = ["elevenlabs", "grok", "openai", "gemini"];
     } else if (capability === "Video Understanding") {
       categoryPriority = ["grok", "gemini", "openai", "claude"];
     } else {

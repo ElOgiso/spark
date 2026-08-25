@@ -3,6 +3,7 @@ import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack } from "./productionPromptPacks";
+import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP } from "../runtime/providerCapabilities";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -888,7 +889,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
         checkAborted();
         try {
           const voiceScript = promptPack.voiceScript;
-          const targetVoiceId = character?.voice?.voiceId;
+          const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal);
           checkAborted();
@@ -1595,8 +1596,10 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
     const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
     const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
 
-    // Provider max clip length limit: Veo/Gemini ~ 8s, Grok ~ 15s, fallback 8s
-    const providerMaxClipSec = mode === "deep" ? 12 : 8;
+    // Dynamic Video Provider Physics: Read real single-shot native peak quality limit from capability map
+    const activeVideo = resolveActiveVideoProvider();
+    const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
+    const providerMaxClipSec = mode === "deep" ? Math.min(nativeMaxClipSec, 12) : nativeMaxClipSec;
     const isOneTake = targetSec <= providerMaxClipSec;
     const briefBeats = brief.beats || [];
     const totalScenesCount = briefBeats.length > 0
@@ -1605,6 +1608,8 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       ? 1
       : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
     const perSceneSec = Math.max(4, Math.floor(targetSec / totalScenesCount));
+
+    console.log(`[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s) -> Sized ${totalScenesCount} scenes for ${targetSec}s target runtime.`);
 
     const storyboard: any[] = (brief.storyboard as any[]) || [];
     const scenesList: ProductionScene[] = [];

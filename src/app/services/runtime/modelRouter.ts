@@ -8,6 +8,8 @@ import type {
 import { AIProviderOrchestrator, type AIExecutionOptions } from "./AIProviderOrchestrator";
 import { getRecommendedModel } from "./modelCatalog";
 
+import { PROVIDER_CAPABILITY_MAP } from "./providerCapabilities";
+
 export class ModelRouter {
   /**
    * Default routing table when user preferences are unconfigured (all set to 'auto')
@@ -62,25 +64,31 @@ export class ModelRouter {
 
   /**
    * Resolves target provider ID dynamically for a given category & user routing config.
-   * If user preferences exist, override routing. Otherwise, use Category Best Available defaults.
+   * If user preferences exist and support the capability, override routing. Otherwise, use Category Best Available defaults.
    */
   static resolveProvider(
     category: AIRoutingCategory,
     userRoutingConfig?: Partial<AIModelRoutingConfig>
   ): AIProviderId {
     const preferred = userRoutingConfig?.[category];
+    const capability = this.mapCategoryToCapability(category);
+
     if (preferred && preferred !== "auto") {
-      return preferred;
+      const profile = PROVIDER_CAPABILITY_MAP[preferred as import("./providerCapabilities").ConcreteAIProviderId];
+      if (profile && profile.capabilities.includes(capability)) {
+        return preferred;
+      }
+      console.warn(`[ModelRouter] Preferred provider "${preferred}" does not support capability "${capability}" for category "${category}". Falling back to Best Available.`);
     }
 
     // Category Best Available Default Table
     switch (category) {
       case "storyboardImages":
-        return "openai"; // Default: OpenAI -> Gemini -> Grok -> others
+        return "openai"; // Default: OpenAI -> Gemini -> Grok -> Kling
       case "videoGeneration":
-        return "gemini"; // Default: Gemini -> Runway -> Kling -> Higgsfield -> Luma
+        return "gemini"; // Default: Gemini -> Grok -> Kling -> Runway -> Luma -> Higgsfield
       case "voice":
-        return "elevenlabs";
+        return "elevenlabs"; // Default: ElevenLabs -> Grok -> OpenAI -> Gemini
       case "superSpark":
       case "executive":
       case "automation":
