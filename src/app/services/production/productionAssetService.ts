@@ -1484,7 +1484,7 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
             renderStartedAt,
             renderCompletedAt,
             providerUsed: "AIProviderOrchestrator",
-            generationStatus: realVideoUrl || sceneImages.length > 0 ? "Completed" : "Failed",
+            generationStatus: isVideoSuccess || (mode === "express" && realVideoUrl && realVoiceUrl) ? "Completed" : "Failed",
             lastError,
           },
         },
@@ -1532,7 +1532,29 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
         updatedAt: renderCompletedAt,
       }));
 
-      emitProgress(100, "Complete", `${mode.toUpperCase()} media assets synthesized and ready for executive review.`);
+      const isExpressNarrator = mode === "express";
+      if (isExpressNarrator) {
+        if (!realVoiceUrl) {
+          lastError = lastError || "Voiceover generation failed or audio was missing for Narrator mode.";
+        }
+        if (!realVideoUrl) {
+          lastError = lastError || "Narrator slideshow compilation failed to produce a master video.";
+        }
+      }
+
+      const isExpressFailed = isExpressNarrator && (!realVideoUrl || !realVoiceUrl);
+      const isOverallSuccess = isExpressNarrator ? !isExpressFailed : Boolean(realVideoUrl || sceneImages.length > 0);
+      const finalStatus = isOverallSuccess ? "Completed" : "Failed";
+      const finalMsg = isOverallSuccess
+        ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
+        : lastError || `${mode.toUpperCase()} asset generation failed to produce a playable master.`;
+
+      if (updatedBrief.generatedAssets?.generationMetadata) {
+        updatedBrief.generatedAssets.generationMetadata.generationStatus = finalStatus;
+        updatedBrief.generatedAssets.generationMetadata.lastError = lastError;
+      }
+
+      emitProgress(isOverallSuccess ? 100 : 50, isOverallSuccess ? "Complete" : "Failed", finalMsg);
 
       return {
         brief: updatedBrief,

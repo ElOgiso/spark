@@ -328,7 +328,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             durationText="3:20"
             videoUrl={activeProd?.videoUrl || item?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
             audioUrl={
-              ((brief?.productionMode || activeProd?.mode || "standard") === "express" || !hasPlayableVideo)
+              !hasPlayableVideo
                 ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])
                 : undefined
             }
