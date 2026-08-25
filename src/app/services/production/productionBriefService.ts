@@ -546,7 +546,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
   "platformRecommendation": "${spark.platformFit || (modeKey === "deep" ? "YouTube Long-form" : "YouTube Shorts")}",
   "whyThisWorks": "1-3 sentences citing spark evidence (${spark.whyNow}) and brand authority",
   "brandFitScore": ${Math.min(99, Math.max(80, sparkScore))},
-  "suggestedDuration": "${effectiveDurationSec >= 120 ? "120-180s" : effectiveDurationSec >= 60 ? "60-90s" : "30-45s"}"
+  "suggestedDuration": "${effectiveDurationSec >= 300 ? "300-600s" : effectiveDurationSec >= 120 ? "120-180s" : effectiveDurationSec >= 60 ? "60-90s" : "30-45s"}"
 }
 `;
 
