@@ -328,16 +328,16 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
             )}
           </div>
 
-          <div className="space-y-3.5">
+          <div className="space-y-2.5">
             {isEmpty ? (
               <div className="text-center py-4 text-xs text-muted-foreground">
                 No activity recorded yet.
               </div>
             ) : (
               <>
-                {/* Media Video Cards Stack (Single column for mobile) */}
+                {/* Media Project Rows (CapCut-dense, native, sleek) */}
                 {mediaActivities.length > 0 && (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {mediaActivities.map((item) => {
                       const isPlayable = Boolean(
                         item.videoUrl &&
@@ -350,81 +350,83 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
                         <div
                           key={item.id}
                           onClick={() => onNavigate?.(item.path || "/review")}
-                          className="relative rounded-2xl bg-white/[0.035] border border-white/10 active:border-purple-500/40 p-3.5 flex flex-col justify-between overflow-hidden shadow-lg transition-all cursor-pointer group"
+                          className="flex items-center justify-between gap-3 p-2 rounded-xl border border-white/5 bg-white/[0.02] active:bg-white/[0.06] active:border-white/15 transition-all cursor-pointer group"
                         >
-                          {/* Aspect Thumbnail Box */}
-                          <div className="relative w-full aspect-video rounded-xl bg-black/60 border border-white/10 overflow-hidden mb-2.5 flex items-center justify-center">
-                            {item.thumbnailUrl ? (
-                              <img
-                                src={item.thumbnailUrl}
-                                alt={item.title}
-                                className="w-full h-full object-cover group-active:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="flex flex-col items-center justify-center p-3 text-center">
-                                <Tv className="w-7 h-7 text-white/30 mb-1" />
-                                <span className="text-[9px] text-white/40 font-mono uppercase tracking-wider">
-                                  Spark Production
-                                </span>
-                              </div>
-                            )}
+                          {/* Left: Compact thumbnail (w-20, h-13, rounded-lg) */}
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="relative w-20 h-13 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                              {item.thumbnailUrl ? (
+                                <img
+                                  src={item.thumbnailUrl}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-active:scale-105 transition-transform duration-200"
+                                />
+                              ) : (
+                                <div className="flex items-center justify-center w-full h-full bg-white/[0.02]">
+                                  <Tv className="w-5 h-5 text-white/30" />
+                                </div>
+                              )}
 
-                            {/* Play Button on playable cards */}
-                            {isPlayable && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveFullscreenVideo({
-                                    videoUrl: item.videoUrl!,
-                                    title: item.title,
-                                  });
-                                }}
-                                className="cursor-pointer active:scale-95"
-                                title="Play Video"
-                                style={{
-                                  position: "absolute",
-                                  width: 42,
-                                  height: 42,
-                                  borderRadius: "50%",
-                                  background: "rgba(168,85,247,0.9)",
-                                  backdropFilter: "blur(8px)",
-                                  border: "1.5px solid rgba(255,255,255,0.5)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  boxShadow: "0 0 16px rgba(168,85,247,0.8)",
-                                  zIndex: 10,
-                                }}
-                              >
-                                <Play style={{ width: 16, height: 16, color: "white", fill: "white", marginLeft: 2 }} />
-                              </button>
-                            )}
+                              {/* Tiny Play Button on playable cards */}
+                              {isPlayable && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveFullscreenVideo({
+                                      videoUrl: item.videoUrl!,
+                                      title: item.title,
+                                    });
+                                  }}
+                                  className="cursor-pointer active:scale-90 transition-transform"
+                                  title="Play Video"
+                                  style={{
+                                    position: "absolute",
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: "50%",
+                                    background: "rgba(168,85,247,0.9)",
+                                    backdropFilter: "blur(4px)",
+                                    border: "1px solid rgba(255,255,255,0.6)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    boxShadow: "0 0 10px rgba(168,85,247,0.6)",
+                                    zIndex: 10,
+                                  }}
+                                >
+                                  <Play style={{ width: 11, height: 11, color: "white", fill: "white", marginLeft: 1 }} />
+                                </button>
+                              )}
 
-                            {/* Generating Overlay */}
-                            {item.isGenerating && (
-                              <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5 z-20">
-                                <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
-                                <span className="text-[9px] font-bold text-purple-300 uppercase tracking-widest animate-pulse">
-                                  Rendering...
+                              {/* Generating Overlay */}
+                              {item.isGenerating && (
+                                <div className="absolute inset-0 bg-black/70 backdrop-blur-[1px] flex items-center justify-center z-20">
+                                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Title & Subline */}
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs font-semibold leading-snug text-white line-clamp-1 truncate">
+                                {item.title}
+                              </h4>
+                              <p className="text-[11px] text-white/50 truncate mt-0.5 flex items-center gap-1.5">
+                                <span className="text-white/75 font-medium truncate">
+                                  {item.statusLabel}
                                 </span>
-                              </div>
-                            )}
+                                <span className="text-white/30">•</span>
+                                <span className="text-white/40 whitespace-nowrap">
+                                  {item.time}
+                                </span>
+                              </p>
+                            </div>
                           </div>
 
-                          {/* Title & Subline */}
-                          <div className="space-y-1">
-                            <h4 className="text-sm font-semibold leading-snug text-white line-clamp-2">
-                              {item.title}
-                            </h4>
-                            <div className="flex items-center justify-between text-xs text-white/50 pt-0.5">
-                              <span className="text-white/70 font-medium truncate max-w-[70%]">
-                                {item.statusLabel}
-                              </span>
-                              <span className="text-[11px] text-white/40 whitespace-nowrap">
-                                {item.time}
-                              </span>
-                            </div>
+                          {/* Right: Hint arrow */}
+                          <div className="flex items-center gap-1.5 flex-shrink-0 text-white/30 group-active:text-white/70">
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </div>
                         </div>
                       );
@@ -434,7 +436,7 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
 
                 {/* Non-Media Timeline Activity Rows */}
                 {systemActivities.length > 0 && (
-                  <div className="space-y-1.5 pt-1">
+                  <div className="space-y-1 pt-0.5">
                     {systemActivities.map((act) => {
                       const Icon = act.type === "opportunity" ? Lightbulb : CheckCircle2;
                       const color = act.type === "opportunity" ? "text-accent-foreground" : "text-success";
@@ -443,11 +445,11 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
                         <button
                           key={act.id}
                           onClick={() => onNavigate?.(act.path || "/viral-sparks")}
-                          className="w-full flex items-center justify-between gap-3 text-left transition-colors active:bg-white/[0.04] p-2.5 rounded-xl border border-white/5 bg-white/[0.02]"
+                          className="w-full flex items-center justify-between gap-3 text-left transition-colors active:bg-white/[0.04] p-2 rounded-xl border border-white/5 bg-white/[0.02]"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
-                              <Icon className={`w-3.5 h-3.5 ${color}`} />
+                            <div className={`w-6 h-6 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                              <Icon className={`w-3 h-3 ${color}`} />
                             </div>
                             <p className="text-xs text-white/90 font-medium truncate">{act.title}</p>
                           </div>

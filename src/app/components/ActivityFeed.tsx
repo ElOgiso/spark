@@ -163,10 +163,10 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Media Activity Cards Grid (Spark Media Video Card DNA) */}
+    <div className="space-y-4">
+      {/* Media Project Rows (CapCut-dense, native, sleek) */}
       {mediaActivities.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4.5">
+        <div className="space-y-2">
           {mediaActivities.map((activity) => {
             const thumb = activity.thumbnailUrl || activity.imageUrl;
             const isPlayable = Boolean(
@@ -180,91 +180,93 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
               <div
                 key={activity.id}
                 onClick={() => onNavigate?.(getRouteForActivity(activity))}
-                className="d-press relative rounded-2xl bg-white/[0.035] border border-white/10 hover:border-purple-500/40 p-4 flex flex-col justify-between overflow-hidden group shadow-lg transition-all duration-200 cursor-pointer"
+                className="flex items-center justify-between gap-3.5 p-2.5 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer group"
               >
-                {/* Media Image / Aspect Thumbnail Box */}
-                <div className="relative w-full aspect-video rounded-xl bg-black/60 border border-white/10 overflow-hidden mb-3.5 flex items-center justify-center">
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt={activity.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center p-4 text-center">
-                      <Tv className="w-8 h-8 text-white/30 mb-1.5" />
-                      <span className="text-[10px] text-white/40 font-mono uppercase tracking-wider">
-                        Spark Production
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Play Video Button on cards with playable videoUrl */}
-                  {isPlayable ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveFullscreenVideo({
-                          videoUrl: activity.videoUrl!,
-                          title: activity.title,
-                        });
-                      }}
-                      className="m-press cursor-pointer"
-                      title="Play Video Fullscreen"
-                      style={{
-                        position: "absolute",
-                        width: 44,
-                        height: 44,
-                        borderRadius: "50%",
-                        background: "rgba(168,85,247,0.9)",
-                        backdropFilter: "blur(8px)",
-                        border: "1.5px solid rgba(255,255,255,0.5)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: "0 0 20px rgba(168,85,247,0.8)",
-                        zIndex: 10,
-                      }}
-                    >
-                      <Play
-                        style={{
-                          width: 18,
-                          height: 18,
-                          color: "white",
-                          fill: "white",
-                          marginLeft: 2,
-                        }}
+                {/* Left: Compact thumbnail (w-20 sm:w-24, aspect 16:10 / 4:3) */}
+                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                  <div className="relative w-20 h-13 sm:w-24 sm:h-14 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt={activity.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                       />
-                    </button>
-                  ) : null}
+                    ) : (
+                      <div className="flex items-center justify-center w-full h-full bg-white/[0.02]">
+                        <Tv className="w-5 h-5 text-white/30" />
+                      </div>
+                    )}
 
-                  {/* Generating / Rendering overlay */}
-                  {activity.isGenerating && (
-                    <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 z-20">
-                      <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
-                      <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest animate-pulse">
-                        Rendering...
-                      </span>
-                    </div>
-                  )}
-                </div>
+                    {/* Tiny Play button overlay on thumb */}
+                    {isPlayable && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveFullscreenVideo({
+                            videoUrl: activity.videoUrl!,
+                            title: activity.title,
+                          });
+                        }}
+                        className="cursor-pointer active:scale-90 transition-transform"
+                        title="Play Video"
+                        style={{
+                          position: "absolute",
+                          width: 26,
+                          height: 26,
+                          borderRadius: "50%",
+                          background: "rgba(168,85,247,0.9)",
+                          backdropFilter: "blur(4px)",
+                          border: "1px solid rgba(255,255,255,0.6)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 0 10px rgba(168,85,247,0.6)",
+                          zIndex: 10,
+                        }}
+                      >
+                        <Play
+                          style={{
+                            width: 11,
+                            height: 11,
+                            color: "white",
+                            fill: "white",
+                            marginLeft: 1,
+                          }}
+                        />
+                      </button>
+                    )}
 
-                {/* Info Text */}
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold leading-snug text-white line-clamp-2 group-hover:text-purple-300 transition-colors">
-                    {activity.title}
-                  </h4>
-                  <div className="flex items-center justify-between text-xs text-white/50 pt-0.5">
-                    <span className="truncate max-w-[70%] font-medium text-white/70">
-                      {activity.statusLabel || activity.metadata}
-                    </span>
-                    {activity.timestamp && activity.timestamp !== "—" && (
-                      <span className="text-[11px] text-white/40 whitespace-nowrap">
-                        {activity.timestamp}
-                      </span>
+                    {/* Generating indicator */}
+                    {activity.isGenerating && (
+                      <div className="absolute inset-0 bg-black/70 backdrop-blur-[1px] flex items-center justify-center z-20">
+                        <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                      </div>
                     )}
                   </div>
+
+                  {/* Center: Title (1 line) + Status metadata */}
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs sm:text-sm font-semibold leading-snug text-white group-hover:text-purple-300 transition-colors truncate">
+                      {activity.title}
+                    </h4>
+                    <p className="text-[11px] sm:text-xs text-white/50 truncate mt-0.5 flex items-center gap-1.5">
+                      <span className="text-white/75 font-medium">
+                        {activity.statusLabel || activity.metadata}
+                      </span>
+                      {activity.timestamp && activity.timestamp !== "—" && (
+                        <>
+                          <span className="text-white/30">•</span>
+                          <span>{activity.timestamp}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right: Quick action hint */}
+                <div className="flex items-center gap-2 flex-shrink-0 text-white/30 group-hover:text-white/70 transition-colors">
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
             );
@@ -274,13 +276,13 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
 
       {/* Non-Media Timeline Activity Rows (Quiet, Honest System Signals) */}
       {nonMediaActivities.length > 0 && (
-        <div className="space-y-1 pt-1">
+        <div className="space-y-1.5 pt-1">
           {mediaActivities.length > 0 && (
-            <div className="text-[11px] uppercase tracking-wider font-semibold text-white/40 px-1 pt-2 pb-1">
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-white/40 px-1 pt-1">
               System Events & Signals
             </div>
           )}
-          <div className="divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+          <div className="space-y-1">
             {nonMediaActivities.map((activity) => {
               const config = activityConfig[activity.type] || activityConfig.opportunity;
               const Icon = config.icon;
@@ -289,13 +291,13 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
                 <div
                   key={activity.id}
                   onClick={() => onNavigate?.(getRouteForActivity(activity))}
-                  className="flex items-center justify-between gap-4 p-3 hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                  className="flex items-center justify-between gap-3.5 p-2 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className={`w-8 h-8 rounded-lg ${config.bg} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}
+                      className={`w-7 h-7 rounded-lg ${config.bg} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}
                     >
-                      <Icon className={`w-4 h-4 ${config.color}`} />
+                      <Icon className={`w-3.5 h-3.5 ${config.color}`} />
                     </div>
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold text-white/90 group-hover:text-purple-300 transition-colors truncate">
