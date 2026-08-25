@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 import { SparkLogo } from "../SparkLogo";
+import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 import {
   getPendingApprovals,
   getAllPeople,
@@ -338,7 +339,7 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Inbox</h1>
-                <p className="text-xs text-white/50 mt-1">Pending workspace approvals & onboarding reviews.</p>
+                <p className="text-xs text-white/50 mt-1">Sparks waiting for approval</p>
               </div>
               <span className="text-xs font-mono px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300">
                 {pendingUsers.length} awaiting review
@@ -346,10 +347,10 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
             </div>
 
             {pendingUsers.length === 0 ? (
-              /* Calm Onboard Empty State */
-              <div className="rounded-2xl border border-white/[0.09] bg-white/[0.035] p-12 text-center space-y-4 max-w-lg mx-auto my-12">
-                <div className="w-14 h-14 rounded-2xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center mx-auto text-purple-300">
-                  <Inbox className="w-7 h-7" />
+              /* Calm Onboard Empty State with Animated SPARK Mark */
+              <div className="rounded-2xl border border-white/[0.09] bg-white/[0.035] p-12 text-center space-y-5 max-w-lg mx-auto my-12 animate-in fade-in duration-300">
+                <div className="flex items-center justify-center">
+                  <MainLogoAnimated size={56} />
                 </div>
                 <div className="space-y-1">
                   <p className="text-base font-semibold text-white tracking-tight">No sparks waiting.</p>
