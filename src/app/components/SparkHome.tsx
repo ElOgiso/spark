@@ -1,7 +1,7 @@
 import { useSpark } from "../state/SparkContext";
 import { useAuth } from "../state/AuthContext";
 import { TopBar } from "./TopBar";
-import { ActivityFeed } from "./ActivityFeed";
+import { ActivityFeed, type Activity } from "./ActivityFeed";
 import { SectionHeader, MetricCard, Button, WhySparkRecommends } from "./ds";
 import { AIChatPill } from "./AIChatPill";
 import { AIChatModal } from "./AIChatModal";
@@ -206,13 +206,76 @@ function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
     { title: "Productions", value: String(productions.length), icon: Clapperboard, subtitle: "Active" },
   ];
 
-  const activities = isEmpty ? [] : productions.slice(0, 5).map((p: any, i: number) => ({
-    id: `a${i}`,
-    type: "production_completed" as const,
-    title: p.status === "Published" ? "Published" : p.status === "Approved" ? "Storyboard Approved" : "Production Created",
-    metadata: `"${p.title}" · ${p.status}`,
-    timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString() : "—",
-  }));
+  const activities: Activity[] = isEmpty
+    ? []
+    : [
+        // 1. Real Production & Review Media activities (up to 8)
+        ...productions.slice(0, 8).map((p: any, i: number) => {
+          const vUrl =
+            p.videoUrl ||
+            p.brief?.videoUrl ||
+            p.brief?.generatedAssets?.generatedVideos?.[0];
+          const imgUrl =
+            p.thumbnailUrl ||
+            p.thumbnail ||
+            p.imageUrl ||
+            p.scenes?.[0]?.image ||
+            p.brief?.generatedAssets?.generatedFrames?.[0] ||
+            p.brief?.generatedAssets?.thumbnails?.[0]?.image ||
+            p.brief?.generatedAssets?.thumbnails?.[0]?.url ||
+            p.brief?.generatedAssets?.storyboardGridUrl;
+          const isGenerating = Boolean(
+            p.isGeneratingAssets ||
+              p.status === "Generating" ||
+              (p.status === "Drafting" && p.generationProgress && p.generationProgress.percent < 100)
+          );
+
+          let statusLabel = "In Production";
+          if (p.status === "Approved") statusLabel = "Approved • Ready";
+          else if (p.status === "Ready for Review" || p.status === "Pending Review") statusLabel = "Ready for Review";
+          else if (p.status === "Published" || p.status === "published") statusLabel = "Published";
+          else if (p.status === "Scheduled") statusLabel = "Scheduled";
+          else if (p.status === "Needs Edit") statusLabel = "Needs Edit";
+          else if (isGenerating) statusLabel = "Rendering...";
+
+          return {
+            id: p.id || `prod-${i}`,
+            type: (isGenerating ? "production_generating" : "production_completed") as any,
+            title: p.title || "Untitled Production",
+            metadata: statusLabel,
+            statusLabel,
+            timestamp: p.createdAt
+              ? new Date(p.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "—",
+            hasMedia: true,
+            thumbnailUrl: imgUrl,
+            imageUrl: imgUrl,
+            videoUrl: typeof vUrl === "string" && vUrl.startsWith("http") ? vUrl : undefined,
+            isGenerating,
+            productionId: p.id,
+            targetPath: "/review",
+          };
+        }),
+
+        // 2. Real System signals (Memory rules, Discovered opportunities)
+        ...(liveMemory.slice(0, 2).map((m: any, i: number) => ({
+          id: `mem-${m.id || i}`,
+          type: "memory_rule_added" as const,
+          title: `Brand Rule: ${m.category || "General"}`,
+          metadata: m.text.length > 90 ? m.text.slice(0, 90) + "…" : m.text,
+          timestamp: m.dateAdded || "Recent",
+          targetPath: "/my-spark",
+        }))),
+
+        ...(viralSparks.slice(0, 2).map((s: any, i: number) => ({
+          id: `spark-${s.id || i}`,
+          type: "opportunity_discovered" as const,
+          title: `Viral Opportunity: "${s.title || s.topic}"`,
+          metadata: `${s.brandFitScore || 90}% Brand Fit · ${s.timeWindow || "24h"} window`,
+          timestamp: "Recent",
+          targetPath: "/viral-sparks",
+        }))),
+      ];
 
   const dynamicReason = totalViews > 0
     ? `Your connected outlets show ${totalViews.toLocaleString()} total views across platforms. Spark recommends publishing short-form clips targeting peak audience retention segments.`
