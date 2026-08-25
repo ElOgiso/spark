@@ -20,9 +20,26 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Copy,
+  Play,
+  Pause,
+  ExternalLink,
+  Film,
+  Bookmark,
+  Pin,
+  Radio,
+  Layers,
+  AlertTriangle,
+  Sliders,
+  ShieldCheck,
+  Check,
+  RotateCcw,
+  Youtube,
+  Twitter,
+  Link as LinkIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSpark } from "../state/SparkContext";
+import { useAuth } from "../state/AuthContext";
 import { eventBus } from "../services/runtime/eventBus";
 import { useXaiRealtime } from "../hooks/useXaiRealtime";
 import { SparkLogo } from "./SparkLogo";
@@ -33,6 +50,10 @@ import { getStoredTheme } from "../theme";
 import { ConversationSession, GenerationCreditSettings, DEFAULT_CREDIT_SETTINGS } from "../domain/types";
 import { generateExecutiveReturnBriefing } from "../services/executiveBriefingService";
 import { AIProviderOrchestrator } from "../services/runtime/AIProviderOrchestrator";
+import { normalizeHandle } from "../domain/accountUtils";
+import { getOAuthAuthorizationUrl } from "../services/socialIntegrationService";
+import { getProviderLogo } from "./ui/AIProviderLogos";
+import { deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
 
 interface AIChatModalProps {
   isOpen: boolean;
@@ -40,14 +61,29 @@ interface AIChatModalProps {
   onNavigate?: (path: string) => void;
 }
 
-interface MessageMedia {
-  type: "video" | "storyboard" | "opportunity" | "production_status" | "research_source" | "memory_saved";
+export interface MessageMedia {
+  type:
+    | "video"
+    | "storyboard"
+    | "opportunity"
+    | "production_status"
+    | "character_image"
+    | "voice_audio"
+    | "research_source"
+    | "settings"
+    | "memory_saved"
+    | "account_status"
+    | "workspace";
   id: string;
   title: string;
   videoUrl?: string;
   coverFrame?: string;
+  imageUrl?: string;
+  audioUrl?: string;
+  previewUrl?: string;
   url?: string;
   platform?: string;
+  handle?: string;
   rule?: string;
   category?: string;
   source?: string;
@@ -56,6 +92,35 @@ interface MessageMedia {
   status: string;
   concept?: string;
   meta?: string;
+  percent?: number;
+  stage?: string;
+  isPinned?: boolean;
+  voiceName?: string;
+  voiceId?: string;
+  traitBadges?: string[];
+  productionId?: string;
+  settingsPayload?: {
+    brandName?: string;
+    niche?: string;
+    archetype?: string;
+    targetDurationSec?: number;
+    preferredVideoProvider?: string;
+    creditSettings?: any;
+    summaryText?: string;
+  };
+  accountsPayload?: Array<{
+    platform: string;
+    displayName: string;
+    handle: string;
+    status: "connected" | "needs_reconnect" | "disconnected";
+    details?: string;
+  }>;
+  workspacesPayload?: Array<{
+    id: string;
+    name: string;
+    niche?: string;
+    isActive: boolean;
+  }>;
 }
 
 function formatExecutiveThinkingStep(stepText?: string): string {
@@ -144,18 +209,34 @@ const FormattedText: React.FC<{ content: string }> = ({ content }) => {
 
 export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const isSparkMediaTheme = getStoredTheme() === "spark_media";
+  const auth = useAuth();
   const sparkState = useSpark() as any;
   const {
     brand,
-    productions,
-    reviewItems,
-    accounts,
+    character,
+    productions = [],
+    reviewItems = [],
+    accounts = [],
+    researchSources = [],
+    memoryItems = [],
+    creditSettings,
+    formatSettings,
+    updateBrand,
+    updateCharacter,
+    updateCreditSettings,
+    updateFormatSettings,
+    cancelProduction,
     approveReviewItem,
     rejectOrRequestEditReviewItem,
     createProductionFromSpark,
     generateAssetsForProduction,
+    generateProductionAssets,
     updateAutomationMode,
     addMemoryItem,
+    removeMemoryItem,
+    pinMemoryItem,
+    addResearchSource,
+    removeResearchSource,
     syncResearchSource,
     sendMessage,
     chatMessages,
@@ -173,6 +254,11 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const messages: Message[] = chatMessages || [];
   const [inputText, setInputText] = useState("");
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    cardId: string;
+    type: "cancel" | "replace_character" | "set_voice" | "remove_source" | "delete_memory" | "switch_workspace";
+    payload?: any;
+  } | null>(null);
 
   // Phase 19F: Dedicated Voice Mode & Read Replies Aloud Settings (Defaults to OFF after initial open greeting)
   const [readRepliesAloud, setReadRepliesAloud] = useState<boolean>(() => {
@@ -717,6 +803,83 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
     speakText(feedbackText, isMuted);
   };
 
+  const handleActionCancel = (productionId: string) => {
+    cancelProduction(productionId);
+    const feedbackText = `Cancelled active asset generation for production. Pipeline background jobs halted.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+    setConfirmAction(null);
+  };
+
+  const handleActionReplaceCharacter = (newSheetUrl: string, traits?: string[]) => {
+    if (updateCharacter) updateCharacter({ characterSheetUrl: newSheetUrl, avatarUrl: newSheetUrl, ...(traits ? { traits } : {}) });
+    if (updateBrand) updateBrand({ characterSheetUrl: newSheetUrl, avatarUrl: newSheetUrl });
+    const feedbackText = `Character appearance updated and saved across ${brand?.name || "your brand"} workspace.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+    setConfirmAction(null);
+  };
+
+  const handleActionSetBrandVoice = (voiceName: string, voiceId?: string) => {
+    if (updateCharacter) updateCharacter({ voice: voiceName });
+    if (updateBrand) updateBrand({ voiceProfile: { name: voiceName, provider: "elevenlabs", voiceId: voiceId || voiceName } });
+    const feedbackText = `Set "${voiceName}" as default brand narrator voice profile.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+    setConfirmAction(null);
+  };
+
+  const handleActionRemoveResearchSource = (sourceId: string) => {
+    if (removeResearchSource) removeResearchSource(sourceId);
+    const feedbackText = `Removed research source from workspace.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+    setConfirmAction(null);
+  };
+
+  const handleActionTogglePinMemory = (memoryId: string, currentPin?: boolean) => {
+    if (pinMemoryItem) pinMemoryItem(memoryId);
+    const feedbackText = currentPin ? `Unpinned memory rule.` : `Pinned memory rule to executive briefing context.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+  };
+
+  const handleActionRemoveMemory = (memoryId: string) => {
+    if (removeMemoryItem) removeMemoryItem(memoryId);
+    const feedbackText = `Removed memory item from brand memory bank.`;
+    addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+    if (readRepliesAloud) speakText(feedbackText, isMuted);
+    setConfirmAction(null);
+  };
+
+  const handleActionSwitchWorkspace = async (brandId: string, brandName: string) => {
+    try {
+      if (auth.switchBrand) {
+        await auth.switchBrand(brandId);
+        const feedbackText = `Switched active executive workspace to "${brandName}".`;
+        addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+        if (readRepliesAloud) speakText(feedbackText, isMuted);
+      }
+    } catch (err: any) {
+      console.warn("[AIChatModal] Switch brand error:", err);
+    }
+  };
+
+  const handleConnectPlatform = (platformKey: string) => {
+    try {
+      const oauthUrl = getOAuthAuthorizationUrl(platformKey);
+      if (oauthUrl && oauthUrl !== "#") {
+        window.location.href = oauthUrl;
+      } else {
+        onNavigate?.("/more/accounts");
+        onClose();
+      }
+    } catch {
+      onNavigate?.("/more/accounts");
+      onClose();
+    }
+  };
+
   const handleSendMessage = () => {
     if (!inputText.trim()) return;
     executeNaturalLanguageCommand(inputText.trim());
@@ -1214,23 +1377,35 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
 
                       {/* Interactive Media Card Attachment */}
                       {msg.media && (
-                        <div className="relative mt-2.5 rounded-xl border border-border/80 bg-background/50 p-4 space-y-3.5 overflow-hidden">
+                        <div className="relative mt-2.5 rounded-xl border border-border/80 bg-background/60 backdrop-blur-md p-4 space-y-3.5 overflow-hidden shadow-md">
                           {loadingCardId === msg.media.id && (
                             <div className="absolute inset-0 bg-background/90 z-30 flex flex-col items-center justify-center gap-2">
                               <Loader2 className="w-6 h-6 text-accent-foreground animate-spin" />
                               <span className="text-[10px] font-bold text-accent-foreground uppercase tracking-widest animate-pulse">
-                                Regenerating assets...
+                                Executing executive action...
                               </span>
                             </div>
                           )}
 
+                          {/* Top Header Row */}
                           <div className="flex items-center justify-between gap-3">
-                            <h4 className="text-xs font-semibold truncate flex-1 leading-snug">{msg.media.title}</h4>
+                            <div className="flex items-center gap-2 min-w-0">
+                              {msg.media.type === "production_status" && <Film className="w-4 h-4 text-purple-400 shrink-0" />}
+                              {msg.media.type === "character_image" && <User className="w-4 h-4 text-cyan-400 shrink-0" />}
+                              {msg.media.type === "voice_audio" && <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+                              {msg.media.type === "research_source" && <Search className="w-4 h-4 text-amber-400 shrink-0" />}
+                              {msg.media.type === "settings" && <Sliders className="w-4 h-4 text-purple-400 shrink-0" />}
+                              {msg.media.type === "workspace" && <Layers className="w-4 h-4 text-indigo-400 shrink-0" />}
+                              {msg.media.type === "account_status" && <Radio className="w-4 h-4 text-sky-400 shrink-0" />}
+                              {msg.media.type === "memory_saved" && <Bookmark className="w-4 h-4 text-purple-400 shrink-0" />}
+                              <h4 className="text-xs font-semibold truncate text-foreground leading-snug">{msg.media.title}</h4>
+                            </div>
+
                             <span
                               className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm border shrink-0 ${
-                                msg.media.status === "Approved"
+                                msg.media.status === "Approved" || msg.media.status === "Connected" || msg.media.status === "Active" || msg.media.status === "Synced" || msg.media.status === "Enabled"
                                   ? "bg-success/10 text-success border-success/20"
-                                  : msg.media.status === "Needs Edit"
+                                  : msg.media.status === "Needs Edit" || msg.media.status === "Cancelled" || msg.media.status === "Disconnected" || msg.media.status === "Disabled"
                                   ? "bg-destructive/10 text-destructive border-destructive/20"
                                   : "bg-warning/10 text-warning border-warning/20"
                               }`}
@@ -1239,127 +1414,520 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                             </span>
                           </div>
 
+                          {/* 1. Production Status Card (Live Progress Binding) */}
+                          {msg.media.type === "production_status" && (() => {
+                            const liveProd = productions.find((p: any) => p.id === msg.media!.id || p.id === msg.media!.productionId) || productions[0];
+                            const currentStage = liveProd?.generationProgress?.stage || msg.media!.stage || (liveProd?.status === "Cancelled" ? "Cancelled" : "Generating");
+                            const currentPercent = liveProd?.generationProgress?.percent ?? msg.media!.percent ?? (liveProd?.isGeneratingAssets ? 30 : 10);
+                            const isCancelled = liveProd?.status === "Cancelled" || currentStage === "Cancelled";
+
+                            return (
+                              <div className="space-y-2.5">
+                                {!isCancelled && (
+                                  <div className="space-y-1.5 bg-background/50 rounded-lg p-3 border border-border/40">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                        <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                                        Stage: {currentStage}
+                                      </span>
+                                      <span className="font-mono text-purple-300 font-bold">{currentPercent}%</span>
+                                    </div>
+                                    <div className="h-2 w-full rounded-full bg-muted/40 overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-purple-600 to-indigo-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${Math.max(currentPercent, 8)}%` }}
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground truncate pt-0.5">
+                                      {liveProd?.generationProgress?.message || msg.media!.meta || "Synthesizing multi-scene assets in background..."}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {isCancelled && (
+                                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-center gap-2">
+                                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                                    <span>Production generation was cancelled by executive.</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* 2. Video Card */}
                           {msg.media.type === "video" && msg.media.videoUrl && (
                             <div className="relative rounded-lg overflow-hidden border border-border/40 aspect-video bg-black flex items-center justify-center">
                               <video src={msg.media.videoUrl} controls className="w-full h-full object-cover" />
                             </div>
                           )}
 
-                          {msg.media.concept && (
+                          {/* 3. Character Image Card */}
+                          {msg.media.type === "character_image" && (
+                            <div className="space-y-2.5">
+                              {msg.media.imageUrl && (
+                                <div className="relative rounded-lg overflow-hidden border border-purple-500/30 aspect-square max-h-56 mx-auto bg-black/40 flex items-center justify-center">
+                                  <img src={msg.media.imageUrl} alt={msg.media.title} className="w-full h-full object-cover" />
+                                </div>
+                              )}
+                              {msg.media.traitBadges && msg.media.traitBadges.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {msg.media.traitBadges.map((t, idx) => (
+                                    <span key={idx} className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 4. Voice Audio Card */}
+                          {msg.media.type === "voice_audio" && (
+                            <div className="space-y-2 bg-background/50 rounded-lg p-3 border border-border/40">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-semibold text-foreground">{msg.media.voiceName || "Executive Voice Profile"}</span>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">ElevenLabs Neural</span>
+                              </div>
+                              {msg.media.audioUrl && (
+                                <audio controls src={msg.media.audioUrl} className="w-full h-8" />
+                              )}
+                            </div>
+                          )}
+
+                          {/* 5. Research Source Card */}
+                          {msg.media.type === "research_source" && (
+                            <div className="space-y-1.5 bg-background/50 rounded-lg p-3 border border-border/40 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-foreground">{msg.media.platform || "Web Source"}</span>
+                                <span className="font-mono text-cyan-300 text-[11px]">{normalizeHandle(msg.media.handle || msg.media.title)}</span>
+                              </div>
+                              {msg.media.url && (
+                                <a href={msg.media.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground truncate flex items-center gap-1">
+                                  <ExternalLink className="w-3 h-3 shrink-0" /> {msg.media.url}
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 6. Settings Card */}
+                          {msg.media.type === "settings" && (
+                            <div className="space-y-2 bg-background/50 rounded-lg p-3 border border-border/40 text-xs">
+                              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div>
+                                  <span className="text-muted-foreground uppercase text-[9px] block">Brand Name</span>
+                                  <span className="font-semibold text-foreground">{brand?.name || "SPARK Brand"}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground uppercase text-[9px] block">Target Length</span>
+                                  <span className="font-semibold text-foreground">
+                                    {(formatSettings?.targetDurationSec || 60) >= 60
+                                      ? `${Math.round((formatSettings?.targetDurationSec || 60) / 60)}m`
+                                      : `${formatSettings?.targetDurationSec || 60}s`}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground uppercase text-[9px] block">Clip Engine</span>
+                                  <span className="font-semibold text-foreground capitalize">{formatSettings?.preferredVideoProvider || "Auto / Veo"}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground uppercase text-[9px] block">Aspect Strategy</span>
+                                  <span className="font-semibold text-foreground uppercase">{formatSettings?.aspectMode || "Portrait (9:16)"}</span>
+                                </div>
+                              </div>
+                              {(() => {
+                                const plan = deriveVideoProductionPlanMetrics({
+                                  targetDurationSec: formatSettings?.targetDurationSec,
+                                  preferredVideoProvider: formatSettings?.preferredVideoProvider,
+                                });
+                                return (
+                                  <p className="text-[10px] font-mono text-purple-300 pt-1 border-t border-border/40">
+                                    🎯 {plan.summaryText}
+                                  </p>
+                                );
+                              })()}
+                            </div>
+                          )}
+
+                          {/* 7. Workspaces Card */}
+                          {msg.media.type === "workspace" && (
+                            <div className="space-y-2">
+                              <div className="space-y-1.5">
+                                {(auth.brands || []).map((b) => {
+                                  const isActive = b.id === (brand?.id || auth.brand?.id);
+                                  return (
+                                    <div
+                                      key={b.id}
+                                      className={`flex items-center justify-between p-2 rounded-lg border text-xs ${
+                                        isActive ? "bg-purple-600/20 border-purple-500/50 text-white" : "bg-background/40 border-border/40"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        {isActive ? <Check className="w-3.5 h-3.5 text-purple-300 shrink-0" /> : <Layers className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                                        <span className="font-semibold truncate">{b.name}</span>
+                                      </div>
+                                      {!isActive && (
+                                        <button
+                                          onClick={() => handleActionSwitchWorkspace(b.id, b.name)}
+                                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
+                                        >
+                                          Switch
+                                        </button>
+                                      )}
+                                      {isActive && <span className="text-[9px] font-mono text-purple-300 font-bold uppercase">Active</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 8. Account Status Diagnostics Card */}
+                          {msg.media.type === "account_status" && (
+                            <div className="space-y-1.5 bg-background/50 rounded-lg p-3 border border-border/40 text-xs">
+                              {["youtube", "x", "tiktok", "instagram"].map((platKey) => {
+                                const acc = accounts.find((a: any) => (a.platform || "").toLowerCase().includes(platKey));
+                                const isConn = acc && acc.status !== "Disconnected";
+                                return (
+                                  <div key={platKey} className="flex items-center justify-between text-[11px] py-1 border-b border-border/20 last:border-0">
+                                    <span className="capitalize font-semibold text-foreground">{platKey === "x" ? "Twitter/X" : platKey}</span>
+                                    <span className={`font-mono text-[10px] ${isConn ? "text-success font-semibold" : "text-muted-foreground"}`}>
+                                      {isConn ? `Connected (${normalizeHandle(acc.username || acc.handle)})` : "Not Connected"}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* 9. Memory Saved Card */}
+                          {msg.media.type === "memory_saved" && (
+                            <div className="space-y-1 bg-background/50 rounded-lg p-3 border border-border/40 text-xs">
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400 block">{msg.media.category || "Strategy"} Rule</span>
+                              <p className="italic text-foreground/90 leading-snug">"{msg.media.rule || msg.media.concept || msg.media.title}"</p>
+                            </div>
+                          )}
+
+                          {/* Concept & Meta Fallback Text */}
+                          {msg.media.concept && msg.media.type !== "memory_saved" && (
                             <div className="text-[11px] leading-relaxed text-muted-foreground bg-input-background/40 border border-border/40 rounded-lg p-2.5">
                               <p className="font-bold text-[9px] text-foreground/80 uppercase tracking-wider mb-1">Concept Hook & Story</p>
                               <p className="italic">"{msg.media.concept}"</p>
                             </div>
                           )}
 
-                          {msg.media.meta && <p className="text-[10px] text-muted-foreground/85 font-medium">{msg.media.meta}</p>}
+                          {msg.media.meta && msg.media.type !== "production_status" && (
+                            <p className="text-[10px] text-muted-foreground/85 font-medium">{msg.media.meta}</p>
+                          )}
 
-                          {/* Interactive Buttons */}
-                          <div className="flex items-center gap-2 pt-1 border-t border-border/30 z-20">
-                            {msg.media.type === "video" && (
-                              <>
-                                <button
-                                  onClick={() => handleActionApprove(msg.media!.id)}
-                                  disabled={msg.media.status === "Approved"}
-                                  className="flex-1 py-2 rounded-lg bg-success hover:bg-success/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={() => handleActionRequestEdit(msg.media!.id)}
-                                  disabled={msg.media.status === "Needs Edit"}
-                                  className="flex-1 py-2 rounded-lg bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
-                                >
-                                  Request Edit
-                                </button>
-                                <button
-                                  onClick={() => handleActionRegenerate(msg.media!.id)}
-                                  className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/90 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
-                                  title="Regenerate scenes"
-                                >
-                                  Regenerate
-                                </button>
-                              </>
-                            )}
-
-                            {msg.media.type === "production_status" && (
-                              <button
-                                onClick={() => {
-                                  onNavigate?.("/more/production-settings");
-                                  onClose();
-                                }}
-                                className="w-full py-2.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent-foreground border border-accent/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
-                              >
-                                Configure Production Settings
-                              </button>
-                            )}
-
-                            {msg.media.type === "research_source" && (
-                              <div className="w-full flex items-center gap-2">
+                          {/* Inline Confirmation Prompt Panel */}
+                          {confirmAction && confirmAction.cardId === msg.media.id && (
+                            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 space-y-2 text-xs">
+                              <div className="flex items-center gap-1.5 text-destructive font-semibold">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                {confirmAction.type === "cancel" && "Confirm cancelling generation?"}
+                                {confirmAction.type === "replace_character" && `Replace "${character?.name || "current character"}" design across workspace?`}
+                                {confirmAction.type === "set_voice" && `Set "${confirmAction.payload?.voiceName}" as default brand narrator?`}
+                                {confirmAction.type === "remove_source" && "Remove research source?"}
+                                {confirmAction.type === "delete_memory" && "Delete memory rule from bank?"}
+                              </div>
+                              <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => {
-                                    onNavigate?.("/my-spark");
-                                    onClose();
+                                    if (confirmAction.type === "cancel") handleActionCancel(msg.media!.id);
+                                    else if (confirmAction.type === "replace_character") handleActionReplaceCharacter(msg.media!.imageUrl || "", msg.media!.traitBadges);
+                                    else if (confirmAction.type === "set_voice") handleActionSetBrandVoice(confirmAction.payload?.voiceName, confirmAction.payload?.voiceId);
+                                    else if (confirmAction.type === "remove_source") handleActionRemoveResearchSource(msg.media!.id);
+                                    else if (confirmAction.type === "delete_memory") handleActionRemoveMemory(msg.media!.id);
                                   }}
-                                  className="flex-1 py-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  className="px-3 py-1.5 rounded-lg bg-destructive hover:bg-destructive/90 text-white font-semibold text-xs active:scale-95 transition-all cursor-pointer"
                                 >
-                                  View in My Spark
+                                  Confirm
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    if (msg.media?.id) syncResearchSource?.(msg.media.id);
-                                  }}
-                                  className="px-3 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  onClick={() => setConfirmAction(null)}
+                                  className="px-3 py-1.5 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-xs active:scale-95 transition-all cursor-pointer"
                                 >
-                                  Sync Now
+                                  Cancel
                                 </button>
                               </div>
-                            )}
+                            </div>
+                          )}
 
-                            {msg.media.type === "memory_saved" && (
-                              <button
-                                onClick={() => {
-                                  onNavigate?.("/more/memory");
-                                  onClose();
-                                }}
-                                className="w-full py-2.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
-                              >
-                                View Memory Bank
-                              </button>
-                            )}
+                          {/* Interactive Action Buttons */}
+                          {(!confirmAction || confirmAction.cardId !== msg.media.id) && (
+                            <div className="flex items-center gap-2 pt-1 border-t border-border/30 z-20">
+                              {/* Production Status Actions */}
+                              {msg.media.type === "production_status" && (
+                                <>
+                                  {msg.media.status !== "Cancelled" && (
+                                    <button
+                                      onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "cancel" })}
+                                      className="py-2 px-3 rounded-lg bg-destructive/15 hover:bg-destructive/25 text-destructive border border-destructive/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  )}
+                                  {msg.media.status === "Cancelled" && (
+                                    <button
+                                      onClick={() => handleActionRegenerate(msg.media!.id)}
+                                      className="py-2 px-3 rounded-lg bg-secondary hover:bg-secondary/90 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" /> Regenerate
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/review");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-accent text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open Review
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/more/production-settings");
+                                      onClose();
+                                    }}
+                                    className="py-2 px-3 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Settings
+                                  </button>
+                                </>
+                              )}
 
-                            {msg.media.type === "storyboard" && (
-                              <div className="w-full flex items-center gap-2">
+                              {/* Video Actions */}
+                              {msg.media.type === "video" && (
+                                <>
+                                  <button
+                                    onClick={() => handleActionApprove(msg.media!.id)}
+                                    disabled={msg.media.status === "Approved"}
+                                    className="flex-1 py-2 rounded-lg bg-success hover:bg-success/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleActionRequestEdit(msg.media!.id)}
+                                    disabled={msg.media.status === "Needs Edit"}
+                                    className="flex-1 py-2 rounded-lg bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                                  >
+                                    Request Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleActionRegenerate(msg.media!.id)}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/90 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                    title="Regenerate scenes"
+                                  >
+                                    Regenerate
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Character Image Actions */}
+                              {msg.media.type === "character_image" && (
+                                <>
+                                  <button
+                                    onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "replace_character" })}
+                                    className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Replace Character
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/my-spark");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open My Spark
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Voice Audio Actions */}
+                              {msg.media.type === "voice_audio" && (
+                                <>
+                                  <button
+                                    onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "set_voice", payload: { voiceName: msg.media!.voiceName, voiceId: msg.media!.voiceId } })}
+                                    className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Set Default Voice
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/my-spark");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open My Spark
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Research Source Actions */}
+                              {msg.media.type === "research_source" && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      if (msg.media?.id) syncResearchSource?.(msg.media.id);
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Sync Now
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "remove_source" })}
+                                    className="px-3 py-2 rounded-lg bg-destructive/15 hover:bg-destructive/25 text-destructive border border-destructive/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Remove
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/my-spark");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    My Spark
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Settings Actions */}
+                              {msg.media.type === "settings" && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/my-spark");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open My Spark
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/more/ai-preferences");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    AI Preferences
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Workspace Actions */}
+                              {msg.media.type === "workspace" && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      auth.openCreateWorkspaceModal?.();
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" /> New Workspace
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/my-spark");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    My Spark
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Account Diagnostics Actions */}
+                              {msg.media.type === "account_status" && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/more/accounts");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Manage Outlets
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/analytics");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Analytics
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Memory Saved Actions */}
+                              {msg.media.type === "memory_saved" && (
+                                <>
+                                  <button
+                                    onClick={() => handleActionTogglePinMemory(msg.media!.id, msg.media!.isPinned)}
+                                    className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <Pin className="w-3 h-3" /> {msg.media.isPinned ? "Unpin" : "Pin Rule"}
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "delete_memory" })}
+                                    className="px-3 py-2 rounded-lg bg-destructive/15 hover:bg-destructive/25 text-destructive border border-destructive/30 text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/more/memory");
+                                      onClose();
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Memory Bank
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Storyboard Actions */}
+                              {msg.media.type === "storyboard" && (
+                                <div className="w-full flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/review");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2.5 rounded-lg bg-accent hover:bg-accent/90 text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open in Review
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onNavigate?.("/review");
+                                      onClose();
+                                    }}
+                                    className="flex-1 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  >
+                                    Open Storyboard
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Opportunity Actions */}
+                              {msg.media.type === "opportunity" && (
                                 <button
-                                  onClick={() => {
-                                    onNavigate?.("/review");
-                                    onClose();
-                                  }}
-                                  className="flex-1 py-2.5 rounded-lg bg-accent hover:bg-accent/90 text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
+                                  onClick={() => handleActionCreateFromSpark(msg.media!.id)}
+                                  className="w-full py-2.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
                                 >
-                                  Open in Review
+                                  Initialize Production Storyboard
                                 </button>
-                                <button
-                                  onClick={() => {
-                                    onNavigate?.("/review");
-                                    onClose();
-                                  }}
-                                  className="flex-1 py-2.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
-                                >
-                                  Open Storyboard
-                                </button>
-                              </div>
-                            )}
-
-                            {msg.media.type === "opportunity" && (
-                              <button
-                                onClick={() => handleActionCreateFromSpark(msg.media!.id)}
-                                className="w-full py-2.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold active:scale-[0.98] transition-all cursor-pointer"
-                              >
-                                Initialize Production Storyboard
-                              </button>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
