@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ChevronDown, Check, CreditCard, Settings, Key, LogOut, LogIn, ShieldCheck, Sparkles } from "lucide-react";
+import { Search, ChevronDown, Check, CreditCard, Settings, Key, LogOut, LogIn, ShieldCheck, Sparkles, Plus } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
 import { useSpark } from "../state/SparkContext";
 import { useAuth } from "../state/AuthContext";
@@ -102,13 +102,51 @@ export function TopBar({
           </button>
 
           {isWorkspaceOpen && (
-            <div className="absolute left-0 mt-2 w-64 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
-              <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border/40 mb-1">
-                Active Brand OS
+            <div className="absolute left-0 mt-2 w-72 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1 flex items-center justify-between">
+                <span>Brand Workspaces</span>
+                <span className="text-[10px] font-normal text-muted-foreground/80 font-mono">
+                  {Math.max((auth.brands || []).length, 1)} total
+                </span>
               </div>
-              <div className="px-3 py-2 rounded-lg bg-accent/20 border border-accent/30 text-xs font-semibold flex items-center justify-between">
-                <span>{brand?.name || "Spark Workspace"}</span>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="max-h-60 overflow-y-auto space-y-1 py-1">
+                {(auth.brands && auth.brands.length > 0 ? auth.brands : (auth.brand ? [auth.brand] : (brand ? [brand] : [{ id: "default", name: "Spark Workspace", niche: "Content Creation" }]))).map((b: any) => {
+                  const isActive = b.id === (auth.brand?.id || brand?.id);
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={async () => {
+                        if (!isActive && b.id !== "default") {
+                          await auth.switchBrand(b.id);
+                        }
+                        setIsWorkspaceOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between text-left transition-all ${
+                        isActive
+                          ? "bg-accent/20 border border-accent/30 text-foreground"
+                          : "hover:bg-accent/10 text-muted-foreground hover:text-foreground cursor-pointer"
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="font-semibold text-xs truncate text-foreground">{b.name || "Untitled Brand"}</p>
+                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">{b.niche || "Content Creation"}</p>
+                      </div>
+                      {isActive && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="pt-2 border-t border-border/40 mt-1">
+                <button
+                  onClick={() => {
+                    setIsWorkspaceOpen(false);
+                    auth.openCreateWorkspaceModal();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create workspace</span>
+                </button>
               </div>
             </div>
           )}

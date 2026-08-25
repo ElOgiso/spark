@@ -433,6 +433,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
   // Detect User ID changes or explicit workspace reset signals
   const lastLoadedUserIdRef = useRef<string | null>(null);
+  const lastLoadedBrandIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (lastLoadedUserIdRef.current !== null && lastLoadedUserIdRef.current !== currentUserId) {
@@ -441,6 +442,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     lastLoadedUserIdRef.current = currentUserId;
   }, [currentUserId, resetWorkspace]);
+
+  useEffect(() => {
+    if (lastLoadedBrandIdRef.current !== null && activeBrandId && lastLoadedBrandIdRef.current !== activeBrandId) {
+      console.log(`[SparkContext] Brand ID changed (${lastLoadedBrandIdRef.current} -> ${activeBrandId}). Executing resetWorkspace().`);
+      resetWorkspace();
+    }
+    if (activeBrandId) {
+      lastLoadedBrandIdRef.current = activeBrandId;
+    }
+  }, [activeBrandId, resetWorkspace]);
 
   useEffect(() => {
     const handleReset = () => {
@@ -1072,21 +1083,57 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    let brandId = auth.brand?.id || getBrandWorkspaceId();
-    if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
+    const isAdditionalWorkspace = data.mode === "additional_workspace";
+    let brandId = "";
+
+    if (isAdditionalWorkspace && auth.currentUser?.id && isSupabaseConfigured()) {
       try {
-        const { ensureDefaultBrand } = await import("../backend/repositories/brandRepository");
-        const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
+        const { createBrand } = await import("../backend/repositories/brandRepository");
+        const createRes = await createBrand({
+          owner_id: auth.currentUser.id,
           name: brandName,
           niche: niche,
           purpose: vision,
+          audience: {
+            primary: audience,
+            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
+            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+          },
+          tone: [{ label: tone, active: true }],
+          content_pillars: [],
+          automation_mode: automationMode,
+          review_required: reviewRequired,
+          publish_requires_approval: true,
+          autonomous_publishing_enabled: automationMode === "autonomous",
         });
-        if (defaultBrandRes.data?.id) {
-          brandId = defaultBrandRes.data.id;
+        if (createRes.data?.id) {
+          brandId = createRes.data.id;
           localStorage.setItem("spark_current_brand_id", brandId);
+          localStorage.setItem("spark_current_brand_name", brandName);
+          auth.setBrand(createRes.data);
         }
-      } catch (err) {
-        console.warn("[SparkContext] ensureDefaultBrand fallback notice:", err);
+      } catch (createErr) {
+        console.warn("[SparkContext] createBrand for additional workspace error:", createErr);
+      }
+    } else {
+      brandId = auth.brand?.id || getBrandWorkspaceId();
+      if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
+        try {
+          const { ensureDefaultBrand } = await import("../backend/repositories/brandRepository");
+          const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
+            name: brandName,
+            niche: niche,
+            purpose: vision,
+          });
+          if (defaultBrandRes.data?.id) {
+            brandId = defaultBrandRes.data.id;
+            localStorage.setItem("spark_current_brand_id", brandId);
+            localStorage.setItem("spark_current_brand_name", brandName);
+            auth.setBrand(defaultBrandRes.data);
+          }
+        } catch (err) {
+          console.warn("[SparkContext] ensureDefaultBrand fallback notice:", err);
+        }
       }
     }
 
@@ -1195,8 +1242,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    // ALWAYS mark onboarding complete in Supabase profiles
-    await auth.markOnboardingComplete(brandId);
+    // For additional workspace, switch active brand in profile & refresh brands list
+    if (isAdditionalWorkspace && brandId) {
+      await auth.switchBrand(brandId);
+      await auth.refreshBrands();
+    } else {
+      // Mark onboarding complete in Supabase profiles for initial brand
+      await auth.markOnboardingComplete(brandId);
+    }
   };
 
   const updateAutomationMode = (mode: AutomationMode) => {

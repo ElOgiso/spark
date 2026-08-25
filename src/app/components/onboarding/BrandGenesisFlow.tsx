@@ -56,10 +56,13 @@ export interface BrandGenesisData {
   audioEnergy?: string;
   researchSources?: string[];
   connectedAccounts?: Array<{ platform: string; username: string; connected: boolean }>;
+  mode?: "first_user" | "additional_workspace";
 }
 
 export interface BrandGenesisFlowProps {
   onComplete: (data: BrandGenesisData) => void;
+  mode?: "first_user" | "additional_workspace";
+  onCancel?: () => void;
 }
 
 
@@ -816,18 +819,36 @@ function FrameEntry({
   isMuted,
   onToggleMute,
   isSpeaking,
+  mode = "first_user",
+  onCancel,
 }: {
   onBegin: () => void;
   isMuted: boolean;
   onToggleMute: () => void;
   isSpeaking?: boolean;
+  mode?: "first_user" | "additional_workspace";
+  onCancel?: () => void;
 }) {
-  const { displayed, done } = useTypewriter(
-    "Welcome. I'm Super Spark, your executive creative director.\nLet's build the brand SPARK will run.", 24, 400
-  );
+  const introText =
+    mode === "additional_workspace"
+      ? "New Workspace. I'm Super Spark, your creative director.\nLet's configure your next brand and lead host."
+      : "Welcome. I'm Super Spark, your executive creative director.\nLet's build the brand SPARK will run.";
+
+  const { displayed, done } = useTypewriter(introText, 24, 400);
   return (
     <div className="relative flex flex-col items-center justify-between h-full px-8 py-8 text-center overflow-hidden">
-      <div className="w-full flex justify-end">
+      <div className="w-full flex items-center justify-between">
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="p-2 rounded-full border bg-white/4 border-white/8 text-white/50 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+            title="Cancel and return to dashboard"
+            aria-label="Cancel and return to dashboard"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        ) : <div />}
         <button
           type="button"
           onClick={onToggleMute}
@@ -847,7 +868,9 @@ function FrameEntry({
       <div className="flex flex-col items-center gap-8">
         <MainLogoAnimated size={96} />
         <div className="space-y-3 max-w-xs">
-          <p className="text-[9px] tracking-[0.25em] uppercase text-white/22 font-semibold">Super Spark</p>
+          <p className="text-[9px] tracking-[0.25em] uppercase text-white/22 font-semibold">
+            {mode === "additional_workspace" ? "New Workspace" : "Super Spark"}
+          </p>
           <p className="text-lg font-semibold text-white leading-snug whitespace-pre-line">
             {displayed}
             {!done && <span className="inline-block w-[2px] h-[1em] bg-[#F018FF] ml-[2px] align-[-0.05em]" style={{ animation: "cursor-blink 0.9s step-end infinite" }} />}
@@ -858,9 +881,9 @@ function FrameEntry({
         <button
           onClick={onBegin}
           type="button"
-          className="w-full py-4 rounded-2xl bg-purple-600 text-white text-base font-semibold tracking-wide hover:bg-purple-500 active:scale-[0.98] transition-all shadow-[0_0_32px_rgba(168,85,247,0.4)]"
+          className="w-full py-4 rounded-2xl bg-purple-600 text-white text-base font-semibold tracking-wide hover:bg-purple-500 active:scale-[0.98] transition-all shadow-[0_0_32px_rgba(168,85,247,0.4)] cursor-pointer"
         >
-          Begin
+          {mode === "additional_workspace" ? "Create Workspace" : "Begin"}
         </button>
         <p className="text-xs text-white/22 leading-relaxed">
           Don't know what to do? Feel free to ask me. I'm Super Spark.
@@ -1573,7 +1596,11 @@ function LegalFlow({ onComplete }: { onComplete: () => void }) {
 // ─── Main Brand Genesis Component ──────────────────────────────────────────────
 let _msgId = 0;
 
-export function BrandGenesisFlow({ onComplete }: BrandGenesisFlowProps) {
+export function BrandGenesisFlow({
+  onComplete,
+  mode = "first_user",
+  onCancel,
+}: BrandGenesisFlowProps) {
   const auth = useAuth();
   const { initializeBrandGenesis } = useSpark();
 
@@ -2072,6 +2099,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       voiceId: data.selectedVoiceId,
       researchSources: data.researchSources,
       connectedAccounts,
+      mode: mode || "first_user",
     };
 
     try {
@@ -2084,7 +2112,9 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           targetDurationSec: data.targetDurationSec || 60,
         });
       }
-      await auth.markOnboardingComplete(auth.brand?.id);
+      if (mode !== "additional_workspace") {
+        await auth.markOnboardingComplete(auth.brand?.id);
+      }
     } catch (persistErr) {
       console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);
     }
@@ -2175,6 +2205,8 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
                 isMuted={voiceMuted}
                 onToggleMute={() => onboardDirectorVoiceService.toggleMute()}
                 isSpeaking={voiceSpeaking}
+                mode={mode}
+                onCancel={onCancel}
               />
             </div>
           )}
@@ -2183,15 +2215,27 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
           {frame >= 1 && (
             <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Top bar */}
-              <div className="flex-shrink-0 flex items-center gap-3 px-5 pt-3 pb-2">
-                <button
-                  onClick={() => go(frame - 1)}
-                  type="button"
-                  className="w-8 h-8 rounded-full bg-white/6 hover:bg-white/12 flex items-center justify-center flex-shrink-0"
-                >
-                  <ChevronLeft className="w-4 h-4 text-white/60" />
-                </button>
-                <StoryProgress total={7} current={frame} />
+              <div className="flex-shrink-0 flex items-center gap-3 px-5 pt-3 pb-2 justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <button
+                    onClick={() => go(frame - 1)}
+                    type="button"
+                    className="w-8 h-8 rounded-full bg-white/6 hover:bg-white/12 flex items-center justify-center flex-shrink-0"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-white/60" />
+                  </button>
+                  <StoryProgress total={7} current={frame} />
+                </div>
+                {onCancel && (
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="w-8 h-8 rounded-full bg-white/6 hover:bg-white/12 flex items-center justify-center flex-shrink-0 text-white/50 hover:text-white cursor-pointer"
+                    title="Exit and return to dashboard"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               {/* Director */}

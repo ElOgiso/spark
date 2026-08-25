@@ -20,6 +20,7 @@ type AuthContextValue = {
   session: Session | null;
   profile: ProfileRow | null;
   brand: BrandRow | null;
+  brands: BrandRow[];
   loading: boolean;
   isAuthenticated: boolean;
   isConfigured: boolean;
@@ -27,6 +28,12 @@ type AuthContextValue = {
   mode: "demo" | "authenticated";
   error: string | null;
   isOnboardingComplete: boolean;
+  createWorkspaceModalOpen: boolean;
+  openCreateWorkspaceModal: () => void;
+  closeCreateWorkspaceModal: () => void;
+  switchBrand: (brandId: string) => Promise<void>;
+  refreshBrands: () => Promise<BrandRow[]>;
+  setBrand: React.Dispatch<React.SetStateAction<BrandRow | null>>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
@@ -56,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [brand, setBrand] = useState<BrandRow | null>(null);
+  const [brands, setBrands] = useState<BrandRow[]>([]);
+  const [createWorkspaceModalOpen, setCreateWorkspaceModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [demoUser, setDemoUser] = useState<User | null>(() => getStoredDemoUser());
@@ -116,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setProfile(result.profile);
         setBrand(result.brand);
+        setBrands(result.brands || []);
         if (result.brand?.id) {
           try {
             localStorage.setItem("spark_current_brand_id", result.brand.id);
@@ -390,6 +400,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setProfile(null);
       setBrand(null);
+      setBrands([]);
+      setCreateWorkspaceModalOpen(false);
       setIsOnboardingComplete(false);
 
       if (typeof window !== "undefined") {
@@ -410,6 +422,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sendResendVerification = useCallback(async (email: string) => {
     const { resendVerification } = await import("../backend/sessionService");
     return resendVerification(email);
+  }, []);
+
+  const switchBrand = useCallback(async (brandId: string) => {
+    if (!brandId) return;
+    setLoading(true);
+    try {
+      let targetBrand = brands.find((b) => b.id === brandId);
+      if (!targetBrand && isConfigured && currentUser?.id) {
+        const { listBrandsForOwner } = await import("../backend/repositories/brandRepository");
+        const bRes = await listBrandsForOwner(currentUser.id);
+        if (bRes.data) {
+          setBrands(bRes.data);
+          targetBrand = bRes.data.find((b) => b.id === brandId);
+        }
+      }
+
+      if (targetBrand) {
+        setBrand(targetBrand);
+        try {
+          localStorage.setItem("spark_current_brand_id", targetBrand.id);
+          localStorage.setItem("spark_current_brand_name", targetBrand.name || "");
+        } catch {}
+      }
+
+      if (currentUser?.id && isConfigured) {
+        const { setActiveBrand } = await import("../backend/repositories/profileRepository");
+        const res = await setActiveBrand(currentUser.id, brandId);
+        if (res.data) {
+          setProfile(res.data);
+        }
+      }
+
+      // Hard reset in-memory state so previous workspace data is completely unloaded before new hydrate
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("spark-workspace-reset"));
+      }
+    } catch (err) {
+      console.warn("[SPARK AUTH] switchBrand error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [brands, currentUser, isConfigured]);
+
+  const refreshBrands = useCallback(async (): Promise<BrandRow[]> => {
+    if (!currentUser?.id || !isConfigured) return brands;
+    try {
+      const { listBrandsForOwner } = await import("../backend/repositories/brandRepository");
+      const res = await listBrandsForOwner(currentUser.id);
+      if (res.data) {
+        setBrands(res.data);
+        return res.data;
+      }
+    } catch (err) {
+      console.warn("[SPARK AUTH] refreshBrands error:", err);
+    }
+    return brands;
+  }, [currentUser, isConfigured, brands]);
+
+  const openCreateWorkspaceModal = useCallback(() => {
+    setCreateWorkspaceModalOpen(true);
+  }, []);
+
+  const closeCreateWorkspaceModal = useCallback(() => {
+    setCreateWorkspaceModalOpen(false);
   }, []);
 
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
@@ -471,6 +547,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     profile,
     brand,
+    brands,
     loading,
     isAuthenticated,
     isConfigured,
@@ -478,6 +555,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     mode: currentUser ? "authenticated" : "demo",
     error: error ?? null,
     isOnboardingComplete,
+    createWorkspaceModalOpen,
+    openCreateWorkspaceModal,
+    closeCreateWorkspaceModal,
+    switchBrand,
+    refreshBrands,
+    setBrand,
     signIn,
     signUp,
     signInWithPassword: signIn,
@@ -492,6 +575,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearError: () => setError(null),
   }), [
     brand,
+    brands,
+    closeCreateWorkspaceModal,
+    createWorkspaceModalOpen,
     currentUser,
     error,
     isAuthenticated,
@@ -499,8 +585,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isOnboardingComplete,
     loading,
     markOnboardingComplete,
-    updateProfile,
+    openCreateWorkspaceModal,
     profile,
+    refreshBrands,
     refreshSession,
     requireAuth,
     sendReset,
@@ -510,6 +597,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithOAuth,
     signOut,
     signUp,
+    switchBrand,
+    updateProfile,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

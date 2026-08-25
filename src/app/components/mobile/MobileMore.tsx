@@ -948,6 +948,59 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             </div>
           );
 
+        case "Workspaces":
+          return (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-border/50">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-foreground">Brand Workspaces</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Switch between brands or create a new workspace</p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setActiveDetail(null);
+                      auth.openCreateWorkspaceModal();
+                    }}
+                    variant="accent"
+                    size="sm"
+                    className="text-xs py-1 h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    New
+                  </Button>
+                </div>
+                <div className="space-y-2 pt-1">
+                  {(auth.brands && auth.brands.length > 0 ? auth.brands : (auth.brand ? [auth.brand] : (brand ? [brand] : [{ id: "default", name: "Spark Workspace", niche: "Content Creation" }]))).map((b: any) => {
+                    const isActive = b.id === (auth.brand?.id || brand?.id);
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={async () => {
+                          if (!isActive && b.id !== "default") {
+                            await auth.switchBrand(b.id);
+                            setActiveDetail(null);
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${
+                          isActive
+                            ? "bg-accent/20 border border-accent/40 text-foreground"
+                            : "bg-background border border-border hover:border-border/80 text-muted-foreground hover:text-foreground cursor-pointer"
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="text-xs font-semibold text-foreground truncate">{b.name || "Untitled Workspace"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{b.niche || "Content Creation"}</p>
+                        </div>
+                        {isActive && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+
         default:
           return null;
       }
@@ -1137,20 +1190,12 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
               Sign Out
             </Button>
             <Button
-              onClick={() => {
-                const name = prompt("Enter workspace/brand name to switch to:", brand?.name || "Creative Studio");
-                if (name && name.trim()) {
-                  if (typeof updateBrand === "function") {
-                    updateBrand({ ...brand, name: name.trim() });
-                  }
-                  alert(`Successfully switched active workspace to: ${name.trim()}`);
-                }
-              }}
+              onClick={() => setActiveDetail("Workspaces")}
               variant="outline"
               className="w-full text-xs flex items-center justify-center gap-1.5"
             >
               <Users className="w-4 h-4 text-muted-foreground" />
-              Switch Workspace ({brand?.name || "Default"})
+              Workspaces ({auth.brand?.name || brand?.name || "Default"})
             </Button>
           </div>
         ) : (

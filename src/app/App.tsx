@@ -232,8 +232,12 @@ function AppContent() {
   const handleEnterDashboard = async (data?: BrandGenesisData) => {
     const finalData = data || genesisData;
     auth.updateProfile(finalData.creatorName || "Creator");
-    if (!auth.isOnboardingComplete && !genesisCompletedInSessionRef.current) {
-      genesisCompletedInSessionRef.current = true;
+    const isAdditional = finalData.mode === "additional_workspace";
+
+    if ((!auth.isOnboardingComplete && !genesisCompletedInSessionRef.current) || isAdditional) {
+      if (!isAdditional) {
+        genesisCompletedInSessionRef.current = true;
+      }
       try {
         await Promise.race([
           initializeBrandGenesis(finalData),
@@ -243,6 +247,7 @@ function AppContent() {
         if (targetBrandId && isUuid(targetBrandId)) {
           await auth.markOnboardingComplete(targetBrandId);
         }
+        await auth.refreshBrands();
       } catch (err) {
         console.warn("[App] handleEnterDashboard genesis notice:", err);
       }
@@ -327,6 +332,27 @@ function AppContent() {
 
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
+      // Additional Workspace Creation Modal (for existing authenticated user)
+      if (auth.createWorkspaceModalOpen) {
+        return (
+          <ProtectedRoute>
+            <BrandGenesisFlow
+              mode="additional_workspace"
+              onCancel={() => auth.closeCreateWorkspaceModal()}
+              onComplete={(data) => {
+                auth.closeCreateWorkspaceModal();
+                if (data) {
+                  setGenesisData(data);
+                  void handleEnterDashboard({ ...data, mode: "additional_workspace" });
+                } else {
+                  void handleEnterDashboard();
+                }
+              }}
+            />
+          </ProtectedRoute>
+        );
+      }
+
       // Returning user whose onboarding is complete in cloud -> straight to dashboard (no marketing splash)
       if (auth.isOnboardingComplete) {
         if (currentDevice === "mobile" || deviceType === "mobile") {
