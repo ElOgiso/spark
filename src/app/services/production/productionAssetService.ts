@@ -828,19 +828,25 @@ Return valid JSON with this exact structure:
         try {
           checkAborted();
           console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
+          const gridVisualLock = buildVisualLockRefs({
+            character,
+          });
+
           const masterGridPrompt = `
+${gridVisualLock.refPromptHeader}
 Production storyboard master grid map, sequential visual map of ${storyboard.length} panels.
 PANEL 1 (Top / Scene 1 - Establishing): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"} (Framing: Wide/Medium establishing shot).
 PANEL 2 (Middle / Scene 2 - Action): ${storyboard[1]?.startState || storyboard[1]?.visualDescription || "Scene 2 transition"} (Framing: Medium action shot).
 PANEL 3 (Bottom / Scene 3 - Resolution): ${storyboard[2]?.endState || storyboard[2]?.visualDescription || "Scene 3 resolution"} (Framing: Medium close-up resolving shot).
-CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.${identityPack.characterReferenceImageUrl ? ` Reference Sheet: ${identityPack.characterReferenceImageUrl}.` : ""} Use reference image. Do not change face or outfit.
+CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}. Use reference image. Do not change face or outfit.
 ENVIRONMENT (locked): ${identityPack.environmentString}. Same set across all panels.
 LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid map showing Scene 1, Scene 2, Scene 3 in exact order from top to bottom. Clear readable scene progression with shot variety, not extreme facial close-ups.
 `.trim();
 
           const gridImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
             prompt: masterGridPrompt,
-            referenceImageUrl: identityPack.characterReferenceImageUrl,
+            referenceImageUrl: gridVisualLock.primaryRefUrl,
+            referenceImageUrls: gridVisualLock.imageUrls,
             aspectRatio: identityPack.aspectRatio,
           });
           checkAborted();
@@ -1283,10 +1289,17 @@ Brand: ${brand.name}
                 checkAborted();
                 const scene = currentStoryboard[sIdx];
                 const sceneStill = scene.image || sceneImages[sIdx];
-
                 const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
 
+                const stageVisualLock = buildVisualLockRefs({
+                  character,
+                  storyboardGridUrl: realGridUrl,
+                  sceneKeyframeUrl: sceneStill,
+                  previousLastFrameUrl: sIdx > 0 ? (sceneClips[sIdx - 1] || sceneImages[sIdx - 1]) : undefined,
+                });
+
                 const stageMotionPrompt = `
+${stageVisualLock.refPromptHeader}
 Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
 Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
 Environment must remain continuous (${identityPack.environmentString}).
@@ -1295,13 +1308,14 @@ Framing: ${panelFraming}.
 No resets, no new character, no scrambled order.
 `.trim();
 
-                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Image conditioned: ${Boolean(sceneStill || realGridUrl)}]...`);
+                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Refs: ${stageVisualLock.imageUrls.length}]...`);
 
                 try {
                   checkAborted();
                   const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: stageMotionPrompt,
-                    referenceImageUrl: sceneStill || realGridUrl || identityPack.characterReferenceImageUrl,
+                    referenceImageUrl: stageVisualLock.primaryRefUrl,
+                    referenceImageUrls: stageVisualLock.imageUrls,
                     aspectRatio: identityPack.aspectRatio,
                   });
                   checkAborted();
