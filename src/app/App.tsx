@@ -22,6 +22,7 @@ import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
 import { AdminPlaceholderPage } from "./components/admin/AdminPlaceholderPage";
+import { AccessGateFreeze } from "./components/auth/AccessGateFreeze";
 import { getBrandWorkspaceId } from "./services/socialIntegrationService";
 import { isUuid } from "./backend/mappers/workspaceMappers";
 
@@ -198,6 +199,9 @@ function AppContent() {
         } else if (!auth.isOnboardingComplete) {
           console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
+        } else if (auth.isPendingApproval || auth.isBanned) {
+          console.log("[SPARK AUTH] routing: ACCESS GATE FREEZE");
+          setViewState("dashboard");
         } else {
           console.log("[SPARK AUTH] routing: DASHBOARD");
           setViewState((prev) => (prev === "auth" ? "dashboard" : prev));
@@ -222,7 +226,7 @@ function AppContent() {
         }
       }
     }
-  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete, auth.isAdmin, currentPage]);
+  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete, auth.isAdmin, auth.isPendingApproval, auth.isBanned, currentPage]);
 
   const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
     console.log("[SPARK AUTH] handleAuthSuccess called for:", email, "mode:", mode);
@@ -361,7 +365,7 @@ function AppContent() {
 
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
-      // Admin standalone route check
+      // A. Admin standalone route check
       if (auth.isAdmin && (currentPage === "/admin" || currentPage === "admin" || (!auth.isOnboardingComplete && !auth.brand))) {
         return (
           <ProtectedRoute>
@@ -370,7 +374,37 @@ function AppContent() {
         );
       }
 
-      // Additional Workspace Creation Modal (for existing authenticated user)
+      // B. First-time authenticated user whose onboarding is incomplete in cloud -> Brand Genesis
+      if (!auth.isOnboardingComplete) {
+        return (
+          <ProtectedRoute>
+            <BrandGenesisFlow
+              onComplete={(data) => {
+                if (data) {
+                  setGenesisData(data);
+                  void handleEnterDashboard(data);
+                } else {
+                  void handleEnterDashboard();
+                }
+              }}
+            />
+          </ProtectedRoute>
+        );
+      }
+
+      // C. Non-admin user who completed onboarding but access is pending or banned -> Access Gate Freeze
+      if (!auth.isAdmin && (auth.isPendingApproval || auth.isBanned)) {
+        return (
+          <ProtectedRoute>
+            <AccessGateFreeze
+              status={auth.accessStatus}
+              onSignOut={() => void auth.signOut()}
+            />
+          </ProtectedRoute>
+        );
+      }
+
+      // D. Additional Workspace Creation Modal (for existing authenticated user)
       if (auth.createWorkspaceModalOpen) {
         return (
           <ProtectedRoute>
@@ -391,41 +425,23 @@ function AppContent() {
         );
       }
 
-      // Returning user whose onboarding is complete in cloud -> straight to dashboard (no marketing splash)
-      if (auth.isOnboardingComplete) {
-        if (currentDevice === "mobile" || deviceType === "mobile") {
-          return (
-            <ProtectedRoute>
-              <MobileApp />
-            </ProtectedRoute>
-          );
-        }
-
+      // E. Returning user whose onboarding is complete and active -> straight to dashboard
+      if (currentDevice === "mobile" || deviceType === "mobile") {
         return (
           <ProtectedRoute>
-            <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
-              <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
-              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                {renderDesktopPage()}
-              </div>
-            </div>
+            <MobileApp />
           </ProtectedRoute>
         );
       }
 
-      // First-time authenticated user whose onboarding is incomplete in cloud -> Brand Genesis
       return (
         <ProtectedRoute>
-          <BrandGenesisFlow
-            onComplete={(data) => {
-              if (data) {
-                setGenesisData(data);
-                void handleEnterDashboard(data);
-              } else {
-                void handleEnterDashboard();
-              }
-            }}
-          />
+          <div className="h-screen overflow-hidden flex bg-background text-foreground antialiased">
+            <Navigation currentPath={currentPage} onNavigate={setCurrentPage} />
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              {renderDesktopPage()}
+            </div>
+          </div>
         </ProtectedRoute>
       );
     }

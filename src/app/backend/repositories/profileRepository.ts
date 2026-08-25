@@ -80,7 +80,8 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
 
 export async function markProfileOnboardingComplete(
   userId: string,
-  activeBrandId?: string | null
+  activeBrandId?: string | null,
+  accessStatus?: "pending_approval" | "active" | "banned"
 ): Promise<RepositoryResult<ProfileRow>> {
   if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
   const supabase = getSupabaseClient();
@@ -94,6 +95,9 @@ export async function markProfileOnboardingComplete(
     if (activeBrandId) {
       patch.active_brand_id = activeBrandId;
     }
+    if (accessStatus) {
+      patch.access_status = accessStatus;
+    }
 
     const { data, error } = await (supabase.from("profiles") as any)
       .update(patch)
@@ -103,13 +107,18 @@ export async function markProfileOnboardingComplete(
 
     if (error) {
       // If update fails because profile row doesn't exist yet, perform upsert
+      const upsertPayload: any = {
+        id: userId,
+        onboarding_complete: true,
+        active_brand_id: activeBrandId || null,
+        updated_at: new Date().toISOString(),
+      };
+      if (accessStatus) {
+        upsertPayload.access_status = accessStatus;
+      }
+
       const { data: upsertData, error: upsertErr } = await (supabase.from("profiles") as any)
-        .upsert({
-          id: userId,
-          onboarding_complete: true,
-          active_brand_id: activeBrandId || null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "id" })
+        .upsert(upsertPayload, { onConflict: "id" })
         .select("*")
         .maybeSingle();
 
@@ -119,6 +128,31 @@ export async function markProfileOnboardingComplete(
     return { data, error: null, source: "supabase" };
   } catch (err: any) {
     return repositoryError<ProfileRow>(err?.message || "Failed to mark profile onboarding complete");
+  }
+}
+
+export async function setAccessStatus(
+  userId: string,
+  status: "pending_approval" | "active" | "banned"
+): Promise<RepositoryResult<ProfileRow>> {
+  if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<ProfileRow>();
+
+  try {
+    const { data, error } = await (supabase.from("profiles") as any)
+      .update({
+        access_status: status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return repositoryError<ProfileRow>(error.message);
+    return { data, error: null, source: "supabase" };
+  } catch (err: any) {
+    return repositoryError<ProfileRow>(err?.message || "Failed to update access status");
   }
 }
 

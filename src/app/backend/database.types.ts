@@ -28,6 +28,7 @@ export enum MemoryCategory {
 }
 
 export type UserRole = "executive" | "admin";
+export type UserAccessStatus = "pending_approval" | "active" | "banned";
 
 export interface ProfileRow {
   id: string;
@@ -35,6 +36,7 @@ export interface ProfileRow {
   role: UserRole | string | null;
   avatar_url: string | null;
   is_super_admin?: boolean | null;
+  access_status?: UserAccessStatus | string | null;
   onboarding_complete?: boolean | null;
   active_brand_id?: string | null;
   /** Present on legacy SPARK profiles table */

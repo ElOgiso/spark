@@ -24,6 +24,9 @@ type AuthContextValue = {
   role: "executive" | "admin";
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  accessStatus: "pending_approval" | "active" | "banned";
+  isPendingApproval: boolean;
+  isBanned: boolean;
   loading: boolean;
   isAuthenticated: boolean;
   isConfigured: boolean;
@@ -526,13 +529,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [brand, brands, currentUser, switchBrand, openCreateWorkspaceModal]);
 
+  const userRole: "executive" | "admin" = useMemo(() => {
+    const rawRole = (profile?.role || "").toLowerCase().trim();
+    return rawRole === "admin" ? "admin" : "executive";
+  }, [profile?.role]);
+
+  const isAdmin = userRole === "admin";
+  const isSuperAdmin = Boolean(profile?.is_super_admin) || isAdmin;
+
+  const userAccessStatus: "pending_approval" | "active" | "banned" = useMemo(() => {
+    if (userRole === "admin") return "active";
+    const rawStatus = (profile?.access_status || "").toLowerCase().trim();
+    if (rawStatus === "pending_approval" || rawStatus === "banned" || rawStatus === "active") {
+      return rawStatus as any;
+    }
+    return "active";
+  }, [profile?.access_status, userRole]);
+
+  const isPendingApproval = userAccessStatus === "pending_approval" && userRole !== "admin";
+  const isBanned = userAccessStatus === "banned";
+
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
+    const targetAccessStatus = userRole === "admin" ? "active" : "pending_approval";
 
     if (targetUserId && isConfigured) {
       try {
-        const res = await markProfileOnboardingComplete(targetUserId, targetBrandId);
+        const res = await markProfileOnboardingComplete(targetUserId, targetBrandId, targetAccessStatus);
         if (res.data) {
           setProfile(res.data);
         }
@@ -544,11 +568,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("spark_onboarding_complete", "true");
+        localStorage.setItem("spark_access_status", targetAccessStatus);
       }
     } catch {}
 
     setIsOnboardingComplete(true);
-  }, [currentUser, session, isConfigured, brand]);
+  }, [currentUser, session, isConfigured, brand, userRole]);
 
   const updateProfile = useCallback((displayName: string, email?: string) => {
     const targetEmail = email || currentUser?.email || "creator@spark.ai";
@@ -580,14 +605,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, brand]);
 
-  const userRole: "executive" | "admin" = useMemo(() => {
-    const rawRole = (profile?.role || "").toLowerCase().trim();
-    return rawRole === "admin" ? "admin" : "executive";
-  }, [profile?.role]);
-
-  const isAdmin = userRole === "admin";
-  const isSuperAdmin = Boolean(profile?.is_super_admin) || isAdmin;
-
   const value = useMemo<AuthContextValue>(() => ({
     currentUser,
     session,
@@ -597,6 +614,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: userRole,
     isAdmin,
     isSuperAdmin,
+    accessStatus: userAccessStatus,
+    isPendingApproval,
+    isBanned,
     loading,
     isAuthenticated,
     isConfigured,
@@ -632,8 +652,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     deleteWorkspace,
     error,
     isAdmin,
+    isBanned,
     isConfigured,
     isOnboardingComplete,
+    isPendingApproval,
     isSuperAdmin,
     isAuthenticated,
     loading,
@@ -652,6 +674,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     switchBrand,
     updateProfile,
+    userAccessStatus,
     userRole,
   ]);
 
