@@ -499,6 +499,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               posts: a.posts || 0,
             });
 
+            // Hydrate cleanup: sanitize cloud row if it was stored with multiple @@
+            if (a.handle && a.handle.startsWith("@@") && activeBrandId) {
+              void import("../backend/workspaceSync").then(({ persistAccountToken }) => {
+                void persistAccountToken(activeBrandId, {
+                  platform: pKey,
+                  handle: cleanHandle,
+                  displayName: a.displayName || cleanHandle,
+                  status: isConn ? "connected" : "needs_reconnect",
+                  permissions: a.permissions || {},
+                });
+              });
+            }
+
             // Seed local token cache if tokens exist in cloud row
             if (a.accessToken || a.refreshToken) {
               const stored = socialConnectorFramework.getStoredTokens();

@@ -47,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let payload: any;
 
     if (p.includes("youtube")) {
-      payload = await ingestYouTube(access_token);
+      payload = await ingestYouTube(access_token, channel_id);
     } else if (p.includes("twitter") || p === "x" || p.includes("twitter/x")) {
       payload = await ingestX(access_token, channel_id);
     } else if (p.includes("tiktok")) {
@@ -202,18 +202,59 @@ function unavailable(platform: string, reason: string) {
   };
 }
 
-async function ingestYouTube(accessToken: string) {
-  // 1) Channel statistics + snippet (always available with youtube.readonly)
-  const chRes = await fetch(
-    "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,status&mine=true",
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  const chText = await chRes.text();
-  if (!chRes.ok) {
-    throw new Error(`YouTube channels API ${chRes.status}: ${chText.slice(0, 400)}`);
+async function ingestYouTube(accessToken: string, channelId?: string) {
+  let channel: any = null;
+
+  // 1) Prefer direct channel lookup if channelId / handle provided
+  if (channelId && typeof channelId === "string" && channelId.trim()) {
+    const rawId = channelId.trim();
+    if (rawId.startsWith("@")) {
+      const cleanHandle = normalizeHandle(rawId).replace(/^@+/, "");
+      try {
+        const handleRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,status&forHandle=${encodeURIComponent(cleanHandle)}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (handleRes.ok) {
+          const handleData = await handleRes.json();
+          if (handleData?.items?.[0]) {
+            channel = handleData.items[0];
+          }
+        }
+      } catch (err) {
+        console.warn("[social-analytics] YouTube channels forHandle fetch error:", err);
+      }
+    } else {
+      try {
+        const idRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,status&id=${encodeURIComponent(rawId)}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (idRes.ok) {
+          const idData = await idRes.json();
+          if (idData?.items?.[0]) {
+            channel = idData.items[0];
+          }
+        }
+      } catch (err) {
+        console.warn("[social-analytics] YouTube channels id fetch error:", err);
+      }
+    }
   }
-  const chData = JSON.parse(chText);
-  const channel = chData?.items?.[0];
+
+  // Fallback to mine=true (always available with youtube.readonly)
+  if (!channel) {
+    const chRes = await fetch(
+      "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,status&mine=true",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const chText = await chRes.text();
+    if (!chRes.ok) {
+      throw new Error(`YouTube channels API ${chRes.status}: ${chText.slice(0, 400)}`);
+    }
+    const chData = JSON.parse(chText);
+    channel = chData?.items?.[0];
+  }
   if (!channel) {
     return {
       platform: "YouTube Shorts",
@@ -248,10 +289,12 @@ async function ingestYouTube(accessToken: string) {
   // 2) Recent uploads with per-video stats (existing content)
   let content: any[] = [];
   try {
-    const searchRes = await fetch(
-      "https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&order=date&maxResults=15",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const searchUrl = channel.id
+      ? `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${encodeURIComponent(channel.id)}&type=video&order=date&maxResults=15`
+      : "https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&order=date&maxResults=15";
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     if (searchRes.ok) {
       const searchData = await searchRes.json();
       const ids = (searchData.items || [])
