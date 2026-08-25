@@ -4,7 +4,7 @@ import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
 import { VoiceStudioModal } from "./ui/VoiceStudioModal";
 import { previewElevenLabsVoice } from "../services/runtime/providers/elevenLabsTTS";
-import { getOAuthAuthorizationUrl } from "../services/socialIntegrationService";
+import { getOAuthAuthorizationUrl, normalizeHandle } from "../services/socialIntegrationService";
 import {
   Brain,
   Mic,
@@ -897,7 +897,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                           <div className={`w-2 h-2 rounded-full ${isConn ? "bg-success" : "bg-amber-500"}`} />
                           <div>
                             <p className="text-sm font-medium">{account.platform}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{account.handle}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{normalizeHandle(account.handle)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">

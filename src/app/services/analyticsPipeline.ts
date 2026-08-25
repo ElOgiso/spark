@@ -6,6 +6,7 @@
 import { createAnalyticsSnapshot } from "../backend/repositories/analyticsRepository";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import type { AnalyticsInsight } from "../domain/types";
+import { normalizeHandle } from "../domain/accountUtils";
 import {
   getBrandWorkspaceId,
   getStoredAccountTokens,
@@ -234,9 +235,10 @@ function enrichTokenFromAnalytics(
   record: PlatformAnalyticsRecord
 ): ConnectedAccountToken {
   const p = record.profile;
+  const rawHandle = p?.username || token.handle;
   return {
     ...token,
-    handle: p?.username || token.handle,
+    handle: normalizeHandle(rawHandle),
     displayName: p?.displayName || token.displayName,
     avatar: p?.avatarUrl || token.avatar,
     channelId: p?.channelId || token.channelId,
@@ -558,10 +560,11 @@ function tokenToProfileCard(
   source: LiveAccountProfileCard["source"],
   error?: string
 ): LiveAccountProfileCard {
+  const cleanHandle = normalizeHandle(token.handle);
   return {
     platform: token.platform,
-    displayName: token.displayName || token.handle || token.platform,
-    username: token.handle || "",
+    displayName: token.displayName || cleanHandle || token.platform,
+    username: cleanHandle,
     avatarUrl: token.avatar || "",
     channelId: token.channelId || "",
     verified: Boolean(token.verified),

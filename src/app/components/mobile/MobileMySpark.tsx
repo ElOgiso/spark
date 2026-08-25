@@ -50,6 +50,7 @@ import {
   BRAND_STYLE_OPTIONS,
   seedDefaultAudience,
 } from "../../domain/brandOptions";
+import { normalizeHandle } from "../../domain/accountUtils";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -939,7 +940,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                     <div className="w-2 h-2 rounded-full bg-success shrink-0" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{account.platform}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono truncate">{account.handle}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono truncate">{normalizeHandle(account.handle)}</p>
                     </div>
                   </div>
                   <span className="text-[11px] text-success font-semibold font-mono">Connected</span>

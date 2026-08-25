@@ -1,5 +1,5 @@
 import { MemoryCategory } from "../database.types";
-import { normalizePlatformKey } from "../../services/socialIntegrationService";
+import { normalizePlatformKey, normalizeHandle } from "../../domain/accountUtils";
 import type {
   AccountRow,
   AnalyticsSnapshotRow,
@@ -462,8 +462,8 @@ export function accountRowToDomain(row: any): Account {
 
   return {
     platform: pKey,
-    handle: row.handle || row.username || row.display_name || "",
-    displayName: row.display_name || row.handle || pKey,
+    handle: normalizeHandle(row.handle || row.username || row.display_name || ""),
+    displayName: row.display_name || normalizeHandle(row.handle) || pKey,
     status: isConnected ? "connected" : isNeedsReconnect ? "needs_reconnect" : "disconnected",
     posts: 0,
     accessToken: perms.access_token || undefined,

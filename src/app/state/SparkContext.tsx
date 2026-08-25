@@ -28,6 +28,7 @@ import {
   Offer,
   OfferType,
 } from "../domain/types";
+import { normalizeHandle } from "../domain/accountUtils";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
 import { eventBus } from "../services/runtime/eventBus";
@@ -461,7 +462,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .filter((t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase()))
       .map((t) => ({
         platform: t.platform,
-        handle: t.handle || "",
+        handle: normalizeHandle(t.handle),
         status: "connected" as const,
         posts: t.postsCount || 0,
       }));
@@ -489,9 +490,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               !isExplicitInvalid &&
               (statusStr === "connected" || statusStr === "active" || statusStr === "refreshing" || hasRefresh);
 
+            const cleanHandle = normalizeHandle(a.handle || a.displayName);
+
             byPlatform.set(pKey, {
               platform: pKey,
-              handle: a.handle || a.displayName || "",
+              handle: cleanHandle,
               status: isConn ? "connected" : "needs_reconnect",
               posts: a.posts || 0,
             });
@@ -500,11 +503,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (a.accessToken || a.refreshToken) {
               const stored = socialConnectorFramework.getStoredTokens();
               const existing = stored[pKey];
-              if (!existing || !existing.accessToken) {
+              if (!existing || !existing.accessToken || (existing.handle && existing.handle.startsWith("@@"))) {
                 socialConnectorFramework.saveToken({
                   platform: pKey,
-                  handle: a.handle || "",
-                  displayName: a.displayName || a.handle || pKey,
+                  handle: cleanHandle,
+                  displayName: a.displayName || cleanHandle || pKey,
                   avatar: a.avatar || "",
                   channelId: a.channelId || "",
                   verified: true,
@@ -537,7 +540,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             byPlatform.set(pKey, {
               platform: pKey,
-              handle: a.handle || "",
+              handle: normalizeHandle(a.handle),
               status: isConn ? "connected" : "needs_reconnect",
               posts: 0,
             });
@@ -599,6 +602,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const onAccountConnected = (ev: Event) => {
       const detail = (ev as CustomEvent).detail || {};
       if (!detail.platform) return;
+      const cleanHandle = normalizeHandle(detail.handle);
       setState((prev: any) => {
         const others = (prev.accounts || []).filter(
           (a: Account) => a.platform !== detail.platform
@@ -609,7 +613,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...others,
             {
               platform: detail.platform,
-              handle: detail.handle || "",
+              handle: cleanHandle,
               status: "connected" as const,
               posts: 0,
             },
@@ -620,7 +624,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (id) {
         void persistAccountToken(id, {
           platform: detail.platform,
-          handle: detail.handle,
+          handle: cleanHandle,
           displayName: detail.displayName,
           status: "connected",
         });

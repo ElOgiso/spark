@@ -475,9 +475,11 @@ export async function persistAccountToken(brandId: string, account: any) {
   try {
     const { supabase } = await import("./supabaseClient");
     if (!supabase) return;
-    const { normalizePlatformKey } = await import("../services/socialIntegrationService");
+    const { normalizePlatformKey, normalizeHandle } = await import("../domain/accountUtils");
     const now = new Date().toISOString();
     const pKey = normalizePlatformKey(account.platform || "youtube");
+    const rawHandle = account.handle || account.username;
+    const cleanHandle = rawHandle ? normalizeHandle(rawHandle) : null;
     const permissions =
       account.permissions && typeof account.permissions === "object"
         ? account.permissions
@@ -490,7 +492,7 @@ export async function persistAccountToken(brandId: string, account: any) {
       {
         brand_id: brandId,
         platform: pKey,
-        handle: account.handle || account.username || null,
+        handle: cleanHandle,
         display_name: account.displayName || account.display_name || null,
         status:
           String(account.status || "connected").toLowerCase() === "connected"

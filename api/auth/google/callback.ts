@@ -4,6 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function normalizeHandle(raw: string | null | undefined): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  return "@" + s.replace(/^@+/, "");
+}
+
 async function upsertConnectedAccount(input: {
   brandId: string;
   platform: string;
@@ -55,7 +61,7 @@ async function upsertConnectedAccount(input: {
   const payload = {
     brand_id: input.brandId,
     platform: input.platform,
-    handle: input.handle,
+    handle: normalizeHandle(input.handle),
     display_name: input.displayName,
     status: "connected",
     permissions: {
@@ -92,20 +98,29 @@ async function upsertConnectedAccount(input: {
   return { ok: true };
 }
 
-async function fetchYouTubeChannel(accessToken: string): Promise<{
+async function fetchYouTubeChannelProfile(accessToken: string): Promise<{
   profile: any | null;
   apiStatus: number | null;
   apiBody: string;
 }> {
   try {
     const profileRes = await fetch(
-      "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      "https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,statistics&mine=true",
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      }
     );
-    const apiBody = await profileRes.text();
-    console.log("[google/callback] YouTube channels status:", profileRes.status);
 
+    const apiBody = await profileRes.text();
     if (!profileRes.ok) {
+      console.warn(
+        "[google/callback] YouTube channels?mine=true status:",
+        profileRes.status,
+        apiBody
+      );
       return { profile: null, apiStatus: profileRes.status, apiBody };
     }
 
@@ -118,13 +133,13 @@ async function fetchYouTubeChannel(accessToken: string): Promise<{
 
     if (profileData?.items?.[0]) {
       const item = profileData.items[0];
+      const rawHandle =
+        item.snippet.customUrl ||
+        item.snippet.title.toLowerCase().replace(/\s+/g, "");
       return {
         profile: {
           displayName: item.snippet.title,
-          username: `@${
-            item.snippet.customUrl ||
-            item.snippet.title.toLowerCase().replace(/\s+/g, "")
-          }`,
+          username: normalizeHandle(rawHandle),
           avatarUrl: item.snippet.thumbnails?.default?.url || "",
           channelId: item.id,
           subscriberCount: parseInt(item.statistics?.subscriberCount || "0", 10),
@@ -171,7 +186,7 @@ async function fetchGoogleUserInfo(accessToken: string): Promise<any | null> {
       .toLowerCase();
     return {
       displayName: name,
-      username: `@${handleBase || "youtube"}`,
+      username: normalizeHandle(handleBase || "youtube"),
       avatarUrl: u.picture || "",
       channelId: u.sub || "",
       email: u.email || "",
@@ -201,32 +216,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { code, redirect_uri, workspace_id, state } = req.body || {};
-
-    console.log("[api/auth/google/callback] Received POST", {
-      codeExists: !!code,
-      redirect_uri,
-      workspace_id,
-      state,
-    });
-
+    const { code, redirect_uri, workspace_id } = req.body || {};
     if (!code) {
       return res.status(400).json({ error: "Missing authorization code" });
     }
 
-    const clientId =
-      process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
-    if (!clientSecret) {
-      return res
-        .status(500)
-        .json({ error: "GOOGLE_CLIENT_SECRET not configured on server" });
-    }
-    if (!clientId) {
-      return res
-        .status(500)
-        .json({ error: "GOOGLE_CLIENT_ID not configured on server" });
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({
+        error: "Google OAuth credentials not configured on server",
+      });
     }
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -259,7 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1) Prefer YouTube channel profile
-    const yt = await fetchYouTubeChannel(tokenData.access_token);
+    const yt = await fetchYouTubeChannelProfile(tokenData.access_token);
     let profile = yt.profile;
 
     // 2) Fallback: Google account profile (no channel / API issue / empty items)

@@ -52,6 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+function normalizeHandle(raw: string | null | undefined): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  return "@" + s.replace(/^@+/, "");
+}
+
 async function fetchYouTubeProfile(accessToken: string) {
   const res = await fetch(
     "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings,status&mine=true",
@@ -67,11 +73,8 @@ async function fetchYouTubeProfile(accessToken: string) {
 
   const title = item.snippet?.title || "YouTube Channel";
   const customUrl = item.snippet?.customUrl || "";
-  const username = customUrl
-    ? customUrl.startsWith("@")
-      ? customUrl
-      : `@${customUrl}`
-    : `@${title.toLowerCase().replace(/\s+/g, "")}`;
+  const rawHandle = customUrl || title.toLowerCase().replace(/\s+/g, "");
+  const username = normalizeHandle(rawHandle);
 
   return {
     platform: "YouTube Shorts",

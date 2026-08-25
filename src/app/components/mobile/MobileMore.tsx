@@ -12,6 +12,7 @@ import {
   listLiveConnectedAccounts,
   buildPlatformAccountMap,
   CanonicalPlatformAccount,
+  normalizeHandle,
   socialConnectorFramework,
   ensureValidGoogleAccess,
 } from "../../services/socialIntegrationService";
@@ -612,7 +613,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-                          {isConnected || needsReconnect ? conn?.handle || "Linked Account" : "Not Connected"}
+                          {isConnected || needsReconnect ? normalizeHandle(conn?.handle) || "Linked Account" : "Not Connected"}
                         </p>
                       </div>
                       

@@ -13,6 +13,7 @@ import {
   buildPlatformAccountMap,
   CanonicalPlatformAccount,
   normalizePlatformKey,
+  normalizeHandle,
   socialConnectorFramework,
   getBrandWorkspaceId,
   ensureValidGoogleAccess,
@@ -996,7 +997,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1 font-mono">
-                              {isConnected || needsReconnect ? conn?.handle || "Linked Account" : "Not Connected"}
+                              {isConnected || needsReconnect ? normalizeHandle(conn?.handle) || "Linked Account" : "Not Connected"}
                             </p>
                           </div>
                         </div>

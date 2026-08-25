@@ -9,6 +9,9 @@
  */
 
 import { eventBus } from "./runtime/eventBus";
+import { normalizeHandle } from "../domain/accountUtils";
+
+export { normalizeHandle };
 
 export type AccountConnectionStatus =
   | "Connecting"
@@ -735,8 +738,8 @@ export function buildPlatformAccountMap(
     map.set(pKey, {
       platform: pKey,
       rawPlatform: t.platform,
-      handle: t.handle || "",
-      displayName: t.displayName || t.handle || pKey,
+      handle: normalizeHandle(t.handle),
+      displayName: t.displayName || normalizeHandle(t.handle) || pKey,
       avatar: t.avatar,
       status: isConn ? "connected" : hasRefresh ? "needs_reconnect" : "disconnected",
       active: isConn,
@@ -767,15 +770,15 @@ export function buildPlatformAccountMap(
           existing.status = "connected";
           existing.active = true;
         }
-        if (acc.handle && !existing.handle) existing.handle = acc.handle;
+        if (acc.handle && !existing.handle) existing.handle = normalizeHandle(acc.handle);
         if (acc.displayName && !existing.displayName) existing.displayName = acc.displayName;
         if (acc.avatar && !existing.avatar) existing.avatar = acc.avatar;
       } else {
         map.set(pKey, {
           platform: pKey,
           rawPlatform: acc.platform,
-          handle: acc.handle || "",
-          displayName: acc.displayName || acc.handle || pKey,
+          handle: normalizeHandle(acc.handle),
+          displayName: acc.displayName || normalizeHandle(acc.handle) || pKey,
           avatar: acc.avatar,
           status: isConn ? "connected" : hasRefresh ? "needs_reconnect" : "disconnected",
           active: isConn,
@@ -848,11 +851,16 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
     try {
       const stored = this.getStoredTokens();
       const pKey = normalizePlatformKey(token.platform);
-      stored[pKey] = { ...token, platform: pKey };
+      const cleanToken = {
+        ...token,
+        platform: pKey,
+        handle: normalizeHandle(token.handle),
+      };
+      stored[pKey] = cleanToken;
       localStorage.setItem("spark_social_account_tokens_v2", JSON.stringify(stored));
       // silent=true when analytics pipeline enriches cache (avoid re-sync loops)
       if (!opts?.silent) {
-        eventBus.emit("ACCOUNT_CONNECTED", { platform: pKey, handle: token.handle });
+        eventBus.emit("ACCOUNT_CONNECTED", { platform: pKey, handle: cleanToken.handle });
       }
     } catch (err) {
       console.warn("[SocialConnectorFramework] Token save error:", err);
@@ -868,7 +876,11 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
       Object.entries(parsed).forEach(([k, tok]: [string, any]) => {
         if (tok && typeof tok === "object") {
           const pKey = normalizePlatformKey(tok.platform || k);
-          normalized[pKey] = { ...tok, platform: pKey };
+          normalized[pKey] = {
+            ...tok,
+            platform: pKey,
+            handle: normalizeHandle(tok.handle),
+          };
         }
       });
       return normalized;
@@ -981,27 +993,31 @@ export function getOAuthAuthorizationUrl(platform: string): string {
 }
 
 export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
-  socialConnectorFramework.saveToken(token);
+  const cleanToken = {
+    ...token,
+    handle: normalizeHandle(token.handle),
+  };
+  socialConnectorFramework.saveToken(cleanToken);
   const brandId = getBrandWorkspaceId();
   if (brandId) {
     void import("../backend/workspaceSync").then(({ persistAccountToken }) => {
-      void persistAccountToken(brandId, token);
+      void persistAccountToken(brandId, cleanToken);
     });
   }
   // Notify workspace UI to merge connected account into live accounts list
   try {
     eventBus.emit("ACCOUNT_CONNECTED", {
-      platform: token.platform,
-      handle: token.handle,
-      displayName: token.displayName,
+      platform: cleanToken.platform,
+      handle: cleanToken.handle,
+      displayName: cleanToken.displayName,
       status: "Connected",
     });
     window.dispatchEvent(
       new CustomEvent("spark-account-connected", {
         detail: {
-          platform: token.platform,
-          handle: token.handle,
-          displayName: token.displayName,
+          platform: cleanToken.platform,
+          handle: cleanToken.handle,
+          displayName: cleanToken.displayName,
         },
       })
     );
@@ -1156,7 +1172,7 @@ export async function ensureValidGoogleAccess(
         void persistAccountToken(brandId, {
           platform: "YouTube Shorts",
           status: "connected",
-          handle: token?.handle || "YouTube",
+          handle: normalizeHandle(token?.handle) || "@youtube",
           displayName: token?.displayName || "YouTube",
           avatar: token?.avatar,
           permissions: {
@@ -1173,7 +1189,7 @@ export async function ensureValidGoogleAccess(
           new CustomEvent("spark-account-connected", {
             detail: {
               platform: "YouTube Shorts",
-              handle: token?.handle,
+              handle: normalizeHandle(token?.handle),
               displayName: token?.displayName,
             },
           })
@@ -1217,8 +1233,8 @@ export function listLiveConnectedAccounts(): Array<{
     .filter((a) => a.status === "connected" || a.status === "needs_reconnect")
     .map((a) => ({
       platform: a.platform,
-      handle: a.handle || "",
-      displayName: a.displayName || a.handle || a.platform,
+      handle: normalizeHandle(a.handle),
+      displayName: a.displayName || normalizeHandle(a.handle) || a.platform,
       status: a.status as "connected" | "needs_reconnect",
       active: a.active,
     }));
@@ -1260,8 +1276,8 @@ export async function fetchLiveAccountProfiles(): Promise<LiveAccountProfileCard
 
   return tokens.map((token) => ({
     platform: token.platform,
-    displayName: token.displayName || token.handle || token.platform,
-    username: token.handle || "",
+    displayName: token.displayName || normalizeHandle(token.handle) || token.platform,
+    username: normalizeHandle(token.handle),
     avatarUrl: token.avatar || "",
     channelId: token.channelId || "",
     verified: Boolean(token.verified),

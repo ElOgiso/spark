@@ -13,6 +13,7 @@ import {
 
 import { getStoredTheme, type ThemeMode } from "../theme";
 import { DesktopSparkMediaHome } from "./DesktopSparkMediaHome";
+import { normalizeHandle } from "../domain/accountUtils";
 
 interface SparkHomeProps {
   onNavigate: (path: string) => void;
@@ -140,7 +141,7 @@ function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
       color: "text-accent-foreground", bg: "bg-accent/10", border: "border-accent/30",
       items: connectedAccounts.length > 0
         ? connectedAccounts.map((a: any) => ({
-            text: `${a.platform} (${a.handle || "Connected"})`,
+            text: `${a.platform} (${normalizeHandle(a.handle) || "Connected"})`,
             sub: "Connected publishing channel ready for automated distribution",
             path: "/more/accounts",
           }))

@@ -4,6 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function normalizeHandle(raw: string | null | undefined): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  return "@" + s.replace(/^@+/, "");
+}
+
 /**
  * Phase 6J — Live multi-platform analytics ingestion proxy.
  * Body: { platform, access_token, channel_id?, workspace_id? }
@@ -236,11 +242,8 @@ async function ingestYouTube(accessToken: string) {
   const videoCount = parseInt(channel.statistics?.videoCount || "0", 10);
   const title = channel.snippet?.title || "YouTube Channel";
   const customUrl = channel.snippet?.customUrl || "";
-  const username = customUrl
-    ? customUrl.startsWith("@")
-      ? customUrl
-      : `@${customUrl}`
-    : `@${title.toLowerCase().replace(/\s+/g, "")}`;
+  const rawHandle = customUrl || title.toLowerCase().replace(/\s+/g, "");
+  const username = normalizeHandle(rawHandle);
 
   // 2) Recent uploads with per-video stats (existing content)
   let content: any[] = [];
