@@ -306,13 +306,18 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
       console.error("[YouTubeAdapter] VITE_GOOGLE_CLIENT_ID not configured");
       return "#";
     }
+    const tokens = socialConnectorFramework.getStoredTokens();
+    const existing = tokens["YouTube Shorts"] || tokens["YouTube"] || tokens["youtube"];
+    const hasRefreshToken = Boolean(existing?.refreshToken);
+
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
       response_type: "code",
       scope: config.scopes.join(" "),
       access_type: "offline",
-      prompt: "consent",
+      include_granted_scopes: "true",
+      prompt: hasRefreshToken ? "consent select_account" : "consent",
       state: `spark_oauth_youtube_${Date.now()}`,
     });
     return `${config.authUrl}?${params.toString()}`;
@@ -963,6 +968,117 @@ export async function disconnectConnectedAccount(platform: string): Promise<void
   }
 }
 
+/**
+ * Ensure valid Google/YouTube access token.
+ * Refreshes silently using refresh_token if expired or within 5 min of expiry.
+ * Connected means: refresh_token present + not revoked.
+ */
+export async function ensureValidGoogleAccess(
+  accountOrPlatform?: string | { platform?: string; accessToken?: string; refreshToken?: string; expiresAt?: number }
+): Promise<string | null> {
+  const pKey = typeof accountOrPlatform === "string" ? accountOrPlatform : (accountOrPlatform?.platform || "YouTube Shorts");
+  const stored = socialConnectorFramework.getStoredTokens();
+  const normKey = normalizePlatformKey(pKey);
+  const token = stored[normKey] || stored["YouTube Shorts"] || stored["YouTube"] || stored["youtube"];
+
+  const effectiveRefreshToken = (typeof accountOrPlatform === "object" && accountOrPlatform?.refreshToken) || token?.refreshToken;
+  const effectiveAccessToken = (typeof accountOrPlatform === "object" && accountOrPlatform?.accessToken) || token?.accessToken;
+  const effectiveExpiresAt = (typeof accountOrPlatform === "object" && accountOrPlatform?.expiresAt) || token?.expiresAt || 0;
+
+  if (!effectiveRefreshToken) {
+    if (token) {
+      token.status = "Needs Reauthorization";
+      socialConnectorFramework.saveToken(token, { silent: true });
+    }
+    return null;
+  }
+
+  const SKEW_MS = 5 * 60 * 1000; // 5 minutes
+  if (effectiveAccessToken && effectiveExpiresAt > Date.now() + SKEW_MS) {
+    return effectiveAccessToken;
+  }
+
+  // Token is expired or expiring within 5 minutes — refresh silently
+  console.log(`[ensureValidGoogleAccess] Performing silent OAuth refresh for Google/YouTube...`);
+  try {
+    const brandId = getBrandWorkspaceId();
+    const res = await fetch("/api/auth/google/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        refresh_token: effectiveRefreshToken,
+        workspace_id: brandId,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const newAccessToken = data.access_token;
+      const newRefreshToken = data.refresh_token || effectiveRefreshToken;
+      const newExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+
+      if (token) {
+        token.accessToken = newAccessToken;
+        token.refreshToken = newRefreshToken;
+        token.expiresAt = newExpiresAt;
+        token.status = "Connected";
+        socialConnectorFramework.saveToken(token, { silent: true });
+      }
+
+      if (brandId) {
+        const { persistAccountToken } = await import("../backend/workspaceSync");
+        void persistAccountToken(brandId, {
+          platform: "YouTube Shorts",
+          status: "connected",
+          handle: token?.handle || "YouTube",
+          displayName: token?.displayName || "YouTube",
+          avatar: token?.avatar,
+          permissions: {
+            access_token: newAccessToken,
+            refresh_token: newRefreshToken,
+            expires_at: Math.floor(newExpiresAt / 1000),
+          },
+        });
+      }
+
+      // Notify UI that connection is verified and alive
+      try {
+        window.dispatchEvent(
+          new CustomEvent("spark-account-connected", {
+            detail: {
+              platform: "YouTube Shorts",
+              handle: token?.handle,
+              displayName: token?.displayName,
+            },
+          })
+        );
+      } catch {}
+
+      return newAccessToken;
+    } else {
+      const errText = await res.text();
+      console.warn("[ensureValidGoogleAccess] Refresh failed:", res.status, errText);
+      if (res.status === 400 || res.status === 401) {
+        if (token) {
+          token.status = "Needs Reauthorization";
+          socialConnectorFramework.saveToken(token, { silent: true });
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("spark-account-needs-reconnect", {
+              detail: { platform: "YouTube Shorts" },
+            })
+          );
+        } catch {}
+      }
+      return null;
+    }
+  } catch (err) {
+    console.warn("[ensureValidGoogleAccess] Network error during refresh:", err);
+    return null;
+  }
+}
+
 /** Live connected platforms from local OAuth token store only (no mock fillers). */
 export function listLiveConnectedAccounts(): Array<{
   platform: string;
@@ -974,7 +1090,13 @@ export function listLiveConnectedAccounts(): Array<{
   return Object.values(getStoredAccountTokens())
     .map((t) => {
       const statusLower = String(t.status || "").toLowerCase();
-      const isConn = !t.status || ["connected", "refreshing", "active"].includes(statusLower);
+      const hasRefresh = Boolean(t.refreshToken);
+      const isExplicitInvalid =
+        statusLower === "needs reauthorization" ||
+        statusLower === "needs_reconnect" ||
+        statusLower === "disconnected" ||
+        (statusLower === "expired" && !hasRefresh);
+      const isConn = !isExplicitInvalid && (hasRefresh || ["connected", "refreshing", "active"].includes(statusLower));
       return {
         platform: t.platform,
         handle: t.handle || "",

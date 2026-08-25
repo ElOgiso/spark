@@ -34,6 +34,24 @@ async function upsertConnectedAccount(input: {
   const supabase = createClient(supabaseUrl, supabaseKey);
   const now = new Date().toISOString();
   const expiresAtMs = Date.now() + (input.expiresInSeconds || 3600) * 1000;
+
+  // CRITICAL: Preserve existing refresh_token if Google omits it on re-authentication
+  let existingRefreshToken: string | null = null;
+  let existingPermissions: Record<string, unknown> = {};
+  const { data: existingRows } = await (supabase.from("accounts") as any)
+    .select("id, permissions")
+    .eq("brand_id", input.brandId)
+    .in("platform", [input.platform, "YouTube Shorts", "YouTube", "youtube"])
+    .limit(1);
+
+  const existingRow = existingRows?.[0];
+  if (existingRow?.permissions && typeof existingRow.permissions === "object") {
+    existingPermissions = existingRow.permissions as Record<string, unknown>;
+    existingRefreshToken = (existingPermissions.refresh_token as string) || null;
+  }
+
+  const effectiveRefreshToken = input.refreshToken || existingRefreshToken || null;
+
   const payload = {
     brand_id: input.brandId,
     platform: input.platform,
@@ -41,12 +59,13 @@ async function upsertConnectedAccount(input: {
     display_name: input.displayName,
     status: "connected",
     permissions: {
+      ...existingPermissions,
       access_token: input.accessToken,
-      refresh_token: input.refreshToken || null,
+      refresh_token: effectiveRefreshToken,
       expires_at: Math.floor(expiresAtMs / 1000),
-      platform_user_id: input.platformUserId || null,
-      avatar: input.avatar || null,
-      scopes: input.scopes || [],
+      platform_user_id: input.platformUserId || (existingPermissions.platform_user_id as string) || null,
+      avatar: input.avatar || (existingPermissions.avatar as string) || null,
+      scopes: input.scopes && input.scopes.length > 0 ? input.scopes : (existingPermissions.scopes as string[]) || [],
       ...(input.extraPermissions || {}),
     },
     connected_at: now,
@@ -58,15 +77,10 @@ async function upsertConnectedAccount(input: {
     onConflict: "brand_id,platform",
   });
   if (error) {
-    const existing = await (supabase.from("accounts") as any)
-      .select("id")
-      .eq("brand_id", input.brandId)
-      .eq("platform", input.platform)
-      .maybeSingle();
-    if (existing?.data?.id) {
+    if (existingRow?.id) {
       const { error: uErr } = await (supabase.from("accounts") as any)
         .update(payload)
-        .eq("id", existing.data.id);
+        .eq("id", existingRow.id);
       if (uErr) return { ok: false, error: uErr.message };
     } else {
       const { error: iErr } = await (supabase.from("accounts") as any).insert(

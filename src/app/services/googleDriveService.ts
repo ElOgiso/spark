@@ -23,12 +23,9 @@ export async function uploadToUserGoogleDriveIfConnected(params: {
 
   try {
     // 1. Check for user Google Drive access token from connected accounts or storage
-    const { getStoredAccountTokens } = await import("./socialIntegrationService");
-    const tokens = getStoredAccountTokens();
+    const { ensureValidGoogleAccess } = await import("./socialIntegrationService");
     const googleToken =
-      tokens.google?.accessToken ||
-      tokens["Google"]?.accessToken ||
-      tokens["YouTube"]?.accessToken ||
+      (await ensureValidGoogleAccess("YouTube Shorts")) ||
       localStorage.getItem("spark_google_drive_token");
 
     if (!googleToken) {

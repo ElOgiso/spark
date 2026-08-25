@@ -5,7 +5,7 @@ import { ModelRouter } from "../../services/runtime/modelRouter";
 import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../../services/runtime/modelCatalog";
 import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { Button } from "../ds";
-import { getBrandWorkspaceId, disconnectConnectedAccount, getOAuthAuthorizationUrl, listLiveConnectedAccounts, socialConnectorFramework } from "../../services/socialIntegrationService";
+import { getBrandWorkspaceId, disconnectConnectedAccount, getOAuthAuthorizationUrl, listLiveConnectedAccounts, socialConnectorFramework, ensureValidGoogleAccess } from "../../services/socialIntegrationService";
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/workspaceSync";
 import { AuthPanel } from "../auth/AuthPanel";
@@ -189,17 +189,58 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
   const refreshMobileAccounts = () => {
     const live = listLiveConnectedAccounts();
-    setAccounts(
-      live.map((a, idx) => ({
+    const map = new Map<string, { id: string; platform: string; handle: string; followers: string; active: boolean; status: string }>();
+
+    live.forEach((a, idx) => {
+      map.set(a.platform, {
         id: String(idx + 1),
         platform: a.platform,
         handle: a.handle,
         followers: "—",
         active: a.active,
         status: a.status,
-      }))
-    );
+      });
+    });
+
+    if (contextAccounts && Array.isArray(contextAccounts)) {
+      contextAccounts.forEach((a: any) => {
+        if (!map.has(a.platform)) {
+          const isConn = String(a.status || "").toLowerCase() === "connected";
+          map.set(a.platform, {
+            id: String(map.size + 1),
+            platform: a.platform,
+            handle: a.handle || "",
+            followers: "—",
+            active: isConn,
+            status: isConn ? "connected" : "needs_reconnect",
+          });
+        }
+      });
+    }
+
+    setAccounts(Array.from(map.values()));
   };
+
+  useEffect(() => {
+    refreshMobileAccounts();
+
+    // Background ensure valid Google OAuth access
+    void ensureValidGoogleAccess("YouTube Shorts").then((validToken) => {
+      if (validToken) {
+        refreshMobileAccounts();
+      }
+    });
+
+    const onAccountUpdate = () => refreshMobileAccounts();
+    window.addEventListener("spark-account-connected", onAccountUpdate);
+    window.addEventListener("spark-account-disconnected", onAccountUpdate);
+    window.addEventListener("spark-account-needs-reconnect", onAccountUpdate);
+    return () => {
+      window.removeEventListener("spark-account-connected", onAccountUpdate);
+      window.removeEventListener("spark-account-disconnected", onAccountUpdate);
+      window.removeEventListener("spark-account-needs-reconnect", onAccountUpdate);
+    };
+  }, [contextAccounts]);
 
   const [team, setTeam] = useState(() =>
     auth.isAuthenticated

@@ -4,6 +4,7 @@ import {
   getBrandWorkspaceId,
   getGoogleRedirectUri,
   saveConnectedAccountToken,
+  getStoredAccountTokens,
 } from "../../services/socialIntegrationService";
 
 export function GoogleCallbackPage() {
@@ -71,6 +72,10 @@ export function GoogleCallbackPage() {
         setStatus("saving");
         const profile = data.profile || {};
         const now = new Date().toISOString();
+        const storedTokens = getStoredAccountTokens();
+        const existingToken = storedTokens["YouTube Shorts"] || storedTokens["YouTube"] || storedTokens["youtube"];
+        const effectiveRefreshToken = data.refresh_token || existingToken?.refreshToken || "";
+
         const token = {
           platform: "YouTube Shorts",
           handle: profile.username || "Unknown",
@@ -80,7 +85,7 @@ export function GoogleCallbackPage() {
           verified: true,
           status: "Connected" as any,
           accessToken: data.access_token,
-          refreshToken: data.refresh_token || "",
+          refreshToken: effectiveRefreshToken,
           expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
           scopes: (data.scope || "").split(" ").filter(Boolean),
           permissionsGranted: (data.scope || "").split(" ").filter(Boolean),

@@ -44,6 +44,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
+      console.warn("[api/auth/google/refresh] Refresh failed:", tokenRes.status, errText);
+
+      // If invalid_grant / revoked, update row status to needs_reconnect
+      if (workspace_id && UUID_RE.test(workspace_id) && (tokenRes.status === 400 || tokenRes.status === 401)) {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+          if (supabaseUrl && supabaseKey) {
+            const supabase = createClient(supabaseUrl, supabaseKey);
+            await (supabase.from("accounts") as any)
+              .update({
+                status: "needs_reconnect",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("brand_id", workspace_id)
+              .in("platform", ["youtube", "YouTube Shorts", "YouTube"]);
+          }
+        } catch (dbErr) {
+          console.warn("[api/auth/google/refresh] Failed to set needs_reconnect in DB:", dbErr);
+        }
+      }
+
       return res.status(tokenRes.status).json({
         error: "Google token refresh failed",
         detail: errText,

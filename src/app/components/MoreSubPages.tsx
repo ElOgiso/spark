@@ -12,6 +12,7 @@ import {
   listLiveConnectedAccounts,
   socialConnectorFramework,
   getBrandWorkspaceId,
+  ensureValidGoogleAccess,
 } from "../services/socialIntegrationService";
 import { NotificationService } from "../notifications/notificationService";
 import type { MemoryItem } from "../domain/types";
@@ -197,42 +198,96 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   }, [auth.brand?.id, character, productions, reviewItems]);
 
   // Accounts — live OAuth tokens only
-  const [accounts, setAccounts] = useState(() =>
-    listLiveConnectedAccounts().map((t, i) => ({
-      id: String(i + 1),
-      platform: t.platform,
-      handle: t.handle,
-      status: "Connected",
-      followers: "—",
-      active: true,
-    }))
-  );
+  // Accounts — live OAuth tokens & verified offline grants
+  const [accounts, setAccounts] = useState(() => {
+    const live = listLiveConnectedAccounts();
+    const ctxAccs = (spark?.accounts || []) as any[];
+    const map = new Map<string, { id: string; platform: string; handle: string; status: string; followers: string; active: boolean }>();
+
+    live.forEach((t, i) => {
+      map.set(t.platform, {
+        id: String(i + 1),
+        platform: t.platform,
+        handle: t.handle,
+        status: t.status === "connected" ? "connected" : "needs_reconnect",
+        followers: "—",
+        active: t.active,
+      });
+    });
+
+    ctxAccs.forEach((a, i) => {
+      if (!map.has(a.platform)) {
+        const isConn = String(a.status || "").toLowerCase() === "connected";
+        map.set(a.platform, {
+          id: String(map.size + 1),
+          platform: a.platform,
+          handle: a.handle || "",
+          status: isConn ? "connected" : "needs_reconnect",
+          followers: "—",
+          active: isConn,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  });
+
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
   const refreshLiveAccounts = () => {
-    setAccounts(
-      listLiveConnectedAccounts().map((t, i) => ({
+    const live = listLiveConnectedAccounts();
+    const ctxAccs = (spark?.accounts || []) as any[];
+    const map = new Map<string, { id: string; platform: string; handle: string; status: string; followers: string; active: boolean }>();
+
+    live.forEach((t, i) => {
+      map.set(t.platform, {
         id: String(i + 1),
         platform: t.platform,
         handle: t.handle,
-        status: "Connected",
+        status: t.status === "connected" ? "connected" : "needs_reconnect",
         followers: "—",
-        active: true,
-      }))
-    );
+        active: t.active,
+      });
+    });
+
+    ctxAccs.forEach((a) => {
+      if (!map.has(a.platform)) {
+        const isConn = String(a.status || "").toLowerCase() === "connected";
+        map.set(a.platform, {
+          id: String(map.size + 1),
+          platform: a.platform,
+          handle: a.handle || "",
+          status: isConn ? "connected" : "needs_reconnect",
+          followers: "—",
+          active: isConn,
+        });
+      }
+    });
+
+    setAccounts(Array.from(map.values()));
   };
 
   useEffect(() => {
     refreshLiveAccounts();
+
+    // Background ensure valid Google OAuth access on page mount
+    void ensureValidGoogleAccess("YouTube Shorts").then((validToken) => {
+      if (validToken) {
+        refreshLiveAccounts();
+      }
+    });
+
     const onChange = () => refreshLiveAccounts();
     window.addEventListener("spark-account-connected", onChange);
     window.addEventListener("spark-account-disconnected", onChange);
+    window.addEventListener("spark-account-needs-reconnect", onChange);
     return () => {
       window.removeEventListener("spark-account-connected", onChange);
       window.removeEventListener("spark-account-disconnected", onChange);
+      window.removeEventListener("spark-account-needs-reconnect", onChange);
     };
-  }, []);
+  }, [spark?.accounts]);
 
   const handleDisconnectPlatform = async (platformKey: string) => {
     if (
