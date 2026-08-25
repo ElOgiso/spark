@@ -3,7 +3,7 @@ import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack } from "./productionPromptPacks";
-import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP } from "../runtime/providerCapabilities";
+import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -1312,11 +1312,13 @@ No resets, no new character, no scrambled order.
 
                 try {
                   checkAborted();
+                  const sceneTargetDuration = parseInt(scene.duration) || (mode === "deep" ? 8 : 5);
                   const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: stageMotionPrompt,
                     referenceImageUrl: stageVisualLock.primaryRefUrl,
                     referenceImageUrls: stageVisualLock.imageUrls,
                     aspectRatio: identityPack.aspectRatio,
+                    durationSec: sceneTargetDuration,
                   });
                   checkAborted();
 
@@ -1353,7 +1355,7 @@ No resets, no new character, no scrambled order.
               }
             } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
-              const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 12) : (activeCreditSettings?.shortsDurationSec || 8);
+              const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 8) : (activeCreditSettings?.shortsDurationSec || 8);
               const beatInterval = Math.max(3, Math.floor(videoDurationSec / Math.max(1, currentStoryboard.length)));
               const sceneDescriptions = currentStoryboard
                 .map((s, i) => {
@@ -1380,7 +1382,7 @@ ${masterMotionVisualLock.refPromptHeader}
 ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
 `.trim();
 
-              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Refs: ${motionRefImages.length}]...`);
+              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Refs: ${motionRefImages.length}, Duration: ${videoDurationSec}s]...`);
               emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
 
               checkAborted();
@@ -1389,6 +1391,7 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
                 referenceImageUrl: masterMotionVisualLock.primaryRefUrl,
                 referenceImageUrls: motionRefImages,
                 aspectRatio: identityPack.aspectRatio,
+                durationSec: videoDurationSec,
               });
               checkAborted();
 
@@ -1664,29 +1667,48 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
     const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
     const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
 
-    // Dynamic Video Provider Physics: Read real single-shot native peak quality limit from capability map
-    const activeVideo = resolveActiveVideoProvider();
+    // Dynamic Video Provider Physics: Read real single-shot native peak quality limit and legal durations
+    const activeVideo = resolveActiveVideoProvider({
+      preferredVideoProvider: formatSettings?.preferredVideoProvider,
+    });
     const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
     const providerMaxClipSec = mode === "deep" ? Math.min(nativeMaxClipSec, 12) : nativeMaxClipSec;
     const isOneTake = targetSec <= providerMaxClipSec;
     const briefBeats = brief.beats || [];
+
+    // Calculate total scenes count
     const totalScenesCount = briefBeats.length > 0
       ? briefBeats.length
       : isOneTake
       ? 1
       : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
-    const perSceneSec = Math.max(4, Math.floor(targetSec / totalScenesCount));
 
-    console.log(`[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s) -> Sized ${totalScenesCount} scenes for ${targetSec}s target runtime.`);
+    // Calculate per-scene legal duration snapped to provider capability map (e.g. Veo: 4|6|8s, Grok: 1..15s)
+    const rawPerSceneSec = Math.max(1, Math.floor(targetSec / totalScenesCount));
+    const perSceneSec = snapToAllowedDuration(rawPerSceneSec, activeVideo.providerId);
+
+    console.log(`[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s, Allowed: [${activeVideo.allowedDurationsSec.join(",")}]) -> Sized ${totalScenesCount} scenes (${perSceneSec}s each) for ${targetSec}s target runtime.`);
 
     const storyboard: any[] = (brief.storyboard as any[]) || [];
     const scenesList: ProductionScene[] = [];
+    let cumulativeSec = 0;
 
     for (let i = 0; i < totalScenesCount; i++) {
       const idx = i + 1;
       const sbItem: any = storyboard[i] || storyboard[storyboard.length - 1];
       const beatItem = briefBeats[i] || briefBeats[briefBeats.length - 1];
       const clipUrl = brief.generatedAssets?.generatedVideos?.[i] || (i === 0 ? production.videoUrl || brief.videoUrl : undefined);
+
+      const sceneStartSec = cumulativeSec;
+      const sceneEndSec = sceneStartSec + perSceneSec;
+      cumulativeSec = sceneEndSec;
+
+      const formatTime = (s: number) => {
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      };
+      const continuousTimecode = `[${formatTime(sceneStartSec)}-${formatTime(sceneEndSec)}]`;
 
       const resolvedSpoken = beatItem?.spokenLines || sbItem?.scriptSnippet || (idx === 1 ? brief.hook : brief.spokenCta || "");
       const resolvedOnScreen = beatItem?.onScreenText || sbItem?.onScreenText || (idx === 1 ? "HOOK" : `SCENE ${idx}`);
@@ -1695,15 +1717,15 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       scenesList.push({
         scene: idx,
         duration: `${perSceneSec}s`,
-        shotList: sbItem?.shotList || `Scene ${idx} framing (${beatItem?.valueJob || "content"})`,
+        shotList: sbItem?.shotList || `${continuousTimecode} Scene ${idx} framing (${beatItem?.valueJob || "content"})`,
         cameraDirection: resolvedCamera,
         transitions: sbItem?.transitions || "Seamless flow",
         onScreenText: resolvedOnScreen,
         pacing: sbItem?.pacing || "Balanced",
         scriptSnippet: resolvedSpoken,
-        visualDescription: sbItem?.visualDescription || `[${(beatItem?.valueJob || "beat").toUpperCase()}] ${resolvedSpoken}`,
-        startState: sbItem?.startState || `Scene ${idx} start state`,
-        endState: sbItem?.endState || `Scene ${idx} end state`,
+        visualDescription: sbItem?.visualDescription || `${continuousTimecode} [${(beatItem?.valueJob || "beat").toUpperCase()}] ${resolvedSpoken}`,
+        startState: sbItem?.startState || `Scene ${idx} start state (${formatTime(sceneStartSec)})`,
+        endState: sbItem?.endState || `Scene ${idx} end state (${formatTime(sceneEndSec)})`,
         primaryChange: sbItem?.primaryChange || resolvedSpoken,
         image: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
         videoUrl: clipUrl,
@@ -1778,11 +1800,13 @@ EXECUTIVE REVISION REASON: "${editNotes}"
 Apply revision while maintaining 100% subject identity and set continuity.
 `.trim();
 
+      const fixTargetDuration = sceneToFix.durationSec || parseInt(sceneToFix.duration) || 8;
       const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
         prompt: beatPrompt,
         referenceImageUrl: fixVisualLock.primaryRefUrl,
         referenceImageUrls: fixVisualLock.imageUrls,
         aspectRatio: identityPack.aspectRatio,
+        durationSec: fixTargetDuration,
       });
 
       let finalClipUrl = generatedClip;

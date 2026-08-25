@@ -8,10 +8,119 @@ export interface ProviderCapabilityProfile {
   displayName: string;
   capabilities: AICapabilityType[];
   maxVideoDurationSec?: number; // native single-shot peak quality limit (seconds)
+  allowedDurationsSec?: number[]; // official supported durations in seconds (e.g. [4, 6, 8] for Veo)
   supportsImageRefs?: boolean;
   supportsNativeAudio?: boolean;
   notes: string;
 }
+
+export interface ProviderVideoCapability {
+  providerId: ConcreteAIProviderId;
+  displayName: string;
+  logoName: string;
+  allowedDurationsSec: number[];
+  maxNativeSec: number;
+  supportsImageRefs: boolean;
+  supportsNativeAudio: boolean;
+  notes: string;
+}
+
+/**
+ * Official Provider Native Video Capabilities & Duration Limits.
+ * Single source of truth for scene planning, video generation duration parameters, and UI settings.
+ */
+export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderVideoCapability> = {
+  gemini: {
+    providerId: "gemini",
+    displayName: "Google Gemini / Veo",
+    logoName: "gemini",
+    allowedDurationsSec: [4, 6, 8],
+    maxNativeSec: 8,
+    supportsImageRefs: true,
+    supportsNativeAudio: true,
+    notes: "Google Veo 3.1 & 2.0 (4s, 6s, or 8s vertical clips with synchronized native audio)",
+  },
+  grok: {
+    providerId: "grok",
+    displayName: "xAI Grok",
+    logoName: "grok",
+    allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    maxNativeSec: 15,
+    supportsImageRefs: true,
+    supportsNativeAudio: false,
+    notes: "xAI Grok Imagine Video (1–15s motion preview)",
+  },
+  kling: {
+    providerId: "kling",
+    displayName: "Kling AI",
+    logoName: "kling",
+    allowedDurationsSec: [5, 10],
+    maxNativeSec: 10,
+    supportsImageRefs: true,
+    supportsNativeAudio: true,
+    notes: "Kling 1.5 high-coherence motion (5s or 10s)",
+  },
+  runway: {
+    providerId: "runway",
+    displayName: "Runway Gen-3",
+    logoName: "runway",
+    allowedDurationsSec: [5, 10],
+    maxNativeSec: 10,
+    supportsImageRefs: true,
+    supportsNativeAudio: false,
+    notes: "Runway Gen-3 Alpha cinematic camera control (5s or 10s)",
+  },
+  luma: {
+    providerId: "luma",
+    displayName: "Luma Dream Machine",
+    logoName: "luma",
+    allowedDurationsSec: [5, 9],
+    maxNativeSec: 9,
+    supportsImageRefs: true,
+    supportsNativeAudio: false,
+    notes: "Luma Ray 2 keyframe-to-motion interpolation (5s or 9s)",
+  },
+  higgsfield: {
+    providerId: "higgsfield",
+    displayName: "Higgsfield AI",
+    logoName: "higgsfield",
+    allowedDurationsSec: [4, 8],
+    maxNativeSec: 8,
+    supportsImageRefs: true,
+    supportsNativeAudio: false,
+    notes: "Higgsfield Pop / Cinema vertical video motion (4s or 8s)",
+  },
+  openai: {
+    providerId: "openai",
+    displayName: "OpenAI",
+    logoName: "openai",
+    allowedDurationsSec: [],
+    maxNativeSec: 0,
+    supportsImageRefs: true,
+    supportsNativeAudio: false,
+    notes: "Reasoning & DALL-E / GPT Image only (no native video model)",
+  },
+  claude: {
+    providerId: "claude",
+    displayName: "Anthropic Claude",
+    logoName: "claude",
+    allowedDurationsSec: [],
+    maxNativeSec: 0,
+    supportsImageRefs: false,
+    supportsNativeAudio: false,
+    notes: "Reasoning & Scriptwriting only",
+  },
+  elevenlabs: {
+    providerId: "elevenlabs",
+    displayName: "ElevenLabs",
+    logoName: "elevenlabs",
+    allowedDurationsSec: [],
+    maxNativeSec: 0,
+    supportsImageRefs: false,
+    supportsNativeAudio: true,
+    notes: "Voiceover & Audio Narration only",
+  },
+};
 
 /**
  * Single source of truth for AI Provider Physics & Capabilities in SPARK.
@@ -22,7 +131,8 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     providerId: "gemini",
     displayName: "Google Gemini / Veo",
     capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding", "Image Generation", "Video Generation", "Text To Speech"],
-    maxVideoDurationSec: 8, // Google Veo 3.1 & 2.0 native 9:16 vertical video limit
+    maxVideoDurationSec: 8,
+    allowedDurationsSec: [4, 6, 8],
     supportsImageRefs: true,
     supportsNativeAudio: true,
     notes: "Google Veo native 9:16 vertical video (~8s single-shot, multimodal image ref conditioned, native synchronized audio)",
@@ -31,7 +141,8 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     providerId: "grok",
     displayName: "xAI Grok",
     capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding", "Image Generation", "Video Generation", "Text To Speech"],
-    maxVideoDurationSec: 15, // Grok Imagine Video preview duration
+    maxVideoDurationSec: 15,
+    allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     supportsImageRefs: true,
     supportsNativeAudio: false,
     notes: "xAI Grok Imagine Video (up to ~15s motion preview, ephemeral URLs persisted to Supabase Storage)",
@@ -65,6 +176,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     displayName: "Kling AI",
     capabilities: ["Video Generation", "Image Generation"],
     maxVideoDurationSec: 10,
+    allowedDurationsSec: [5, 10],
     supportsImageRefs: true,
     supportsNativeAudio: true,
     notes: "Kling 1.5 high-coherence motion & portrait keyframe conditioning (~10s max)",
@@ -74,6 +186,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     displayName: "Runway Gen-3",
     capabilities: ["Video Generation"],
     maxVideoDurationSec: 10,
+    allowedDurationsSec: [5, 10],
     supportsImageRefs: true,
     supportsNativeAudio: false,
     notes: "Runway Gen-3 Alpha cinematic camera control & continuous movement (~10s max)",
@@ -83,6 +196,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     displayName: "Luma Dream Machine",
     capabilities: ["Video Generation"],
     maxVideoDurationSec: 9,
+    allowedDurationsSec: [5, 9],
     supportsImageRefs: true,
     supportsNativeAudio: false,
     notes: "Luma Ray 2 keyframe-to-motion interpolation (~9s max)",
@@ -92,6 +206,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     displayName: "Higgsfield AI",
     capabilities: ["Video Generation", "Video Understanding"],
     maxVideoDurationSec: 8,
+    allowedDurationsSec: [4, 8],
     supportsImageRefs: true,
     supportsNativeAudio: false,
     notes: "Higgsfield Pop / Cinema vertical video motion (~8s max)",
@@ -99,21 +214,40 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
 };
 
 /**
+ * Snaps a target scene duration to the largest legal duration supported by the provider.
+ * For example: for Gemini/Veo (allowed: [4, 6, 8]), 8s -> 8, 7s -> 6, 5s -> 4.
+ */
+export function snapToAllowedDuration(targetSec: number, providerId: ConcreteAIProviderId): number {
+  const cap = PROVIDER_VIDEO_CAPABILITIES[providerId] || PROVIDER_VIDEO_CAPABILITIES.gemini;
+  const allowed = cap.allowedDurationsSec;
+  if (!allowed || allowed.length === 0) return Math.min(targetSec, 8);
+
+  const validLessOrEqual = allowed.filter((d) => d <= targetSec);
+  if (validLessOrEqual.length > 0) {
+    return Math.max(...validLessOrEqual);
+  }
+  return Math.min(...allowed);
+}
+
+/**
  * Resolves the active video generation provider by checking user AI preferences,
  * verifying that the provider has the "Video Generation" capability, and confirming an API key exists.
  * Falls back dynamically to the Best Available video provider.
  */
 export function resolveActiveVideoProvider(params?: {
+  preferredVideoProvider?: AIProviderId;
   userRoutingConfig?: Partial<AIModelRoutingConfig>;
   customKeys?: Record<string, string>;
 }): {
-  providerId: AIProviderId;
+  providerId: ConcreteAIProviderId;
   maxVideoDurationSec: number;
+  allowedDurationsSec: number[];
   supportsImageRefs: boolean;
   supportsNativeAudio: boolean;
   profile: ProviderCapabilityProfile;
+  videoCapability: ProviderVideoCapability;
 } {
-  const { userRoutingConfig, customKeys } = params || {};
+  const { preferredVideoProvider, userRoutingConfig, customKeys } = params || {};
   let userConfig: Partial<AIModelRoutingConfig> | undefined = userRoutingConfig;
 
   if (!userConfig && typeof localStorage !== "undefined") {
@@ -123,7 +257,9 @@ export function resolveActiveVideoProvider(params?: {
     } catch {}
   }
 
-  const pinnedVideoProvider = userConfig?.videoGeneration;
+  const pinnedVideoProvider = preferredVideoProvider && preferredVideoProvider !== "auto"
+    ? preferredVideoProvider
+    : userConfig?.videoGeneration;
 
   // 1. If user pinned a specific video provider, verify capability & key
   if (pinnedVideoProvider && pinnedVideoProvider !== "auto") {
@@ -131,12 +267,15 @@ export function resolveActiveVideoProvider(params?: {
     if (profile && profile.capabilities.includes("Video Generation")) {
       const hasKey = resolveProviderKey(pinnedVideoProvider, customKeys);
       if (hasKey) {
+        const vidCap = PROVIDER_VIDEO_CAPABILITIES[pinnedVideoProvider as ConcreteAIProviderId];
         return {
-          providerId: pinnedVideoProvider,
+          providerId: pinnedVideoProvider as ConcreteAIProviderId,
           maxVideoDurationSec: profile.maxVideoDurationSec || 8,
+          allowedDurationsSec: profile.allowedDurationsSec || [4, 6, 8],
           supportsImageRefs: profile.supportsImageRefs ?? true,
           supportsNativeAudio: profile.supportsNativeAudio ?? false,
           profile,
+          videoCapability: vidCap,
         };
       }
     }
@@ -149,12 +288,15 @@ export function resolveActiveVideoProvider(params?: {
     if (profile && profile.capabilities.includes("Video Generation")) {
       const hasKey = resolveProviderKey(candidateId, customKeys);
       if (hasKey) {
+        const vidCap = PROVIDER_VIDEO_CAPABILITIES[candidateId];
         return {
           providerId: candidateId,
           maxVideoDurationSec: profile.maxVideoDurationSec || 8,
+          allowedDurationsSec: profile.allowedDurationsSec || [4, 6, 8],
           supportsImageRefs: profile.supportsImageRefs ?? true,
           supportsNativeAudio: profile.supportsNativeAudio ?? false,
           profile,
+          videoCapability: vidCap,
         };
       }
     }
@@ -162,11 +304,14 @@ export function resolveActiveVideoProvider(params?: {
 
   // 3. Fallback: Gemini Veo default profile
   const defaultProfile = PROVIDER_CAPABILITY_MAP.gemini;
+  const defaultVidCap = PROVIDER_VIDEO_CAPABILITIES.gemini;
   return {
     providerId: "gemini",
     maxVideoDurationSec: defaultProfile.maxVideoDurationSec || 8,
+    allowedDurationsSec: defaultProfile.allowedDurationsSec || [4, 6, 8],
     supportsImageRefs: defaultProfile.supportsImageRefs ?? true,
     supportsNativeAudio: defaultProfile.supportsNativeAudio ?? true,
     profile: defaultProfile,
+    videoCapability: defaultVidCap,
   };
 }

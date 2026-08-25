@@ -15,6 +15,7 @@ export interface AIExecutionOptions {
   referenceImageUrl?: string;
   referenceImageUrls?: string[];
   aspectRatio?: string;
+  durationSec?: number;
 }
 
 export interface AIProviderPlugin {
