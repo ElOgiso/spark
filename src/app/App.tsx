@@ -21,6 +21,7 @@ import { SplashReel } from "./components/splash/SplashReel";
 import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
+import { AdminPlaceholderPage } from "./components/admin/AdminPlaceholderPage";
 import { getBrandWorkspaceId } from "./services/socialIntegrationService";
 import { isUuid } from "./backend/mappers/workspaceMappers";
 
@@ -175,12 +176,26 @@ function AppContent() {
       }
 
       if (isUserAuthenticated) {
-        if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
+        if (pathname === "/admin") {
+          if (!auth.isAdmin) {
+            console.log("[SPARK AUTH] Non-admin attempted /admin access -> redirecting to executive home");
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState({}, "", "/");
+            }
+            setCurrentPage("/");
+          } else {
+            setCurrentPage("/admin");
+          }
+        } else if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
           if (!search.includes("resume_onboarding") && pathname !== "/") {
             window.history.replaceState({}, "", "/");
           }
         }
-        if (!auth.isOnboardingComplete) {
+
+        if (auth.isAdmin && (currentPage === "/admin" || !auth.brand)) {
+          console.log("[SPARK AUTH] routing: ADMIN CONSOLE");
+          setViewState("dashboard");
+        } else if (!auth.isOnboardingComplete) {
           console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
         } else {
@@ -207,7 +222,7 @@ function AppContent() {
         }
       }
     }
-  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete]);
+  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete, auth.isAdmin, currentPage]);
 
   const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
     console.log("[SPARK AUTH] handleAuthSuccess called for:", email, "mode:", mode);
@@ -222,6 +237,14 @@ function AppContent() {
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "/");
     }
+
+    if (auth.isAdmin) {
+      console.log("[SPARK AUTH] routing → Admin Console");
+      setCurrentPage("/admin");
+      setViewState("dashboard");
+      return;
+    }
+
     const isComplete = auth.isOnboardingComplete;
     console.log("[SPARK AUTH] routing →", isComplete ? "Spark Dashboard" : "Brand Genesis");
     setViewState(isComplete ? "dashboard" : "onboarding");
@@ -307,6 +330,12 @@ function AppContent() {
         return <FullLegalPage onNavigate={setCurrentPage} type="terms" />;
       case "/privacy":
         return <FullLegalPage onNavigate={setCurrentPage} type="privacy" />;
+      case "/admin":
+      case "admin":
+        if (!auth.isAdmin) {
+          return <SparkHome onNavigate={setCurrentPage} />;
+        }
+        return <AdminPlaceholderPage onNavigate={setCurrentPage} />;
       default:
         return <SparkHome onNavigate={setCurrentPage} />;
     }
@@ -332,6 +361,15 @@ function AppContent() {
 
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
+      // Admin standalone route check
+      if (auth.isAdmin && (currentPage === "/admin" || currentPage === "admin" || (!auth.isOnboardingComplete && !auth.brand))) {
+        return (
+          <ProtectedRoute>
+            <AdminPlaceholderPage onNavigate={setCurrentPage} />
+          </ProtectedRoute>
+        );
+      }
+
       // Additional Workspace Creation Modal (for existing authenticated user)
       if (auth.createWorkspaceModalOpen) {
         return (

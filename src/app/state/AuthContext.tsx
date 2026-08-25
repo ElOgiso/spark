@@ -21,6 +21,9 @@ type AuthContextValue = {
   profile: ProfileRow | null;
   brand: BrandRow | null;
   brands: BrandRow[];
+  role: "executive" | "admin";
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
   loading: boolean;
   isAuthenticated: boolean;
   isConfigured: boolean;
@@ -577,12 +580,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, brand]);
 
+  const userRole: "executive" | "admin" = useMemo(() => {
+    const rawRole = (profile?.role || "").toLowerCase().trim();
+    return rawRole === "admin" ? "admin" : "executive";
+  }, [profile?.role]);
+
+  const isAdmin = userRole === "admin";
+  const isSuperAdmin = Boolean(profile?.is_super_admin) || isAdmin;
+
   const value = useMemo<AuthContextValue>(() => ({
     currentUser,
     session,
     profile,
     brand,
     brands,
+    role: userRole,
+    isAdmin,
+    isSuperAdmin,
     loading,
     isAuthenticated,
     isConfigured,
@@ -617,9 +631,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     currentUser,
     deleteWorkspace,
     error,
-    isAuthenticated,
+    isAdmin,
     isConfigured,
     isOnboardingComplete,
+    isSuperAdmin,
+    isAuthenticated,
     loading,
     markOnboardingComplete,
     openCreateWorkspaceModal,
@@ -636,6 +652,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     switchBrand,
     updateProfile,
+    userRole,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

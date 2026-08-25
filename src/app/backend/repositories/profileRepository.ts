@@ -52,7 +52,8 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
     const payload: Partial<ProfileRow> & { id: string } = {
       id: user.id,
       display_name: displayNameFromUser(user),
-      role: "Director",
+      role: "executive",
+      is_super_admin: false,
       avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
       email: user.email ?? null,
       onboarding_complete: initialOnboarding,

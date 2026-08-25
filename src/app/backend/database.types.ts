@@ -27,11 +27,14 @@ export enum MemoryCategory {
   EXECUTIVE_NOTE = "EXECUTIVE_NOTE",
 }
 
+export type UserRole = "executive" | "admin";
+
 export interface ProfileRow {
   id: string;
   display_name: string | null;
-  role: string | null;
+  role: UserRole | string | null;
   avatar_url: string | null;
+  is_super_admin?: boolean | null;
   onboarding_complete?: boolean | null;
   active_brand_id?: string | null;
   /** Present on legacy SPARK profiles table */
