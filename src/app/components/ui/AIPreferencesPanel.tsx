@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { ArrowLeft, Sparkles, Check, ChevronRight, Sliders, RotateCcw, X, Info } from "lucide-react";
+import { ArrowLeft, Sparkles, Check, ChevronRight, RotateCcw, X, Info, ShieldCheck } from "lucide-react";
 import { ModelRouter } from "../../services/runtime/modelRouter";
 import { getModelsForProviderAndCapability, getModelLabel } from "../../services/runtime/modelCatalog";
 import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { useSpark } from "../../state/SparkContext";
+import { getProviderLogo } from "./AIProviderLogos";
+import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 
 interface AIPreferencesPanelProps {
   onNavigate: (path: string) => void;
@@ -13,138 +15,130 @@ export interface TaskDefinition {
   key: AIRoutingCategory;
   name: string;
   shortLabel: string;
-  category: "Chat" | "Research" | "Vision" | "Production" | "Media" | "Engine";
+  category: "Intelligence" | "Creative" | "Operations";
   desc: string;
-  allowedProviders: { id: AIProviderId | "auto"; name: string; desc?: string }[];
+  allowedProviders: { id: AIProviderId | "auto"; name: string; desc?: string; logoId: string }[];
 }
 
 export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
   {
     key: "superSpark",
     name: "Super Spark Chat",
-    shortLabel: "Chat",
-    category: "Chat",
-    desc: "Primary conversational intelligence, creative strategy & brand guidance",
+    shortLabel: "Chat & Strategy",
+    category: "Intelligence",
+    desc: "Primary conversational intelligence, creative strategy & executive decisions",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK chooses optimal reasoning engine" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o & o3-mini models" },
-      { id: "claude", name: "Anthropic Claude", desc: "Claude 3.5 Sonnet & 3.7 Sonnet" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash & 2.0 Pro" },
-      { id: "grok", name: "xAI Grok", desc: "Grok 3 & Grok 2" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK dynamically routes to highest-reasoning model", logoId: "auto" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 & flagship reasoning models", logoId: "openai" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 & Opus 5", logoId: "claude" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash & 2.0 Pro", logoId: "gemini" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 & Grok 3", logoId: "grok" },
     ],
   },
   {
     key: "research",
-    name: "Research & Signal Discovery",
-    shortLabel: "Research",
-    category: "Research",
+    name: "Research Department",
+    shortLabel: "Research & Radar",
+    category: "Intelligence",
     desc: "Breakout trend discovery, pattern recognition, and viral hook scoring",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best research model" },
-      { id: "claude", name: "Anthropic Claude", desc: "Claude 3.5 Sonnet" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash & Deep Research" },
-      { id: "grok", name: "xAI Grok", desc: "Grok 3 Realtime Web" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o Search" },
-    ],
-  },
-  {
-    key: "storyboardImages",
-    name: "Keyframe Image Generation",
-    shortLabel: "Images",
-    category: "Media",
-    desc: "Generates high-contrast vertical 9:16 keyframe images per scene",
-    allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best image generator" },
-      { id: "openai", name: "OpenAI", desc: "GPT-Image-1.5 / DALL-E 3" },
-      { id: "gemini", name: "Google Gemini", desc: "Imagen 4.0 Studio" },
-      { id: "grok", name: "xAI Grok", desc: "Grok Image Generator" },
-    ],
-  },
-  {
-    key: "videoGeneration",
-    name: "Video Generation & Motion Clips",
-    shortLabel: "Video",
-    category: "Media",
-    desc: "Renders 9:16 vertical MP4 video preview clips per scene",
-    allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best video engine" },
-      { id: "gemini", name: "Google Gemini", desc: "Google Veo 3.1 Predict" },
-      { id: "grok", name: "xAI Grok", desc: "Grok Video Generator" },
-    ],
-  },
-  {
-    key: "voice",
-    name: "Voiceover Narration (TTS)",
-    shortLabel: "Voice",
-    category: "Media",
-    desc: "Synthesizes executive audio voiceover narration",
-    allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best voice engine" },
-      { id: "elevenlabs", name: "ElevenLabs", desc: "Executive Voice Library & Custom Voices" },
-      { id: "openai", name: "OpenAI", desc: "OpenAI TTS HD" },
-      { id: "grok", name: "xAI Grok", desc: "Grok Audio Speech" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects optimal web-augmented research engine", logoId: "auto" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash with deep research context", logoId: "gemini" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 realtime cultural radar", logoId: "grok" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 trend analysis", logoId: "claude" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 Search & pattern matching", logoId: "openai" },
     ],
   },
   {
     key: "videoUnderstanding",
-    name: "Multimodal Video & Visual Analysis",
-    shortLabel: "Vision",
-    category: "Vision",
-    desc: "Visual keyframe analysis, frame extraction, and transcript parsing",
+    name: "Video Understanding",
+    shortLabel: "Multimodal Vision",
+    category: "Intelligence",
+    desc: "Visual keyframe analysis, frame extraction, and multimodal transcript parsing",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best vision model" },
-      { id: "grok", name: "xAI Grok", desc: "Grok 2 Vision" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash Vision" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o Vision" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects optimal multimodal vision engine", logoId: "auto" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 1M-token multimodal vision", logoId: "gemini" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 Vision frame analysis", logoId: "grok" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 Multimodal Vision", logoId: "openai" },
     ],
   },
   {
     key: "production",
-    name: "Production & Scripting Engine",
-    shortLabel: "Scripting",
-    category: "Production",
-    desc: "Production Brief generation, 3-scene storyboarding, and caption formatting",
+    name: "Production Compiler",
+    shortLabel: "Briefs & Scripts",
+    category: "Creative",
+    desc: "Production Brief generation, duration-sized beat sheets, and scriptwriting",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best scriptwriting engine" },
-      { id: "claude", name: "Anthropic Claude", desc: "Claude 3.5 Sonnet" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o Scriptwriter" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best production scripting compiler", logoId: "auto" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 high-density scripting", logoId: "claude" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 Production Brief writer", logoId: "openai" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash scriptwriter", logoId: "gemini" },
+    ],
+  },
+  {
+    key: "storyboardImages",
+    name: "Storyboard Keyframes",
+    shortLabel: "9:16 Keyframe Stills",
+    category: "Creative",
+    desc: "Renders 9:16 vertical keyframe images with strict character visual lock",
+    allowedProviders: [
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects optimal image generation model", logoId: "auto" },
+      { id: "gemini", name: "Google Imagen 3 / Gemini", desc: "Google Imagen 3 UHD keyframes with visual lock", logoId: "gemini" },
+      { id: "openai", name: "OpenAI", desc: "GPT-Image-1.5 / DALL-E 3 high-contrast stills", logoId: "openai" },
+      { id: "grok", name: "xAI Grok", desc: "Grok Imagine concept rendering", logoId: "grok" },
+    ],
+  },
+  {
+    key: "videoGeneration",
+    name: "Video Generation",
+    shortLabel: "Motion & Clips",
+    category: "Creative",
+    desc: "Renders 9:16 vertical continuous video clips adhering to official native limits",
+    allowedProviders: [
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects optimal video engine (Google Veo preferred)", logoId: "auto" },
+      { id: "gemini", name: PROVIDER_VIDEO_CAPABILITIES.gemini.displayName, desc: "Google Veo (4s, 6s, 8s native clips with synchronized audio)", logoId: "gemini" },
+      { id: "grok", name: PROVIDER_VIDEO_CAPABILITIES.grok.displayName, desc: "xAI Grok Imagine Video (1–15s motion preview)", logoId: "grok" },
+      { id: "kling", name: PROVIDER_VIDEO_CAPABILITIES.kling.displayName, desc: "Kling 1.5 high-coherence motion (5s or 10s)", logoId: "kling" },
+      { id: "runway", name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName, desc: "Runway Gen-3 Alpha cinematic motion (5s or 10s)", logoId: "runway" },
+      { id: "luma", name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName, desc: "Luma Ray 2 keyframe motion (5s or 9s)", logoId: "luma" },
+      { id: "higgsfield", name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName, desc: "Higgsfield Pop / Cinema vertical motion (4s or 8s)", logoId: "higgsfield" },
+    ],
+  },
+  {
+    key: "voice",
+    name: "Voiceover Narration",
+    shortLabel: "Voice & Speech",
+    category: "Creative",
+    desc: "Synthesizes studio-grade voiceover narration locked to the brand's identity",
+    allowedProviders: [
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK routes to ElevenLabs for narrator voiceover", logoId: "auto" },
+      { id: "elevenlabs", name: "ElevenLabs", desc: "Production Voice Library & Custom Clones", logoId: "elevenlabs" },
+      { id: "gemini", name: "Google Gemini TTS", desc: "Natural multi-voice speech synthesis", logoId: "gemini" },
+      { id: "openai", name: "OpenAI Voice", desc: "Super Spark conversational speech audio", logoId: "openai" },
     ],
   },
   {
     key: "automation",
-    name: "Autonomous Engine & Memory",
-    shortLabel: "Background OS",
-    category: "Engine",
-    desc: "Background trend monitoring, publishing queue, and memory formation",
+    name: "Autonomous Engine",
+    shortLabel: "Operations & Queue",
+    category: "Operations",
+    desc: "Background trend monitoring, publishing queue, and autonomous memory formation",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best background model" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o Mini" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash" },
-    ],
-  },
-  {
-    key: "executive",
-    name: "Executive Briefings & Summaries",
-    shortLabel: "Executive",
-    category: "Engine",
-    desc: "Offline summaries, return briefings, and strategic directives",
-    allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best briefing model" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.0 Pro" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best background model", logoId: "auto" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 Mini efficient background execution", logoId: "openai" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash high-throughput operations", logoId: "gemini" },
     ],
   },
   {
     key: "analytics",
-    name: "Analytics & Virality Predictor",
-    shortLabel: "Analytics",
-    category: "Engine",
-    desc: "Audience reach estimation, engagement scoring, and performance attribution",
+    name: "Analytics & Attribution",
+    shortLabel: "Virality Intelligence",
+    category: "Operations",
+    desc: "Audience reach estimation, engagement attribution, and virality scoring",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best analytics model" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash" },
-      { id: "openai", name: "OpenAI", desc: "GPT-4o" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best analytics model", logoId: "auto" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash structured telemetry analysis", logoId: "gemini" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 performance attribution", logoId: "openai" },
     ],
   },
 ];
@@ -186,18 +180,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
         modelSelection: ModelRouter.getUserModelSelectionConfig(),
       });
     }
-  };
-
-  const handleUpdateModel = (categoryKey: AIRoutingCategory, modelId: string) => {
-    const updatedModels = ModelRouter.setUserModelSelectionConfig({ [categoryKey]: modelId });
-    setAiModelSelectionConfig(updatedModels as any);
-
-    if (typeof updateAISettings === "function") {
-      updateAISettings({
-        routing: ModelRouter.getUserRoutingConfig(),
-        modelSelection: ModelRouter.getUserModelSelectionConfig(),
-      });
-    }
+    setActiveTaskModal(null);
   };
 
   const handleResetAllToAuto = () => {
@@ -224,29 +207,26 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-foreground flex flex-col font-sans select-none relative pb-28">
-      {/* Ambient background bloom matching AuthPanel */}
-      <div
-        className="pointer-events-none fixed inset-0 overflow-hidden"
-        style={{ zIndex: 0 }}
-      >
+      {/* Ambient background bloom matching SPARK design tokens */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" style={{ zIndex: 0 }}>
         <div
-          className="absolute rounded-full opacity-[0.15]"
+          className="absolute rounded-full opacity-[0.12]"
           style={{
-            width: 420,
-            height: 420,
-            background: "radial-gradient(circle, #F018FF 0%, #a855f7 40%, transparent 70%)",
-            top: -100,
+            width: 500,
+            height: 500,
+            background: "radial-gradient(circle, #9333EA 0%, #4F46E5 50%, transparent 75%)",
+            top: -120,
             right: -100,
           }}
         />
       </div>
 
-      <div className="relative z-10 max-w-2xl mx-auto w-full px-4 pt-6 space-y-5">
-        {/* Header */}
+      <div className="relative z-10 max-w-3xl mx-auto w-full px-6 pt-8 space-y-6">
+        {/* Top Action Bar */}
         <div className="flex items-center justify-between">
           <button
             onClick={() => onNavigate("/more")}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-white transition-colors py-2 px-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md cursor-pointer"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-white transition-colors py-2 px-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 backdrop-blur-md cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to More
@@ -255,50 +235,53 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
           {!isAllAuto && (
             <button
               onClick={handleResetAllToAuto}
-              className="inline-flex items-center gap-1.5 text-xs text-purple-300 hover:text-white font-semibold py-2 px-3 rounded-xl bg-purple-500/10 border border-purple-500/20 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs text-purple-300 hover:text-white font-semibold py-2 px-3.5 rounded-xl bg-purple-500/10 border border-purple-500/25 hover:bg-purple-500/20 transition-all cursor-pointer shadow-sm"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              Reset to Best Available
+              Reset All to Best Available
             </button>
           )}
         </div>
 
-        {/* Title & One-line helper */}
-        <div className="space-y-1">
-          <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-purple-400 shrink-0" />
+        {/* Title & Subline */}
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+            <Sparkles className="w-6 h-6 text-purple-400 shrink-0" />
             AI Preferences
           </h1>
           <p className="text-xs text-muted-foreground">
-            Leave on Best Available unless you want control.
+            Best Available lets SPARK choose. Turn off to pin a provider per task.
           </p>
         </div>
 
-        {/* Master Card: Best Available (Recommended) */}
+        {/* Master Card (Onboard Glass Card) */}
         <div
           onClick={handleResetAllToAuto}
-          className={`rounded-2xl border p-4.5 transition-all cursor-pointer backdrop-blur-md ${
+          className={`rounded-2xl border p-5 transition-all cursor-pointer backdrop-blur-md ${
             isAllAuto
-              ? "bg-purple-950/30 border-purple-500/40 shadow-lg shadow-purple-950/20"
+              ? "bg-purple-950/25 border-purple-500/40 shadow-xl shadow-purple-950/20"
               : "bg-white/[0.03] border-white/10 hover:border-white/20"
           }`}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-white">Best Available</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                  Recommended
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="w-8 h-8 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                </div>
+                <span className="text-sm font-bold text-white">Best Available (Recommended)</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                  Automatic Routing
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                SPARK automatically selects optimal models for speed and quality (OpenAI, Claude, Gemini, Grok, ElevenLabs).
+              <p className="text-xs text-muted-foreground leading-relaxed pl-10.5">
+                SPARK dynamically routes each creative and intelligence task to its quality peak (Google Veo for vertical video, Claude/GPT for reasoning, ElevenLabs for narrator VO).
               </p>
             </div>
             <div
               className={`w-6 h-6 rounded-full flex items-center justify-center border shrink-0 transition-all ${
                 isAllAuto
-                  ? "bg-purple-600 border-purple-400 text-white"
+                  ? "bg-purple-600 border-purple-400 text-white shadow-md shadow-purple-600/30"
                   : "border-white/20 bg-white/5 text-transparent"
               }`}
             >
@@ -306,100 +289,123 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
             </div>
           </div>
 
-          <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+          <div className="mt-4 pt-3.5 border-t border-white/10 flex items-center justify-between text-xs font-mono">
             <span className="text-muted-foreground">
-              {isAllAuto ? "All jobs auto-managed" : `${customOverrideCount} job(s) customized`}
+              {isAllAuto ? "All 9 tasks dynamically optimized" : `${customOverrideCount} task(s) pinned`}
             </span>
             <span className="text-purple-300 font-semibold">
-              {isAllAuto ? "Optimal Speed & Quality" : "Custom Model Overrides"}
+              {isAllAuto ? "Peak Quality & Zero Config" : "Custom Provider Overrides Active"}
             </span>
           </div>
         </div>
 
-        {/* Customize per-job Section */}
-        <div className="space-y-3 pt-1">
-          <div className="flex items-center justify-between px-0.5">
+        {/* Task List (Generous, Scannable Desktop Rows) */}
+        <div className="space-y-3.5 pt-2">
+          <div className="flex items-center justify-between px-1">
             <h2 className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
-              Customize Per Job
+              Tasks & Provider Routing
             </h2>
-            <span className="text-[11px] text-muted-foreground">Tap any card to change model</span>
+            <span className="text-[11px] text-muted-foreground">Click any row to change provider</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] divide-y divide-white/5 overflow-hidden backdrop-blur-md shadow-sm">
             {AI_PREFERENCES_TASKS.map((task) => {
               const categoryKey = task.key;
               const configuredProvider = aiRoutingConfig[categoryKey] || "auto";
-              const configuredModelId = aiModelSelectionConfig[categoryKey] || "";
               const capability = ModelRouter.mapCategoryToCapability(categoryKey);
               const effectiveProvider = ModelRouter.resolveProvider(categoryKey, aiRoutingConfig);
               const effectiveModelId = ModelRouter.resolveModel(categoryKey, effectiveProvider, capability, aiModelSelectionConfig);
               const effectiveLabel = getModelLabel(effectiveProvider, effectiveModelId);
 
               const isAuto = configuredProvider === "auto";
+              const activeProviderId = isAuto ? effectiveProvider : configuredProvider;
 
               return (
                 <div
                   key={task.key}
                   onClick={() => setActiveTaskModal(task)}
-                  className={`rounded-2xl border p-4 transition-all cursor-pointer backdrop-blur-md space-y-3 active:scale-[0.99] ${
-                    !isAuto
-                      ? "bg-purple-950/20 border-purple-500/40 shadow-sm"
-                      : "bg-white/[0.03] border-white/10 hover:border-purple-500/30"
+                  className={`w-full p-4.5 flex items-center justify-between gap-4 text-left transition-all cursor-pointer group hover:bg-white/[0.04] ${
+                    !isAuto ? "bg-purple-950/15" : ""
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{task.shortLabel}</span>
-                      <span className="text-[10px] font-semibold text-muted-foreground bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
-                        {task.category}
-                      </span>
+                  {/* Left: Real Logo + Task Information */}
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                    <div className="w-10 h-10 rounded-xl bg-card border border-white/15 flex items-center justify-center shrink-0 shadow-sm group-hover:border-purple-500/50 transition-colors">
+                      {getProviderLogo(activeProviderId, 28)}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-white group-hover:text-purple-200 transition-colors">
+                          {task.name}
+                        </span>
+                        <span className="text-[10px] font-semibold text-muted-foreground bg-white/5 border border-white/10 px-2 py-0.2 rounded-md">
+                          {task.category}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {task.desc}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Provider & Model Display (Full names, wrapping allowed, no text cut-off) */}
-                  <div className="rounded-xl bg-black/40 border border-white/10 p-3 space-y-2 text-xs">
-                    <div className="flex items-center justify-between flex-wrap gap-1">
-                      <span className="text-muted-foreground font-mono">Provider:</span>
-                      <span className="font-semibold text-white">
+                  {/* Right: Selected Provider Pill & Change Button */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+                        isAuto
+                          ? "bg-purple-500/10 text-purple-300 border-purple-500/25"
+                          : "bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-semibold"
+                      }`}
+                    >
+                      <span>
                         {isAuto ? (
-                          <span className="text-emerald-400">Best Available (Auto: {effectiveProvider.toUpperCase()})</span>
+                          <>
+                            <span className="text-muted-foreground mr-1 font-mono">Auto:</span>
+                            {effectiveProvider.toUpperCase()}
+                          </>
                         ) : (
-                          <span className="text-purple-300">
-                            {task.allowedProviders.find((p) => p.id === configuredProvider)?.name || configuredProvider.toUpperCase()}
-                          </span>
+                          configuredProvider.toUpperCase()
                         )}
                       </span>
                     </div>
 
-                    <div className="flex items-start justify-between gap-2 pt-2 border-t border-white/10">
-                      <span className="text-muted-foreground font-mono shrink-0">Model:</span>
-                      <span className="font-mono text-purple-200 text-right text-xs break-words max-w-[75%] font-medium leading-relaxed">
-                        {isAuto ? `Auto (${effectiveLabel})` : effectiveLabel || "Recommended Default"}
-                      </span>
-                    </div>
+                    <button className="px-3 py-1.5 rounded-xl bg-white/5 group-hover:bg-purple-600 group-hover:text-white border border-white/10 group-hover:border-purple-500 text-xs font-semibold text-muted-foreground transition-all flex items-center gap-1">
+                      <span>Change</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* Failover & Reliability Note */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex items-start gap-3 text-xs text-muted-foreground backdrop-blur-md">
+          <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            <strong className="text-foreground">Zero-Disruption Architecture:</strong> If a chosen provider experiences an upstream rate-limit or API key absence, SPARK smoothly falls back to Best Available to guarantee uninterrupted pipeline execution.
+          </p>
+        </div>
       </div>
 
-      {/* Task Customization Modal / Sheet */}
+      {/* Task Customization Modal (Desktop Popover Dialog) */}
       {activeTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-xl animate-in fade-in duration-200">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setActiveTaskModal(null)}
+        >
           <div
-            className="w-full max-w-lg bg-[#0B0F17] border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 sm:p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg bg-[#0E131F] border border-white/15 rounded-2xl shadow-2xl p-6 space-y-5 max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
+            {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div>
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
                   {activeTaskModal.category}
                 </span>
-                <h3 className="text-lg font-bold text-white mt-1">{activeTaskModal.shortLabel}</h3>
+                <h3 className="text-lg font-bold text-white mt-1.5">{activeTaskModal.name}</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">{activeTaskModal.desc}</p>
               </div>
               <button
@@ -410,10 +416,10 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
               </button>
             </div>
 
-            {/* Step 1: Provider Selection */}
-            <div className="space-y-3">
+            {/* Provider Options List with Real Logos */}
+            <div className="space-y-2.5">
               <label className="block text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
-                1. Select Provider
+                Select Provider
               </label>
 
               <div className="space-y-2">
@@ -426,16 +432,22 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
                     <button
                       key={prov.id}
                       onClick={() => handleUpdateProvider(categoryKey, prov.id)}
-                      className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all min-h-[48px] cursor-pointer ${
+                      className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
                         isSelected
-                          ? "bg-purple-950/40 border-purple-500 text-white shadow-sm"
-                          : "bg-white/[0.03] border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"
+                          ? "bg-purple-950/40 border-purple-500 text-white shadow-md shadow-purple-950/20"
+                          : "bg-white/[0.03] border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/[0.06] hover:border-white/20"
                       }`}
                     >
-                      <div className="space-y-0.5">
-                        <div className="text-sm font-semibold text-white">{prov.name}</div>
-                        {prov.desc && <div className="text-xs text-muted-foreground">{prov.desc}</div>}
+                      <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                        <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center shrink-0 shadow-sm">
+                          {getProviderLogo(prov.logoId, 26)}
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="text-sm font-semibold text-white truncate">{prov.name}</div>
+                          {prov.desc && <div className="text-xs text-muted-foreground truncate">{prov.desc}</div>}
+                        </div>
                       </div>
+
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
                           isSelected ? "bg-purple-600 border-purple-400 text-white" : "border-white/20 bg-white/5"
@@ -449,67 +461,11 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
               </div>
             </div>
 
-            {/* Step 2: Model Selection (Only if provider is NOT auto) */}
-            {aiRoutingConfig[activeTaskModal.key] && aiRoutingConfig[activeTaskModal.key] !== "auto" && (
-              <div className="space-y-3 pt-3 border-t border-white/10">
-                <label className="block text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
-                  2. Select Specific Model
-                </label>
-
-                {(() => {
-                  const categoryKey = activeTaskModal.key;
-                  const selectedProvider = aiRoutingConfig[categoryKey] as AIProviderId;
-                  const capability = ModelRouter.mapCategoryToCapability(categoryKey);
-                  const availableModels = getModelsForProviderAndCapability(selectedProvider, capability);
-                  const currentModelId = aiModelSelectionConfig[categoryKey] || "";
-
-                  return (
-                    <div className="space-y-2">
-                      {availableModels.map((m) => {
-                        const isSelected = currentModelId === m.id || (!currentModelId && m.recommended);
-
-                        return (
-                          <button
-                            key={m.id}
-                            onClick={() => handleUpdateModel(categoryKey, m.id)}
-                            className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all min-h-[48px] cursor-pointer ${
-                              isSelected
-                                ? "bg-purple-950/40 border-purple-500 text-white shadow-sm"
-                                : "bg-white/[0.03] border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"
-                            }`}
-                          >
-                            <div className="space-y-0.5 pr-2">
-                              <div className="text-sm font-semibold text-white flex items-center gap-1.5 flex-wrap">
-                                <span>{m.label}</span>
-                                {m.recommended && (
-                                  <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-full">
-                                    Recommended ★
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] font-mono text-muted-foreground">{m.id}</div>
-                            </div>
-                            <div
-                              className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
-                                isSelected ? "bg-purple-600 border-purple-400 text-white" : "border-white/20 bg-white/5"
-                              }`}
-                            >
-                              {isSelected && <Check className="w-3 h-3" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Done Button */}
+            {/* Modal Actions */}
             <div className="pt-2">
               <button
                 onClick={() => setActiveTaskModal(null)}
-                className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-[0_0_20px_rgba(168,85,247,0.3)]"
+                className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg shadow-purple-600/25"
               >
                 Done
               </button>
@@ -520,4 +476,3 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
     </div>
   );
 }
-
