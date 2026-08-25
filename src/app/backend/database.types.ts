@@ -28,7 +28,7 @@ export enum MemoryCategory {
 }
 
 export type UserRole = "executive" | "admin";
-export type UserAccessStatus = "pending_approval" | "active" | "banned";
+export type UserAccessStatus = "pending_approval" | "active" | "banned" | "rejected";
 
 export interface ProfileRow {
   id: string;
@@ -37,6 +37,7 @@ export interface ProfileRow {
   avatar_url: string | null;
   is_super_admin?: boolean | null;
   access_status?: UserAccessStatus | string | null;
+  credit_balance?: number | null;
   onboarding_complete?: boolean | null;
   active_brand_id?: string | null;
   /** Present on legacy SPARK profiles table */
@@ -45,6 +46,35 @@ export interface ProfileRow {
   username?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreditLedgerRow {
+  id: string;
+  user_id: string;
+  admin_id: string | null;
+  delta: number;
+  reason: string;
+  created_at: string;
+}
+
+export interface CouponRow {
+  id: string;
+  code: string;
+  amount: number;
+  max_redemptions: number;
+  redeemed_count: number;
+  expires_at: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface AdminAuditLogRow {
+  id: string;
+  actor_id: string;
+  action: string;
+  target_user_id: string | null;
+  meta: Json;
+  created_at: string;
 }
 
 export interface BrandRow {

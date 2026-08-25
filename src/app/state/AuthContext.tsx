@@ -24,9 +24,11 @@ type AuthContextValue = {
   role: "executive" | "admin";
   isAdmin: boolean;
   isSuperAdmin: boolean;
-  accessStatus: "pending_approval" | "active" | "banned";
+  accessStatus: "pending_approval" | "active" | "banned" | "rejected";
   isPendingApproval: boolean;
   isBanned: boolean;
+  isRejected: boolean;
+  creditBalance: number;
   loading: boolean;
   isAuthenticated: boolean;
   isConfigured: boolean;
@@ -537,10 +539,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAdmin = userRole === "admin";
   const isSuperAdmin = Boolean(profile?.is_super_admin) || isAdmin;
 
-  const userAccessStatus: "pending_approval" | "active" | "banned" = useMemo(() => {
+  const userAccessStatus: "pending_approval" | "active" | "banned" | "rejected" = useMemo(() => {
     if (userRole === "admin") return "active";
     const rawStatus = (profile?.access_status || "").toLowerCase().trim();
-    if (rawStatus === "pending_approval" || rawStatus === "banned" || rawStatus === "active") {
+    if (rawStatus === "pending_approval" || rawStatus === "banned" || rawStatus === "active" || rawStatus === "rejected") {
       return rawStatus as any;
     }
     return "active";
@@ -548,6 +550,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isPendingApproval = userAccessStatus === "pending_approval" && userRole !== "admin";
   const isBanned = userAccessStatus === "banned";
+  const isRejected = userAccessStatus === "rejected";
+  const creditBalance = Number(profile?.credit_balance ?? 0);
 
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
@@ -617,6 +621,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     accessStatus: userAccessStatus,
     isPendingApproval,
     isBanned,
+    isRejected,
+    creditBalance,
     loading,
     isAuthenticated,
     isConfigured,
@@ -648,6 +654,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     brands,
     closeCreateWorkspaceModal,
     createWorkspaceModalOpen,
+    creditBalance,
     currentUser,
     deleteWorkspace,
     error,
@@ -656,6 +663,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isConfigured,
     isOnboardingComplete,
     isPendingApproval,
+    isRejected,
     isSuperAdmin,
     isAuthenticated,
     loading,

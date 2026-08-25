@@ -199,7 +199,7 @@ function AppContent() {
         } else if (!auth.isOnboardingComplete) {
           console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
-        } else if (auth.isPendingApproval || auth.isBanned) {
+        } else if (auth.isPendingApproval || auth.isBanned || auth.isRejected) {
           console.log("[SPARK AUTH] routing: ACCESS GATE FREEZE");
           setViewState("dashboard");
         } else {
@@ -396,8 +396,8 @@ function AppContent() {
         );
       }
 
-      // C. Non-admin user who completed onboarding but access is pending or banned -> Access Gate Freeze
-      if (!auth.isAdmin && (auth.isPendingApproval || auth.isBanned)) {
+      // C. Non-admin user who completed onboarding but access is pending, rejected, or banned -> Access Gate Freeze
+      if (!auth.isAdmin && (auth.isPendingApproval || auth.isBanned || auth.isRejected)) {
         return (
           <ProtectedRoute>
             <AccessGateFreeze

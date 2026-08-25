@@ -1,14 +1,15 @@
-﻿import React from "react";
+import React from "react";
 import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
 import { LogOut } from "lucide-react";
 
 interface AccessGateFreezeProps {
-  status?: "pending_approval" | "active" | "banned" | string | null;
+  status?: "pending_approval" | "active" | "banned" | "rejected" | string | null;
   onSignOut?: () => void;
 }
 
 export function AccessGateFreeze({ status = "pending_approval", onSignOut }: AccessGateFreezeProps) {
   const isBanned = status === "banned";
+  const isRejected = status === "rejected";
 
   return (
     <div className="fixed inset-0 z-[9999] h-screen w-screen bg-[#0B0F17] flex flex-col items-center justify-center p-6 select-none overflow-hidden antialiased">
@@ -27,6 +28,8 @@ export function AccessGateFreeze({ status = "pending_approval", onSignOut }: Acc
           <p className="text-xs text-muted-foreground/75 font-normal tracking-wide">
             {isBanned
               ? "This spark is unavailable."
+              : isRejected
+              ? "Workspace review declined."
               : "Your workspace is being reviewed."}
           </p>
         </div>
