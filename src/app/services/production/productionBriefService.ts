@@ -461,8 +461,29 @@ export class ProductionBriefService {
     const researchPromptBlock = formatResearchContextBlock(resolvedResearch, brand.name);
     const hostStyle = character?.style || character?.name || brand.name;
     const charTraits = character?.traits ? character.traits.join(", ") : "Authoritative, direct, engaging";
-    const pillars = brand.contentPillars ? brand.contentPillars.map((p) => p.label).join(", ") : "Strategy, Insights";
-    const tones = brand.tone ? brand.tone.map((t) => t.label).join(", ") : "Professional, executive";
+
+    const activePillars = Array.isArray(brand.contentPillars)
+      ? brand.contentPillars.filter((p) => p.active !== false).map((p) => p.label)
+      : [];
+    const pillars = activePillars.length > 0 ? activePillars.join(", ") : (brand.niche || "Strategy, Insights");
+
+    const activeTones = Array.isArray(brand.tone)
+      ? brand.tone.filter((t) => t.active !== false).map((t) => t.label)
+      : [];
+    const activeStyles = Array.isArray(brand.style)
+      ? brand.style.filter((s) => s.active !== false).map((s) => s.label)
+      : [];
+    const tones = activeTones.length > 0 ? activeTones.join(", ") : "Authoritative, conversational";
+    const styles = activeStyles.length > 0 ? activeStyles.join(", ") : "Direct-to-camera, story-driven";
+
+    const audPrimary = brand.audience?.primary || "Forward-thinking creators and operators";
+    const audPain = Array.isArray(brand.audience?.painPoints) && brand.audience.painPoints.length > 0
+      ? brand.audience.painPoints.join("; ")
+      : "Inconsistent output and unclear positioning";
+    const audDesires = Array.isArray(brand.audience?.desires) && brand.audience.desires.length > 0
+      ? brand.audience.desires.join("; ")
+      : "High-retention viral authority and rapid execution";
+
     const sparkScore = spark.brandFitScore || 92;
     const modeKey = resolveProductionMode({ modeOverride: productionMode, spark, brand });
 
@@ -495,7 +516,7 @@ ANTI-SLOP COMPILER LAWS (MANDATORY):
    - OnScreenText: <=6-8 words in uppercase
 3. DURATION LAW: Scale substance with duration (${effectiveDurationSec}s). Long targets get more proof, examples, and breakdowns—NEVER empty filler or time-padding.
 4. CTA LAW: spokenCta must be 1 exact ready-to-speak line. onScreenCta must be <=6-8 words in uppercase.
-5. RESEARCH LAW: Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
+5. AUDIENCE & RESEARCH LAW: Address the audience's primary desires and solve their pain points directly. Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
 6. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
 7. OUTPUT LAW: Return valid JSON matching the schema with zero introductory chatter.`;
 
@@ -515,9 +536,14 @@ SOURCE SPARK DATA:
 ${researchPromptBlock ? `${researchPromptBlock}\n` : ""}BRAND IDENTITY & ENVIRONMENT:
 - Brand Name: ${brand.name}
 - Industry Niche: ${niche || brand.niche || "General"}
-- Archetype: ${brand.archetype}
+- Archetype: ${brand.archetype || "Visionary Creator"}
 - Tone Profile: ${tones}
-- Content Pillars: ${pillars}
+- Delivery Style: ${styles}
+- Content Pillars (Active Focus): ${pillars}
+- Country & Language Context: ${brand.country || "Global"} / ${brand.language || "English"}
+- Target Audience: ${audPrimary}
+- Audience Core Pain Points: ${audPain}
+- Audience Core Desires: ${audDesires}
 - Presenter / Host: ${hostStyle} (${charTraits})
 - Production Mode: ${modeKey}
 ${offerPromptSection}

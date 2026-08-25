@@ -41,6 +41,16 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider } from "../services/runtime/providerCapabilities";
+import { SearchableSelect } from "./ui/SearchableSelect";
+import {
+  BRAND_ARCHETYPES,
+  BRAND_NICHES,
+  BRAND_COUNTRIES,
+  BRAND_LANGUAGES,
+  BRAND_TONE_OPTIONS,
+  BRAND_STYLE_OPTIONS,
+  seedDefaultAudience,
+} from "../domain/brandOptions";
 
 interface MySparkProps {
   onNavigate: (path: string) => void;
@@ -70,7 +80,8 @@ export function MySpark({ onNavigate }: MySparkProps) {
     createProductionFromSpark,
     updateMemoryItem,
     toggleContentPillar,
-    toggleTone
+    toggleTone,
+    toggleStyle,
   } = useSpark() as any;
 
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
@@ -95,12 +106,12 @@ export function MySpark({ onNavigate }: MySparkProps) {
   // Profile & Brand Extended Edit State
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [editName, setEditName] = useState(brand?.name || "");
-  const [editNiche, setEditNiche] = useState(brand?.niche || "");
-  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "");
+  const [editNiche, setEditNiche] = useState(brand?.niche || "AI & Automation");
+  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "Visionary Creator");
   const [editPurpose, setEditPurpose] = useState(brand?.purpose || "");
   const [editWebsite, setEditWebsite] = useState(brand?.website || "");
-  const [editCountry, setEditCountry] = useState(brand?.country || "Nigeria");
-  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (UK/NG)");
+  const [editCountry, setEditCountry] = useState(brand?.country || "United States");
+  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (US)");
   const [editAudiencePrimary, setEditAudiencePrimary] = useState(brand?.audience?.primary || "");
   const [editPainPoints, setEditPainPoints] = useState(
     Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints.join(", ") : ""
@@ -108,6 +119,39 @@ export function MySpark({ onNavigate }: MySparkProps) {
   const [editDesires, setEditDesires] = useState(
     Array.isArray(brand?.audience?.desires) ? brand.audience.desires.join(", ") : ""
   );
+
+  const openEditIdentity = () => {
+    setEditName(brand?.name || "");
+    setEditNiche(brand?.niche || "AI & Automation");
+    setEditArchetype(brand?.archetype || "Visionary Creator");
+    setEditPurpose(brand?.purpose || "");
+    setEditWebsite(brand?.website || "");
+    setEditCountry(brand?.country || "United States");
+    setEditLanguage(brand?.language || "English (US)");
+
+    const currentAud = brand?.audience;
+    const isAudEmpty = !currentAud?.primary && (!currentAud?.painPoints || currentAud.painPoints.length === 0);
+    if (isAudEmpty) {
+      const seeded = seedDefaultAudience({
+        niche: brand?.niche || "AI & Automation",
+        archetype: brand?.archetype || "Visionary Creator",
+        country: brand?.country || "United States",
+        characterName: character?.name,
+      });
+      setEditAudiencePrimary(seeded.primary);
+      setEditPainPoints(seeded.painPoints.join(", "));
+      setEditDesires(seeded.desires.join(", "));
+    } else {
+      setEditAudiencePrimary(currentAud?.primary || "");
+      setEditPainPoints(
+        Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
+      );
+      setEditDesires(
+        Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
+      );
+    }
+    setShowEditIdentity(true);
+  };
 
   const [showAddPillar, setShowAddPillar] = useState(false);
   const [newPillarText, setNewPillarText] = useState("");
@@ -118,13 +162,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
     e.preventDefault();
     if (!updateBrand) return;
     updateBrand({
-      name: editName.trim() || brand.name,
-      niche: editNiche.trim() || brand.niche,
-      archetype: editArchetype.trim() || brand.archetype,
-      purpose: editPurpose.trim() || brand.purpose,
+      name: editName.trim() || brand?.name || "My Brand",
+      niche: editNiche.trim() || brand?.niche || "AI & Automation",
+      archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
+      purpose: editPurpose.trim() || brand?.purpose || "",
       website: editWebsite.trim(),
-      country: editCountry.trim(),
-      language: editLanguage.trim(),
+      country: editCountry.trim() || "United States",
+      language: editLanguage.trim() || "English (US)",
       audience: {
         ...brand?.audience,
         primary: editAudiencePrimary.trim(),
@@ -348,39 +392,60 @@ export function MySpark({ onNavigate }: MySparkProps) {
           {/* Brand Identity */}
           <section>
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Brand Identity</h2>
-            <div className="rounded-xl border border-border bg-card p-8">
-              <div className="flex items-start justify-between mb-6">
+            <div className="rounded-xl border border-border bg-card p-8 space-y-6">
+              <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-2xl font-medium">{brand?.name || "My Brand"}</h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-success/20 text-success text-xs font-medium">Active</span>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-1">{brand?.niche || "Content & Media"}</p>
-                  <p className="text-xs text-muted-foreground">Archetype: <span className="text-foreground font-medium">{brand?.archetype || "Visionary Creator"}</span></p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
+                    <span className="px-2 py-0.5 rounded bg-muted font-medium text-foreground">{brand?.niche || "AI & Automation"}</span>
+                    <span>•</span>
+                    <span>Archetype: <strong className="text-foreground">{brand?.archetype || "Visionary Creator"}</strong></span>
+                    <span>•</span>
+                    <span>{brand?.country || "United States"}</span>
+                    <span>•</span>
+                    <span>{brand?.language || "English (US)"}</span>
+                    {brand?.website && (
+                      <>
+                        <span>•</span>
+                        <a href={brand.website.startsWith("http") ? brand.website : `https://${brand.website}`} target="_blank" rel="noreferrer" className="text-accent hover:underline flex items-center gap-1">
+                          <Globe className="w-3 h-3" /> {brand.website.replace(/^https?:\/\//, "")}
+                        </a>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <button
-                  onClick={() => {
-                    setEditName(brand?.name || "");
-                    setEditNiche(brand?.niche || "");
-                    setEditArchetype(brand?.archetype || "");
-                    setEditPurpose(brand?.purpose || "");
-                    setShowEditIdentity(true);
-                  }}
-                  className="px-4 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors"
+                  type="button"
+                  onClick={openEditIdentity}
+                  className="px-4 py-2 rounded-lg border border-border hover:bg-accent/20 text-sm font-medium transition-colors cursor-pointer shrink-0"
                 >
                   Edit Identity
                 </button>
               </div>
+
               <div className="p-4 rounded-xl bg-background border border-border">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Brand Purpose</p>
-                <p className="text-base leading-relaxed">{brand?.purpose || "Creating impactful, high-converting digital productions."}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1 font-mono">Brand Purpose</p>
+                <p className="text-sm leading-relaxed text-foreground">{brand?.purpose || "Creating impactful, high-converting digital productions with compounding distribution."}</p>
               </div>
 
               {showEditIdentity && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-                  <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl">
-                    <h3 className="text-lg font-medium text-foreground">Edit Brand Identity</h3>
-                    <form onSubmit={handleEditIdentitySubmit} className="space-y-3">
+                  <div className="bg-card border border-border rounded-xl p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
+                      <h3 className="text-lg font-medium text-foreground">Edit Brand Identity</h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowEditIdentity(false)}
+                        className="text-muted-foreground hover:text-foreground text-xs p-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleEditIdentitySubmit} className="space-y-4">
                       <div>
                         <label className="text-xs text-muted-foreground uppercase font-mono">Brand Name</label>
                         <input
@@ -388,116 +453,121 @@ export function MySpark({ onNavigate }: MySparkProps) {
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+                          placeholder="e.g. Acme Media"
                           required
                         />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Niche</label>
-                          <input
-                            type="text"
-                            value={editNiche}
-                            onChange={(e) => setEditNiche(e.target.value)}
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Archetype</label>
-                          <input
-                            type="text"
-                            value={editArchetype}
-                            onChange={(e) => setEditArchetype(e.target.value)}
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                            required
-                          />
-                        </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <SearchableSelect
+                          label="Industry Niche"
+                          value={editNiche}
+                          onChange={setEditNiche}
+                          options={BRAND_NICHES}
+                          allowCustom={true}
+                          placeholder="Select niche..."
+                        />
+                        <SearchableSelect
+                          label="Archetype"
+                          value={editArchetype}
+                          onChange={setEditArchetype}
+                          options={BRAND_ARCHETYPES}
+                          allowCustom={true}
+                          placeholder="Select archetype..."
+                        />
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <SearchableSelect
+                          label="Country Focus"
+                          value={editCountry}
+                          onChange={setEditCountry}
+                          options={BRAND_COUNTRIES}
+                          placeholder="Select country..."
+                        />
+                        <SearchableSelect
+                          label="Primary Language"
+                          value={editLanguage}
+                          onChange={setEditLanguage}
+                          options={BRAND_LANGUAGES}
+                          placeholder="Select language..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-muted-foreground uppercase font-mono">Website / URL</label>
+                        <input
+                          type="text"
+                          value={editWebsite}
+                          onChange={(e) => setEditWebsite(e.target.value)}
+                          placeholder="https://yourbrand.com"
+                          className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+                        />
+                      </div>
+
                       <div>
                         <label className="text-xs text-muted-foreground uppercase font-mono">Brand Purpose</label>
                         <textarea
                           rows={2}
                           value={editPurpose}
                           onChange={(e) => setEditPurpose(e.target.value)}
+                          placeholder="What high-level impact and transformation does your brand produce?"
                           className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
                           required
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Website</label>
-                          <input
-                            type="text"
-                            value={editWebsite}
-                            onChange={(e) => setEditWebsite(e.target.value)}
-                            placeholder="https://yourbrand.com"
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Country</label>
-                          <input
-                            type="text"
-                            value={editCountry}
-                            onChange={(e) => setEditCountry(e.target.value)}
-                            placeholder="e.g. Nigeria"
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Language</label>
-                          <input
-                            type="text"
-                            value={editLanguage}
-                            onChange={(e) => setEditLanguage(e.target.value)}
-                            placeholder="e.g. English"
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground uppercase font-mono">Primary Audience</label>
-                        <input
-                          type="text"
-                          value={editAudiencePrimary}
-                          onChange={(e) => setEditAudiencePrimary(e.target.value)}
-                          placeholder="e.g. Tech Founders & Product Creators"
-                          className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Pain Points (Comma Separated)</label>
-                          <input
-                            type="text"
-                            value={editPainPoints}
-                            onChange={(e) => setEditPainPoints(e.target.value)}
-                            placeholder="Limited time, low retention"
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground uppercase font-mono">Desires (Comma Separated)</label>
-                          <input
-                            type="text"
-                            value={editDesires}
-                            onChange={(e) => setEditDesires(e.target.value)}
-                            placeholder="Viral reach, high engagement"
-                            className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          />
+
+                      <div className="pt-2 border-t border-border/50">
+                        <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Audience Profile</p>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs text-muted-foreground">Primary Target Audience</label>
+                            <input
+                              type="text"
+                              value={editAudiencePrimary}
+                              onChange={(e) => setEditAudiencePrimary(e.target.value)}
+                              placeholder="e.g. Growth Founders & Technical Operators"
+                              className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs text-muted-foreground">Pain Points (Comma-separated)</label>
+                              <textarea
+                                rows={2}
+                                value={editPainPoints}
+                                onChange={(e) => setEditPainPoints(e.target.value)}
+                                placeholder="Low retention, fragmented research"
+                                className="w-full mt-1 bg-background text-foreground text-xs border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-muted-foreground">Desires (Comma-separated)</label>
+                              <textarea
+                                rows={2}
+                                value={editDesires}
+                                onChange={(e) => setEditDesires(e.target.value)}
+                                placeholder="High viral reach, category authority"
+                                className="w-full mt-1 bg-background text-foreground text-xs border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex justify-end gap-2 pt-2">
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-border">
                         <button
                           type="button"
                           onClick={() => setShowEditIdentity(false)}
-                          className="px-4 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground"
+                          className="px-4 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
-                          className="px-4 py-2 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95"
+                          className="px-4 py-2 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95 cursor-pointer"
                         >
                           Save Changes
                         </button>
@@ -511,13 +581,22 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
           {/* Content Pillars */}
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Content Pillars</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Content Pillars</h2>
+              <span className="text-xs text-muted-foreground font-mono">
+                {((Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).filter((p: any) => p.active !== false).length)} active (3–5 recommended)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Pillars are the 3–5 repeatable themes your channel owns (not vague one-word categories).
+            </p>
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-muted-foreground">These pillars guide every production decision</p>
+                <p className="text-sm font-medium">Active Production Pillars</p>
                 <button
+                  type="button"
                   onClick={() => setShowAddPillar(!showAddPillar)}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-xs text-accent font-medium hover:underline transition-colors cursor-pointer"
                 >
                   {showAddPillar ? "Cancel" : "+ Add pillar"}
                 </button>
@@ -529,36 +608,38 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     type="text"
                     value={newPillarText}
                     onChange={(e) => setNewPillarText(e.target.value)}
-                    placeholder="Enter new content pillar..."
-                    className="flex-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent/50"
+                    placeholder="e.g. AI Workflow Breakdowns..."
+                    className="flex-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
                     required
+                    autoFocus
                   />
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95"
+                    className="px-4 py-2 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95 cursor-pointer"
                   >
-                    Add
+                    Add Pillar
                   </button>
                 </form>
               )}
 
               <div className="flex flex-wrap gap-2">
                 {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : [
-                  { label: "Educational", active: true },
-                  { label: "Strategic", active: true },
-                  { label: "Behind the Scenes", active: true },
-                  { label: "Industry Trends", active: true },
+                  { label: "AI & Automation", active: true },
+                  { label: "Digital Strategy", active: true },
+                  { label: "Content Creation", active: true },
                 ]).map((pillar: any) => (
                   <button
                     key={pillar.label}
+                    type="button"
                     onClick={() => toggleContentPillar && toggleContentPillar(pillar.label)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
                       pillar.active
-                        ? "bg-accent text-foreground border border-accent/60"
+                        ? "bg-accent text-accent-foreground border border-accent/60 shadow-sm"
                         : "bg-background border border-border text-muted-foreground hover:border-accent/40"
                     }`}
                   >
-                    {pillar.label}
+                    <span>{pillar.label}</span>
+                    {pillar.active && <Check className="w-3 h-3" />}
                   </button>
                 ))}
               </div>
@@ -665,31 +746,46 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
           {/* Audience */}
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Audience Profile</h2>
-            <div className="rounded-xl border border-border bg-card p-8">
-              <div className="mb-5 p-4 rounded-xl bg-background border border-border">
-                <p className="text-xs text-muted-foreground mb-1">Primary Audience</p>
-                <p className="text-base font-medium">{brand?.audience?.primary || (typeof brand?.audience === "string" ? brand.audience : "Modern digital creators & tech founders")}</p>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Audience Profile</h2>
+              <button
+                type="button"
+                onClick={openEditIdentity}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+              >
+                <Edit3 className="w-3 h-3" /> Edit Profile
+              </button>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-8 space-y-6">
+              <div className="p-4 rounded-xl bg-background border border-border">
+                <p className="text-xs text-muted-foreground mb-1 font-mono uppercase">Primary Audience</p>
+                <p className="text-base font-medium">{brand?.audience?.primary || "Modern digital creators, founders & operators"}</p>
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Pain Points</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3 font-mono">Core Pain Points</p>
                   <div className="space-y-2">
-                    {(Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints : ["Time constraints in content creation", "Inconsistent engagement across formats"]).map((point: any, i: number) => (
+                    {(Array.isArray(brand?.audience?.painPoints) && brand.audience.painPoints.length > 0
+                      ? brand.audience.painPoints
+                      : ["Time constraints in content creation", "Inconsistent engagement and low retention"]
+                    ).map((point: any, i: number) => (
                       <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/5 border border-destructive/10">
                         <AlertCircle className="w-3.5 h-3.5 text-destructive mt-0.5 flex-shrink-0" />
-                        <p className="text-sm">{point}</p>
+                        <p className="text-xs text-foreground">{point}</p>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Desires</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3 font-mono">Core Desires</p>
                   <div className="space-y-2">
-                    {(Array.isArray(brand?.audience?.desires) ? brand.audience.desires : ["High retention and viral reach", "Scalable media workflow"]).map((desire: any, i: number) => (
+                    {(Array.isArray(brand?.audience?.desires) && brand.audience.desires.length > 0
+                      ? brand.audience.desires
+                      : ["High retention and compounding viral reach", "Scalable, automated media operations"]
+                    ).map((desire: any, i: number) => (
                       <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg bg-success/5 border border-success/10">
                         <CheckCircle2 className="w-3.5 h-3.5 text-success mt-0.5 flex-shrink-0" />
-                        <p className="text-sm">{desire}</p>
+                        <p className="text-xs text-foreground">{desire}</p>
                       </div>
                     ))}
                   </div>
@@ -698,35 +794,73 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
           </section>
 
-          {/* Tone Matrix */}
+          {/* Tone & Style Matrix */}
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">Tone & Style</h2>
-            <div className="rounded-xl border border-border bg-card p-6">
-              <p className="text-sm text-muted-foreground mb-4">Active tones shape every script, caption, and hook</p>
-              <div className="flex flex-wrap gap-2">
-                {(Array.isArray(brand?.tone)
-                  ? brand.tone
-                  : typeof brand?.tone === "string" && brand.tone.trim()
-                  ? brand.tone.split(",").map((t: string) => ({ label: t.trim(), active: true })).filter((t: any) => t.label)
-                  : [
-                      { label: "Direct", active: true },
-                      { label: "Analytical", active: true },
-                      { label: "Relatable", active: true },
-                      { label: "Authoritative", active: true },
-                    ]
-                ).map((t: any) => (
-                  <button
-                    key={t.label}
-                    onClick={() => toggleTone && toggleTone(t.label)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      t.active
-                        ? "bg-foreground text-background"
-                        : "bg-background border border-border text-muted-foreground hover:border-border"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tone & Style</h2>
+              <span className="text-xs text-muted-foreground font-mono">
+                {((Array.isArray(brand?.tone) ? brand.tone : []).filter((t: any) => t.active !== false).length)} tones active (2–4 recommended)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Select 2–4 tones to avoid contradiction. Active tones and delivery styles shape every script and hook.
+            </p>
+            
+            <div className="rounded-xl border border-border bg-card p-6 space-y-6">
+              {/* Tone of Voice */}
+              <div>
+                <p className="text-xs font-mono uppercase text-muted-foreground mb-3">Tone of Voice</p>
+                <div className="flex flex-wrap gap-2">
+                  {BRAND_TONE_OPTIONS.map((opt) => {
+                    const currentTones = Array.isArray(brand?.tone) ? brand.tone : [];
+                    const match = currentTones.find((t: any) => t.label?.toLowerCase() === opt.toLowerCase());
+                    const isActive = match ? match.active : false;
+
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => toggleTone && toggleTone(opt)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isActive
+                            ? "bg-foreground text-background border border-foreground shadow-sm"
+                            : "bg-background border border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                        }`}
+                      >
+                        <span>{opt}</span>
+                        {isActive && <Check className="w-3 h-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Delivery & Narrative Style */}
+              <div className="pt-4 border-t border-border/50">
+                <p className="text-xs font-mono uppercase text-muted-foreground mb-3">Delivery & Narrative Style</p>
+                <div className="flex flex-wrap gap-2">
+                  {BRAND_STYLE_OPTIONS.map((opt) => {
+                    const currentStyles = Array.isArray(brand?.style) ? brand.style : [];
+                    const match = currentStyles.find((s: any) => s.label?.toLowerCase() === opt.toLowerCase());
+                    const isActive = match ? match.active : false;
+
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => toggleStyle && toggleStyle(opt)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isActive
+                            ? "bg-accent text-accent-foreground border border-accent shadow-sm"
+                            : "bg-background border border-border text-muted-foreground hover:border-accent/40 hover:text-foreground"
+                        }`}
+                      >
+                        <span>{opt}</span>
+                        {isActive && <Check className="w-3 h-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>

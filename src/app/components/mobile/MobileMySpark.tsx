@@ -40,6 +40,16 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider } from "../../services/runtime/providerCapabilities";
+import { SearchableSelect } from "../ui/SearchableSelect";
+import {
+  BRAND_ARCHETYPES,
+  BRAND_NICHES,
+  BRAND_COUNTRIES,
+  BRAND_LANGUAGES,
+  BRAND_TONE_OPTIONS,
+  BRAND_STYLE_OPTIONS,
+  seedDefaultAudience,
+} from "../../domain/brandOptions";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -70,6 +80,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     updateMemoryItem,
     toggleContentPillar,
     toggleTone,
+    toggleStyle,
   } = useSpark() as any;
 
   // Purpose Expand State
@@ -106,12 +117,12 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   // Edit Identity Full-Screen Mobile Sheet State
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [editName, setEditName] = useState(brand?.name || "");
-  const [editNiche, setEditNiche] = useState(brand?.niche || "");
-  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "");
+  const [editNiche, setEditNiche] = useState(brand?.niche || "AI & Automation");
+  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "Visionary Creator");
   const [editPurpose, setEditPurpose] = useState(brand?.purpose || "");
   const [editWebsite, setEditWebsite] = useState(brand?.website || "");
-  const [editCountry, setEditCountry] = useState(brand?.country || "Nigeria");
-  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (UK/NG)");
+  const [editCountry, setEditCountry] = useState(brand?.country || "United States");
+  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (US)");
   const [editAudiencePrimary, setEditAudiencePrimary] = useState(brand?.audience?.primary || "");
   const [editPainPoints, setEditPainPoints] = useState(
     Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints.join(", ") : ""
@@ -120,17 +131,50 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     Array.isArray(brand?.audience?.desires) ? brand.audience.desires.join(", ") : ""
   );
 
+  const openEditIdentity = () => {
+    setEditName(brand?.name || "");
+    setEditNiche(brand?.niche || "AI & Automation");
+    setEditArchetype(brand?.archetype || "Visionary Creator");
+    setEditPurpose(brand?.purpose || "");
+    setEditWebsite(brand?.website || "");
+    setEditCountry(brand?.country || "United States");
+    setEditLanguage(brand?.language || "English (US)");
+
+    const currentAud = brand?.audience;
+    const isAudEmpty = !currentAud?.primary && (!currentAud?.painPoints || currentAud.painPoints.length === 0);
+    if (isAudEmpty) {
+      const seeded = seedDefaultAudience({
+        niche: brand?.niche || "AI & Automation",
+        archetype: brand?.archetype || "Visionary Creator",
+        country: brand?.country || "United States",
+        characterName: character?.name,
+      });
+      setEditAudiencePrimary(seeded.primary);
+      setEditPainPoints(seeded.painPoints.join(", "));
+      setEditDesires(seeded.desires.join(", "));
+    } else {
+      setEditAudiencePrimary(currentAud?.primary || "");
+      setEditPainPoints(
+        Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
+      );
+      setEditDesires(
+        Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
+      );
+    }
+    setShowEditIdentity(true);
+  };
+
   const handleEditIdentitySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!updateBrand) return;
     updateBrand({
       name: editName.trim() || brand?.name || "My Brand",
-      niche: editNiche.trim() || brand?.niche || "Content & Media",
+      niche: editNiche.trim() || brand?.niche || "AI & Automation",
       archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
-      purpose: editPurpose.trim() || brand?.purpose || "Creating impactful digital content.",
+      purpose: editPurpose.trim() || brand?.purpose || "",
       website: editWebsite.trim(),
-      country: editCountry.trim(),
-      language: editLanguage.trim(),
+      country: editCountry.trim() || "United States",
+      language: editLanguage.trim() || "English (US)",
       audience: {
         ...brand?.audience,
         primary: editAudiencePrimary.trim(),
@@ -315,7 +359,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   return (
     <div className="w-full min-h-[100dvh] flex flex-col space-y-4 pt-3 pb-6 px-4 antialiased">
       {/* 1. Compact Header: Brand Name, Niche, Archetype, Active Badge, Edit Button */}
-      <div className="flex items-center justify-between gap-3 pt-2 pb-1 border-b border-border/40">
+      <div className="flex items-start justify-between gap-3 pt-2 pb-2 border-b border-border/40">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold truncate tracking-tight text-foreground">{brand?.name || "My Brand"}</h1>
@@ -323,25 +367,18 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Active
             </span>
           </div>
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {brand?.niche || "Content Creation"} • <span className="font-mono text-[11px]">{brand?.archetype || "The Expert Guide"}</span>
-          </p>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-1">
+            <span className="px-1.5 py-0.2 rounded bg-muted font-medium text-foreground text-[11px]">{brand?.niche || "AI & Automation"}</span>
+            <span>•</span>
+            <span className="text-[11px]">{brand?.archetype || "Visionary Creator"}</span>
+            <span>•</span>
+            <span className="text-[11px]">{brand?.country || "United States"}</span>
+          </div>
         </div>
         <button
-          onClick={() => {
-            setEditName(brand?.name || "");
-            setEditNiche(brand?.niche || "");
-            setEditArchetype(brand?.archetype || "");
-            setEditPurpose(brand?.purpose || "");
-            setEditWebsite(brand?.website || "");
-            setEditCountry(brand?.country || "Nigeria");
-            setEditLanguage(brand?.language || "English (UK/NG)");
-            setEditAudiencePrimary(brand?.audience?.primary || "");
-            setEditPainPoints(Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints.join(", ") : "");
-            setEditDesires(Array.isArray(brand?.audience?.desires) ? brand.audience.desires.join(", ") : "");
-            setShowEditIdentity(true);
-          }}
-          className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-accent/15 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors shadow-sm min-h-[38px]"
+          type="button"
+          onClick={openEditIdentity}
+          className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-accent/15 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors shadow-sm min-h-[38px] cursor-pointer"
         >
           <Edit3 className="w-3.5 h-3.5 text-accent-foreground" />
           Edit
@@ -370,12 +407,17 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
       {/* 3. Content Pillars */}
       <section className="rounded-xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-accent-foreground" /> Content Pillars
-          </h2>
+          <div>
+            <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-accent-foreground" /> Content Pillars
+            </h2>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {((Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).filter((p: any) => p.active !== false).length)} active (3–5 recommended)
+            </p>
+          </div>
           <button
             onClick={() => setShowAddPillar(!showAddPillar)}
-            className="text-[11px] text-accent-foreground font-medium flex items-center gap-1"
+            className="text-[11px] text-accent-foreground font-medium flex items-center gap-1 cursor-pointer"
           >
             {showAddPillar ? "Cancel" : "+ Add"}
           </button>
@@ -390,10 +432,11 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               placeholder="New pillar name..."
               className="flex-1 bg-background text-foreground text-xs border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
               required
+              autoFocus
             />
             <button
               type="submit"
-              className="px-3 py-2 rounded-lg bg-foreground text-background text-xs font-semibold hover:bg-foreground/90 shrink-0"
+              className="px-3 py-2 rounded-lg bg-foreground text-background text-xs font-semibold hover:bg-foreground/90 shrink-0 cursor-pointer"
             >
               Add
             </button>
@@ -401,17 +444,23 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         )}
 
         <div className="flex flex-wrap gap-2">
-          {(brand?.contentPillars || []).map((pillar: any) => (
+          {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : [
+            { label: "AI & Automation", active: true },
+            { label: "Digital Strategy", active: true },
+            { label: "Content Creation", active: true },
+          ]).map((pillar: any) => (
             <button
               key={pillar.label}
+              type="button"
               onClick={() => toggleContentPillar && toggleContentPillar(pillar.label)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[34px] ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[34px] flex items-center gap-1 cursor-pointer ${
                 pillar.active
-                  ? "bg-accent text-foreground border border-accent/60 shadow-sm"
+                  ? "bg-accent text-accent-foreground border border-accent/60 shadow-sm"
                   : "bg-background border border-border text-muted-foreground"
               }`}
             >
-              {pillar.label}
+              <span>{pillar.label}</span>
+              {pillar.active && <Check className="w-3 h-3" />}
             </button>
           ))}
         </div>
@@ -509,19 +558,31 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
       {/* 5. Audience Profile */}
       <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-          <Users className="w-3.5 h-3.5 text-accent-foreground" /> Audience Profile
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5 text-accent-foreground" /> Audience Profile
+          </h2>
+          <button
+            type="button"
+            onClick={openEditIdentity}
+            className="text-[11px] text-accent-foreground font-medium flex items-center gap-1 cursor-pointer"
+          >
+            <Edit3 className="w-3 h-3" /> Edit
+          </button>
+        </div>
 
         <div className="p-3 rounded-lg bg-background border border-border space-y-1">
           <p className="text-[10px] uppercase font-mono text-muted-foreground font-semibold">Primary Target</p>
-          <p className="text-xs font-medium text-foreground">{brand?.audience?.primary || "Digital creators and tech professionals"}</p>
+          <p className="text-xs font-medium text-foreground">{brand?.audience?.primary || "Digital creators, founders and technical operators"}</p>
         </div>
 
         {/* Stacked Pain Points */}
         <div className="space-y-1.5">
           <p className="text-[10px] uppercase font-mono text-muted-foreground font-semibold">Pain Points</p>
-          {(brand?.audience?.painPoints || []).map((point: string, i: number) => (
+          {(Array.isArray(brand?.audience?.painPoints) && brand.audience.painPoints.length > 0
+            ? brand.audience.painPoints
+            : ["Time constraints in content creation", "Inconsistent engagement across formats"]
+          ).map((point: string, i: number) => (
             <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/5 border border-destructive/15 text-xs">
               <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
               <p className="text-foreground/90">{point}</p>
@@ -532,7 +593,10 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         {/* Stacked Desires */}
         <div className="space-y-1.5">
           <p className="text-[10px] uppercase font-mono text-muted-foreground font-semibold">Desires</p>
-          {(brand?.audience?.desires || []).map((desire: string, i: number) => (
+          {(Array.isArray(brand?.audience?.desires) && brand.audience.desires.length > 0
+            ? brand.audience.desires
+            : ["High retention and viral reach", "Scalable media workflow"]
+          ).map((desire: string, i: number) => (
             <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-success/5 border border-success/15 text-xs">
               <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0 mt-0.5" />
               <p className="text-foreground/90">{desire}</p>
@@ -542,34 +606,74 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
       </section>
 
       {/* 6. Tone & Style */}
-      <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-accent-foreground" /> Tone Matrix
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          {(Array.isArray(brand?.tone)
-            ? brand.tone
-            : typeof brand?.tone === "string" && brand.tone.trim()
-            ? brand.tone.split(",").map((t: string) => ({ label: t.trim(), active: true })).filter((t: any) => t.label)
-            : [
-                { label: "Direct", active: true },
-                { label: "Analytical", active: true },
-                { label: "Relatable", active: true },
-                { label: "Authoritative", active: true },
-              ]
-          ).map((t: any) => (
-            <button
-              key={t.label}
-              onClick={() => toggleTone && toggleTone(t.label)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[34px] ${
-                t.active
-                  ? "bg-foreground text-background font-semibold"
-                  : "bg-background border border-border text-muted-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <section className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-accent-foreground" /> Tone of Voice
+            </h2>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {((Array.isArray(brand?.tone) ? brand.tone : []).filter((t: any) => t.active !== false).length)} active (2–4 rec.)
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground mb-2.5">
+            Defines the narrator's attitude and personality in every script.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {BRAND_TONE_OPTIONS.map((opt) => {
+              const currentTones = Array.isArray(brand?.tone) ? brand.tone : [];
+              const match = currentTones.find((t: any) => t.label?.toLowerCase() === opt.toLowerCase());
+              const isActive = match ? match.active : false;
+
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => toggleTone && toggleTone(opt)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[32px] flex items-center gap-1 cursor-pointer ${
+                    isActive
+                      ? "bg-foreground text-background font-semibold shadow-sm"
+                      : "bg-background border border-border text-muted-foreground"
+                  }`}
+                >
+                  <span>{opt}</span>
+                  {isActive && <Check className="w-2.5 h-2.5" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-border/40">
+          <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+            Delivery & Narrative Style
+          </h3>
+          <p className="text-[10px] text-muted-foreground mb-2.5">
+            Structural framework for content presentation.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {BRAND_STYLE_OPTIONS.map((opt) => {
+              const currentStyles = Array.isArray(brand?.style) ? brand.style : [];
+              const match = currentStyles.find((s: any) => s.label?.toLowerCase() === opt.toLowerCase());
+              const isActive = match ? match.active : false;
+
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => toggleStyle && toggleStyle(opt)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[32px] flex items-center gap-1 cursor-pointer ${
+                    isActive
+                      ? "bg-accent text-accent-foreground border border-accent font-semibold shadow-sm"
+                      : "bg-background border border-border text-muted-foreground"
+                  }`}
+                >
+                  <span>{opt}</span>
+                  {isActive && <Check className="w-2.5 h-2.5" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -1281,7 +1385,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             </div>
             <button
               onClick={() => setShowEditIdentity(false)}
-              className="p-2 rounded-lg text-muted-foreground hover:text-foreground"
+              className="p-2 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1294,32 +1398,57 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
+                placeholder="e.g. Acme Media"
                 className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
                 required
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Niche</label>
-                <input
-                  type="text"
-                  value={editNiche}
-                  onChange={(e) => setEditNiche(e.target.value)}
-                  className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Archetype</label>
-                <input
-                  type="text"
-                  value={editArchetype}
-                  onChange={(e) => setEditArchetype(e.target.value)}
-                  className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
-                  required
-                />
-              </div>
+            <div className="space-y-3">
+              <SearchableSelect
+                label="Industry Niche"
+                value={editNiche}
+                onChange={setEditNiche}
+                options={BRAND_NICHES}
+                allowCustom={true}
+                placeholder="Select niche..."
+              />
+              <SearchableSelect
+                label="Archetype"
+                value={editArchetype}
+                onChange={setEditArchetype}
+                options={BRAND_ARCHETYPES}
+                allowCustom={true}
+                placeholder="Select archetype..."
+              />
+            </div>
+
+            <div className="space-y-3">
+              <SearchableSelect
+                label="Country Focus"
+                value={editCountry}
+                onChange={setEditCountry}
+                options={BRAND_COUNTRIES}
+                placeholder="Select country..."
+              />
+              <SearchableSelect
+                label="Primary Language"
+                value={editLanguage}
+                onChange={setEditLanguage}
+                options={BRAND_LANGUAGES}
+                placeholder="Select language..."
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Website / URL</label>
+              <input
+                type="text"
+                value={editWebsite}
+                onChange={(e) => setEditWebsite(e.target.value)}
+                placeholder="https://yourbrand.com"
+                className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
+              />
             </div>
 
             <div>
@@ -1328,61 +1457,45 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 rows={3}
                 value={editPurpose}
                 onChange={(e) => setEditPurpose(e.target.value)}
+                placeholder="What high-level impact and transformation does your brand produce?"
                 className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent"
                 required
               />
             </div>
 
-            <div>
-              <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Primary Target Audience</label>
-              <input
-                type="text"
-                value={editAudiencePrimary}
-                onChange={(e) => setEditAudiencePrimary(e.target.value)}
-                placeholder="e.g. Tech Founders & Product Creators"
-                className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
-              />
-            </div>
+            <div className="pt-2 border-t border-border/50 space-y-3">
+              <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">Audience Profile</p>
 
-            <div>
-              <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Pain Points (Comma Separated)</label>
-              <input
-                type="text"
-                value={editPainPoints}
-                onChange={(e) => setEditPainPoints(e.target.value)}
-                placeholder="e.g. Low retention, high production time"
-                className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Desires (Comma Separated)</label>
-              <input
-                type="text"
-                value={editDesires}
-                onChange={(e) => setEditDesires(e.target.value)}
-                placeholder="e.g. Viral reach, high subscriber conversion"
-                className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Country</label>
+                <label className="text-xs text-muted-foreground font-medium">Primary Target Audience</label>
                 <input
                   type="text"
-                  value={editCountry}
-                  onChange={(e) => setEditCountry(e.target.value)}
+                  value={editAudiencePrimary}
+                  onChange={(e) => setEditAudiencePrimary(e.target.value)}
+                  placeholder="e.g. Growth Founders & Technical Operators"
                   className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
                 />
               </div>
+
               <div>
-                <label className="text-xs font-mono uppercase text-muted-foreground font-semibold">Language</label>
-                <input
-                  type="text"
-                  value={editLanguage}
-                  onChange={(e) => setEditLanguage(e.target.value)}
-                  className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent min-h-[44px]"
+                <label className="text-xs text-muted-foreground font-medium">Pain Points (Comma Separated)</label>
+                <textarea
+                  rows={2}
+                  value={editPainPoints}
+                  onChange={(e) => setEditPainPoints(e.target.value)}
+                  placeholder="e.g. Low retention, high production time"
+                  className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground font-medium">Desires (Comma Separated)</label>
+                <textarea
+                  rows={2}
+                  value={editDesires}
+                  onChange={(e) => setEditDesires(e.target.value)}
+                  placeholder="e.g. Viral reach, high subscriber conversion"
+                  className="w-full mt-1 bg-card text-foreground text-sm border border-border rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-accent"
                 />
               </div>
             </div>
@@ -1391,13 +1504,13 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               <button
                 type="button"
                 onClick={() => setShowEditIdentity(false)}
-                className="flex-1 py-3 rounded-xl border border-border text-xs font-semibold text-muted-foreground min-h-[44px]"
+                className="flex-1 py-3 rounded-xl border border-border text-xs font-semibold text-muted-foreground min-h-[44px] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 rounded-xl bg-foreground text-background text-xs font-semibold hover:bg-foreground/90 min-h-[44px]"
+                className="flex-1 py-3 rounded-xl bg-foreground text-background text-xs font-semibold hover:bg-foreground/90 min-h-[44px] cursor-pointer"
               >
                 Save Changes
               </button>

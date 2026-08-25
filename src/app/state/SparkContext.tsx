@@ -136,6 +136,7 @@ interface SparkContextType {
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
+  toggleStyle: (label: string) => void;
   addChatMessage: (msg: ChatMessage) => void;
   updateChatMessage: (msgId: string, newText: string, isStreaming?: boolean, media?: any) => void;
   sendMessage: (prompt: string, onChunk?: (chunk: string) => void) => Promise<any>;
@@ -1223,18 +1224,49 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleTone = (label: string) => {
     let updatedTones: any[] = [];
     setState((prev: any) => {
-      updatedTones = prev.brand.tone.map((t: any) =>
-        t.label === label ? { ...t, active: !t.active } : t
-      );
+      const currentList = Array.isArray(prev.brand?.tone) ? prev.brand.tone : [];
+      const exists = currentList.some((t: any) => t.label === label);
+      if (exists) {
+        updatedTones = currentList.map((t: any) =>
+          t.label === label ? { ...t, active: !t.active } : t
+        );
+      } else {
+        updatedTones = [...currentList, { label, active: true }];
+      }
       return {
         ...prev,
         brand: { ...prev.brand, tone: updatedTones }
       };
     });
-    const brandId = getBrandWorkspaceId();
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
     if (brandId && updatedTones.length > 0) {
       void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
         void persistBrandUpdate(brandId, { tone: updatedTones });
+      });
+    }
+  };
+
+  const toggleStyle = (label: string) => {
+    let updatedStyles: any[] = [];
+    setState((prev: any) => {
+      const currentList = Array.isArray(prev.brand?.style) ? prev.brand.style : [];
+      const exists = currentList.some((s: any) => s.label === label);
+      if (exists) {
+        updatedStyles = currentList.map((s: any) =>
+          s.label === label ? { ...s, active: !s.active } : s
+        );
+      } else {
+        updatedStyles = [...currentList, { label, active: true }];
+      }
+      return {
+        ...prev,
+        brand: { ...prev.brand, style: updatedStyles }
+      };
+    });
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (brandId && updatedStyles.length > 0) {
+      void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+        void persistBrandUpdate(brandId, { style: updatedStyles });
       });
     }
   };
@@ -2728,6 +2760,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         getActiveOffers,
         toggleContentPillar,
         toggleTone,
+        toggleStyle,
         addChatMessage,
         updateChatMessage,
         sendMessage,

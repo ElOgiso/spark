@@ -3,6 +3,9 @@ export interface Brand {
   niche: string;
   archetype: string;
   purpose: string;
+  country?: string;
+  language?: string;
+  website?: string;
   contentPillars: { label: string; active: boolean }[];
   audience: {
     primary: string;
@@ -10,6 +13,7 @@ export interface Brand {
     desires: string[];
   };
   tone: { label: string; active: boolean }[];
+  style?: { label: string; active: boolean }[];
   // Future backend and automation configuration fields
   automation_mode?: AutomationMode;
   productionMode?: string;

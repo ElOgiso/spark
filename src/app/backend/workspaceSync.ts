@@ -88,40 +88,51 @@ function brandRowToDomain(row: BrandRow): Brand {
     ? (row.audience as any)
     : {};
 
+  const toneObj = (row.tone && typeof row.tone === "object" && !Array.isArray(row.tone))
+    ? (row.tone as any)
+    : null;
+
+  const rawToneList = toneObj?.tones || (Array.isArray(row.tone) ? row.tone : null);
+  const rawStyleList = toneObj?.style;
+
   return {
     name: row.name || "My Brand",
     niche: row.niche || "Content Creation",
-    archetype: row.archetype || "The Expert Guide",
+    archetype: row.archetype || "Visionary Creator",
     purpose: row.purpose || "Creating authoritative, engaging digital media content.",
     website: audienceObj.website || "",
-    country: audienceObj.country || "Nigeria",
-    language: audienceObj.language || "English (UK/NG)",
+    country: audienceObj.country || "United States",
+    language: audienceObj.language || "English (US)",
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
       : [
           { label: "AI & Automation", active: true },
           { label: "Digital Strategy", active: true },
           { label: "Content Creation", active: true },
-          { label: "Growth Marketing", active: true },
         ],
     audience: {
       primary: audienceObj.primary || "Digital creators and forward-thinking professionals",
       painPoints: Array.isArray(audienceObj.painPoints) ? audienceObj.painPoints : ["Inconsistent publishing workflow", "High time investment required for research"],
       desires: Array.isArray(audienceObj.desires) ? audienceObj.desires : ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
     },
-    tone: Array.isArray(row.tone)
-      ? (row.tone as any[]).map((t) => typeof t === "string" ? { label: t, active: true } : t)
+    tone: Array.isArray(rawToneList)
+      ? (rawToneList as any[]).map((t) => typeof t === "string" ? { label: t, active: true } : t)
       : [
-          { label: "Energetic", active: true },
-          { label: "Relatable", active: true },
-          { label: "Expert", active: true },
-          { label: "Inspiring", active: true },
+          { label: "Authoritative", active: true },
+          { label: "Conversational", active: true },
+          { label: "Bold", active: true },
+        ],
+    style: Array.isArray(rawStyleList)
+      ? (rawStyleList as any[]).map((s) => typeof s === "string" ? { label: s, active: true } : s)
+      : [
+          { label: "Direct-to-camera", active: true },
+          { label: "Story-driven", active: true },
         ],
     automation_mode: row.automation_mode || "balanced",
     review_required: row.review_required ?? true,
     publish_requires_approval: row.publish_requires_approval ?? true,
     autonomous_publishing_enabled: row.autonomous_publishing_enabled ?? false,
-  } as any;
+  };
 }
 
 function characterRowToDomain(row: CharacterRow): Character {
@@ -638,7 +649,16 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
     if (patch.archetype !== undefined) rowPatch.archetype = patch.archetype;
     if (patch.purpose !== undefined) rowPatch.purpose = patch.purpose;
     if (patch.contentPillars !== undefined) rowPatch.content_pillars = patch.contentPillars;
-    if (patch.tone !== undefined) rowPatch.tone = patch.tone;
+    if (patch.tone !== undefined || patch.style !== undefined) {
+      if (patch.style !== undefined) {
+        rowPatch.tone = {
+          tones: patch.tone,
+          style: patch.style,
+        };
+      } else {
+        rowPatch.tone = patch.tone;
+      }
+    }
 
     const audienceObj: Record<string, any> =
       typeof patch.audience === "object" && patch.audience !== null ? { ...patch.audience } : {};
