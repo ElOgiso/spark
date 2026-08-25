@@ -241,6 +241,14 @@ export function TopBar({
                 </div>
 
                 <div className="space-y-1">
+                  {auth.isAdmin && (
+                    <button
+                      onClick={() => handleNavigate("/admin/inbox")}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all cursor-pointer font-medium"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400" /> Admin access
+                    </button>
+                  )}
                   <button
                     onClick={() => handleNavigate("/more")}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-muted-foreground hover:text-foreground hover:bg-accent/15 transition-all cursor-pointer"

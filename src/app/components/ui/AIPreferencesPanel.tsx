@@ -73,6 +73,7 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 high-density scripting", logoId: "claude" },
       { id: "openai", name: "OpenAI", desc: "GPT-5.6 Production Brief writer", logoId: "openai" },
       { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash scriptwriter", logoId: "gemini" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 high-velocity script drafting", logoId: "grok" },
     ],
   },
   {
@@ -115,6 +116,7 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "elevenlabs", name: "ElevenLabs", desc: "Production Voice Library & Custom Clones", logoId: "elevenlabs" },
       { id: "gemini", name: "Google Gemini TTS", desc: "Natural multi-voice speech synthesis", logoId: "gemini" },
       { id: "openai", name: "OpenAI Voice", desc: "Super Spark conversational speech audio", logoId: "openai" },
+      { id: "grok", name: "xAI Grok TTS", desc: "xAI Grok speech synthesis (Eve Voice)", logoId: "grok" },
     ],
   },
   {
@@ -127,18 +129,22 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best background model", logoId: "auto" },
       { id: "openai", name: "OpenAI", desc: "GPT-5.6 Mini efficient background execution", logoId: "openai" },
       { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash high-throughput operations", logoId: "gemini" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 autonomous execution", logoId: "claude" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 background radar", logoId: "grok" },
     ],
   },
   {
     key: "analytics",
     name: "Analytics & Attribution",
-    shortLabel: "Virality Intelligence",
+    shortLabel: "Virality & Metrics",
     category: "Operations",
-    desc: "Audience reach estimation, engagement attribution, and virality scoring",
+    desc: "Performance attribution, retention decay analysis, and virality diagnostics",
     allowedProviders: [
-      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects best analytics model", logoId: "auto" },
-      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 Flash structured telemetry analysis", logoId: "gemini" },
-      { id: "openai", name: "OpenAI", desc: "GPT-5.6 performance attribution", logoId: "openai" },
+      { id: "auto", name: "Best Available (Auto)", desc: "SPARK selects optimal analytics intelligence model", logoId: "auto" },
+      { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 deep statistical analysis", logoId: "gemini" },
+      { id: "openai", name: "OpenAI", desc: "GPT-5.6 performance intelligence", logoId: "openai" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 attribution synthesis", logoId: "claude" },
+      { id: "grok", name: "xAI Grok", desc: "Grok 4.5 real-time metrics modeling", logoId: "grok" },
     ],
   },
 ];

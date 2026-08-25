@@ -1066,17 +1066,28 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => {
-            setEditName(profileName);
-            setEditEmail(profileEmail);
-            setEditRole(profileRole);
-            setActiveDetail("Edit Profile");
-          }}
-          className="w-full py-2.5 px-4 rounded-lg border border-border hover:bg-accent/10 transition-colors text-sm font-medium"
-        >
-          Edit Profile
-        </button>
+        <div className="flex flex-col gap-2">
+          {auth.isAdmin && (
+            <button
+              onClick={() => onNavigate?.("/admin/inbox")}
+              className="w-full py-2.5 px-4 rounded-lg bg-purple-500/15 border border-purple-500/30 hover:bg-purple-500/25 transition-colors text-sm font-semibold text-purple-300 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-400" />
+              Admin access
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setEditName(profileName);
+              setEditEmail(profileEmail);
+              setEditRole(profileRole);
+              setActiveDetail("Edit Profile");
+            }}
+            className="w-full py-2.5 px-4 rounded-lg border border-border hover:bg-accent/10 transition-colors text-sm font-medium"
+          >
+            Edit Profile
+          </button>
+        </div>
       </div>
 
       {/* Auth Status */}

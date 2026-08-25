@@ -3,6 +3,7 @@ import { useSpark } from "../../state/SparkContext";
 import { ModelRouter } from "../../services/runtime/modelRouter";
 import type { AIProviderId, AICapabilityType, AIRoutingCategory } from "../../domain/types";
 import { getProviderLogo } from "../ui/AIProviderLogos";
+import { MODEL_CATALOG, getModelsForProviderAndCapability, getModelLabel } from "../../services/runtime/modelCatalog";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 import {
   Sparkles,
@@ -13,6 +14,7 @@ import {
   ArrowLeft,
   Info,
   RotateCcw,
+  Sliders,
 } from "lucide-react";
 
 interface MobileAIPreferencesProps {
@@ -87,6 +89,7 @@ const MOBILE_AI_TASKS: TaskItemConfig[] = [
 export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesProps) {
   const { aiSettings, updateAISettings, brand } = useSpark();
   const [selectedTaskKey, setSelectedTaskKey] = useState<AIRoutingCategory | null>(null);
+  const [activeSubProvider, setActiveSubProvider] = useState<AIProviderId | null>(null);
 
   const currentRouting = aiSettings?.routing || ModelRouter.getUserRoutingConfig();
   const currentModels = aiSettings?.models || ModelRouter.getUserModelSelectionConfig();
@@ -98,17 +101,41 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
     const autoRouting = ModelRouter.getDefaultRoutingConfig();
     ModelRouter.setUserRoutingConfig(autoRouting);
     if (updateAISettings) {
-      await updateAISettings({ routing: autoRouting });
+      await updateAISettings({
+        routing: autoRouting,
+        models: currentModels,
+        customApiKeys: aiSettings?.customApiKeys,
+        customBaseUrls: aiSettings?.customBaseUrls,
+      });
     }
   };
 
-  const handleSelectProvider = async (taskId: AIRoutingCategory, providerId: AIProviderId) => {
-    const updated = { ...currentRouting, [taskId]: providerId };
-    ModelRouter.setUserRoutingConfig(updated);
+  const handleSelectProvider = async (taskId: AIRoutingCategory, providerId: AIProviderId | "auto") => {
+    const updatedRouting = { ...currentRouting, [taskId]: providerId };
+    ModelRouter.setUserRoutingConfig(updatedRouting);
     if (updateAISettings) {
-      await updateAISettings({ routing: updated });
+      await updateAISettings({
+        routing: updatedRouting,
+        models: currentModels,
+        customApiKeys: aiSettings?.customApiKeys,
+        customBaseUrls: aiSettings?.customBaseUrls,
+      });
     }
+    setActiveSubProvider(null);
     setSelectedTaskKey(null);
+  };
+
+  const handleSelectModel = async (providerId: AIProviderId, modelId: string) => {
+    const updatedModels = { ...currentModels, [providerId]: modelId };
+    ModelRouter.setUserModelSelectionConfig(updatedModels);
+    if (updateAISettings) {
+      await updateAISettings({
+        routing: currentRouting,
+        models: updatedModels,
+        customApiKeys: aiSettings?.customApiKeys,
+        customBaseUrls: aiSettings?.customBaseUrls,
+      });
+    }
   };
 
   const handleGoBack = () => {
@@ -195,7 +222,10 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
               return (
                 <button
                   key={task.id}
-                  onClick={() => setSelectedTaskKey(task.id)}
+                  onClick={() => {
+                    setSelectedTaskKey(task.id);
+                    setActiveSubProvider(null);
+                  }}
                   className="w-full p-3.5 flex items-center justify-between gap-3 text-left hover:bg-accent/5 active:bg-accent/10 transition-colors"
                 >
                   {/* Left: Real Logo */}
@@ -245,7 +275,7 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
         </div>
       </div>
 
-      {/* 5. Bottom Sheet Modal (Onboard DNA) */}
+      {/* 5. Bottom Sheet Modal (Onboard DNA - Dynamically Built from MODEL_CATALOG) */}
       {selectedTaskKey && (() => {
         const activeTask = MOBILE_AI_TASKS.find((t) => t.id === selectedTaskKey);
         if (!activeTask) return null;
@@ -253,129 +283,58 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
         const configuredProvider = (currentRouting as any)[selectedTaskKey] || "auto";
         const capability = ModelRouter.mapCategoryToCapability(selectedTaskKey);
 
+        // 1. Start with Best Available (Auto)
         const providerOptions: Array<{
-          id: AIProviderId;
+          id: AIProviderId | "auto";
           name: string;
           note: string;
           logoId: string;
+          models: any[];
         }> = [
           {
             id: "auto",
             name: "Best Available (Auto)",
             note: "SPARK dynamically selects the optimal model for this task",
             logoId: "auto",
+            models: [],
           },
         ];
 
+        // 2. Discover all providers in MODEL_CATALOG that have >=1 model matching capability
+        MODEL_CATALOG.forEach((cat) => {
+          const matchingModels = getModelsForProviderAndCapability(cat.provider, capability);
+          if (matchingModels.length > 0) {
+            const recommended = matchingModels.find((m) => m.recommended) || matchingModels[0];
+            const currentSelectedModel = (currentModels as any)[cat.provider];
+            const activeLabel = currentSelectedModel
+              ? getModelLabel(cat.provider, currentSelectedModel)
+              : recommended?.label || cat.displayName;
+
+            providerOptions.push({
+              id: cat.provider,
+              name: cat.displayName,
+              note: activeLabel,
+              logoId: cat.provider,
+              models: matchingModels,
+            });
+          }
+        });
+
+        // 3. For Video Generation, also include specialized video engines from PROVIDER_VIDEO_CAPABILITIES
         if (capability === "Video Generation") {
-          providerOptions.push(
-            {
-              id: "gemini",
-              name: PROVIDER_VIDEO_CAPABILITIES.gemini.displayName,
-              note: "Google Veo (4s, 6s, 8s native clips with synchronized audio)",
-              logoId: "gemini",
-            },
-            {
-              id: "grok",
-              name: PROVIDER_VIDEO_CAPABILITIES.grok.displayName,
-              note: "xAI Grok Imagine Video (1–15s motion preview)",
-              logoId: "grok",
-            },
-            {
-              id: "kling",
-              name: PROVIDER_VIDEO_CAPABILITIES.kling.displayName,
-              note: "Kling 1.5 high-coherence motion (5s or 10s)",
-              logoId: "kling",
-            },
-            {
-              id: "runway",
-              name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
-              note: "Runway Gen-3 Alpha cinematic motion (5s or 10s)",
-              logoId: "runway",
-            },
-            {
-              id: "luma",
-              name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName,
-              note: "Luma Ray 2 keyframe motion (5s or 9s)",
-              logoId: "luma",
-            },
-            {
-              id: "higgsfield",
-              name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
-              note: "Higgsfield Pop / Cinema vertical motion (4s or 8s)",
-              logoId: "higgsfield",
+          const videoEngines: AIProviderId[] = ["kling", "runway", "luma", "higgsfield"];
+          videoEngines.forEach((engId) => {
+            if (!providerOptions.some((o) => o.id === engId) && (PROVIDER_VIDEO_CAPABILITIES as any)[engId]) {
+              const spec = (PROVIDER_VIDEO_CAPABILITIES as any)[engId];
+              providerOptions.push({
+                id: engId,
+                name: spec.displayName,
+                note: `${spec.allowedDurationsSec.map((d: number) => `${d}s`).join(" or ")} native motion clips`,
+                logoId: engId,
+                models: [],
+              });
             }
-          );
-        } else if (capability === "Text To Speech") {
-          providerOptions.push(
-            {
-              id: "elevenlabs",
-              name: "ElevenLabs",
-              note: "Dedicated production voiceover narration & brand voices",
-              logoId: "elevenlabs",
-            },
-            {
-              id: "gemini",
-              name: "Google Gemini TTS",
-              note: "Natural multi-voice speech synthesis",
-              logoId: "gemini",
-            },
-            {
-              id: "openai",
-              name: "OpenAI Voice",
-              note: "Super Spark conversational voice audio",
-              logoId: "openai",
-            }
-          );
-        } else if (capability === "Image Generation") {
-          providerOptions.push(
-            {
-              id: "gemini",
-              name: "Google Imagen 3 / Gemini",
-              note: "8K UHD keyframes with visual lock conditioning",
-              logoId: "gemini",
-            },
-            {
-              id: "openai",
-              name: "OpenAI GPT Image 1.5",
-              note: "High-fidelity stills & stylized illustration",
-              logoId: "openai",
-            },
-            {
-              id: "grok",
-              name: "xAI Grok Imagine",
-              note: "Rapid concept rendering & high-contrast visuals",
-              logoId: "grok",
-            }
-          );
-        } else {
-          // Reasoning / Chat / Vision / General Intelligence
-          providerOptions.push(
-            {
-              id: "gemini",
-              name: "Google Gemini 2.5 Pro / Flash",
-              note: "Deep multimodal vision & fast structured reasoning",
-              logoId: "gemini",
-            },
-            {
-              id: "claude",
-              name: "Anthropic Claude Sonnet & Opus",
-              note: "Elite production compiling, scripting & critique",
-              logoId: "claude",
-            },
-            {
-              id: "openai",
-              name: "OpenAI GPT-5.6",
-              note: "Flagship intelligence & strategic decisions",
-              logoId: "openai",
-            },
-            {
-              id: "grok",
-              name: "xAI Grok 4.5",
-              note: "Real-time discovery & cultural radar analysis",
-              logoId: "grok",
-            }
-          );
+          });
         }
 
         return (
@@ -406,38 +365,85 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
               <div className="space-y-2 pt-2">
                 {providerOptions.map((opt) => {
                   const isSelected = configuredProvider === opt.id;
+                  const isSubOpen = activeSubProvider === opt.id;
+                  const hasMultipleModels = opt.models && opt.models.length > 1;
+
                   return (
-                    <button
-                      key={opt.id}
-                      onClick={() => handleSelectProvider(selectedTaskKey, opt.id)}
-                      className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 ${
-                        isSelected
-                          ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/10"
-                          : "bg-background border-border hover:border-accent/40"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-card border border-border/80 flex items-center justify-center shrink-0 shadow-sm">
-                          {getProviderLogo(opt.logoId, 26)}
+                    <div key={opt.id} className="space-y-1.5">
+                      <div
+                        onClick={() => handleSelectProvider(selectedTaskKey, opt.id)}
+                        className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                          isSelected
+                            ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/10"
+                            : "bg-background border-border hover:border-accent/40"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-card border border-border/80 flex items-center justify-center shrink-0 shadow-sm">
+                            {getProviderLogo(opt.logoId, 26)}
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <span className="text-xs font-semibold text-foreground block truncate">
+                              {opt.name}
+                            </span>
+                            <p className="text-[11px] text-muted-foreground line-clamp-1">
+                              {opt.note}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <span className="text-xs font-semibold text-foreground block truncate">
-                            {opt.name}
-                          </span>
-                          <p className="text-[11px] text-muted-foreground line-clamp-1">
-                            {opt.note}
-                          </p>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {hasMultipleModels && isSelected && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveSubProvider(isSubOpen ? null : (opt.id as AIProviderId));
+                              }}
+                              className="p-1.5 rounded-lg bg-accent/20 hover:bg-accent/40 text-xs text-foreground flex items-center gap-1"
+                              title="Select specific model"
+                            >
+                              <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                            </button>
+                          )}
+                          {isSelected ? (
+                            <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center shrink-0 text-white">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="w-6 h-6 rounded-full border border-border shrink-0" />
+                          )}
                         </div>
                       </div>
 
-                      {isSelected ? (
-                        <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center shrink-0 text-white">
-                          <Check className="w-3.5 h-3.5" />
+                      {/* Secondary Model Selector if expanded */}
+                      {isSubOpen && hasMultipleModels && (
+                        <div className="pl-4 pr-1 py-2 space-y-1 bg-accent/5 rounded-xl border border-border/40">
+                          <p className="text-[10px] uppercase font-mono tracking-wider text-muted-foreground px-2 py-1">
+                            Available Models
+                          </p>
+                          {opt.models.map((m: any) => {
+                            const activeModelId = (currentModels as any)[opt.id] || opt.models[0]?.id;
+                            const isModelActive = activeModelId === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => handleSelectModel(opt.id as AIProviderId, m.id)}
+                                className={`w-full px-3 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors ${
+                                  isModelActive
+                                    ? "bg-purple-600/20 text-purple-200 font-semibold"
+                                    : "hover:bg-accent/10 text-muted-foreground hover:text-foreground"
+                                }`}
+                              >
+                                <span className="truncate">{m.label}</span>
+                                {isModelActive && <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                              </button>
+                            );
+                          })}
                         </div>
-                      ) : (
-                        <div className="w-6 h-6 rounded-full border border-border shrink-0" />
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>

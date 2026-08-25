@@ -669,6 +669,28 @@ export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
   preferredVideoProvider: "auto",
 };
 
+export function getEffectiveFormatSettings(source?: any): ProductionFormatSettings {
+  if (!source) return { ...DEFAULT_FORMAT_SETTINGS };
+  const direct = source?.formatSettings || (typeof source?.targetDurationSec === "number" ? source : undefined);
+  const brandSettings = source?.brand?.formatSettings;
+  return {
+    ...DEFAULT_FORMAT_SETTINGS,
+    ...(brandSettings || {}),
+    ...(direct || {}),
+  };
+}
+
+export function getEffectiveCreditSettings(source?: any): GenerationCreditSettings {
+  if (!source) return { ...DEFAULT_CREDIT_SETTINGS };
+  const direct = source?.creditSettings || (typeof source?.maxVideoClips === "number" ? source : undefined);
+  const brandSettings = source?.brand?.creditSettings;
+  return {
+    ...DEFAULT_CREDIT_SETTINGS,
+    ...(brandSettings || {}),
+    ...(direct || {}),
+  };
+}
+
 export interface ThinkingState {
   step: string;
   timestamp: string;

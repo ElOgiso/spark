@@ -108,6 +108,18 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
 
         {profileOpen && (
           <div className="absolute bottom-16 left-3 right-3 bg-popover border border-border rounded-xl p-2 shadow-2xl z-50 animate-in fade-in duration-150 space-y-1">
+            {auth.isAdmin && (
+              <button
+                onClick={() => {
+                  setProfileOpen(false);
+                  onNavigate?.("/admin/inbox");
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 font-medium transition-colors cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                <span>Admin access</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 setProfileOpen(false);

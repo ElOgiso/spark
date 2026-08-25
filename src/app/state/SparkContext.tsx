@@ -23,6 +23,8 @@ import {
   DEFAULT_CREDIT_SETTINGS,
   ProductionFormatSettings,
   DEFAULT_FORMAT_SETTINGS,
+  getEffectiveCreditSettings,
+  getEffectiveFormatSettings,
   ThinkingState,
   ConversationSession,
   Offer,
@@ -251,16 +253,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [state, setState] = useState(() => {
     const local = loadPersistedState<any>(currentUserId || undefined, activeBrandId || undefined);
     if (local) {
+      const effectiveFmt = getEffectiveFormatSettings(local);
+      const effectiveCrd = getEffectiveCreditSettings(local);
       return {
         ...local,
+        formatSettings: effectiveFmt,
+        creditSettings: effectiveCrd,
+        brand: local.brand ? { ...local.brand, formatSettings: effectiveFmt, creditSettings: effectiveCrd } : local.brand,
         offers: Array.isArray(local.offers) ? local.offers : [],
         aiSettings: local.aiSettings || defaultAISettings,
-        creditSettings: local.creditSettings || DEFAULT_CREDIT_SETTINGS,
         chatMessages: Array.isArray(local.chatMessages) ? local.chatMessages : [],
       };
     }
     return {
-      brand: defaultBrand,
+      brand: { ...defaultBrand, formatSettings: DEFAULT_FORMAT_SETTINGS, creditSettings: DEFAULT_CREDIT_SETTINGS },
       character: defaultCharacter,
       executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
       accounts: [],
@@ -279,6 +285,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       researchPatterns: [],
       aiSettings: defaultAISettings,
       creditSettings: DEFAULT_CREDIT_SETTINGS,
+      formatSettings: DEFAULT_FORMAT_SETTINGS,
       thinkingState: null,
       chatMessages: [],
     };
@@ -294,7 +301,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     activeGenerationControllers.current.clear();
 
     setState({
-      brand: defaultBrand,
+      brand: { ...defaultBrand, formatSettings: DEFAULT_FORMAT_SETTINGS, creditSettings: DEFAULT_CREDIT_SETTINGS },
       character: defaultCharacter,
       executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
       accounts: [],
@@ -313,6 +320,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       researchPatterns: [],
       aiSettings: defaultAISettings,
       creditSettings: DEFAULT_CREDIT_SETTINGS,
+      formatSettings: DEFAULT_FORMAT_SETTINGS,
       thinkingState: null,
       chatMessages: [],
     });
@@ -328,11 +336,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateCreditSettings = useCallback(async (newSettings: Partial<GenerationCreditSettings>): Promise<boolean> => {
+    const current = getEffectiveCreditSettings(state);
     const updated = {
-      ...(state.creditSettings || DEFAULT_CREDIT_SETTINGS),
+      ...current,
       ...newSettings,
     };
-    setState((prev: any) => ({ ...prev, creditSettings: updated }));
+    setState((prev: any) => ({
+      ...prev,
+      creditSettings: updated,
+      brand: prev.brand ? { ...prev.brand, creditSettings: updated } : prev.brand,
+    }));
 
     const brandId = getBrandWorkspaceId();
     if (brandId) {
@@ -340,14 +353,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return await persistCreditSettings(brandId, updated);
     }
     return true;
-  }, [state.creditSettings]);
+  }, [state]);
 
   const updateFormatSettings = useCallback(async (newSettings: Partial<ProductionFormatSettings>): Promise<boolean> => {
+    const current = getEffectiveFormatSettings(state);
     const updated = {
-      ...(state.formatSettings || DEFAULT_FORMAT_SETTINGS),
+      ...current,
       ...newSettings,
     };
-    setState((prev: any) => ({ ...prev, formatSettings: updated }));
+    setState((prev: any) => ({
+      ...prev,
+      formatSettings: updated,
+      brand: prev.brand ? { ...prev.brand, formatSettings: updated } : prev.brand,
+    }));
 
     const brandId = getBrandWorkspaceId();
     if (brandId) {
@@ -355,7 +373,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return await persistFormatSettings(brandId, updated);
     }
     return true;
-  }, [state.formatSettings]);
+  }, [state]);
 
   // Hydrate conversation sessions on mount
   useEffect(() => {
@@ -572,13 +590,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
-          const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings;
+          const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings || snap.creditSettings;
+          const cloudFormatSettings = (execContext as any)?.summary?.current_objectives?.format_settings || snap.formatSettings || snap.brand?.formatSettings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
+
+          const mergedFormatSettings = {
+            ...DEFAULT_FORMAT_SETTINGS,
+            ...(cloudFormatSettings || {}),
+            ...(prev.brand?.formatSettings || {}),
+            ...(prev.formatSettings || {}),
+          };
+
+          const mergedCreditSettings = {
+            ...DEFAULT_CREDIT_SETTINGS,
+            ...(cloudCreditSettings || {}),
+            ...(prev.brand?.creditSettings || {}),
+            ...(prev.creditSettings || {}),
+          };
 
           // CLOUD IS TRUTH FOR AUTHENTICATED USER — EMPTY CLOUD ARRAYS ARE TRUTH ([])
           const merged = {
             ...prev,
-            brand: snap.brand ? { ...prev.brand, ...snap.brand } : prev.brand,
+            brand: snap.brand
+              ? { ...prev.brand, ...snap.brand, formatSettings: mergedFormatSettings, creditSettings: mergedCreditSettings }
+              : (prev.brand ? { ...prev.brand, formatSettings: mergedFormatSettings, creditSettings: mergedCreditSettings } : prev.brand),
             character: snap.character
               ? {
                   ...prev.character,
@@ -595,9 +630,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
-            creditSettings: cloudCreditSettings
-              ? { ...DEFAULT_CREDIT_SETTINGS, ...prev.creditSettings, ...cloudCreditSettings }
-              : (prev.creditSettings || DEFAULT_CREDIT_SETTINGS),
+            creditSettings: mergedCreditSettings,
+            formatSettings: mergedFormatSettings,
 
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
             memoryItems: snap.memoryItems || [],
@@ -1445,22 +1479,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
     void import("../services/productionService").then(({ productionService }) => {
+      const effectiveFormat = getEffectiveFormatSettings(state);
       const seriesBible = resolveSeriesBible({
         brand: state.brand,
         character: state.character,
         characters: state.characters,
         memoryItems: state.memoryItems || [],
-        formatSettings: state.brand?.formatSettings,
+        formatSettings: effectiveFormat,
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
       const effectiveMode = state.productionMode || seriesBible.productionMode;
-      const effectiveDuration = state.brand?.formatSettings?.targetDurationSec || (effectiveMode === "deep" ? 120 : 45);
+      const effectiveDuration = effectiveFormat.targetDurationSec || (effectiveMode === "deep" ? 120 : 45);
 
       void productionService
         .createProductionFromSpark({
           spark,
-          brand: state.brand,
+          brand: { ...state.brand, formatSettings: effectiveFormat },
           character: effectiveCharacter,
           niche: state.brand.niche,
           memoryItems: state.memoryItems || [],
@@ -1836,22 +1871,24 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const { productionService } = await import("../services/productionService");
+      const effectiveFormat = getEffectiveFormatSettings(state);
+      const effectiveCredit = getEffectiveCreditSettings(state);
       const seriesBible = resolveSeriesBible({
         brand: state.brand,
         character: state.character,
         characters: state.characters,
         memoryItems: state.memoryItems || [],
-        formatSettings: state.brand?.formatSettings,
+        formatSettings: effectiveFormat,
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
 
       const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
-        production: prod,
-        brand: state.brand,
+        production: { ...prod, formatSettings: effectiveFormat },
+        brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
         character: effectiveCharacter,
         memoryItems: state.memoryItems || [],
-        creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
+        creditSettings: effectiveCredit,
         forceRegenerate,
         signal: controller.signal,
         onProgress: (progress) => {

@@ -1,4 +1,5 @@
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
+import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
@@ -465,14 +466,14 @@ export class ProductionAssetService {
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
-    const activeCreditSettings: import("../../domain/types").GenerationCreditSettings =
-      creditSettings || (brand as any)?.creditSettings || (production as any)?.creditSettings || {
-        thumbnailCount: 3,
-        keyframeCount: 3,
-        shortsDurationSec: 8,
-        cinematicDurationSec: 12,
-        maxVideoClips: 3,
-      };
+    const activeFormatSettings = getEffectiveFormatSettings({
+      formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
+      brand,
+    });
+    const activeCreditSettings = getEffectiveCreditSettings({
+      creditSettings: creditSettings || (production as any)?.creditSettings,
+      brand,
+    });
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
@@ -801,7 +802,7 @@ Return valid JSON with this exact structure:
         cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
       }));
 
-      currentStoryboard = storyboard.length > 0 ? storyboard : ProductionAssetService.planProductionScenes({ production, brief, brand });
+      currentStoryboard = storyboard.length > 0 ? storyboard : ProductionAssetService.planProductionScenes({ production, brief, brand, formatSettings: activeFormatSettings });
       currentThumbnails = thumbnails.map((t: any, idx: number) => ({
         id: t.id || `t${idx + 1}`,
         variant: t.variant || ["A", "B", "C"][idx] || "A",
@@ -961,7 +962,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
 
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
-        const targetKeyframeCount = Math.min(Math.max(activeCreditSettings.keyframeCount || 3, 1), 6);
+        const targetKeyframeCount = typeof activeCreditSettings.keyframeCount === "number" ? Math.max(1, activeCreditSettings.keyframeCount) : 3;
         const effectiveStoryboard = storyboard.slice(0, targetKeyframeCount);
         const totalScenes = effectiveStoryboard.length || 3;
         for (let sIdx = 0; sIdx < effectiveStoryboard.length; sIdx++) {
@@ -1053,7 +1054,7 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
-        const targetThumbCount = Math.min(Math.max(activeCreditSettings.thumbnailCount || 3, 1), 3);
+        const targetThumbCount = typeof activeCreditSettings.thumbnailCount === "number" ? Math.max(0, activeCreditSettings.thumbnailCount) : 3;
         const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
         const totalThumbs = effectiveThumbnails.length || 3;
         for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
@@ -1760,7 +1761,15 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
   }): Promise<ProductionScene | null> {
     const { productionId, sceneIndex, editNotes, brand, character, production, memoryItems = [] } = params;
     const brief = production.brief || ({} as ProductionBrief);
-    const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({ production, brief, brand });
+    const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({
+      production,
+      brief,
+      brand,
+      formatSettings: getEffectiveFormatSettings({
+        formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
+        brand,
+      }),
+    });
     const targetSceneIdx = existingScenes.findIndex((s) => (s.index || s.scene) === sceneIndex);
 
     if (targetSceneIdx < 0) return null;
