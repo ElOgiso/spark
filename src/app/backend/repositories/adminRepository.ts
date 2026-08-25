@@ -155,9 +155,22 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
   if (!supabase) return unconfiguredResult<boolean>();
 
   try {
+    // Try RPC first
+    const rpcRes = await (supabase as any).rpc("admin_set_access_status", {
+      target_user_id: targetUserId,
+      new_status: "active",
+    });
+
+    if (!rpcRes.error) {
+      return { data: true, error: null, source: "supabase" };
+    }
+
+    // Fallback to direct table update if RPC not present
     const { error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "active",
+        access_reviewed_at: new Date().toISOString(),
+        access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", targetUserId);
@@ -183,9 +196,20 @@ export async function rejectUser(targetUserId: string, actorId: string, reason?:
   if (!supabase) return unconfiguredResult<boolean>();
 
   try {
+    const rpcRes = await (supabase as any).rpc("admin_set_access_status", {
+      target_user_id: targetUserId,
+      new_status: "rejected",
+    });
+
+    if (!rpcRes.error) {
+      return { data: true, error: null, source: "supabase" };
+    }
+
     const { error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "rejected",
+        access_reviewed_at: new Date().toISOString(),
+        access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", targetUserId);
@@ -211,9 +235,20 @@ export async function banUser(targetUserId: string, actorId: string, reason?: st
   if (!supabase) return unconfiguredResult<boolean>();
 
   try {
+    const rpcRes = await (supabase as any).rpc("admin_set_access_status", {
+      target_user_id: targetUserId,
+      new_status: "banned",
+    });
+
+    if (!rpcRes.error) {
+      return { data: true, error: null, source: "supabase" };
+    }
+
     const { error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "banned",
+        access_reviewed_at: new Date().toISOString(),
+        access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", targetUserId);
@@ -239,9 +274,20 @@ export async function unbanUser(targetUserId: string, actorId: string): Promise<
   if (!supabase) return unconfiguredResult<boolean>();
 
   try {
+    const rpcRes = await (supabase as any).rpc("admin_set_access_status", {
+      target_user_id: targetUserId,
+      new_status: "active",
+    });
+
+    if (!rpcRes.error) {
+      return { data: true, error: null, source: "supabase" };
+    }
+
     const { error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "active",
+        access_reviewed_at: new Date().toISOString(),
+        access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", targetUserId);
@@ -272,6 +318,17 @@ export async function adjustCredits(
   if (!supabase) return unconfiguredResult<number>();
 
   try {
+    // Try RPC first
+    const rpcRes = await (supabase as any).rpc("admin_adjust_credits", {
+      target_user_id: targetUserId,
+      delta,
+      reason,
+    });
+
+    if (!rpcRes.error && typeof rpcRes.data === "number") {
+      return { data: rpcRes.data, error: null, source: "supabase" };
+    }
+
     // 1. Read current credit balance
     const { data: profile, error: readErr } = await (supabase.from("profiles") as any)
       .select("credit_balance")

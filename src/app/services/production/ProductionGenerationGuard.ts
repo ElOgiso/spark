@@ -34,7 +34,28 @@ export class ProductionGenerationGuard {
     }
   }
 
+  static assertAccessActive(actionName: string): void {
+    if (typeof localStorage === "undefined") return;
+    try {
+      const role = localStorage.getItem("spark_user_role");
+      if (role === "admin") return; // Admins bypass access status checks
+
+      const status = localStorage.getItem("spark_access_status");
+      if (status === "pending_approval" || status === "banned" || status === "rejected") {
+        throw new Error(
+          `[SPARK Security Guard] Action "${actionName}" refused: Account access is "${status}". Waiting for executive administrator clearance.`
+        );
+      }
+    } catch (err: any) {
+      if (err?.message?.includes("[SPARK Security Guard]")) {
+        throw err;
+      }
+    }
+  }
+
   static assertEnabled(actionName: string, brandId?: string): void {
+    this.assertAccessActive(actionName);
+
     if (!this.isEnabled(brandId)) {
       throw new Error(
         `[ProductionGenerationGuard] Action "${actionName}" blocked: Production Generation is currently OFF. Planning and read-only mode active.`

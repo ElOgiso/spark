@@ -37,6 +37,8 @@ export interface ProfileRow {
   avatar_url: string | null;
   is_super_admin?: boolean | null;
   access_status?: UserAccessStatus | string | null;
+  access_reviewed_at?: string | null;
+  access_reviewed_by?: string | null;
   credit_balance?: number | null;
   onboarding_complete?: boolean | null;
   active_brand_id?: string | null;

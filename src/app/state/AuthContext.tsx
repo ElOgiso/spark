@@ -553,6 +553,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isRejected = userAccessStatus === "rejected";
   const creditBalance = Number(profile?.credit_balance ?? 0);
 
+  useEffect(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("spark_user_role", userRole);
+        localStorage.setItem("spark_access_status", userAccessStatus);
+      }
+    } catch {}
+  }, [userRole, userAccessStatus]);
+
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
@@ -573,6 +582,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("spark_onboarding_complete", "true");
         localStorage.setItem("spark_access_status", targetAccessStatus);
+        localStorage.setItem("spark_user_role", userRole);
       }
     } catch {}
 
