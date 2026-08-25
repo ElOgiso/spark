@@ -1076,3 +1076,91 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
   }
 }
 
+/**
+ * Permanently deletes an entire workspace and all its child scoped records:
+ * - review_items, publish_jobs, export_packages, analytics_insights
+ * - productions, viral_sparks, research_sources, research_patterns
+ * - memory_items, brand_rules, conversation_sessions, executive_sessions
+ * - executive_director_summaries, executive_timeline, characters, accounts
+ * - brand row (scoped by owner_id if provided)
+ * - cleans local storage workspace cache
+ */
+export async function deleteWorkspace(brandId: string, ownerId?: string): Promise<boolean> {
+  if (!brandId) return false;
+  console.log(`[workspaceSync] Initiating complete workspace deletion for brandId: ${brandId}`);
+
+  // 1. Cloud Deletion (if Supabase is configured)
+  if (isSupabaseConfigured() && isUuid(brandId)) {
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        // Child tables in safe deletion order
+        const childTables = [
+          "review_items",
+          "publish_jobs",
+          "export_packages",
+          "analytics_insights",
+          "productions",
+          "viral_sparks",
+          "research_sources",
+          "research_patterns",
+          "memory_items",
+          "brand_rules",
+          "conversation_sessions",
+          "executive_sessions",
+          "executive_director_summaries",
+          "executive_timeline",
+          "characters",
+          "accounts",
+        ];
+
+        for (const table of childTables) {
+          try {
+            await (supabase.from(table as any) as any).delete().eq("brand_id", brandId);
+          } catch (tErr) {
+            console.warn(`[workspaceSync] Notice deleting from ${table}:`, tErr);
+          }
+        }
+
+        // Delete parent brand (enforcing owner check if provided)
+        let brandDeleteQuery = (supabase.from("brands") as any).delete().eq("id", brandId);
+        if (ownerId) {
+          brandDeleteQuery = brandDeleteQuery.eq("owner_id", ownerId);
+        }
+        const { error: brandErr } = await brandDeleteQuery;
+        if (brandErr) {
+          console.warn("[workspaceSync] Brand table deletion notice:", brandErr);
+        }
+      }
+    } catch (err) {
+      console.warn("[workspaceSync] Supabase workspace deletion error:", err);
+    }
+  }
+
+  // 2. Local Storage Cleanup
+  try {
+    if (typeof localStorage !== "undefined") {
+      const keysToRemove = [
+        `spark_workspace_${brandId}`,
+        `spark_format_settings_${brandId}`,
+        `spark_credit_settings_${brandId}`,
+        `spark_ai_settings_${brandId}`,
+        `spark_ai_routing_${brandId}`,
+        `spark_ai_models_${brandId}`,
+        `spark_selected_offer_${brandId}`,
+        `spark_account_tokens_${brandId}`,
+      ];
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      if (localStorage.getItem("spark_current_brand_id") === brandId) {
+        localStorage.removeItem("spark_current_brand_id");
+        localStorage.removeItem("spark_current_brand_name");
+      }
+    }
+  } catch (lsErr) {
+    console.warn("[workspaceSync] Local storage cleanup notice:", lsErr);
+  }
+
+  console.log(`[workspaceSync] Successfully deleted workspace brandId: ${brandId}`);
+  return true;
+}
+

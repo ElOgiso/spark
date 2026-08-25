@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, ChevronDown, Check, CreditCard, Settings, Key, LogOut, LogIn, ShieldCheck, Sparkles, Plus } from "lucide-react";
+import { Search, ChevronDown, Check, CreditCard, Settings, Key, LogOut, LogIn, ShieldCheck, Sparkles, Plus, Trash2 } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
+import { DeleteWorkspaceModal } from "./ui/DeleteWorkspaceModal";
 import { useSpark } from "../state/SparkContext";
 import { useAuth } from "../state/AuthContext";
 import { Button } from "./ds";
@@ -44,8 +45,8 @@ export function TopBar({
   const { brand } = useSpark() as any;
 
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [deleteTargetBrand, setDeleteTargetBrand] = useState<{ id: string; name: string } | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -88,69 +89,86 @@ export function TopBar({
   );
 
   return (
-    <div className="h-16 border-b border-border bg-card flex items-center justify-between px-6 select-none relative z-40 shadow-sm">
-      <div className="flex items-center gap-6">
-        {/* Workspace Switcher */}
-        <div ref={workspaceRef} className="relative">
-          <button
-            onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/5 hover:bg-accent/15 border border-border/40 hover:border-border transition-all active:scale-[0.98] cursor-pointer"
-          >
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sm font-semibold tracking-tight">{brand?.name || "Spark Workspace"}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
+    <>
+      <div className="h-16 border-b border-border bg-card flex items-center justify-between px-6 select-none relative z-40 shadow-sm">
+        <div className="flex items-center gap-6">
+          {/* Workspace Switcher */}
+          <div ref={workspaceRef} className="relative">
+            <button
+              onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/5 hover:bg-accent/15 border border-border/40 hover:border-border transition-all active:scale-[0.98] cursor-pointer"
+            >
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-sm font-semibold tracking-tight">{brand?.name || "Spark Workspace"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
 
-          {isWorkspaceOpen && (
-            <div className="absolute left-0 mt-2 w-72 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
-              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1 flex items-center justify-between">
-                <span>Brand Workspaces</span>
-                <span className="text-[10px] font-normal text-muted-foreground/80 font-mono">
-                  {Math.max((auth.brands || []).length, 1)} total
-                </span>
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-1 py-1">
-                {(auth.brands && auth.brands.length > 0 ? auth.brands : (auth.brand ? [auth.brand] : (brand ? [brand] : [{ id: "default", name: "Spark Workspace", niche: "Content Creation" }]))).map((b: any) => {
-                  const isActive = b.id === (auth.brand?.id || brand?.id);
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={async () => {
-                        if (!isActive && b.id !== "default") {
-                          await auth.switchBrand(b.id);
-                        }
-                        setIsWorkspaceOpen(false);
-                      }}
-                      className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between text-left transition-all ${
-                        isActive
-                          ? "bg-accent/20 border border-accent/30 text-foreground"
-                          : "hover:bg-accent/10 text-muted-foreground hover:text-foreground cursor-pointer"
-                      }`}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="font-semibold text-xs truncate text-foreground">{b.name || "Untitled Brand"}</p>
-                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">{b.niche || "Content Creation"}</p>
+            {isWorkspaceOpen && (
+              <div className="absolute left-0 mt-2 w-72 rounded-xl border border-border bg-card p-2 shadow-2xl z-50 animate-in fade-in duration-150">
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1 flex items-center justify-between">
+                  <span>Brand Workspaces</span>
+                  <span className="text-[10px] font-normal text-muted-foreground/80 font-mono">
+                    {Math.max((auth.brands || []).length, 1)} total
+                  </span>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-1 py-1">
+                  {(auth.brands && auth.brands.length > 0 ? auth.brands : (auth.brand ? [auth.brand] : (brand ? [brand] : [{ id: "default", name: "Spark Workspace", niche: "Content Creation" }]))).map((b: any) => {
+                    const isActive = b.id === (auth.brand?.id || brand?.id);
+                    return (
+                      <div
+                        key={b.id}
+                        onClick={async () => {
+                          if (!isActive && b.id !== "default") {
+                            await auth.switchBrand(b.id);
+                          }
+                          setIsWorkspaceOpen(false);
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between text-left transition-all group ${
+                          isActive
+                            ? "bg-accent/20 border border-accent/30 text-foreground"
+                            : "hover:bg-accent/10 text-muted-foreground hover:text-foreground cursor-pointer"
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2 flex-1">
+                          <p className="font-semibold text-xs truncate text-foreground">{b.name || "Untitled Brand"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{b.niche || "Content Creation"}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isActive && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                          {b.id !== "default" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsWorkspaceOpen(false);
+                                setDeleteTargetBrand(b);
+                              }}
+                              title="Delete workspace"
+                              className="p-1 rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all opacity-70 group-hover:opacity-100 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      {isActive && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className="pt-2 border-t border-border/40 mt-1">
+                  <button
+                    onClick={() => {
+                      setIsWorkspaceOpen(false);
+                      auth.openCreateWorkspaceModal();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create workspace</span>
+                  </button>
+                </div>
               </div>
-              <div className="pt-2 border-t border-border/40 mt-1">
-                <button
-                  onClick={() => {
-                    setIsWorkspaceOpen(false);
-                    auth.openCreateWorkspaceModal();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create workspace</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
         {/* Global Quick Search */}
         <div ref={searchRef} className="relative hidden md:block">
@@ -277,5 +295,16 @@ export function TopBar({
         )}
       </div>
     </div>
-  );
+
+    {/* Delete Workspace Confirmation Modal */}
+    <DeleteWorkspaceModal
+      isOpen={!!deleteTargetBrand}
+      brand={deleteTargetBrand}
+      onClose={() => setDeleteTargetBrand(null)}
+      onConfirm={async (id) => {
+        await auth.deleteWorkspace(id);
+      }}
+    />
+  </>
+);
 }

@@ -256,7 +256,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     cardId: string;
-    type: "cancel" | "replace_character" | "set_voice" | "remove_source" | "delete_memory" | "switch_workspace";
+    type: "cancel" | "replace_character" | "set_voice" | "remove_source" | "delete_memory" | "switch_workspace" | "delete_workspace";
     payload?: any;
   } | null>(null);
 
@@ -862,6 +862,20 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
       }
     } catch (err: any) {
       console.warn("[AIChatModal] Switch brand error:", err);
+    }
+  };
+
+  const handleActionDeleteWorkspace = async (brandId: string, brandName: string) => {
+    try {
+      if (auth.deleteWorkspace) {
+        await auth.deleteWorkspace(brandId);
+        const feedbackText = `Permanently deleted workspace "${brandName}". Workspace state and child records cleaned up.`;
+        addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
+        if (readRepliesAloud) speakText(feedbackText, isMuted);
+        setConfirmAction(null);
+      }
+    } catch (err: any) {
+      console.warn("[AIChatModal] Delete brand error:", err);
     }
   };
 
@@ -1565,15 +1579,26 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                                         {isActive ? <Check className="w-3.5 h-3.5 text-purple-300 shrink-0" /> : <Layers className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                                         <span className="font-semibold truncate">{b.name}</span>
                                       </div>
-                                      {!isActive && (
-                                        <button
-                                          onClick={() => handleActionSwitchWorkspace(b.id, b.name)}
-                                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
-                                        >
-                                          Switch
-                                        </button>
-                                      )}
-                                      {isActive && <span className="text-[9px] font-mono text-purple-300 font-bold uppercase">Active</span>}
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        {!isActive && (
+                                          <button
+                                            onClick={() => handleActionSwitchWorkspace(b.id, b.name)}
+                                            className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
+                                          >
+                                            Switch
+                                          </button>
+                                        )}
+                                        {b.id !== "default" && (
+                                          <button
+                                            onClick={() => setConfirmAction({ cardId: msg.media!.id, type: "delete_workspace", payload: { brandId: b.id, brandName: b.name } })}
+                                            title="Delete workspace"
+                                            className="p-1 rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all cursor-pointer"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                        {isActive && <span className="text-[9px] font-mono text-purple-300 font-bold uppercase">Active</span>}
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1629,6 +1654,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                                 {confirmAction.type === "set_voice" && `Set "${confirmAction.payload?.voiceName}" as default brand narrator?`}
                                 {confirmAction.type === "remove_source" && "Remove research source?"}
                                 {confirmAction.type === "delete_memory" && "Delete memory rule from bank?"}
+                                {confirmAction.type === "delete_workspace" && `Permanently delete workspace "${confirmAction.payload?.brandName}" and all associated assets? Cannot undo.`}
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
@@ -1638,6 +1664,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
                                     else if (confirmAction.type === "set_voice") handleActionSetBrandVoice(confirmAction.payload?.voiceName, confirmAction.payload?.voiceId);
                                     else if (confirmAction.type === "remove_source") handleActionRemoveResearchSource(msg.media!.id);
                                     else if (confirmAction.type === "delete_memory") handleActionRemoveMemory(msg.media!.id);
+                                    else if (confirmAction.type === "delete_workspace") handleActionDeleteWorkspace(confirmAction.payload?.brandId, confirmAction.payload?.brandName);
                                   }}
                                   className="px-3 py-1.5 rounded-lg bg-destructive hover:bg-destructive/90 text-white font-semibold text-xs active:scale-95 transition-all cursor-pointer"
                                 >

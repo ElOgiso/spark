@@ -32,6 +32,7 @@ type AuthContextValue = {
   openCreateWorkspaceModal: () => void;
   closeCreateWorkspaceModal: () => void;
   switchBrand: (brandId: string) => Promise<void>;
+  deleteWorkspace: (brandId: string) => Promise<boolean>;
   refreshBrands: () => Promise<BrandRow[]>;
   setBrand: React.Dispatch<React.SetStateAction<BrandRow | null>>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -488,6 +489,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCreateWorkspaceModalOpen(false);
   }, []);
 
+  const deleteWorkspace = useCallback(async (brandId: string): Promise<boolean> => {
+    if (!brandId) return false;
+    setLoading(true);
+    try {
+      const { deleteWorkspace: performDelete } = await import("../backend/workspaceSync");
+      const success = await performDelete(brandId, currentUser?.id);
+
+      const remainingBrands = brands.filter((b) => b.id !== brandId);
+      setBrands(remainingBrands);
+
+      if (brand?.id === brandId) {
+        if (remainingBrands.length > 0) {
+          await switchBrand(remainingBrands[0].id);
+        } else {
+          setBrand(null);
+          try {
+            localStorage.removeItem("spark_current_brand_id");
+            localStorage.removeItem("spark_current_brand_name");
+          } catch {}
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("spark-workspace-reset"));
+          }
+          openCreateWorkspaceModal();
+        }
+      }
+      return success;
+    } catch (err) {
+      console.warn("[SPARK AUTH] deleteWorkspace error:", err);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [brand, brands, currentUser, switchBrand, openCreateWorkspaceModal]);
+
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
@@ -521,8 +556,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: prev?.role || "Director",
       avatar_url: prev?.avatar_url || null,
       email: targetEmail,
+      active_brand_id: prev?.active_brand_id || brand?.id || null,
       onboarding_complete: prev?.onboarding_complete ?? true,
-      active_brand_id: prev?.active_brand_id ?? null,
       created_at: prev?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
     }));
@@ -540,7 +575,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("spark_demo_user", JSON.stringify(updatedUser));
       setDemoUser(updatedUser);
     }
-  }, [currentUser]);
+  }, [currentUser, brand]);
 
   const value = useMemo<AuthContextValue>(() => ({
     currentUser,
@@ -559,6 +594,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     openCreateWorkspaceModal,
     closeCreateWorkspaceModal,
     switchBrand,
+    deleteWorkspace,
     refreshBrands,
     setBrand,
     signIn,
@@ -579,6 +615,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     closeCreateWorkspaceModal,
     createWorkspaceModalOpen,
     currentUser,
+    deleteWorkspace,
     error,
     isAuthenticated,
     isConfigured,

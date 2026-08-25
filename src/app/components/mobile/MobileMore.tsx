@@ -19,6 +19,7 @@ import {
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/workspaceSync";
 import { AuthPanel } from "../auth/AuthPanel";
+import { DeleteWorkspaceModal } from "../ui/DeleteWorkspaceModal";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../../theme";
 import {
   Zap,
@@ -90,6 +91,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   // Current sub-panel state
   const [activeDetail, setActiveDetail] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<AIRoutingCategory | null>(null);
+  const [deleteTargetBrand, setDeleteTargetBrand] = useState<{ id: string; name: string } | null>(null);
 
   // Modals inside details
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -974,7 +976,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                   {(auth.brands && auth.brands.length > 0 ? auth.brands : (auth.brand ? [auth.brand] : (brand ? [brand] : [{ id: "default", name: "Spark Workspace", niche: "Content Creation" }]))).map((b: any) => {
                     const isActive = b.id === (auth.brand?.id || brand?.id);
                     return (
-                      <button
+                      <div
                         key={b.id}
                         onClick={async () => {
                           if (!isActive && b.id !== "default") {
@@ -982,18 +984,33 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                             setActiveDetail(null);
                           }
                         }}
-                        className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all ${
+                        className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-all group ${
                           isActive
                             ? "bg-accent/20 border border-accent/40 text-foreground"
                             : "bg-background border border-border hover:border-border/80 text-muted-foreground hover:text-foreground cursor-pointer"
                         }`}
                       >
-                        <div className="min-w-0 pr-2">
+                        <div className="min-w-0 pr-2 flex-1">
                           <p className="text-xs font-semibold text-foreground truncate">{b.name || "Untitled Workspace"}</p>
                           <p className="text-[10px] text-muted-foreground truncate mt-0.5">{b.niche || "Content Creation"}</p>
                         </div>
-                        {isActive && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
-                      </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isActive && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                          {b.id !== "default" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTargetBrand(b);
+                              }}
+                              title="Delete workspace"
+                              className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-all opacity-80 group-hover:opacity-100 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -1266,6 +1283,16 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
           </div>
         </div>
       )}
+
+      {/* Delete Workspace Confirmation Modal */}
+      <DeleteWorkspaceModal
+        isOpen={!!deleteTargetBrand}
+        brand={deleteTargetBrand}
+        onClose={() => setDeleteTargetBrand(null)}
+        onConfirm={async (id) => {
+          await auth.deleteWorkspace(id);
+        }}
+      />
     </div>
   );
 }
