@@ -10,6 +10,9 @@ import {
   disconnectConnectedAccount,
   getOAuthAuthorizationUrl,
   listLiveConnectedAccounts,
+  buildPlatformAccountMap,
+  CanonicalPlatformAccount,
+  normalizePlatformKey,
   socialConnectorFramework,
   getBrandWorkspaceId,
   ensureValidGoogleAccess,
@@ -197,75 +200,17 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     };
   }, [auth.brand?.id, character, productions, reviewItems]);
 
-  // Accounts — live OAuth tokens only
-  // Accounts — live OAuth tokens & verified offline grants
-  const [accounts, setAccounts] = useState(() => {
-    const live = listLiveConnectedAccounts();
-    const ctxAccs = (spark?.accounts || []) as any[];
-    const map = new Map<string, { id: string; platform: string; handle: string; status: string; followers: string; active: boolean }>();
-
-    live.forEach((t, i) => {
-      map.set(t.platform, {
-        id: String(i + 1),
-        platform: t.platform,
-        handle: t.handle,
-        status: t.status === "connected" ? "connected" : "needs_reconnect",
-        followers: "—",
-        active: t.active,
-      });
-    });
-
-    ctxAccs.forEach((a, i) => {
-      if (!map.has(a.platform)) {
-        const isConn = String(a.status || "").toLowerCase() === "connected";
-        map.set(a.platform, {
-          id: String(map.size + 1),
-          platform: a.platform,
-          handle: a.handle || "",
-          status: isConn ? "connected" : "needs_reconnect",
-          followers: "—",
-          active: isConn,
-        });
-      }
-    });
-
-    return Array.from(map.values());
-  });
+  // Accounts — unified single-source platform map
+  const [platformAccountMap, setPlatformAccountMap] = useState<Map<string, CanonicalPlatformAccount>>(() =>
+    buildPlatformAccountMap(spark?.accounts)
+  );
 
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
   const refreshLiveAccounts = () => {
-    const live = listLiveConnectedAccounts();
-    const ctxAccs = (spark?.accounts || []) as any[];
-    const map = new Map<string, { id: string; platform: string; handle: string; status: string; followers: string; active: boolean }>();
-
-    live.forEach((t, i) => {
-      map.set(t.platform, {
-        id: String(i + 1),
-        platform: t.platform,
-        handle: t.handle,
-        status: t.status === "connected" ? "connected" : "needs_reconnect",
-        followers: "—",
-        active: t.active,
-      });
-    });
-
-    ctxAccs.forEach((a) => {
-      if (!map.has(a.platform)) {
-        const isConn = String(a.status || "").toLowerCase() === "connected";
-        map.set(a.platform, {
-          id: String(map.size + 1),
-          platform: a.platform,
-          handle: a.handle || "",
-          status: isConn ? "connected" : "needs_reconnect",
-          followers: "—",
-          active: isConn,
-        });
-      }
-    });
-
-    setAccounts(Array.from(map.values()));
+    const map = buildPlatformAccountMap(spark?.accounts);
+    setPlatformAccountMap(map);
   };
 
   useEffect(() => {
@@ -990,13 +935,25 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
       case "/more/accounts":
         const supportedPlatforms = [
-          { key: "YouTube Shorts", displayName: "YouTube", icon: Youtube, color: "text-red-500 bg-red-500/10 border-red-500/20" },
-          { key: "Twitter/X", displayName: "Twitter/X", icon: Twitter, color: "text-sky-400 bg-sky-400/10 border-sky-400/20" },
-          { key: "TikTok", displayName: "TikTok", icon: LinkIcon, color: "text-pink-500 bg-pink-500/10 border-pink-500/20" },
-          { key: "Instagram", displayName: "Instagram", icon: LinkIcon, color: "text-purple-500 bg-purple-500/10 border-purple-500/20" },
-          { key: "Facebook", displayName: "Facebook", icon: Facebook, color: "text-blue-500 bg-blue-500/10 border-blue-500/20" },
-          { key: "LinkedIn", displayName: "LinkedIn", icon: Linkedin, color: "text-blue-600 bg-blue-600/10 border-blue-600/20" },
+          { key: "youtube", displayName: "YouTube", icon: Youtube, color: "text-red-500 bg-red-500/10 border-red-500/20" },
+          { key: "x", displayName: "Twitter/X", icon: Twitter, color: "text-sky-400 bg-sky-400/10 border-sky-400/20" },
+          { key: "tiktok", displayName: "TikTok", icon: LinkIcon, color: "text-pink-500 bg-pink-500/10 border-pink-500/20" },
+          { key: "instagram", displayName: "Instagram", icon: LinkIcon, color: "text-purple-500 bg-purple-500/10 border-purple-500/20" },
+          { key: "facebook", displayName: "Facebook", icon: Facebook, color: "text-blue-500 bg-blue-500/10 border-blue-500/20" },
+          { key: "linkedin", displayName: "LinkedIn", icon: Linkedin, color: "text-blue-600 bg-blue-600/10 border-blue-600/20" },
         ];
+
+        const connectedCount = supportedPlatforms.filter(
+          (plat) => platformAccountMap.get(plat.key)?.status === "connected"
+        ).length;
+
+        // Dev log for drift detection
+        if (process.env.NODE_ENV !== "production") {
+          const rawAccounts = spark?.accounts || [];
+          if (rawAccounts.length > 0 && connectedCount === 0) {
+            console.warn("[Accounts Debug] Raw accounts found in context but 0 connected:", rawAccounts);
+          }
+        }
 
         return {
           title: "Connected Accounts",
@@ -1006,22 +963,15 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-medium">
-                  Connected Outlets ({accounts.filter((a) => a.active).length} Active)
+                  Connected Outlets ({connectedCount} Active)
                 </h3>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {supportedPlatforms.map((plat) => {
-                  const conn = accounts.find(
-                    (a) =>
-                      a.platform === plat.key ||
-                      a.platform === plat.displayName ||
-                      (plat.key.includes("YouTube") && String(a.platform).includes("YouTube")) ||
-                      (plat.key.includes("Twitter") &&
-                        (String(a.platform).includes("Twitter") || a.platform === "X"))
-                  );
-                  const isConnected = Boolean(conn && (conn.status === "connected" || conn.active));
-                  const needsReconnect = Boolean(conn && conn.status === "needs_reconnect");
+                  const conn = platformAccountMap.get(plat.key);
+                  const isConnected = conn?.status === "connected";
+                  const needsReconnect = conn?.status === "needs_reconnect";
                   const Icon = plat.icon;
                   const isBusy = disconnectingPlatform === plat.key || connectingPlatform === plat.displayName;
 
@@ -1046,7 +996,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1 font-mono">
-                              {isConnected || needsReconnect ? conn!.handle || "Linked Account" : "Not Connected"}
+                              {isConnected || needsReconnect ? conn?.handle || "Linked Account" : "Not Connected"}
                             </p>
                           </div>
                         </div>
@@ -1067,7 +1017,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-xs h-8 text-destructive border-destructive/30 hover:bg-destructive/10"
+                            className="text-xs h-8 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
                             disabled={isBusy}
                             onClick={() => handleDisconnectPlatform(plat.key)}
                           >
@@ -1077,7 +1027,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           <Button
                             variant={needsReconnect ? "outline" : "accent"}
                             size="sm"
-                            className={`text-xs h-8 ${needsReconnect ? "border-amber-500/40 text-amber-400 hover:bg-amber-500/10" : ""}`}
+                            className={`text-xs h-8 cursor-pointer ${needsReconnect ? "border-amber-500/40 text-amber-400 hover:bg-amber-500/10" : ""}`}
                             disabled={isBusy}
                             onClick={() => {
                               setConnectingPlatform(plat.displayName);
@@ -1147,12 +1097,12 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <div>
                     <div className="flex justify-between text-xs font-medium mb-1.5">
                       <span>Connected publishing accounts</span>
-                      <span>{accounts.filter((a) => a.active).length}</span>
+                      <span>{Array.from(platformAccountMap.values()).filter((a) => a.active).length}</span>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-accent h-full rounded-full"
-                        style={{ width: `${Math.min(100, accounts.filter((a) => a.active).length * 20)}%` }}
+                        style={{ width: `${Math.min(100, Array.from(platformAccountMap.values()).filter((a) => a.active).length * 20)}%` }}
                       />
                     </div>
                   </div>

@@ -478,7 +478,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           (snap.accounts || []).forEach((a: any) => {
             const pKey = normalizePlatformKey(a.platform);
             const statusStr = String(a.status || "").toLowerCase();
-            const isConn = statusStr === "connected" || statusStr === "active";
+            const hasRefresh = Boolean(a.refreshToken || a.permissions?.refresh_token);
+            const isExplicitInvalid =
+              statusStr === "needs_reconnect" ||
+              statusStr === "needs reauthorization" ||
+              statusStr === "disconnected" ||
+              statusStr === "invalid_grant";
+            const isConn =
+              !isExplicitInvalid &&
+              (statusStr === "connected" || statusStr === "active" || statusStr === "refreshing" || hasRefresh);
+
             byPlatform.set(pKey, {
               platform: pKey,
               handle: a.handle || a.displayName || "",
@@ -512,10 +521,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
 
           // Merge local tokens
-          tokenAccounts.forEach((a) => {
+          tokenAccounts.forEach((a: any) => {
             const pKey = normalizePlatformKey(a.platform);
             const statusStr = String(a.status || "").toLowerCase();
-            const isConn = statusStr === "connected" || statusStr === "active";
+            const hasRefresh = Boolean(a.refreshToken);
+            const isExplicitInvalid =
+              statusStr === "needs_reconnect" ||
+              statusStr === "needs reauthorization" ||
+              statusStr === "disconnected" ||
+              statusStr === "invalid_grant";
+            const isConn =
+              !isExplicitInvalid &&
+              (statusStr === "connected" || statusStr === "active" || statusStr === "refreshing" || hasRefresh);
+
             byPlatform.set(pKey, {
               platform: pKey,
               handle: a.handle || "",

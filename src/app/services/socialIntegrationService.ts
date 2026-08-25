@@ -659,13 +659,134 @@ class BasePlatformAdapter implements ISocialPlatformAdapter {
 
 export function normalizePlatformKey(platform: string): string {
   const lower = String(platform || "").toLowerCase().trim();
-  if (lower.includes("youtube") || lower.includes("youtu")) return "youtube";
-  if (lower.includes("x") || lower.includes("twitter")) return "x";
-  if (lower.includes("tiktok")) return "tiktok";
-  if (lower.includes("instagram")) return "instagram";
-  if (lower.includes("facebook")) return "facebook";
-  if (lower.includes("linkedin")) return "linkedin";
+  if (
+    lower.includes("youtube") ||
+    lower.includes("youtu") ||
+    lower === "yt" ||
+    lower === "google" ||
+    lower === "googledrive" ||
+    lower === "google drive"
+  ) {
+    return "youtube";
+  }
+  if (
+    lower.includes("twitter") ||
+    lower === "x" ||
+    lower.startsWith("x/") ||
+    lower.endsWith("/x") ||
+    lower === "twitter/x" ||
+    lower === "x/twitter"
+  ) {
+    return "x";
+  }
+  if (lower.includes("tiktok") || lower === "tik tok") {
+    return "tiktok";
+  }
+  if (lower.includes("instagram") || lower.includes("insta") || lower === "ig") {
+    return "instagram";
+  }
+  if (lower.includes("facebook") || lower === "fb" || lower.includes("meta")) {
+    return "facebook";
+  }
+  if (lower.includes("linkedin") || lower === "li") {
+    return "linkedin";
+  }
   return lower;
+}
+
+export interface CanonicalPlatformAccount {
+  platform: string;
+  rawPlatform: string;
+  handle: string;
+  displayName: string;
+  avatar?: string;
+  status: "connected" | "needs_reconnect" | "disconnected";
+  active: boolean;
+  refreshToken?: string;
+  accessToken?: string;
+}
+
+/**
+ * Builds a unified canonical platform map from local OAuth tokens and cloud Supabase accounts.
+ * Single source of truth for Accounts UI header counts, status badges, and row lookups.
+ */
+export function buildPlatformAccountMap(
+  contextAccounts?: any[]
+): Map<string, CanonicalPlatformAccount> {
+  const map = new Map<string, CanonicalPlatformAccount>();
+  const liveStoredTokens = getStoredAccountTokens();
+
+  // 1. Ingest local OAuth token store
+  Object.values(liveStoredTokens).forEach((t) => {
+    if (!t) return;
+    const pKey = normalizePlatformKey(t.platform);
+    const statusLower = String(t.status || "").toLowerCase();
+    const hasRefresh = Boolean(t.refreshToken);
+    const isExplicitInvalid =
+      statusLower === "needs reauthorization" ||
+      statusLower === "needs_reconnect" ||
+      statusLower === "disconnected" ||
+      statusLower === "invalid_grant" ||
+      (statusLower === "expired" && !hasRefresh);
+    const isConn =
+      !isExplicitInvalid &&
+      (hasRefresh || ["connected", "refreshing", "active"].includes(statusLower));
+
+    map.set(pKey, {
+      platform: pKey,
+      rawPlatform: t.platform,
+      handle: t.handle || "",
+      displayName: t.displayName || t.handle || pKey,
+      avatar: t.avatar,
+      status: isConn ? "connected" : hasRefresh ? "needs_reconnect" : "disconnected",
+      active: isConn,
+      refreshToken: t.refreshToken,
+      accessToken: t.accessToken,
+    });
+  });
+
+  // 2. Ingest Supabase context accounts (cloud state merge)
+  if (Array.isArray(contextAccounts)) {
+    contextAccounts.forEach((acc: any) => {
+      if (!acc) return;
+      const pKey = normalizePlatformKey(acc.platform);
+      const statusLower = String(acc.status || "").toLowerCase();
+      const hasRefresh = Boolean(acc.permissions?.refresh_token || acc.refreshToken);
+      const isExplicitInvalid =
+        statusLower === "needs_reconnect" ||
+        statusLower === "needs reauthorization" ||
+        statusLower === "disconnected" ||
+        statusLower === "invalid_grant";
+      const isConn =
+        !isExplicitInvalid &&
+        (["connected", "active", "refreshing"].includes(statusLower) || hasRefresh);
+
+      const existing = map.get(pKey);
+      if (existing) {
+        if (isConn) {
+          existing.status = "connected";
+          existing.active = true;
+        }
+        if (acc.handle && !existing.handle) existing.handle = acc.handle;
+        if (acc.displayName && !existing.displayName) existing.displayName = acc.displayName;
+        if (acc.avatar && !existing.avatar) existing.avatar = acc.avatar;
+      } else {
+        map.set(pKey, {
+          platform: pKey,
+          rawPlatform: acc.platform,
+          handle: acc.handle || "",
+          displayName: acc.displayName || acc.handle || pKey,
+          avatar: acc.avatar,
+          status: isConn ? "connected" : hasRefresh ? "needs_reconnect" : "disconnected",
+          active: isConn,
+          refreshToken: acc.permissions?.refresh_token || acc.refreshToken,
+          accessToken: acc.permissions?.access_token || acc.accessToken,
+        });
+      }
+    });
+  }
+
+  return map;
 }
 
 export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IProfileFetcher, IAnalyticsFetcher, IPublisher {
@@ -709,8 +830,13 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
   }
 
   getAdapter(platform: string): ISocialPlatformAdapter {
-    if (platform === "YouTube" || platform === "YouTube Shorts") return this.adapters.get("YouTube Shorts")!;
-    if (platform === "X" || platform === "Twitter" || platform === "Twitter/X") return this.adapters.get("Twitter/X")!;
+    const norm = normalizePlatformKey(platform);
+    if (norm === "youtube") return this.adapters.get("YouTube Shorts")!;
+    if (norm === "x") return this.adapters.get("Twitter/X")!;
+    if (norm === "tiktok") return this.adapters.get("TikTok") || new BasePlatformAdapter("TikTok");
+    if (norm === "instagram") return this.adapters.get("Instagram") || new BasePlatformAdapter("Instagram");
+    if (norm === "facebook") return this.adapters.get("Facebook") || new BasePlatformAdapter("Facebook");
+    if (norm === "linkedin") return this.adapters.get("LinkedIn") || new BasePlatformAdapter("LinkedIn");
     return this.adapters.get(platform) || new BasePlatformAdapter(platform);
   }
 
@@ -1087,24 +1213,15 @@ export function listLiveConnectedAccounts(): Array<{
   status: "connected" | "needs_reconnect";
   active: boolean;
 }> {
-  return Object.values(getStoredAccountTokens())
-    .map((t) => {
-      const statusLower = String(t.status || "").toLowerCase();
-      const hasRefresh = Boolean(t.refreshToken);
-      const isExplicitInvalid =
-        statusLower === "needs reauthorization" ||
-        statusLower === "needs_reconnect" ||
-        statusLower === "disconnected" ||
-        (statusLower === "expired" && !hasRefresh);
-      const isConn = !isExplicitInvalid && (hasRefresh || ["connected", "refreshing", "active"].includes(statusLower));
-      return {
-        platform: t.platform,
-        handle: t.handle || "",
-        displayName: t.displayName || t.handle || t.platform,
-        status: isConn ? ("connected" as const) : ("needs_reconnect" as const),
-        active: isConn,
-      };
-    });
+  return Array.from(buildPlatformAccountMap().values())
+    .filter((a) => a.status === "connected" || a.status === "needs_reconnect")
+    .map((a) => ({
+      platform: a.platform,
+      handle: a.handle || "",
+      displayName: a.displayName || a.handle || a.platform,
+      status: a.status as "connected" | "needs_reconnect",
+      active: a.active,
+    }));
 }
 
 function formatCount(n?: number): string {

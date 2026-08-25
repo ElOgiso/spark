@@ -5,7 +5,16 @@ import { ModelRouter } from "../../services/runtime/modelRouter";
 import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../../services/runtime/modelCatalog";
 import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { Button } from "../ds";
-import { getBrandWorkspaceId, disconnectConnectedAccount, getOAuthAuthorizationUrl, listLiveConnectedAccounts, socialConnectorFramework, ensureValidGoogleAccess } from "../../services/socialIntegrationService";
+import {
+  getBrandWorkspaceId,
+  disconnectConnectedAccount,
+  getOAuthAuthorizationUrl,
+  listLiveConnectedAccounts,
+  buildPlatformAccountMap,
+  CanonicalPlatformAccount,
+  socialConnectorFramework,
+  ensureValidGoogleAccess,
+} from "../../services/socialIntegrationService";
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/workspaceSync";
 import { AuthPanel } from "../auth/AuthPanel";
@@ -160,71 +169,19 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     };
   }, [auth.brand?.id, character, productions, reviewItems]);
 
-  const [accounts, setAccounts] = useState<{ id: string; platform: string; handle: string; followers: string; active: boolean; status: string }[]>(() => {
-    const live = listLiveConnectedAccounts();
-    if (live.length > 0) {
-      return live.map((a, idx) => ({
-        id: String(idx + 1),
-        platform: a.platform,
-        handle: a.handle,
-        followers: "—",
-        active: a.active,
-        status: a.status,
-      }));
-    }
-    if (contextAccounts && Array.isArray(contextAccounts)) {
-      return contextAccounts
-        .map((a: any, idx: number) => ({
-          id: String(idx + 1),
-          platform: a.platform,
-          handle: a.handle || "",
-          followers: "—",
-          active: String(a.status || "").toLowerCase() === "connected",
-          status: a.status || "disconnected",
-        }));
-    }
-    return [];
-  });
+  const [platformAccountMap, setPlatformAccountMap] = useState<Map<string, CanonicalPlatformAccount>>(() =>
+    buildPlatformAccountMap(contextAccounts)
+  );
   const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
 
   const refreshMobileAccounts = () => {
-    const live = listLiveConnectedAccounts();
-    const map = new Map<string, { id: string; platform: string; handle: string; followers: string; active: boolean; status: string }>();
-
-    live.forEach((a, idx) => {
-      map.set(a.platform, {
-        id: String(idx + 1),
-        platform: a.platform,
-        handle: a.handle,
-        followers: "—",
-        active: a.active,
-        status: a.status,
-      });
-    });
-
-    if (contextAccounts && Array.isArray(contextAccounts)) {
-      contextAccounts.forEach((a: any) => {
-        if (!map.has(a.platform)) {
-          const isConn = String(a.status || "").toLowerCase() === "connected";
-          map.set(a.platform, {
-            id: String(map.size + 1),
-            platform: a.platform,
-            handle: a.handle || "",
-            followers: "—",
-            active: isConn,
-            status: isConn ? "connected" : "needs_reconnect",
-          });
-        }
-      });
-    }
-
-    setAccounts(Array.from(map.values()));
+    const map = buildPlatformAccountMap(contextAccounts);
+    setPlatformAccountMap(map);
   };
 
   useEffect(() => {
     refreshMobileAccounts();
 
-    // Background ensure valid Google OAuth access
     void ensureValidGoogleAccess("YouTube Shorts").then((validToken) => {
       if (validToken) {
         refreshMobileAccounts();
@@ -299,9 +256,9 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
           icon: LinkIcon,
           label: "Accounts",
           badge:
-            accounts.filter((a) => a.active).length === 0
+            Array.from(platformAccountMap.values()).filter((a) => a.active).length === 0
               ? "None"
-              : `${accounts.filter((a) => a.active).length} active`,
+              : `${Array.from(platformAccountMap.values()).filter((a) => a.active).length} active`,
         },
       ],
     },
@@ -608,31 +565,36 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
         case "Accounts":
           const mobilePlatforms = [
-            { key: "YouTube Shorts", displayName: "YouTube" },
-            { key: "Twitter/X", displayName: "Twitter/X" },
-            { key: "TikTok", displayName: "TikTok" },
-            { key: "Instagram", displayName: "Instagram" },
-            { key: "Facebook", displayName: "Facebook" },
-            { key: "LinkedIn", displayName: "LinkedIn" }
+            { key: "youtube", displayName: "YouTube" },
+            { key: "x", displayName: "Twitter/X" },
+            { key: "tiktok", displayName: "TikTok" },
+            { key: "instagram", displayName: "Instagram" },
+            { key: "facebook", displayName: "Facebook" },
+            { key: "linkedin", displayName: "LinkedIn" }
           ];
+
+          const connectedCount = mobilePlatforms.filter(
+            (plat) => platformAccountMap.get(plat.key)?.status === "connected"
+          ).length;
+
+          // Dev log for drift detection
+          if (process.env.NODE_ENV !== "production") {
+            const rawAccounts = contextAccounts || [];
+            if (rawAccounts.length > 0 && connectedCount === 0) {
+              console.warn("[Mobile Accounts Debug] Raw accounts found in context but 0 connected:", rawAccounts);
+            }
+          }
 
           return (
             <div className="space-y-4">
               <p className="text-xs text-muted-foreground px-1">
-                {accounts.filter((a) => a.active).length} connected · live OAuth only
+                {connectedCount} connected · live OAuth only
               </p>
               <div className="rounded-xl border border-border bg-card divide-y divide-border/50 overflow-hidden">
                 {mobilePlatforms.map((plat) => {
-                  const conn = accounts.find(
-                    (a) =>
-                      a.platform === plat.key ||
-                      a.platform === plat.displayName ||
-                      (plat.key.includes("YouTube") && String(a.platform).includes("YouTube")) ||
-                      (plat.key.includes("Twitter") &&
-                        (String(a.platform).includes("Twitter") || a.platform === "X"))
-                  );
-                  const isConnected = Boolean(conn && (conn.status === "connected" || conn.active));
-                  const needsReconnect = Boolean(conn && conn.status === "needs_reconnect");
+                  const conn = platformAccountMap.get(plat.key);
+                  const isConnected = conn?.status === "connected";
+                  const needsReconnect = conn?.status === "needs_reconnect";
 
                   return (
                     <div key={plat.key} className="p-4 flex items-center justify-between gap-3">
@@ -650,7 +612,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-                          {isConnected || needsReconnect ? conn!.handle || "Linked Account" : "Not Connected"}
+                          {isConnected || needsReconnect ? conn?.handle || "Linked Account" : "Not Connected"}
                         </p>
                       </div>
                       
@@ -675,7 +637,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                               setDisconnectingPlatform(null);
                             }
                           }}
-                          className="py-1.5 px-3 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold text-center transition-colors shrink-0"
+                          className="py-1.5 px-3 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold text-center transition-colors shrink-0 cursor-pointer"
                         >
                           {disconnectingPlatform === plat.key ? "…" : "Disconnect"}
                         </button>
@@ -696,7 +658,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                               }
                             }).catch(() => {});
                           }}
-                          className={`py-1.5 px-3 rounded-lg border text-xs font-semibold text-center transition-colors shrink-0 ${
+                          className={`py-1.5 px-3 rounded-lg border text-xs font-semibold text-center transition-colors shrink-0 cursor-pointer ${
                             needsReconnect
                               ? "border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
                               : "border-border bg-background hover:bg-accent/10"
