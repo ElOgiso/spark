@@ -177,7 +177,7 @@ function AppContent() {
       }
 
       if (isUserAuthenticated) {
-        if (pathname === "/admin") {
+        if (pathname.startsWith("/admin")) {
           if (!auth.isAdmin) {
             console.log("[SPARK AUTH] Non-admin attempted /admin access -> redirecting to executive home");
             if (window.history && window.history.replaceState) {
@@ -185,7 +185,7 @@ function AppContent() {
             }
             setCurrentPage("/");
           } else {
-            setCurrentPage("/admin");
+            setCurrentPage(pathname);
           }
         } else if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
           if (!search.includes("resume_onboarding") && pathname !== "/") {
@@ -193,7 +193,7 @@ function AppContent() {
           }
         }
 
-        if (auth.isAdmin && (currentPage === "/admin" || !auth.brand)) {
+        if (auth.isAdmin && (currentPage.startsWith("/admin") || !auth.brand)) {
           console.log("[SPARK AUTH] routing: ADMIN CONSOLE");
           setViewState("dashboard");
         } else if (!auth.isOnboardingComplete) {
@@ -244,7 +244,7 @@ function AppContent() {
 
     if (auth.isAdmin) {
       console.log("[SPARK AUTH] routing → Admin Console");
-      setCurrentPage("/admin");
+      setCurrentPage("/admin/inbox");
       setViewState("dashboard");
       return;
     }
@@ -335,11 +335,15 @@ function AppContent() {
       case "/privacy":
         return <FullLegalPage onNavigate={setCurrentPage} type="privacy" />;
       case "/admin":
+      case "/admin/inbox":
+      case "/admin/people":
+      case "/admin/credits":
+      case "/admin/coupons":
       case "admin":
         if (!auth.isAdmin) {
           return <SparkHome onNavigate={setCurrentPage} />;
         }
-        return <AdminPlaceholderPage onNavigate={setCurrentPage} />;
+        return <AdminPlaceholderPage currentPath={currentPage} onNavigate={setCurrentPage} />;
       default:
         return <SparkHome onNavigate={setCurrentPage} />;
     }
@@ -366,10 +370,10 @@ function AppContent() {
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
       // A. Admin standalone route check
-      if (auth.isAdmin && (currentPage === "/admin" || currentPage === "admin" || (!auth.isOnboardingComplete && !auth.brand))) {
+      if (auth.isAdmin && (currentPage.startsWith("/admin") || (!auth.isOnboardingComplete && !auth.brand))) {
         return (
           <ProtectedRoute>
-            <AdminPlaceholderPage onNavigate={setCurrentPage} />
+            <AdminPlaceholderPage currentPath={currentPage.startsWith("/admin") ? currentPage : "/admin/inbox"} onNavigate={setCurrentPage} />
           </ProtectedRoute>
         );
       }
