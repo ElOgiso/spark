@@ -40,7 +40,8 @@ import {
   Video,
   Cpu,
 } from "lucide-react";
-import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider } from "../services/runtime/providerCapabilities";
+import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
+import { getProviderLogo } from "./ui/AIProviderLogos";
 import { SearchableSelect } from "./ui/SearchableSelect";
 import {
   BRAND_ARCHETYPES,
@@ -1046,160 +1047,219 @@ export function MySpark({ onNavigate }: MySparkProps) {
                 </div>
               </div>
 
-              {/* Target Video Length */}
-              <div>
-                <p className="text-sm font-medium mb-1">Target Video Length</p>
-                <p className="text-sm text-muted-foreground mb-3">Longer videos use more generation credit & multi-segment render passes.</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { sec: 60, label: "1m" },
-                    { sec: 180, label: "3m" },
-                    { sec: 300, label: "5m" },
-                    { sec: 600, label: "10m" },
-                    { sec: 900, label: "15m" },
-                    { sec: 1200, label: "20m" },
-                    { sec: 1800, label: "30m" },
-                    { sec: 2700, label: "45m" },
-                    { sec: 3600, label: "60m" },
-                  ].map((dur) => {
-                    const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
-                    return (
-                      <button
-                        key={dur.sec}
-                        onClick={() => updateFormatSettings && updateFormatSettings({ targetDurationSec: dur.sec })}
-                        className={`px-4 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                          active
-                            ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/30"
-                            : "bg-background border-border text-muted-foreground hover:border-accent/40"
-                        }`}
-                      >
-                        {dur.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Clip Engine & Video Models */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium">Clip Engine & Video Models</p>
-                  <span className="text-[11px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
-                    Official Capability Map
+              {/* Unified Control Block: Video Length & Clip Engine */}
+              <div className="pt-6 border-t border-border space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Film className="w-4 h-4 text-purple-400" />
+                      <h3 className="text-sm font-semibold text-foreground">Video Length & Clip Engine</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Single control system for total episode runtime and clip generation physics.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono text-purple-300 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20 self-start sm:self-auto">
+                    Unified Scene Physics
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Single-shot native clip physics. When target runtime exceeds native max, the planner generates multi-segment continuous clips.
-                </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {(() => {
-                    const activeVideo = resolveActiveVideoProvider({
-                      preferredVideoProvider: formatSettings?.preferredVideoProvider,
-                    });
-                    const isAuto = !formatSettings?.preferredVideoProvider || formatSettings.preferredVideoProvider === "auto";
-
-                    const videoModels: Array<{ id: string; name: string; lengths: string; maxSec: number; tag: string }> = [
-                      {
-                        id: "gemini",
-                        name: PROVIDER_VIDEO_CAPABILITIES.gemini.displayName,
-                        lengths: "4s / 6s / 8s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.gemini.maxNativeSec,
-                        tag: "Native Audio + Refs",
-                      },
-                      {
-                        id: "grok",
-                        name: PROVIDER_VIDEO_CAPABILITIES.grok.displayName,
-                        lengths: "1–15s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.grok.maxNativeSec,
-                        tag: "High Motion Speed",
-                      },
-                      {
-                        id: "kling",
-                        name: PROVIDER_VIDEO_CAPABILITIES.kling.displayName,
-                        lengths: "5s / 10s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.kling.maxNativeSec,
-                        tag: "Portrait Coherence",
-                      },
-                      {
-                        id: "runway",
-                        name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
-                        lengths: "5s / 10s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.runway.maxNativeSec,
-                        tag: "Cinematic Motion",
-                      },
-                      {
-                        id: "luma",
-                        name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName,
-                        lengths: "5s / 9s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.luma.maxNativeSec,
-                        tag: "Keyframe Ray 2",
-                      },
-                      {
-                        id: "higgsfield",
-                        name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
-                        lengths: "4s / 8s",
-                        maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
-                        tag: "Vertical Pop",
-                      },
-                    ];
-
-                    return (
-                      <>
+                {/* Sub-row 1: Target Video Length */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Total Target Runtime
+                    </p>
+                    <span className="text-xs font-medium text-foreground">
+                      {(formatSettings?.targetDurationSec || 60) >= 60
+                        ? `${Math.round((formatSettings?.targetDurationSec || 60) / 60)}m Episode`
+                        : `${formatSettings?.targetDurationSec || 60}s Short`}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { sec: 15, label: "15s" },
+                      { sec: 30, label: "30s" },
+                      { sec: 60, label: "1m" },
+                      { sec: 180, label: "3m" },
+                      { sec: 300, label: "5m" },
+                      { sec: 600, label: "10m" },
+                      { sec: 900, label: "15m" },
+                      { sec: 1200, label: "20m" },
+                      { sec: 1800, label: "30m" },
+                      { sec: 2700, label: "45m" },
+                      { sec: 3600, label: "60m" },
+                    ].map((dur) => {
+                      const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
+                      return (
                         <button
-                          onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: "auto" })}
-                          className={`p-3.5 rounded-xl border text-left transition-all ${
-                            isAuto
-                              ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20"
-                              : "bg-background border-border hover:border-accent/40"
+                          key={dur.sec}
+                          onClick={() => updateFormatSettings && updateFormatSettings({ targetDurationSec: dur.sec })}
+                          className={`px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            active
+                              ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/30 ring-1 ring-purple-400/50"
+                              : "bg-background border-border text-muted-foreground hover:border-accent/40 hover:text-foreground"
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-purple-400" />
-                              <span className="text-xs font-semibold text-foreground">Auto / Best Available</span>
-                            </div>
-                            <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
-                              Active: {activeVideo.profile.displayName.split(" ")[0]}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">
-                            Automatically routes to the highest-quality available video model with valid API key.
-                          </p>
+                          {dur.label}
                         </button>
-
-                        {videoModels.map((m) => {
-                          const isSelected = formatSettings?.preferredVideoProvider === m.id;
-                          return (
-                            <button
-                              key={m.id}
-                              onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: m.id as any })}
-                              className={`p-3.5 rounded-xl border text-left transition-all ${
-                                isSelected
-                                  ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20"
-                                  : "bg-background border-border hover:border-accent/40"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-1.5">
-                                <div className="flex items-center gap-2">
-                                  <Video className="w-3.5 h-3.5 text-accent-foreground" />
-                                  <span className="text-xs font-semibold text-foreground">{m.name}</span>
-                                </div>
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                  Max: {m.maxSec}s
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="font-mono text-purple-300">Lengths: {m.lengths}</span>
-                                <span className="text-muted-foreground text-[10px]">{m.tag}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {/* Sub-row 2: Clip Engine & Video Models */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Clip Engine & Native Durations
+                    </p>
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      Provider Clip Physics
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {(() => {
+                      const activeVideo = resolveActiveVideoProvider({
+                        preferredVideoProvider: formatSettings?.preferredVideoProvider,
+                      });
+                      const isAuto = !formatSettings?.preferredVideoProvider || formatSettings.preferredVideoProvider === "auto";
+
+                      const videoModels: Array<{ id: string; name: string; lengths: string; maxSec: number; tag: string }> = [
+                        {
+                          id: "gemini",
+                          name: PROVIDER_VIDEO_CAPABILITIES.gemini.displayName,
+                          lengths: "4s / 6s / 8s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.gemini.maxNativeSec,
+                          tag: "Native Audio + Refs",
+                        },
+                        {
+                          id: "grok",
+                          name: PROVIDER_VIDEO_CAPABILITIES.grok.displayName,
+                          lengths: "1–15s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.grok.maxNativeSec,
+                          tag: "High Motion Speed",
+                        },
+                        {
+                          id: "kling",
+                          name: PROVIDER_VIDEO_CAPABILITIES.kling.displayName,
+                          lengths: "5s / 10s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.kling.maxNativeSec,
+                          tag: "Portrait Coherence",
+                        },
+                        {
+                          id: "runway",
+                          name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
+                          lengths: "5s / 10s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.runway.maxNativeSec,
+                          tag: "Cinematic Motion",
+                        },
+                        {
+                          id: "luma",
+                          name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName,
+                          lengths: "5s / 9s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.luma.maxNativeSec,
+                          tag: "Keyframe Ray 2",
+                        },
+                        {
+                          id: "higgsfield",
+                          name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
+                          lengths: "4s / 8s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
+                          tag: "Vertical Pop",
+                        },
+                      ];
+
+                      return (
+                        <>
+                          <button
+                            onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: "auto" })}
+                            className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                              isAuto
+                                ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
+                                : "bg-background border-border hover:border-accent/40"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2.5">
+                                {getProviderLogo("auto", 22)}
+                                <span className="text-xs font-semibold text-foreground">Auto / Best Available</span>
+                              </div>
+                              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                                Active: {activeVideo.profile.displayName.split(" ")[0]}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              Automatically routes to highest-quality available video model with valid API key.
+                            </p>
+                          </button>
+
+                          {videoModels.map((m) => {
+                            const isSelected = formatSettings?.preferredVideoProvider === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: m.id as any })}
+                                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                  isSelected
+                                    ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
+                                    : "bg-background border-border hover:border-accent/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2.5">
+                                    {getProviderLogo(m.id, 22)}
+                                    <span className="text-xs font-semibold text-foreground">{m.name}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                    Max: {m.maxSec}s
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] mt-1 pt-1 border-t border-border/40">
+                                  <span className="font-mono text-purple-300">Native: {m.lengths}</span>
+                                  <span className="text-muted-foreground text-[10px]">{m.tag}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Sub-row 3: Real-Time Scene Segmentation & Physics Box */}
+                {(() => {
+                  const planMetrics = deriveVideoProductionPlanMetrics({
+                    targetDurationSec: formatSettings?.targetDurationSec,
+                    preferredVideoProvider: formatSettings?.preferredVideoProvider,
+                  });
+
+                  return (
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-purple-400" />
+                          <p className="text-xs font-semibold text-foreground">
+                            {planMetrics.isMultiScene
+                              ? `Estimated Scene Segmentation: ~${planMetrics.estimatedSceneCount} Scenes`
+                              : `Estimated Scene Segmentation: 1 Scene (Single Take)`}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-mono text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full font-medium">
+                          {planMetrics.displayName} (Max {planMetrics.maxNativeClipSec}s/clip)
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        🎯 {planMetrics.summaryText}
+                      </p>
+                      <p className="text-[11px] text-white/40 italic">
+                        {planMetrics.helperText}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </section>

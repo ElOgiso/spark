@@ -60,6 +60,7 @@ import {
   normalizePlatformKey,
   socialConnectorFramework,
 } from "../services/socialIntegrationService";
+import { deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
 import { useAuth } from "./AuthContext";
 
 export interface ChatMessage {
@@ -2522,34 +2523,59 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const isMemoryReq = /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
 
     const isFormatCommand =
-      /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*min|\d+\s*minute|\d+\s*m\b)\b/i.test(lower) &&
-      /\b(format|aspect|duration|length|set|mode|video|style|target)\b/i.test(lower);
+      /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*s\b|\d+\s*sec|\d+\s*seconds|\d+\s*min|\d+\s*minute|\d+\s*m\b|veo|gemini|grok|kling|runway|luma|higgsfield|clip engine|video model|video engine)\b/i.test(lower) &&
+      /\b(format|aspect|duration|length|set|mode|video|style|target|engine|clip|provider|model|switch|use)\b/i.test(lower);
 
     if (isFormatCommand) {
       let aspectMode: import("../domain/types").AspectMode | undefined = undefined;
       if (/\b(landscape|16:9|youtube long)\b/i.test(lower)) aspectMode = "landscape";
       else if (/\b(portrait|9:16|shorts|tiktok)\b/i.test(lower)) aspectMode = "portrait";
-      else if (/\b(dynamic|auto)\b/i.test(lower)) aspectMode = "dynamic";
+      else if (/\b(dynamic|auto aspect)\b/i.test(lower)) aspectMode = "dynamic";
 
       let targetDurationSec: number | undefined = undefined;
+      const secMatch = lower.match(/(\d+)\s*(s\b|sec|seconds\b)/i);
       const minMatch = lower.match(/(\d+)\s*(min|minute|m\b)/i);
-      if (minMatch) {
+
+      if (secMatch) {
+        const rawSecs = parseInt(secMatch[1], 10);
+        const validSecs = [15, 30, 60, 180, 300, 600, 900, 1200, 1800, 2700, 3600];
+        const closest = validSecs.reduce((prev, curr) => (Math.abs(curr - rawSecs) < Math.abs(prev - rawSecs) ? curr : prev));
+        targetDurationSec = closest;
+      } else if (minMatch) {
         const mins = parseInt(minMatch[1], 10);
         const validSecs = [60, 180, 300, 600, 900, 1200, 1800, 2700, 3600];
         const closest = validSecs.reduce((prev, curr) => (Math.abs(curr - mins * 60) < Math.abs(prev - mins * 60) ? curr : prev));
         targetDurationSec = closest;
       }
 
-      if (aspectMode || targetDurationSec) {
+      let preferredVideoProvider: import("../domain/types").AIProviderId | undefined = undefined;
+      if (/\b(veo|gemini)\b/i.test(lower)) preferredVideoProvider = "gemini";
+      else if (/\b(grok|xai)\b/i.test(lower)) preferredVideoProvider = "grok";
+      else if (/\b(kling)\b/i.test(lower)) preferredVideoProvider = "kling";
+      else if (/\b(runway)\b/i.test(lower)) preferredVideoProvider = "runway";
+      else if (/\b(luma)\b/i.test(lower)) preferredVideoProvider = "luma";
+      else if (/\b(higgsfield)\b/i.test(lower)) preferredVideoProvider = "higgsfield";
+      else if (/\b(auto engine|auto video|best available)\b/i.test(lower)) preferredVideoProvider = "auto";
+
+      if (aspectMode || targetDurationSec !== undefined || preferredVideoProvider !== undefined) {
         const patch: Partial<import("../domain/types").ProductionFormatSettings> = {};
         if (aspectMode) patch.aspectMode = aspectMode;
-        if (targetDurationSec) patch.targetDurationSec = targetDurationSec;
+        if (targetDurationSec !== undefined) patch.targetDurationSec = targetDurationSec;
+        if (preferredVideoProvider !== undefined) patch.preferredVideoProvider = preferredVideoProvider;
         void updateFormatSettings(patch);
 
         const currentSettings = { ...(state.formatSettings || DEFAULT_FORMAT_SETTINGS), ...patch };
+        const metrics = deriveVideoProductionPlanMetrics({
+          targetDurationSec: currentSettings.targetDurationSec,
+          preferredVideoProvider: currentSettings.preferredVideoProvider,
+        });
+
         const aspectStr = currentSettings.aspectMode.toUpperCase();
-        const durStr = `${Math.round(currentSettings.targetDurationSec / 60)}m`;
-        const formatNotice = `Production format settings updated: ${aspectStr} aspect ratio strategy, ${durStr} target video length.`;
+        const durStr = currentSettings.targetDurationSec >= 60
+          ? `${Math.round(currentSettings.targetDurationSec / 60)}m`
+          : `${currentSettings.targetDurationSec}s`;
+
+        const formatNotice = `Production settings updated: ${aspectStr} aspect ratio, ${durStr} total runtime, using ${metrics.displayName} (max ${metrics.maxNativeClipSec}s native clip). ${metrics.isMultiScene ? `Planned into ~${metrics.estimatedSceneCount} continuous scenes.` : "Planned as 1 single-shot scene."}`;
         if (onChunk) onChunk(formatNotice);
         activeAiRequestRef.current = false;
         return formatNotice;

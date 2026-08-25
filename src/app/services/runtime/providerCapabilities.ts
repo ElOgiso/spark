@@ -315,3 +315,61 @@ export function resolveActiveVideoProvider(params?: {
     videoCapability: defaultVidCap,
   };
 }
+
+export interface VideoProductionPlanMetrics {
+  targetDurationSec: number;
+  activeProviderId: ConcreteAIProviderId;
+  displayName: string;
+  maxNativeClipSec: number;
+  allowedDurationsSec: number[];
+  isMultiScene: boolean;
+  estimatedSceneCount: number;
+  perSceneMaxSec: number;
+  summaryText: string;
+  helperText: string;
+}
+
+/**
+ * Derives unified video length and clip engine metrics for UI display and scene planning.
+ * Guarantees that target duration and clip engine operate as one unified control system.
+ */
+export function deriveVideoProductionPlanMetrics(params: {
+  targetDurationSec?: number;
+  preferredVideoProvider?: AIProviderId;
+  customKeys?: Record<string, string>;
+}): VideoProductionPlanMetrics {
+  const targetDurationSec = params.targetDurationSec || 60;
+  const activeVideo = resolveActiveVideoProvider({
+    preferredVideoProvider: params.preferredVideoProvider,
+    customKeys: params.customKeys,
+  });
+
+  const maxNativeClipSec = activeVideo.maxVideoDurationSec || 8;
+  const isMultiScene = targetDurationSec > maxNativeClipSec;
+  const estimatedSceneCount = isMultiScene ? Math.ceil(targetDurationSec / maxNativeClipSec) : 1;
+  const perSceneMaxSec = snapToAllowedDuration(Math.min(targetDurationSec, maxNativeClipSec), activeVideo.providerId);
+
+  const formattedTarget =
+    targetDurationSec >= 60
+      ? `${Math.round(targetDurationSec / 60)}m (${targetDurationSec}s)`
+      : `${targetDurationSec}s`;
+
+  const summaryText = isMultiScene
+    ? `${estimatedSceneCount} continuous scenes (~${perSceneMaxSec}s max per clip) for ${formattedTarget} total runtime`
+    : `Single take (1 scene, ~${perSceneMaxSec}s) matching ${activeVideo.videoCapability.displayName} native limits`;
+
+  const helperText = "SPARK splits long targets into scenes at this engine's max clip length.";
+
+  return {
+    targetDurationSec,
+    activeProviderId: activeVideo.providerId,
+    displayName: activeVideo.videoCapability.displayName,
+    maxNativeClipSec,
+    allowedDurationsSec: activeVideo.allowedDurationsSec,
+    isMultiScene,
+    estimatedSceneCount,
+    perSceneMaxSec,
+    summaryText,
+    helperText,
+  };
+}

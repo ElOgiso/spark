@@ -1676,15 +1676,14 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
     const isOneTake = targetSec <= providerMaxClipSec;
     const briefBeats = brief.beats || [];
 
-    // Calculate total scenes count
-    const totalScenesCount = briefBeats.length > 0
-      ? briefBeats.length
-      : isOneTake
-      ? 1
-      : Math.max(2, Math.ceil(targetSec / providerMaxClipSec));
+    // Calculate total scenes count: enforce scene segmentation when target exceeds engine max clip
+    const minScenesForDuration = Math.ceil(targetSec / providerMaxClipSec);
+    const totalScenesCount = isOneTake
+      ? (briefBeats.length > 0 ? Math.min(briefBeats.length, 3) : 1)
+      : Math.max(minScenesForDuration, briefBeats.length);
 
     // Calculate per-scene legal duration snapped to provider capability map (e.g. Veo: 4|6|8s, Grok: 1..15s)
-    const rawPerSceneSec = Math.max(1, Math.floor(targetSec / totalScenesCount));
+    const rawPerSceneSec = Math.max(1, Math.min(providerMaxClipSec, Math.ceil(targetSec / totalScenesCount)));
     const perSceneSec = snapToAllowedDuration(rawPerSceneSec, activeVideo.providerId);
 
     console.log(`[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s, Allowed: [${activeVideo.allowedDurationsSec.join(",")}]) -> Sized ${totalScenesCount} scenes (${perSceneSec}s each) for ${targetSec}s target runtime.`);

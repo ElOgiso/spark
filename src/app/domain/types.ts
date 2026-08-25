@@ -658,8 +658,9 @@ export type AspectMode = "landscape" | "portrait" | "dynamic";
 
 export interface ProductionFormatSettings {
   aspectMode: AspectMode;
-  targetDurationSec: number; // 60, 180, 300, 600, 900, 1200, 1800, 2700, 3600
+  targetDurationSec: number; // 15, 30, 60 (1m), 180 (3m), 300 (5m), 600 (10m), 900 (15m), 1200 (20m), 1800 (30m), 2700 (45m), 3600 (60m)
   preferredVideoProvider?: AIProviderId;
+  preferredVideoModel?: string;
 }
 
 export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
