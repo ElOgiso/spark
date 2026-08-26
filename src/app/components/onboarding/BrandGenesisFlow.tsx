@@ -1925,24 +1925,20 @@ export function BrandGenesisFlow({
   // Real Character Generation Handler
   const handleGenerateSheet = async () => {
     setIsGeneratingSheet(true);
-    setGenerateError(null);
-
-    const prompt = `Production Character Design Bible Reference Sheet for "${data.creatorName || "Lead Host"}" representing brand "${data.brandName || "SPARK"}", niche: "${data.niche}".
-Visual Style / Genre: ${data.characterGenre || "Realistic"}.
-Skin Tone: ${data.characterSkin || "Rich Brown"}.
-Hair Style: ${data.characterHair || "Short Crop"}.
-Signature Wardrobe: ${data.characterWardrobe || "Executive Tailored Suit"}.
-Personality & Emotion: ${data.characterPersonality || "Confident"}.
-Director Notes & Persona: ${data.characterDescription || "Executive host in modern high-contrast studio setting"}.
-
-LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
-1. TOP TITLE BLOCK: "${data.creatorName || "Lead Host"}" - Production Model Bible, Style: ${data.characterGenre || "Realistic"}, Core Aesthetic Guidelines.
-2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe (${data.characterWardrobe || "Executive Tailored Suit"}) under neutral key studio lighting.
-3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${data.characterPersonality || "Confident"}: Confident, Explaining/Directing, Warm/Smiling, Inquisitive/Thoughtful, Intense Hook).
-4. COLOR PALETTE SWATCH STRIP: 5 exact hex color swatches defining wardrobe accents, skin tone, hair tint, and set tone.
-5. DETAILS & PROPS: Detailed close-up of signature microphone / accessory / wristwear and fabric texture.
-
-AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting, high consistency, professional animation and visual development standard, photorealistic 8k detail, clear reference layout.`;
+    const { buildProductionCharacterSheetPrompt } = await import("../../services/production/characterSheetPrompt");
+    const prompt = buildProductionCharacterSheetPrompt({
+      creatorName: data.creatorName,
+      role: "Brand Host & Lead Presenter",
+      brandName: data.brandName,
+      niche: data.niche,
+      purpose: data.goal,
+      genre: data.characterGenre,
+      personality: data.characterPersonality,
+      skinTone: data.characterSkin,
+      hairStyle: data.characterHair,
+      wardrobe: data.characterWardrobe,
+      directorNotes: data.characterDescription,
+    });
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");

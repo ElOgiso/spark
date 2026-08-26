@@ -232,22 +232,20 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     setPortraitError(null);
 
     const activeNiche = customNiche.trim() || niche || "AI & Technology";
-    const prompt = `Production Character Design Bible Reference Sheet for "${creatorName || "Lead Host"}" representing brand "${brandName || "SPARK"}", niche: "${activeNiche}".
-Visual Style / Genre: ${genre || "Realistic"}.
-Skin Tone: ${skinTone || "Rich Brown"}.
-Hair Style: ${hairStyle || "Short Crop"}.
-Signature Wardrobe: ${wardrobe || "Executive Tailored Suit"}.
-Personality & Emotion: ${personality || "Confident"}.
-Director Notes: ${characterDescription || "Executive host in modern high-contrast studio setting"}.
-
-LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
-1. TOP TITLE BLOCK: "${creatorName || "Lead Host"}" - Production Model Bible, Style: ${genre || "Realistic"}.
-2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe (${wardrobe || "Executive Tailored Suit"}).
-3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${personality || "Confident"}: Confident, Explaining/Directing, Warm/Smiling, Inquisitive/Thoughtful, Intense Hook).
-4. COLOR PALETTE SWATCH STRIP: 5 exact hex color swatches defining wardrobe accents, skin tone, hair tint, and set tone.
-5. DETAILS & PROPS: Detailed close-up of signature microphone or accessory.
-
-Masterclass character turnaround sheet, ultra-crisp studio lighting, high consistency, professional animation and visual development standard, photorealistic 8k detail.`;
+    const { buildProductionCharacterSheetPrompt } = await import("../../../services/production/characterSheetPrompt");
+    const prompt = buildProductionCharacterSheetPrompt({
+      creatorName,
+      role: "Brand Host & Lead Presenter",
+      brandName,
+      niche: activeNiche,
+      purpose: undefined,
+      genre,
+      personality,
+      skinTone,
+      hairStyle,
+      wardrobe,
+      directorNotes: characterDescription,
+    });
 
     try {
       const { ModelRouter } = await import("../../../services/runtime/modelRouter");

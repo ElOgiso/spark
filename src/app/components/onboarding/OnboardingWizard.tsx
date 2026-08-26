@@ -293,22 +293,20 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     setIsGeneratingPortrait(true);
     setPortraitError(null);
 
-    const prompt = `Production Character Design Bible Reference Sheet for "${formData.creatorName || "Lead Host"}" representing brand "${formData.brandName || "SPARK"}", niche: "${formData.niche}".
-Visual Style / Genre: ${formData.genre || "Realistic"}.
-Skin Tone: ${formData.skinTone || "Rich Brown"}.
-Hair Style: ${formData.hairStyle || "Short Crop"}.
-Signature Wardrobe: ${formData.wardrobe || "Executive Tailored Suit"}.
-Personality & Emotion: ${formData.personality || "Confident"}.
-Director Notes & Persona: ${formData.characterDescription || "Executive host in modern high-contrast studio setting"}.
-
-LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
-1. TOP TITLE BLOCK: "${formData.creatorName || "Lead Host"}" - Production Model Bible, Style: ${formData.genre || "Realistic"}, Core Aesthetic Guidelines.
-2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe (${formData.wardrobe || "Executive Tailored Suit"}) under neutral key studio lighting.
-3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${formData.personality || "Confident"}: Confident, Explaining/Directing, Warm/Smiling, Inquisitive/Thoughtful, Intense Hook).
-4. COLOR PALETTE SWATCH STRIP: 5 exact hex color swatches defining wardrobe accents, skin tone, hair tint, and set tone.
-5. DETAILS & PROPS: Detailed close-up of signature microphone / accessory / wristwear and fabric texture.
-
-AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting, high consistency, professional animation and visual development standard, photorealistic 8k detail, clear reference layout.`;
+    const { buildProductionCharacterSheetPrompt } = await import("../../services/production/characterSheetPrompt");
+    const prompt = buildProductionCharacterSheetPrompt({
+      creatorName: formData.creatorName,
+      role: "Brand Host & Lead Presenter",
+      brandName: formData.brandName,
+      niche: formData.niche,
+      purpose: undefined,
+      genre: formData.genre,
+      personality: formData.personality,
+      skinTone: formData.skinTone,
+      hairStyle: formData.hairStyle,
+      wardrobe: formData.wardrobe,
+      directorNotes: formData.characterDescription,
+    });
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");

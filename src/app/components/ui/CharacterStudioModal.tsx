@@ -35,21 +35,18 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
   const handleGenerateSheet = async () => {
     setIsGenerating(true);
     setErrorMsg(null);
-    setSuccessMsg(null);
-
-    const prompt = `Production Character Design Bible Reference Sheet for "${creatorName}" representing brand "${brand?.name || "SPARK"}", niche: "${brand?.niche || "Executive Media"}".
-Visual Style / Genre: ${styleGenre}.
-Signature Wardrobe: ${wardrobe}.
-Personality & Emotion: ${personality}.
-Director Notes & Persona: ${directorNotes}.
-
-LAYOUT & COMPOSITION (One unified master model sheet / production bible grid):
-1. TOP TITLE BLOCK: "${creatorName}" - Production Model Bible, Style: ${styleGenre}.
-2. FULL-BODY TURNAROUND MODEL ROW: 4 distinct full-body views (Full Front Standing Pose, 3/4 Dynamic Angle, Side Profile, and Back View) in matching signature wardrobe under neutral key studio lighting.
-3. EXPRESSION PALETTE GRID: 4 to 6 facial emotion crops (${personality}).
-4. COLOR PALETTE SWATCH STRIP: 5 exact hex color swatches defining wardrobe accents, skin tone, hair tint, and set tone.
-
-AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting, high consistency, professional animation and visual development standard, photorealistic 8k detail.`;
+    const { buildProductionCharacterSheetPrompt } = await import("../../services/production/characterSheetPrompt");
+    const prompt = buildProductionCharacterSheetPrompt({
+      creatorName,
+      role: character?.role || "Brand Host & Lead Presenter",
+      brandName: brand?.name,
+      niche: brand?.niche,
+      purpose: (brand as any)?.purpose,
+      genre: styleGenre,
+      personality,
+      wardrobe,
+      directorNotes,
+    });
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
