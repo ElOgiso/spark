@@ -416,18 +416,16 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   const realMediaUrl = storyboardImage || thumbImage || fallbackImage;
 
                   const isGenerating =
-                    Boolean(p.isGeneratingAssets) ||
-                    Boolean(
-                      p.generationProgress &&
-                      p.generationProgress.percent > 0 &&
-                      p.generationProgress.percent < 100 &&
-                      p.generationProgress.stage !== "Complete" &&
-                      p.generationProgress.stage !== "Cancelled" &&
-                      p.generationProgress.stage !== "Failed"
-                    );
+                    Boolean(p.isGeneratingAssets) &&
+                    p.generationProgress?.stage !== "Complete" &&
+                    p.generationProgress?.stage !== "Cancelled" &&
+                    p.generationProgress?.stage !== "Failed" &&
+                    (p.generationProgress?.percent === undefined || p.generationProgress?.percent < 100);
 
-                  const stageLabel = p.generationProgress?.stage || "Generating";
-                  const percent = p.generationProgress?.percent || (p.isGeneratingAssets ? 15 : 0);
+                  const stageLabel = p.generationProgress?.stage || (isGenerating ? "Synthesizing" : "Ready");
+                  const percent = typeof p.generationProgress?.percent === "number" && p.generationProgress.percent >= 0
+                    ? p.generationProgress.percent
+                    : 0;
                   const isSelected = p.id === activeProd?.id;
 
                   return (
@@ -460,7 +458,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold truncate text-foreground">{p.title}</p>
                         <p className="text-[10px] text-muted-foreground truncate">
-                          {isGenerating ? `${stageLabel} · ${percent}%` : videoUrl ? "Playable MP4" : p.status || "Ready"}
+                          {isGenerating ? `${stageLabel} · ${percent > 0 ? `${percent}%` : "Active"}` : videoUrl ? "Playable MP4" : p.status || "Ready"}
                         </p>
                       </div>
                     </button>
@@ -503,7 +501,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           </div>
 
           {/* Active Generation Progress Card */}
-          {activeProd?.isGeneratingAssets && (
+          {activeProd?.isGeneratingAssets &&
+           activeProd.generationProgress?.stage !== "Complete" &&
+           activeProd.generationProgress?.stage !== "Cancelled" &&
+           activeProd.generationProgress?.stage !== "Failed" &&
+           (activeProd.generationProgress?.percent === undefined || activeProd.generationProgress?.percent < 100) && (
             <div className="p-5 rounded-2xl bg-card border border-accent/40 shadow-sm space-y-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -514,7 +516,9 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-mono font-bold text-accent bg-accent/20 px-2.5 py-0.5 rounded-full">
-                    {activeProd.generationProgress?.percent ?? 15}%
+                    {typeof activeProd.generationProgress?.percent === "number" && activeProd.generationProgress.percent >= 0
+                      ? `${activeProd.generationProgress.percent}%`
+                      : "Starting..."}
                   </span>
                   <span className="text-[10px] font-mono font-semibold uppercase text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
                     Pipeline Active
@@ -526,7 +530,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-accent via-purple-400 to-emerald-500 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(activeProd.generationProgress?.percent ?? 15, 6)}%` }}
+                  style={{
+                    width: `${typeof activeProd.generationProgress?.percent === "number" && activeProd.generationProgress.percent > 0
+                      ? Math.max(activeProd.generationProgress.percent, 3)
+                      : 3}%`
+                  }}
                 />
               </div>
 
@@ -937,8 +945,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               onClick={handleGenerateAssets}
               disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
             >
-              {activeProd?.isGeneratingAssets
-                ? "Synthesizing Storyboard..."
+              {activeProd?.isGeneratingAssets &&
+               activeProd.generationProgress?.stage !== "Complete" &&
+               activeProd.generationProgress?.stage !== "Failed" &&
+               activeProd.generationProgress?.stage !== "Cancelled"
+                ? (activeProd.generationProgress?.stage ? `Synthesizing ${activeProd.generationProgress.stage}...` : "Synthesizing Assets...")
                 : (brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.length)
                 ? "Generate Assets"
                 : "Continue Generation"}

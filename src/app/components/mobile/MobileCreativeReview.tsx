@@ -277,14 +277,14 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
               </span>
             </div>
             <span className="text-[11px] font-mono font-bold text-accent bg-accent/20 px-2 py-0.5 rounded-full">
-              {genProgress?.percent ?? 15}%
+              {typeof genProgress?.percent === "number" && genProgress.percent >= 0 ? `${genProgress.percent}%` : "Starting..."}
             </span>
           </div>
 
           <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-300"
-              style={{ width: `${Math.max(genProgress?.percent ?? 15, 6)}%` }}
+              style={{ width: `${typeof genProgress?.percent === "number" && genProgress.percent > 0 ? Math.max(genProgress.percent, 3) : 3}%` }}
             />
           </div>
 

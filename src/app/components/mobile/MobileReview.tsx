@@ -437,7 +437,7 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
               (p) => p.id === review.productionId || p.id === review.id || p.id === review.id.replace("rev-", "")
             );
             const genProgress = prod?.generationProgress || prod?.brief?.generationProgress || review.generationProgress;
-            const progressPct = genProgress?.percent ?? (prod?.isGeneratingAssets || review.isGeneratingAssets ? 15 : 0);
+            const progressPct = typeof genProgress?.percent === "number" && genProgress.percent >= 0 ? genProgress.percent : 0;
             const progressStage = genProgress?.stage || (prod?.isGeneratingAssets ? "Synthesizing Media" : "");
 
             const isComplete = progressStage === "Complete" || progressPct >= 100;

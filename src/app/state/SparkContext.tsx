@@ -2083,14 +2083,38 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError") {
         console.log(`[SparkContext] Asset generation aborted for prodId ${productionId}`);
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) =>
+            p.id === productionId
+              ? {
+                  ...p,
+                  isGeneratingAssets: false,
+                  status: "Cancelled",
+                  generationProgress: p.generationProgress
+                    ? { ...p.generationProgress, stage: "Cancelled", message: "Generation cancelled." }
+                    : { percent: 0, stage: "Cancelled", stages: [], message: "Generation cancelled." },
+                }
+              : p
+          ),
+        }));
         return;
       }
-      console.warn("[SparkContext] Asset generation notice:", err);
+      console.warn("[SparkContext] Asset generation error:", err);
+      const errMsg = err?.message || String(err);
       setState((prev: any) => ({
         ...prev,
         productions: prev.productions.map((p: any) =>
           p.id === productionId
-            ? { ...p, isGeneratingAssets: false, lastError: err?.message || String(err) }
+            ? {
+                ...p,
+                isGeneratingAssets: false,
+                status: "Failed",
+                lastError: errMsg,
+                generationProgress: p.generationProgress
+                  ? { ...p.generationProgress, stage: "Failed", message: `Generation failed: ${errMsg}` }
+                  : { percent: 0, stage: "Failed", stages: [], message: `Generation failed: ${errMsg}`, partialAssets: { lastError: errMsg } },
+              }
             : p
         ),
       }));
@@ -2098,6 +2122,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (activeGenerationControllers.current.get(productionId) === controller) {
         activeGenerationControllers.current.delete(productionId);
       }
+      setState((prev: any) => ({
+        ...prev,
+        productions: prev.productions.map((p: any) =>
+          p.id === productionId ? { ...p, isGeneratingAssets: false } : p
+        ),
+      }));
     }
   };
 
@@ -2120,9 +2150,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               status: "Cancelled",
               isGeneratingAssets: false,
               lastError: "Cancelled by executive",
-              generationProgress: p.generationProgress
-                ? { ...p.generationProgress, stage: "Cancelled", message: "Generation cancelled by executive" }
-                : undefined,
+              generationProgress: {
+                percent: p.generationProgress?.percent || 0,
+                stage: "Cancelled",
+                stages: p.generationProgress?.stages || [],
+                message: "Generation cancelled by executive",
+              },
             }
           : p
       ),

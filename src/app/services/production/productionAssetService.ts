@@ -180,6 +180,34 @@ export function isValidMediaData(val?: string | null): val is string {
   );
 }
 
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string,
+  signal?: AbortSignal
+): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Timeout (${Math.round(timeoutMs / 1000)}s): ${errorMessage}`));
+    }, timeoutMs);
+  });
+
+  const abortPromise = new Promise<T>((_, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("Operation aborted"));
+    } else {
+      signal?.addEventListener("abort", () => reject(new Error("Operation aborted")), { once: true });
+    }
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise, abortPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Builds a deterministic, positional visual reference list for image/video models:
  * 1. Character Sheet URL(s) (always top priority)
@@ -621,9 +649,43 @@ export class ProductionAssetService {
       }
     };
 
-    emitProgress(5, "Storyboard", `Synthesizing ${mode.toUpperCase()} (${aspectRatio}) continuous storyboard...`);
+    let heartbeatTimer: any = null;
+    const startHeartbeat = (stageLabel: string) => {
+      stopHeartbeat();
+      heartbeatTimer = setInterval(() => {
+        if (signal?.aborted) {
+          stopHeartbeat();
+          return;
+        }
+        if (
+          latestProgressSnapshot &&
+          latestProgressSnapshot.stage !== "Complete" &&
+          latestProgressSnapshot.stage !== "Failed" &&
+          latestProgressSnapshot.stage !== "Cancelled" &&
+          latestProgressSnapshot.percent < 100
+        ) {
+          emitProgress(
+            latestProgressSnapshot.percent,
+            latestProgressSnapshot.stage,
+            `Working on ${stageLabel || latestProgressSnapshot.stage}...`
+          );
+        }
+      }, 4000);
+    };
 
-    // PART 2 — Mode-Specific Storyboard Generation Prompt
+    const stopHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+
+    emitProgress(5, "Storyboard", `Synthesizing ${mode.toUpperCase()} (${aspectRatio}) continuous storyboard...`);
+    void persistCurrentStage("Storyboard");
+    startHeartbeat("Storyboard");
+
+    try {
+      // PART 2 — Mode-Specific Storyboard Generation Prompt
     let systemInstruction = "";
     let prompt = "";
 
@@ -803,13 +865,21 @@ Return valid JSON with this exact structure:
 `;
     }
 
+    let parsedStoryboard: any[] = [];
+    let thumbnails: any[] = [];
+
     try {
       checkAborted();
       console.log(`[SPARK Pipeline] Provider Request: ${mode.toUpperCase()} Storyboard structure via ModelRouter...`);
-      const rawResponse = await ModelRouter.executeCategoryRequest("production", {
-        prompt,
-        systemInstruction,
-      });
+      const rawResponse = await withTimeout(
+        ModelRouter.executeCategoryRequest("production", {
+          prompt,
+          systemInstruction,
+        }),
+        45000,
+        "Storyboard structure generation timed out after 45s",
+        signal
+      );
 
       checkAborted();
       console.log(`[SPARK Pipeline] Provider Response: Storyboard structure received (${rawResponse.length} chars)`);
@@ -817,66 +887,79 @@ Return valid JSON with this exact structure:
       const cleanJson = rawResponse.replace(/```json/gi, "").replace(/```/g, "").trim();
       const parsed = JSON.parse(cleanJson);
 
-      const parsedStoryboard: any[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
-      const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
+      parsedStoryboard = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
+      thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
+    } catch (llmErr: any) {
+      if (llmErr?.name === "AbortError" || signal?.aborted) throw llmErr;
+      console.warn("[SPARK Pipeline] Storyboard LLM generation notice, using structured fallback:", llmErr);
+      if (!lastError) lastError = `Storyboard: ${llmErr?.message || String(llmErr)}`;
+    }
 
-      // Ensure every parsed scene has valueJob, spokenLines, and audio mode
-      const storyboard: ProductionScene[] = parsedStoryboard.map((s, idx) => {
-        const job = s.valueJob || brief.beats?.[idx]?.valueJob || "context";
-        const resolvedAudio: "vo" | "talent" =
-          s.audio ||
-          (mode === "express"
-            ? "vo"
-            : mode === "deep"
-            ? "talent"
-            : (job === "slide" || job === "still" || job === "b-roll" || job === "context" || job === "example" || job === "problem" || job === "myth_bust"
-                ? "vo"
-                : "talent"));
+    // Ensure every parsed scene has valueJob, spokenLines, and audio mode
+    const storyboard: ProductionScene[] = parsedStoryboard.length > 0
+      ? parsedStoryboard.map((s, idx) => {
+          const job = s.valueJob || brief.beats?.[idx]?.valueJob || "context";
+          const resolvedAudio: "vo" | "talent" =
+            s.audio ||
+            (mode === "express"
+              ? "vo"
+              : mode === "deep"
+              ? "talent"
+              : (job === "slide" || job === "still" || job === "b-roll" || job === "context" || job === "example" || job === "problem" || job === "myth_bust"
+                  ? "vo"
+                  : "talent"));
 
-        return {
-          ...s,
-          scene: typeof s.scene === "number" ? s.scene : idx + 1,
-          audio: resolvedAudio,
-          valueJob: job,
-          spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-          scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-          onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
-          cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
-        };
-      });
+          return {
+            ...s,
+            scene: typeof s.scene === "number" ? s.scene : idx + 1,
+            audio: resolvedAudio,
+            valueJob: job,
+            spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+            scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+            onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
+            cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+          };
+        })
+      : ProductionAssetService.planProductionScenes({ production, brief, brand, formatSettings: activeFormatSettings });
 
-      currentStoryboard = storyboard.length > 0 ? storyboard : ProductionAssetService.planProductionScenes({ production, brief, brand, formatSettings: activeFormatSettings });
-      currentThumbnails = thumbnails.map((t: any, idx: number) => ({
-        id: t.id || `t${idx + 1}`,
-        variant: t.variant || ["A", "B", "C"][idx] || "A",
-        concept: t.concept || `Variant ${t.variant || "A"}`,
-      }));
+    currentStoryboard = storyboard;
+    currentThumbnails = thumbnails.length > 0
+      ? thumbnails.map((t: any, idx: number) => ({
+          id: t.id || `t${idx + 1}`,
+          variant: t.variant || ["A", "B", "C"][idx] || "A",
+          concept: t.concept || `Variant ${t.variant || "A"}`,
+        }))
+      : [
+          { id: "t1", variant: "A", concept: "High-contrast hook framing with brand authority" },
+          { id: "t2", variant: "B", concept: "Core value delivery and insight breakdown" },
+          { id: "t3", variant: "C", concept: "Resolving call-to-action with clear next step" },
+        ];
 
-      const isValidMediaData = (val?: string | null): val is string => {
-        if (!val || typeof val !== "string") return false;
-        const trimmed = val.trim();
-        return (
-          trimmed.startsWith("data:image/") ||
-          trimmed.startsWith("data:video/") ||
-          trimmed.startsWith("data:audio/") ||
-          trimmed.startsWith("http://") ||
-          trimmed.startsWith("https://")
-        );
-      };
+    const isValidMediaData = (val?: string | null): val is string => {
+      if (!val || typeof val !== "string") return false;
+      const trimmed = val.trim();
+      return (
+        trimmed.startsWith("data:image/") ||
+        trimmed.startsWith("data:video/") ||
+        trimmed.startsWith("data:audio/") ||
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://")
+      );
+    };
 
-      // Generate ONE master multi-panel storyboard GRID image mapping scenes 1 -> N
-      checkAborted();
-      if (!forceRegenerate && isValidMediaData(realGridUrl)) {
-        console.log(`[SPARK Pipeline] Reusing existing Master Storyboard Grid -> ${realGridUrl}`);
-      } else {
-        try {
-          checkAborted();
-          console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
-          const gridVisualLock = buildVisualLockRefs({
-            character,
-          });
+    // Generate ONE master multi-panel storyboard GRID image mapping scenes 1 -> N
+    checkAborted();
+    if (!forceRegenerate && isValidMediaData(realGridUrl)) {
+      console.log(`[SPARK Pipeline] Reusing existing Master Storyboard Grid -> ${realGridUrl}`);
+    } else {
+      try {
+        checkAborted();
+        console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
+        const gridVisualLock = buildVisualLockRefs({
+          character,
+        });
 
-          const masterGridPrompt = `
+        const masterGridPrompt = `
 ${gridVisualLock.refPromptHeader}
 Production storyboard master grid map, sequential visual map of ${storyboard.length} panels.
 PANEL 1 (Top / Scene 1 - Establishing): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"} (Framing: Wide/Medium establishing shot).
@@ -887,12 +970,17 @@ ENVIRONMENT (locked): ${identityPack.environmentString}. Same set across all pan
 LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid map showing Scene 1, Scene 2, Scene 3 in exact order from top to bottom. Clear readable scene progression with shot variety, not extreme facial close-ups.
 `.trim();
 
-          const gridImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        const gridImgData = await withTimeout(
+          ModelRouter.executeCategoryRequest("storyboardImages", {
             prompt: masterGridPrompt,
             referenceImageUrl: gridVisualLock.primaryRefUrl,
             referenceImageUrls: gridVisualLock.imageUrls,
             aspectRatio: identityPack.aspectRatio,
-          });
+          }),
+          60000,
+          "Master storyboard grid image generation timed out after 60s",
+          signal
+        );
           checkAborted();
 
           if (isValidMediaData(gridImgData)) {
@@ -944,12 +1032,19 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
         stages[1].status = "done";
       } else {
         emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
+        void persistCurrentStage("Voice");
+        startHeartbeat("Voice");
         checkAborted();
         try {
           const voiceScript = promptPack.voiceScript;
           const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
-          const elevenVoice = await generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal);
+          const elevenVoice = await withTimeout(
+            generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
+            45000,
+            "ElevenLabs voice synthesis timed out after 45s",
+            signal
+          );
           checkAborted();
           if (isValidMediaData(elevenVoice)) {
             let voiceResult = elevenVoice;
@@ -972,7 +1067,12 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
           } else {
             checkAborted();
             const { generateSuperSparkVoice } = await import("../geminiService");
-            const synthesizedVoice = await generateSuperSparkVoice(voiceScript);
+            const synthesizedVoice = await withTimeout(
+              generateSuperSparkVoice(voiceScript),
+              45000,
+              "SuperSpark voice synthesis timed out after 45s",
+              signal
+            );
             checkAborted();
             if (isValidMediaData(synthesizedVoice)) {
               let voiceResult = synthesizedVoice;
@@ -1005,6 +1105,8 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
       await persistCurrentStage("Voice");
       stages[2].status = "active";
       emitProgress(20, "Keyframes", `Rendering ${aspectRatio} scene keyframes (Target Hero Frames)...`);
+      void persistCurrentStage("Keyframes");
+      startHeartbeat("Keyframes");
 
       // PART 1 & 4 — Professional Sequential Take Grids (3-4 panels per take contact sheet)
       const sceneImages: string[] = [];
@@ -1091,12 +1193,17 @@ PRODUCTION LAWS:
           try {
             checkAborted();
             console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} storyboard grid via ModelRouter ("storyboardImages") [Refs: ${visualLock.imageUrls.length}]...`);
-            const gridImgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
-              prompt: takeGridPrompt,
-              referenceImageUrl: visualLock.primaryRefUrl,
-              referenceImageUrls: visualLock.imageUrls,
-              aspectRatio: identityPack.aspectRatio,
-            });
+            const gridImgUrl = await withTimeout(
+              ModelRouter.executeCategoryRequest("storyboardImages", {
+                prompt: takeGridPrompt,
+                referenceImageUrl: visualLock.primaryRefUrl,
+                referenceImageUrls: visualLock.imageUrls,
+                aspectRatio: identityPack.aspectRatio,
+              }),
+              60000,
+              `Take ${tIdx + 1} storyboard grid generation timed out after 60s`,
+              signal
+            );
             checkAborted();
 
             if (isValidMediaData(gridImgUrl)) {
@@ -1139,6 +1246,7 @@ PRODUCTION LAWS:
 
           const currentPct = 20 + Math.round(((tIdx + 1) / totalTakes) * 35);
           emitProgress(currentPct, "Keyframes", `Rendered Take ${tIdx + 1} of ${totalTakes} storyboard grid...`);
+          void persistCurrentStage(`Take-${tIdx + 1}`);
         }
       } catch (imgErr: any) {
         if (imgErr?.name === "AbortError" || signal?.aborted) throw imgErr;
@@ -1150,6 +1258,8 @@ PRODUCTION LAWS:
       await persistCurrentStage("Keyframes");
       stages[3].status = "active";
       emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
+      void persistCurrentStage("Thumbnails");
+      startHeartbeat("Thumbnails");
 
       // Thumbnail Variants Image Generation Loop via ModelRouter with Locked Identity Pack
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
@@ -1225,12 +1335,17 @@ Brand: ${brand.name}
           try {
             checkAborted();
             console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
-            const thumbImgData = await ModelRouter.executeCategoryRequest("storyboardImages", {
-              prompt: thumbPrompt,
-              referenceImageUrl: thumbVisualLock.primaryRefUrl,
-              referenceImageUrls: thumbVisualLock.imageUrls,
-              aspectRatio: identityPack.aspectRatio,
-            });
+            const thumbImgData = await withTimeout(
+              ModelRouter.executeCategoryRequest("storyboardImages", {
+                prompt: thumbPrompt,
+                referenceImageUrl: thumbVisualLock.primaryRefUrl,
+                referenceImageUrls: thumbVisualLock.imageUrls,
+                aspectRatio: identityPack.aspectRatio,
+              }),
+              45000,
+              `Thumbnail variant ${variantLetter} generation timed out after 45s`,
+              signal
+            );
             checkAborted();
 
             if (isValidMediaData(thumbImgData)) {
@@ -1275,6 +1390,7 @@ Brand: ${brand.name}
 
           const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
           emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
+          void persistCurrentStage("Thumbnails");
         }
       } catch (tLoopErr: any) {
         if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
@@ -1390,12 +1506,17 @@ Brand: ${brand.name}
               }
 
               const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
-              const compileResult = await compileNarratorSlideshowVideo({
-                imageUrls: targetImages,
-                audioUrl: realVoiceUrl,
-                onScreenTexts: targetTexts,
-                totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
-              });
+              const compileResult = await withTimeout(
+                compileNarratorSlideshowVideo({
+                  imageUrls: targetImages,
+                  audioUrl: realVoiceUrl,
+                  onScreenTexts: targetTexts,
+                  totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+                }),
+                60000,
+                "Narrator slideshow compilation timed out after 60s",
+                signal
+              );
 
               if (compileResult && compileResult.blob && compileResult.blob.size > 0) {
                 const ext = compileResult.extension || (compileResult.mimeType.includes("mp4") ? "mp4" : "webm");
@@ -1495,13 +1616,18 @@ Brand: ${brand.name}
 
                 try {
                   checkAborted();
-                  const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                    prompt: stageMotionPrompt,
-                    referenceImageUrl: stageVisualLock.primaryRefUrl,
-                    referenceImageUrls: stageVisualLock.imageUrls,
-                    aspectRatio: identityPack.aspectRatio,
-                    durationSec: sceneTargetDuration,
-                  });
+                  const generatedClip = await withTimeout(
+                    ModelRouter.executeCategoryRequest("videoGeneration", {
+                      prompt: stageMotionPrompt,
+                      referenceImageUrl: stageVisualLock.primaryRefUrl,
+                      referenceImageUrls: stageVisualLock.imageUrls,
+                      aspectRatio: identityPack.aspectRatio,
+                      durationSec: sceneTargetDuration,
+                    }),
+                    90000,
+                    `Video stage ${sIdx + 1} generation timed out after 90s`,
+                    signal
+                  );
                   checkAborted();
 
                   if (isValidMediaData(generatedClip)) {
@@ -1530,10 +1656,12 @@ Brand: ${brand.name}
                 } catch (stageVidErr: any) {
                   if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
                   console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
+                  if (!lastError) lastError = `Video Scene ${sIdx + 1}: ${stageVidErr?.message || String(stageVidErr)}`;
                 }
 
                 const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
                 emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
+                void persistCurrentStage(`Video-Scene-${sIdx + 1}`);
               }
 
               // MERGE SCENE CLIPS INTO ONE PLAYABLE MASTER VIDEO
@@ -1560,13 +1688,18 @@ Brand: ${brand.name}
                 emitProgress(95, "Merge", `Merging ${sceneClips.length} approved scene videos into master MP4...`);
                 try {
                   const { mergeSceneVideos } = await import("./sceneVideoMerger");
-                  const mergeResult = await mergeSceneVideos({
-                    videoUrls: sceneClips,
-                    audioUrl: mergeAudioUrl,
-                    onScreenTexts: targetMergeTexts,
-                    width: aspectRatio === "16:9" ? 1920 : 1080,
-                    height: aspectRatio === "16:9" ? 1080 : 1920,
-                  });
+                  const mergeResult = await withTimeout(
+                    mergeSceneVideos({
+                      videoUrls: sceneClips,
+                      audioUrl: mergeAudioUrl,
+                      onScreenTexts: targetMergeTexts,
+                      width: aspectRatio === "16:9" ? 1920 : 1080,
+                      height: aspectRatio === "16:9" ? 1080 : 1920,
+                    }),
+                    60000,
+                    "Automatic scene video merge timed out after 60s",
+                    signal
+                  );
 
                   if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
                     const ext = mergeResult.extension || "mp4";
@@ -1659,13 +1792,18 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
               emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
 
               checkAborted();
-              const generatedMaster = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                prompt: masterMotionPrompt,
-                referenceImageUrl: masterMotionVisualLock.primaryRefUrl,
-                referenceImageUrls: motionRefImages,
-                aspectRatio: identityPack.aspectRatio,
-                durationSec: videoDurationSec,
-              });
+              const generatedMaster = await withTimeout(
+                ModelRouter.executeCategoryRequest("videoGeneration", {
+                  prompt: masterMotionPrompt,
+                  referenceImageUrl: masterMotionVisualLock.primaryRefUrl,
+                  referenceImageUrls: motionRefImages,
+                  aspectRatio: identityPack.aspectRatio,
+                  durationSec: videoDurationSec,
+                }),
+                90000,
+                "Master video generation timed out after 90s",
+                signal
+              );
               checkAborted();
 
               if (isValidMediaData(generatedMaster)) {
@@ -1951,6 +2089,8 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       };
 
       return fallbackResult;
+    } finally {
+      stopHeartbeat();
     }
   }
 

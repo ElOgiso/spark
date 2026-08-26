@@ -524,7 +524,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
           prod.generationProgress.stage !== "Failed");
 
       const stageLabel = prod.generationProgress?.stage || "Generating";
-      const percent = prod.generationProgress?.percent || (prod.isGeneratingAssets ? 15 : 0);
+      const percent = typeof prod.generationProgress?.percent === "number" && prod.generationProgress.percent >= 0 ? prod.generationProgress.percent : 0;
 
       // Asset priority:
       // 1. videoUrl
