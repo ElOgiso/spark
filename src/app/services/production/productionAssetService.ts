@@ -5,6 +5,7 @@ import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
+import { extractVideoLastFrame } from "./videoFrameExtractor";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -1391,13 +1392,44 @@ CRITICAL PRODUCTION LAWS:
               checkAborted();
               const s = currentStoryboard[sIdx];
               const globalSceneNum = s.scene || sIdx + 1;
-              const sceneFirstFrame = s.image || sceneImages[sIdx];
+              const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
+
+              // Scene N+1 continuity: First frame / referenceImageUrl = scene[N].lastFrameUrl || scene[N+1].image
+              const sceneFirstFrame = (sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl))
+                ? prevScene.lastFrameUrl
+                : (s.image || sceneImages[sIdx]);
 
               // Check if existing durable clip exists for this scene
               if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
                 console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} video clip -> ${s.videoUrl}`);
                 sceneClips.push(s.videoUrl);
                 if (sIdx === 0 && !realVideoUrl) realVideoUrl = s.videoUrl;
+
+                // Ensure last frame is extracted for clip N+1 continuity if missing
+                if (!s.lastFrameUrl) {
+                  try {
+                    const extracted = await extractVideoLastFrame(s.videoUrl);
+                    if (extracted?.blob) {
+                      const storedLast = await this.uploadAssetToStorage({
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        assetType: "image",
+                        storagePath: `${production.id}/scenes/scene-0${globalSceneNum}-last.jpg`,
+                        dataUrlOrBlob: extracted.blob,
+                        mimeType: "image/jpeg",
+                        prompt: `Last frame of Scene ${globalSceneNum}`,
+                        provider: "VideoFrameExtractor",
+                      });
+                      if (storedLast?.publicUrl) {
+                        s.lastFrameUrl = storedLast.publicUrl;
+                        currentStoryboard[sIdx] = { ...s, lastFrameUrl: storedLast.publicUrl };
+                        console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame (reused) -> ${s.lastFrameUrl}`);
+                      }
+                    }
+                  } catch (extErr) {
+                    console.warn(`[SPARK Pipeline] Notice extracting last frame for existing Scene ${globalSceneNum}:`, extErr);
+                  }
+                }
                 continue;
               }
 
@@ -1412,9 +1444,14 @@ CRITICAL PRODUCTION LAWS:
               const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
               const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
 
-              // Build reference array: [0] = scene.image (First Frame), [1] = characterSheetUrl (Identity Law)
+              // Build reference array: [0] = sceneFirstFrame (First Frame), [1] = characterSheetUrl (Identity Law)
               const orderedSceneRefs: string[] = [sceneFirstFrame];
-              const refLabels: string[] = [`INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`];
+              const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl === sceneFirstFrame;
+              const refLabels: string[] = [
+                isChainingLastFrame
+                  ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame Continuity Resolution)`
+                  : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
+              ];
 
               if (charSheetUrl && isValidMediaData(charSheetUrl) && charSheetUrl !== sceneFirstFrame) {
                 orderedSceneRefs.push(charSheetUrl);
@@ -1440,7 +1477,7 @@ CRITICAL PRODUCTION LAWS:
                 environment: identityPack.environmentString,
               })}`;
 
-              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [FirstFrame: ${Boolean(sceneFirstFrame)}, Duration: ${sceneTargetDuration}s]...`);
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "Scene " + sIdx + " Last Frame" : "Scene Still"}), Duration: ${sceneTargetDuration}s, Poll Budget: 360s]...`);
 
               try {
                 checkAborted();
@@ -1451,9 +1488,10 @@ CRITICAL PRODUCTION LAWS:
                     referenceImageUrls: orderedSceneRefs,
                     aspectRatio: identityPack.aspectRatio,
                     durationSec: sceneTargetDuration,
+                    lastFrameUrl: prevScene?.lastFrameUrl,
                   }),
-                  90000,
-                  `Scene ${globalSceneNum} video generation timed out after 90s`,
+                  360000,
+                  `Scene ${globalSceneNum} video generation timed out after 360s`,
                   signal
                 );
                 checkAborted();
@@ -1477,8 +1515,31 @@ CRITICAL PRODUCTION LAWS:
                     console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video upload notice:`, storageErr);
                   }
 
+                  // 1) Extract last frame of this scene clip for clip N+1 continuity
+                  try {
+                    const lastFrameExtract = await extractVideoLastFrame(finalClip);
+                    if (lastFrameExtract?.blob) {
+                      const storedLastFrame = await this.uploadAssetToStorage({
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        assetType: "image",
+                        storagePath: `${production.id}/scenes/scene-0${globalSceneNum}-last.jpg`,
+                        dataUrlOrBlob: lastFrameExtract.blob,
+                        mimeType: "image/jpeg",
+                        prompt: `Last frame of Scene ${globalSceneNum}`,
+                        provider: "VideoFrameExtractor",
+                      });
+                      if (storedLastFrame?.publicUrl) {
+                        s.lastFrameUrl = storedLastFrame.publicUrl;
+                        console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame -> ${s.lastFrameUrl}`);
+                      }
+                    }
+                  } catch (extractErr) {
+                    console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} last frame extract notice:`, extractErr);
+                  }
+
                   s.videoUrl = finalClip;
-                  currentStoryboard[sIdx] = { ...s, videoUrl: finalClip };
+                  currentStoryboard[sIdx] = { ...s, videoUrl: finalClip, lastFrameUrl: s.lastFrameUrl };
                   sceneClips.push(finalClip);
                   if (sIdx === 0) realVideoUrl = finalClip;
                 } else {
@@ -1880,6 +1941,7 @@ Brand: ${brand.name}
           primaryChange: sb.primaryChange || sb.visualDescription,
           image: sceneStillUrl,
           keyframeImageUrl: sceneStillUrl,
+          lastFrameUrl: sb.lastFrameUrl || currentStoryboard[idx]?.lastFrameUrl,
           videoUrl: sceneClipUrl,
           status: (sceneClipUrl || (idx === 0 && realVideoUrl)) ? "ready" : sceneStillUrl ? "ready" : "pending",
           createdAt: renderStartedAt,
@@ -2128,13 +2190,16 @@ Brand: ${brand.name}
         memoryItems,
       });
 
-      // Adjacent continuity seed: previous scene's last frame or keyframe
+      // Adjacent continuity seed: previous scene's last frame or keyframe (strictly an image, never a video URL)
       const prevScene = existingScenes[targetSceneIdx - 1];
+      const isImgUrl = (u?: string) => typeof u === "string" && isValidMediaData(u) && !u.endsWith(".mp4") && !u.endsWith(".webm") && !u.includes("video/");
+      const prevFrameCandidate = [prevScene?.lastFrameUrl, prevScene?.keyframeImageUrl, prevScene?.image].find((u) => isImgUrl(u));
+
       const fixVisualLock = buildVisualLockRefs({
         character,
         storyboardGridUrl: (brief as any).storyboardGridUrl,
         sceneKeyframeUrl: sceneToFix.image || sceneToFix.keyframeImageUrl,
-        previousLastFrameUrl: prevScene?.lastFrameUrl || prevScene?.keyframeImageUrl || prevScene?.image,
+        previousLastFrameUrl: prevFrameCandidate,
       });
 
       const beatPrompt = `
@@ -2147,14 +2212,23 @@ EXECUTIVE REVISION REASON: "${editNotes}"
 Apply revision while maintaining 100% subject identity and set continuity.
 `.trim();
 
-      const fixTargetDuration = sceneToFix.durationSec || parseInt(sceneToFix.duration) || 8;
-      const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
-        prompt: beatPrompt,
-        referenceImageUrl: fixVisualLock.primaryRefUrl,
-        referenceImageUrls: fixVisualLock.imageUrls,
-        aspectRatio: identityPack.aspectRatio,
-        durationSec: fixTargetDuration,
-      });
+      const activeVideo = resolveActiveVideoProvider();
+      const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
+      const rawFixDur = sceneToFix.durationSec || parseInt(sceneToFix.duration) || 8;
+      const fixTargetDuration = snapToAllowedDuration(Math.min(rawFixDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawFixDur, 8);
+
+      const generatedClip = await withTimeout(
+        ModelRouter.executeCategoryRequest("videoGeneration", {
+          prompt: beatPrompt,
+          referenceImageUrl: fixVisualLock.primaryRefUrl,
+          referenceImageUrls: fixVisualLock.imageUrls,
+          aspectRatio: identityPack.aspectRatio,
+          durationSec: fixTargetDuration,
+          lastFrameUrl: prevFrameCandidate,
+        }),
+        360000,
+        `Scene ${sceneIndex} video regeneration timed out after 360s`
+      );
 
       let finalClipUrl = generatedClip;
       if (isPlayableVideoUrl(generatedClip)) {
@@ -2163,7 +2237,7 @@ Apply revision while maintaining 100% subject identity and set continuity.
             productionId,
             brandId: (brand as any).id,
             assetType: "video",
-            storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/scenes/scene_${sceneIndex}_rev_${Date.now()}.mp4`,
+            storagePath: `${productionId}/scenes/scene-0${sceneIndex}.mp4`,
             dataUrlOrBlob: generatedClip,
             mimeType: "video/mp4",
             prompt: beatPrompt,
@@ -2171,6 +2245,27 @@ Apply revision while maintaining 100% subject identity and set continuity.
           });
           if (storedAsset?.publicUrl) finalClipUrl = storedAsset.publicUrl;
         } catch {}
+
+        try {
+          const lastExtract = await extractVideoLastFrame(finalClipUrl);
+          if (lastExtract?.blob) {
+            const storedRevLast = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any).id,
+              assetType: "image",
+              storagePath: `${productionId}/scenes/scene-0${sceneIndex}-last.jpg`,
+              dataUrlOrBlob: lastExtract.blob,
+              mimeType: "image/jpeg",
+              prompt: `Revised last frame of Scene ${sceneIndex}`,
+              provider: "VideoFrameExtractor",
+            });
+            if (storedRevLast?.publicUrl) {
+              sceneToFix.lastFrameUrl = storedRevLast.publicUrl;
+            }
+          }
+        } catch (revLastErr) {
+          console.warn("[ProductionAssetService] Revised scene last frame extract notice:", revLastErr);
+        }
       }
 
       sceneToFix.videoUrl = finalClipUrl;

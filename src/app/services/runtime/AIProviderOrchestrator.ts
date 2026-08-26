@@ -16,6 +16,7 @@ export interface AIExecutionOptions {
   referenceImageUrls?: string[];
   aspectRatio?: string;
   durationSec?: number;
+  lastFrameUrl?: string;
 }
 
 export interface AIProviderPlugin {
@@ -229,15 +230,23 @@ export class AIProviderOrchestrator {
           let finalVideoUrl = "";
 
           const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
+          const rawDuration = options.durationSec || 8;
+          const snappedVeoDuration = (rawDuration && [4, 6, 8].includes(rawDuration))
+            ? rawDuration
+            : (rawDuration <= 4 ? 4 : rawDuration <= 6 ? 6 : 8);
+
           for (const videoModel of candidateVeoModels) {
             const instanceObj: any = { prompt: options.prompt };
             if (options.referenceImageUrl) {
               if (options.referenceImageUrl.startsWith("data:")) {
                 instanceObj.image = { imageBytes: options.referenceImageUrl.split(",")[1] };
-              } else if (options.referenceImageUrl.startsWith("http")) {
+              } else if (options.referenceImageUrl.startsWith("gs://")) {
                 instanceObj.image = { gcsUri: options.referenceImageUrl };
+              } else if (options.referenceImageUrl.startsWith("http")) {
+                // Pass as uri (never invent gcsUri from http URL)
+                instanceObj.image = { uri: options.referenceImageUrl };
               }
-              console.log(`[Gemini Provider] Conditioning Veo video generation on scene still reference`);
+              console.log(`[Gemini Provider] Conditioning Veo video generation on scene still reference (duration: ${snappedVeoDuration}s)`);
             }
 
             const videoPayload = {
@@ -245,6 +254,7 @@ export class AIProviderOrchestrator {
               parameters: {
                 aspectRatio: targetAspect,
                 sampleCount: 1,
+                durationSeconds: snappedVeoDuration,
               },
             };
 
@@ -258,7 +268,10 @@ export class AIProviderOrchestrator {
                     const sdkParams: any = {
                       model: videoModel,
                       prompt: options.prompt,
-                      config: { aspectRatio: targetAspect },
+                      config: {
+                        aspectRatio: targetAspect,
+                        durationSeconds: snappedVeoDuration,
+                      },
                     };
                     if (options.referenceImageUrl) {
                       sdkParams.image = { uri: options.referenceImageUrl };
@@ -1153,15 +1166,19 @@ export class AIProviderOrchestrator {
           let finalVideoUrl = "";
 
           const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
+          const rawGrokDuration = options.durationSec || 5;
+          const snappedGrokDuration = Math.min(15, Math.max(1, Math.round(rawGrokDuration)));
+
           for (const videoModel of candidateVideoModels) {
             const grokVideoPayload: any = {
               model: videoModel,
               prompt: options.prompt,
               aspect_ratio: targetAspect,
+              duration: snappedGrokDuration,
             };
             if (options.referenceImageUrl || options.referenceImageUrls?.length) {
               grokVideoPayload.image_url = options.referenceImageUrl || options.referenceImageUrls?.[0];
-              console.log(`[Grok Provider] Conditioning Grok video generation on scene still reference`);
+              console.log(`[Grok Provider] Conditioning Grok video generation on scene still reference (duration: ${snappedGrokDuration}s)`);
             }
 
             if (apiKey) {
@@ -1220,8 +1237,8 @@ export class AIProviderOrchestrator {
 
           // Poll video status if asynchronous request_id returned
           if (!finalVideoUrl && requestId) {
-            console.log(`[Grok Provider] Polling video generation status for ${requestId}...`);
-            for (let attempt = 0; attempt < 24; attempt++) {
+            console.log(`[Grok Provider] Polling video generation status for ${requestId} (up to 6 min budget)...`);
+            for (let attempt = 0; attempt < 36; attempt++) {
               await new Promise((r) => setTimeout(r, 10000));
               try {
                 let pollData: any = null;
