@@ -255,6 +255,18 @@ export function buildVisualLockRefs(params: {
   };
 }
 
+/**
+ * Normalizes on-screen text for in-picture burn-in (canvas lower-third or keyframe typography overlay).
+ * Enforces concise length (<=8 words / <=60 chars) and excludes long spoken scripts or platform captions.
+ */
+export function formatBurnedOnScreenText(text?: string): string {
+  if (!text) return "";
+  const cleaned = text.replace(/["\r\n\t]+/g, " ").trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length <= 8 && cleaned.length <= 60) return cleaned;
+  return words.slice(0, 8).join(" ");
+}
+
 export class ProductionAssetService {
   /**
    * Refetches existing video mp4 objects from Supabase Storage if UI state is missing playable URLs.
@@ -1003,7 +1015,9 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
           }
 
           const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-          const sceneText = (scene.onScreenText || scene.scriptSnippet || brief.hook || "").slice(0, 60);
+          const sceneText = formatBurnedOnScreenText(
+            scene.onScreenText || brief.beats?.[sIdx]?.onScreenText || (sIdx === 0 ? brief.hook : "")
+          );
           const actionDesc = scene.primaryChange || scene.visualDescription || scene.startState || "Host addressing viewer";
 
           const visualLock = buildVisualLockRefs({
@@ -1261,7 +1275,22 @@ Brand: ${brand.name}
 
             try {
               const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
-              const targetTexts = currentStoryboard.map((s) => s.onScreenText || s.scriptSnippet || brief.hook || "");
+              const targetTexts = currentStoryboard.map((s, idx) => {
+                const primaryOnScreen = s.onScreenText;
+                if (primaryOnScreen) {
+                  const formatted = formatBurnedOnScreenText(primaryOnScreen);
+                  if (formatted) return formatted;
+                }
+                const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+                if (beatOnScreen) {
+                  const formatted = formatBurnedOnScreenText(beatOnScreen);
+                  if (formatted) return formatted;
+                }
+                if (idx === 0 && brief.hook) {
+                  return formatBurnedOnScreenText(brief.hook);
+                }
+                return "";
+              });
 
               if (targetImages.length === 0) {
                 throw new Error("Narrator compilation requires generated keyframe still images (0 stills available).");
