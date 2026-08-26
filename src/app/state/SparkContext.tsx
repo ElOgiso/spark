@@ -891,6 +891,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const automationMode = data.automationMode || "balanced";
     const reviewRequired = data.reviewRequired !== false;
 
+    const resolvedFormatSettings: ProductionFormatSettings = {
+      aspectMode: data.aspectMode || "portrait",
+      targetDurationSec: data.targetDurationSec || 60,
+      preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
+    };
+
     // Map Notion production modes to internal storage keys
     const rawProdMode = data.productionMode || "standard";
     const productionMode: ProductionMode =
@@ -1079,11 +1085,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           purpose: vision,
           automation_mode: automationMode,
           review_required: reviewRequired,
+          formatSettings: resolvedFormatSettings,
           audience: {
             ...prev.brand?.audience,
             primary: audience,
           },
         },
+        formatSettings: resolvedFormatSettings,
         character: {
           ...prev.character,
           name: creatorName,
@@ -1265,6 +1273,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await persistResearchSourceCreate(brandId, src);
           }
         }
+
+        // Persist initial format settings to cloud
+        const { persistFormatSettings } = await import("../backend/workspaceSync");
+        await persistFormatSettings(brandId, resolvedFormatSettings);
       } catch (persistErr) {
         console.warn("[SparkContext] initializeBrandGenesis persist error:", persistErr);
       }

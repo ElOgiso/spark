@@ -26,7 +26,9 @@ import {
   FRAME_TO_SCRIPT_KEY,
   ONBOARD_SCRIPT_KEYS,
 } from "../../services/onboarding/onboardDirectorVoiceService";
-import type { ProductionMode, AutomationMode } from "../../domain/types";
+import type { ProductionMode, AutomationMode, AIProviderId } from "../../domain/types";
+import { getProviderLogo } from "../ui/AIProviderLogos";
+import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
 export interface BrandGenesisData {
@@ -56,6 +58,9 @@ export interface BrandGenesisData {
   audioEnergy?: string;
   researchSources?: string[];
   connectedAccounts?: Array<{ platform: string; username: string; connected: boolean }>;
+  aspectMode?: "portrait" | "landscape" | "dynamic";
+  targetDurationSec?: number;
+  preferredVideoProvider?: AIProviderId | "auto";
   mode?: "first_user" | "additional_workspace";
 }
 
@@ -777,6 +782,7 @@ interface GenesisInternalState {
   automationMode: string;
   aspectMode: "portrait" | "landscape" | "dynamic";
   targetDurationSec: number;
+  preferredVideoProvider?: AIProviderId | "auto";
 }
 
 const DEFAULT_STATE: GenesisInternalState = {
@@ -801,6 +807,7 @@ const DEFAULT_STATE: GenesisInternalState = {
   automationMode: "Balanced",
   aspectMode: "portrait",
   targetDurationSec: 60,
+  preferredVideoProvider: "auto",
 };
 
 const DIRECTORS: Record<number, string> = {
@@ -1417,6 +1424,8 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Target Video Length</label>
         <div className="flex flex-wrap gap-2">
           {[
+            { sec: 15, label: "15s" },
+            { sec: 30, label: "30s" },
             { sec: 60, label: "1m" },
             { sec: 180, label: "3m" },
             { sec: 300, label: "5m" },
@@ -1433,8 +1442,10 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
                 key={dur.sec}
                 type="button"
                 onClick={() => onChange({ targetDurationSec: dur.sec })}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                  active ? "bg-purple-600 text-white border-purple-400" : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
+                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                  active
+                    ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/30 ring-1 ring-purple-400/50"
+                    : "bg-white/5 border-white/10 text-white/60 hover:border-white/20 hover:text-white"
                 }`}
               >
                 {dur.label}
@@ -1442,6 +1453,97 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
             );
           })}
         </div>
+      </div>
+
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Clip Engine & Native Durations</label>
+          <span className="text-[10px] font-mono text-purple-300/80">Provider Clip Physics</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {(() => {
+            const isAuto = !data.preferredVideoProvider || data.preferredVideoProvider === "auto";
+            const videoEngines: Array<{ id: AIProviderId | "auto"; name: string; lengths: string; maxSec: number }> = [
+              {
+                id: "auto",
+                name: "Auto / Best Available",
+                lengths: "Dynamic Selection",
+                maxSec: 15,
+              },
+              {
+                id: "gemini",
+                name: PROVIDER_VIDEO_CAPABILITIES.gemini.displayName,
+                lengths: "4s / 6s / 8s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.gemini.maxNativeSec,
+              },
+              {
+                id: "grok",
+                name: PROVIDER_VIDEO_CAPABILITIES.grok.displayName,
+                lengths: "1–15s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.grok.maxNativeSec,
+              },
+              {
+                id: "kling",
+                name: PROVIDER_VIDEO_CAPABILITIES.kling.displayName,
+                lengths: "5s / 10s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.kling.maxNativeSec,
+              },
+              {
+                id: "runway",
+                name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
+                lengths: "5s / 10s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.runway.maxNativeSec,
+              },
+              {
+                id: "luma",
+                name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName,
+                lengths: "5s / 9s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.luma.maxNativeSec,
+              },
+              {
+                id: "higgsfield",
+                name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
+                lengths: "4s / 8s",
+                maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
+              },
+            ];
+
+            return videoEngines.map((m) => {
+              const isSelected = m.id === "auto" ? isAuto : data.preferredVideoProvider === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onChange({ preferredVideoProvider: m.id })}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
+                      : "bg-white/[0.035] border-white/[0.09] hover:border-white/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      {getProviderLogo(m.id, 20)}
+                      <span className="text-xs font-semibold text-white">{m.name}</span>
+                    </div>
+                    {m.id !== "auto" && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-white/50 border border-white/10">
+                        Max: {m.maxSec}s
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] mt-0.5 pt-1 border-t border-white/[0.06]">
+                    <span className="font-mono text-purple-300 text-[10px]">{m.lengths}</span>
+                    {isSelected && <span className="text-[10px] text-purple-300 font-semibold">Selected</span>}
+                  </div>
+                </button>
+              );
+            });
+          })()}
+        </div>
+        <p className="text-[11px] text-white/40 leading-relaxed pt-1">
+          Longer episode runtimes will be automatically split into continuous scenes at the selected engine's native clip limit.
+        </p>
       </div>
     </div>
   );
@@ -1460,6 +1562,8 @@ function FrameReady({ data, onPreviewSheet }: { data: GenesisInternalState; onPr
         { label: "Sources",    value: data.researchSources.length > 0 ? `${data.researchSources.length} channel${data.researchSources.length !== 1 ? "s" : ""}` : "None" },
         { label: "Production", value: data.productionMode },
         { label: "Automation", value: data.automationMode },
+        { label: "Format",     value: `${(data.aspectMode || "portrait").toUpperCase()} · ${(data.targetDurationSec || 60) >= 60 ? `${Math.round((data.targetDurationSec || 60) / 60)}m` : `${data.targetDurationSec || 60}s`}` },
+        { label: "Clip Engine", value: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? (PROVIDER_VIDEO_CAPABILITIES as any)[data.preferredVideoProvider]?.displayName || data.preferredVideoProvider.toUpperCase() : "Auto (Best Available)" },
       ].map((row, i, arr) => (
         <div key={row.label} className={`flex items-center justify-between px-5 py-3.5 ${i < arr.length - 1 ? "border-b border-white/6" : ""}`}>
           <span className="text-[10px] text-white/30 uppercase tracking-wide font-semibold">{row.label}</span>
@@ -2099,6 +2203,9 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
       voiceId: data.selectedVoiceId,
       researchSources: data.researchSources,
       connectedAccounts,
+      aspectMode: data.aspectMode || "portrait",
+      targetDurationSec: data.targetDurationSec || 60,
+      preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
       mode: mode || "first_user",
     };
 
@@ -2110,6 +2217,7 @@ AESTHETICS: Masterclass character turnaround sheet, ultra-crisp studio lighting,
         await persistFormatSettings(brandId, {
           aspectMode: data.aspectMode || "portrait",
           targetDurationSec: data.targetDurationSec || 60,
+          preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
         });
       }
       if (mode !== "additional_workspace") {
