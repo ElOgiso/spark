@@ -157,19 +157,24 @@ export async function compileNarratorSlideshowVideo(
     height = 1920,
   } = options;
 
-  if (!imageUrls || imageUrls.length === 0) return null;
-
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return null;
+  if (!imageUrls || imageUrls.length === 0) {
+    throw new Error("Narrator video compilation requires at least one image URL.");
   }
 
-  // 1. CORS-safe load images
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("Narrator video compiler requires a browser DOM environment.");
+  }
+
+  if (!audioUrl) {
+    throw new Error("Narrator compilation requires a voice audio URL.");
+  }
+
+  // 1. CORS-safe load images in scene order
   const loadedImageResults = await Promise.all(imageUrls.map((u) => loadCorsSafeImage(u)));
   const validImageItems = loadedImageResults.filter((item): item is { img: HTMLImageElement; objectUrl?: string } => item !== null);
 
   if (validImageItems.length === 0) {
-    console.warn("[NarratorVideoCompiler] Zero valid images loaded (CORS or broken URLs). Aborting compilation.");
-    return null;
+    throw new Error("Zero valid images could be loaded for Narrator compilation (CORS or broken URLs).");
   }
 
   const cleanupObjectUrls = () => {
@@ -178,20 +183,17 @@ export async function compileNarratorSlideshowVideo(
     });
   };
 
-  // 2. CORS-safe load audio (if audioUrl provided)
+  // 2. CORS-safe load audio
   let audioData: { audioElement: HTMLAudioElement; duration: number; objectUrl?: string } | null = null;
-  if (audioUrl) {
-    audioData = await loadCorsSafeAudio(audioUrl);
-    if (!audioData) {
-      console.warn("[NarratorVideoCompiler] Audio URL was provided but failed to load. Aborting compilation.");
-      cleanupObjectUrls();
-      return null;
-    }
+  audioData = await loadCorsSafeAudio(audioUrl);
+  if (!audioData) {
+    cleanupObjectUrls();
+    throw new Error("Narrator voice audio failed to load (CORS or invalid audio URL).");
   }
 
-  const durationSec = audioData?.duration || fallbackDuration;
+  const durationSec = audioData.duration && audioData.duration > 0 ? audioData.duration : fallbackDuration;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
       // 3. Create Canvas
       const canvas = document.createElement("canvas");
@@ -202,11 +204,17 @@ export async function compileNarratorSlideshowVideo(
       if (!ctx) {
         cleanupObjectUrls();
         if (audioData?.objectUrl) URL.revokeObjectURL(audioData.objectUrl);
-        return resolve(null);
+        return reject(new Error("Unable to obtain 2D rendering context for Narrator canvas."));
       }
 
       // 4. Capture Streams & Audio Track
       const fps = 30;
+      if (typeof (canvas as any).captureStream !== "function") {
+        cleanupObjectUrls();
+        if (audioData?.objectUrl) URL.revokeObjectURL(audioData.objectUrl);
+        return reject(new Error("Browser does not support canvas.captureStream for video compilation."));
+      }
+
       const canvasStream = canvas.captureStream(fps);
       const videoTrack = canvasStream.getVideoTracks()[0];
 

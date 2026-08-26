@@ -1243,47 +1243,53 @@ Brand: ${brand.name}
             emitProgress(85, "Compile", "Compiling Narrator slideshow video from keyframe stills & voiceover...");
 
             try {
-              const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
-              const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map(s => s.image).filter(Boolean) as string[]);
+              const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
               const targetTexts = currentStoryboard.map((s) => s.onScreenText || s.scriptSnippet || brief.hook || "");
 
+              if (targetImages.length === 0) {
+                throw new Error("Narrator compilation requires generated keyframe still images (0 stills available).");
+              }
+              if (!realVoiceUrl) {
+                throw new Error("Narrator compilation requires a generated voice audio track (realVoiceUrl missing).");
+              }
+
+              const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
               const compileResult = await compileNarratorSlideshowVideo({
                 imageUrls: targetImages,
                 audioUrl: realVoiceUrl,
                 onScreenTexts: targetTexts,
-                totalDurationSec: activeCreditSettings?.shortsDurationSec || 12,
+                totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
               });
 
               if (compileResult && compileResult.blob && compileResult.blob.size > 0) {
-                try {
-                  const ext = compileResult.extension || (compileResult.mimeType.includes("mp4") ? "mp4" : "webm");
-                  const storedCompiledVid = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "video",
-                    storagePath: getStoragePath(`video/master.${ext}`),
-                    dataUrlOrBlob: compileResult.blob,
-                    mimeType: compileResult.mimeType || `video/${ext}`,
-                    prompt: "Narrator compiled slideshow video with voiceover muxing",
-                    provider: "NarratorSlideshowCompiler",
+                const ext = compileResult.extension || (compileResult.mimeType.includes("mp4") ? "mp4" : "webm");
+                const storedCompiledVid = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "video",
+                  storagePath: getStoragePath(`video/master.${ext}`),
+                  dataUrlOrBlob: compileResult.blob,
+                  mimeType: compileResult.mimeType || `video/${ext}`,
+                  prompt: "Narrator compiled slideshow video with voiceover muxing",
+                  provider: "NarratorSlideshowCompiler",
+                });
+                if (storedCompiledVid?.publicUrl && isPlayableVideoUrl(storedCompiledVid.publicUrl)) {
+                  realVideoUrl = storedCompiledVid.publicUrl;
+                  sceneClips.length = 0;
+                  currentStoryboard.forEach((s) => {
+                    s.videoUrl = realVideoUrl;
                   });
-                  if (storedCompiledVid?.publicUrl) {
-                    realVideoUrl = storedCompiledVid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
-                  } else {
-                    lastError = "Narrator compiled video upload succeeded but returned empty public URL.";
-                  }
-                } catch (compileStorageErr: any) {
-                  console.warn("[SPARK Pipeline] Narrator compiled video storage upload failed:", compileStorageErr);
-                  lastError = `Narrator video storage upload failed: ${compileStorageErr.message || String(compileStorageErr)}`;
+                  console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
+                } else {
+                  throw new Error("Narrator compiled video upload returned an empty or invalid public URL.");
                 }
               } else {
-                console.warn("[SPARK Pipeline] Narrator slideshow video compilation returned null (CORS or missing images/audio).");
-                lastError = "Narrator slideshow compiler failed (CORS or missing images/audio).";
+                throw new Error("Narrator slideshow compiler produced an empty video blob.");
               }
             } catch (compilerErr: any) {
               console.warn("[SPARK Pipeline] Narrator video compiler exception:", compilerErr);
               lastError = `Narrator video compiler error: ${compilerErr.message || String(compilerErr)}`;
+              realVideoUrl = undefined;
             }
           } else {
             // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion
@@ -1510,7 +1516,7 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
             renderStartedAt,
             renderCompletedAt,
             providerUsed: "AIProviderOrchestrator",
-            generationStatus: isVideoSuccess || (mode === "express" && realVideoUrl && realVoiceUrl) ? "Completed" : "Failed",
+            generationStatus: isVideoSuccess ? "Completed" : "Failed",
             lastError,
           },
         },
