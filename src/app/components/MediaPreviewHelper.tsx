@@ -54,7 +54,7 @@ export function MiniMediaThumbnail({
   isVideo = false,
   isGenerating = false,
   stageLabel = "Generating",
-  percent = 15,
+  percent = 0,
   className = "",
   duration = "12:15",
 }: MiniMediaThumbnailProps) {
@@ -305,7 +305,7 @@ export function InteractiveVideoPlayer({
   };
 
   const activeVideoUrl = activeScene.videoUrl || videoUrl || scenes.find((s) => Boolean(s.videoUrl))?.videoUrl;
-  const activeImageUrl = activeScene.image;
+  const activeImageUrl = activeScene.image || scenes.find((s) => Boolean(s.image))?.image || scenes[0]?.image;
 
   const togglePlay = () => {
     setIsPlaying(prev => !prev);

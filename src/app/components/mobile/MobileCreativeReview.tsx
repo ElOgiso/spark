@@ -177,12 +177,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           id: t.id || String(idx + 1),
           concept: asText(t.concept, `Variant ${t.variant || ["A", "B", "C"][idx] || "A"} optimized for CTR`),
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
+          image: t.image || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
       : [
-          { id: "1", variant: "A", concept: "Cinematic Split hook preview", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { id: "2", variant: "B", concept: "Bold Reaction Accent curiosity card", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.generatedAssets?.generatedFrames?.[2] },
+          { id: "1", variant: "A", concept: "Cinematic Split hook preview", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[0] },
+          { id: "2", variant: "B", concept: "Bold Reaction Accent curiosity card", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[1] },
+          { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[2] },
         ],
     narrative: {
       hook: asText(brief?.hook || item?.scriptSnippet, "Failed marketing campaigns waste billions annually"),
@@ -196,7 +196,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           scene: s.scene || idx + 1,
           description: s.description,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.storyboard?.[idx]?.image || brief?.generatedAssets?.generatedFrames?.[idx],
+          image: s.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.storyboard?.[idx]?.image,
           videoUrl: s.videoUrl || activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
         }))
       : brief?.storyboard?.length
@@ -204,13 +204,13 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           scene: s.scene || idx + 1,
           description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
           duration: s.duration || "0–10s",
-          image: s.image || brief.generatedAssets?.generatedFrames?.[idx],
+          image: s.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief.generatedAssets?.generatedFrames?.[idx],
           videoUrl: s.videoUrl || brief.videoUrl || brief.generatedAssets?.generatedVideos?.[0],
         }))
       : [
-          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
+          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[0] },
+          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[1] },
+          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[2] },
         ],
     platformStrategy: {
       youtube: "12-15 min deep dive, SEO optimized",

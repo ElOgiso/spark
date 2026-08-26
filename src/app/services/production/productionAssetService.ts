@@ -559,9 +559,9 @@ export class ProductionAssetService {
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
       { id: "voice", label: "Voiceover synthesis", status: "pending" },
-      { id: "keyframes", label: "Scene keyframes (Hero stills)", status: "pending" },
+      { id: "keyframes", label: "Sequential Take Grids", status: "pending" },
+      { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
       { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
-      { id: "video", label: "Motion synthesis (Image-to-video)", status: "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
 
@@ -1194,159 +1194,21 @@ PRODUCTION LAWS:
 
       stages[2].status = takeGrids.length > 0 ? "done" : "failed";
       await persistCurrentStage("Keyframes");
-      stages[3].status = "active";
-      emitProgress(58, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
-      void persistCurrentStage("Thumbnails");
-      startHeartbeat("Thumbnails");
 
-      // Thumbnail Variants Image Generation Loop via ModelRouter with Locked Identity Pack
-      const targetThumbCount = typeof activeCreditSettings.thumbnailCount === "number" ? Math.max(0, activeCreditSettings.thumbnailCount) : 3;
-      const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
-
-      if (targetThumbCount === 0) {
-        console.log("[SPARK Pipeline] Thumbnail count is 0 in credit controls. Skipping thumbnail generation loop.");
-        stages[3].status = "done";
-        await persistCurrentStage("Thumbnails");
-      } else {
-        try {
-          const { ModelRouter } = await import("../runtime/modelRouter");
-          const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
-          const totalThumbs = effectiveThumbnails.length || targetThumbCount;
-          for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
-            checkAborted();
-            const thumb = effectiveThumbnails[tIdx];
-            const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
-            if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
-              const existingThumbUrl = thumb.image || thumb.url;
-              console.log(`[SPARK Pipeline] Reusing existing Thumbnail Variant ${variantLetter} -> ${existingThumbUrl}`);
-              enrichedThumbnails.push({
-                id: thumb.id || `t${tIdx + 1}`,
-                variant: variantLetter,
-                concept: thumb.concept,
-                image: existingThumbUrl,
-                url: existingThumbUrl,
-              });
-              currentThumbnails = [...enrichedThumbnails];
-              const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
-              emitProgress(currentPct, "Thumbnails", `Verified thumbnail variant ${variantLetter}...`);
-              continue;
-            }
-
-            const shortHookText = (typeof brief.hook === "string" ? brief.hook : brief.title || "VIRAL INSIGHT")
-              .replace(/[^\w\s]/gi, "")
-              .split(" ")
-              .filter(Boolean)
-              .slice(0, 4)
-              .join(" ")
-              .toUpperCase();
-
-            const formulaDirectives: Record<string, string> = {
-              A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
-LAYOUT: Subject on left vertical third (Rule of Thirds grid), short bold 2-4 word headline on right third.
-TEXT OVERLAY: "${shortHookText}" (Short, bold, high-contrast typography, ≤4 words).
-COLOR PALETTE: Primary brand accent + high-contrast monochrome base (black/white) + neon magenta highlight glow.`,
-              B: `VIRAL FORMULA: Big Number Transformation + Character Scale Comparison.
-LAYOUT: Subject on right vertical third gesturing toward large metric graphic card on left vertical third.
-TEXT OVERLAY: "${shortHookText}" (Bold numerical highlight & metric callout, ≤4 words).
-COLOR PALETTE: Primary brand accent + dark obsidian base + electric amber per-video highlight.`,
-              C: `VIRAL FORMULA: Hero Object + Burning Question + Blurred Outcome.
-LAYOUT: Subject at Rule of Thirds focal intersection looking toward curiosity object with subtle depth-of-field blur.
-TEXT OVERLAY: "${shortHookText}" (Bold mystery question prompt, ≤4 words).
-COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight glow.`,
-            };
-
-            const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
-
-            const thumbVisualLock = buildVisualLockRefs({
-              character,
-              storyboardGridUrl: realGridUrl || takeGrids[0],
-            });
-
-            const thumbPrompt = `
-${thumbVisualLock.refPromptHeader}
-[${identityPack.aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
-CONCEPT: ${thumb.concept}
-${formulaSpec}
-RULE OF THIRDS LAW: Align character face and visual elements on rule-of-thirds grid intersections.
-CHARACTER LOCK: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive"}). Facial structure, hair, and wardrobe strictly identical to character sheet reference.
-${identityPack.combinedPromptPrefix}
-Brand: ${brand.name}
-`.trim();
-
-            let thumbUrl: string | undefined = undefined;
-
-            try {
-              checkAborted();
-              console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter ("storyboardImages")...`);
-              const thumbImgData = await withTimeout(
-                ModelRouter.executeCategoryRequest("storyboardImages", {
-                  prompt: thumbPrompt,
-                  referenceImageUrl: thumbVisualLock.primaryRefUrl,
-                  referenceImageUrls: thumbVisualLock.imageUrls,
-                  aspectRatio: identityPack.aspectRatio,
-                }),
-                45000,
-                `Thumbnail variant ${variantLetter} generation timed out after 45s`,
-                signal
-              );
-              checkAborted();
-
-              if (isValidMediaData(thumbImgData)) {
-                let finalThumb = thumbImgData;
-                try {
-                  const storedThumb = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "thumbnail",
-                    storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
-                    dataUrlOrBlob: thumbImgData,
-                    mimeType: "image/png",
-                    prompt: thumbPrompt,
-                    provider: "ModelRouter",
-                  });
-                  if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
-                } catch (storageErr) {
-                  console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
-                }
-                thumbUrl = finalThumb;
-              } else {
-                console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
-                if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
-              }
-            } catch (thumbErr: any) {
-              if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
-              console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
-              if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
-            }
-
-            if (thumbUrl) {
-              const thumbEntry = {
-                id: thumb.id || `t${tIdx + 1}`,
-                variant: variantLetter,
-                concept: thumb.concept,
-                image: thumbUrl,
-                url: thumbUrl,
-              };
-              enrichedThumbnails.push(thumbEntry);
-              currentThumbnails = [...enrichedThumbnails];
-            }
-
-            const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
-            emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
-            void persistCurrentStage("Thumbnails");
-          }
-        } catch (tLoopErr: any) {
-          if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
-          console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
-          if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
-        }
-
-        stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
-        await persistCurrentStage("Thumbnails");
+      // Bind take grids as master storyboard visuals for preview and motion
+      if (takeGrids.length > 0) {
+        brief.storyboardGridUrl = takeGrids[0];
+        brief.takeGrids = takeGrids;
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        brief.generatedAssets.storyboardGridUrl = takeGrids[0];
+        brief.generatedAssets.takeGrids = takeGrids;
+        brief.generatedAssets.generatedFrames = takeGrids;
       }
-      stages[4].status = "active";
-      emitProgress(80, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on scene stills...`);
+
+      stages[3].status = "active";
+      emitProgress(60, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on storyboard take grids...`);
+      void persistCurrentStage("Video");
+      startHeartbeat("Video");
 
       // PART 3 — Stills Drive Motion: Image-Conditioned Video Generation Loop via ModelRouter ("videoGeneration")
       const sceneClips: string[] = [];
@@ -1423,7 +1285,7 @@ Brand: ${brand.name}
           if (isExpressNarrator) {
             // NARRATOR PIPELINE (express): Compile stills + voiceover into video without calling videoGeneration provider
             console.log(`[SPARK Pipeline] Mode is "${mode}" (Narrator). Compiling ordered stills + voiceover narration into master MP4 (0 AI video credits burned).`);
-            emitProgress(85, "Compile", "Compiling Narrator slideshow video from keyframe stills & voiceover...");
+            emitProgress(70, "Compile", "Compiling Narrator slideshow video from storyboard grids & voiceover...");
 
             try {
               const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
@@ -1614,7 +1476,7 @@ Brand: ${brand.name}
                 if (!lastError) lastError = `Take ${tIdx + 1} Video: ${takeVidErr?.message || String(takeVidErr)}`;
               }
 
-              const currentPct = 80 + Math.round(((tIdx + 1) / totalTakes) * 15);
+              const currentPct = 60 + Math.round(((tIdx + 1) / totalTakes) * 20);
               emitProgress(currentPct, "Video", `Rendered Take ${tIdx + 1} of ${totalTakes} video motion...`);
               void persistCurrentStage(`Take-Video-${tIdx + 1}`);
             }
@@ -1640,7 +1502,7 @@ Brand: ${brand.name}
             });
 
             if (takeClips.length > 1) {
-              emitProgress(95, "Merge", `Merging ${takeClips.length} approved take videos into master MP4...`);
+              emitProgress(82, "Merge", `Merging ${takeClips.length} approved take videos into master MP4...`);
               try {
                 const { mergeSceneVideos } = await import("./sceneVideoMerger");
                 const mergeResult = await withTimeout(
@@ -1721,43 +1583,216 @@ Brand: ${brand.name}
         lastError = "Video synthesis completed but did not produce a verified durable video in Storage.";
       }
 
-      stages[4].status = isVideoSuccess ? "done" : "failed";
-      stages[5].status = isVideoSuccess ? "done" : "failed";
+      stages[3].status = isVideoSuccess ? "done" : "failed";
+      await persistCurrentStage("Video");
+
+      // Stage 4 — Proposed Thumbnail Variants (Runs AFTER Master Video / Slideshow Compile)
+      stages[4].status = "active";
+      emitProgress(88, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
+      void persistCurrentStage("Thumbnails");
+      startHeartbeat("Thumbnails");
+
+      const targetThumbCount = typeof activeCreditSettings.thumbnailCount === "number" ? Math.max(0, activeCreditSettings.thumbnailCount) : 3;
+      const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
+
+      if (targetThumbCount === 0) {
+        console.log("[SPARK Pipeline] Thumbnail count is 0 in credit controls. Skipping thumbnail generation loop.");
+        stages[4].status = "done";
+        await persistCurrentStage("Thumbnails");
+      } else {
+        try {
+          const { ModelRouter } = await import("../runtime/modelRouter");
+          const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
+          const totalThumbs = effectiveThumbnails.length || targetThumbCount;
+          for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
+            checkAborted();
+            const thumb = effectiveThumbnails[tIdx];
+            const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
+            if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
+              const existingThumbUrl = thumb.image || thumb.url;
+              console.log(`[SPARK Pipeline] Reusing existing Thumbnail Variant ${variantLetter} -> ${existingThumbUrl}`);
+              enrichedThumbnails.push({
+                id: thumb.id || `t${tIdx + 1}`,
+                variant: variantLetter,
+                concept: thumb.concept,
+                image: existingThumbUrl,
+                url: existingThumbUrl,
+              });
+              currentThumbnails = [...enrichedThumbnails];
+              continue;
+            }
+
+            const shortHookText = (typeof brief.hook === "string" ? brief.hook : brief.title || "VIRAL INSIGHT")
+              .replace(/[^\w\s]/gi, "")
+              .split(" ")
+              .filter(Boolean)
+              .slice(0, 4)
+              .join(" ")
+              .toUpperCase();
+
+            const formulaDirectives: Record<string, string> = {
+              A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
+LAYOUT: Subject on left vertical third (Rule of Thirds grid), short bold 2-4 word headline on right third.
+TEXT OVERLAY: "${shortHookText}" (Short, bold, high-contrast typography, ≤4 words).
+COLOR PALETTE: Primary brand accent + high-contrast monochrome base (black/white) + neon magenta highlight glow.`,
+              B: `VIRAL FORMULA: Big Number Transformation + Character Scale Comparison.
+LAYOUT: Subject on right vertical third gesturing toward large metric graphic card on left vertical third.
+TEXT OVERLAY: "${shortHookText}" (Bold numerical highlight & metric callout, ≤4 words).
+COLOR PALETTE: Primary brand accent + dark obsidian base + electric amber per-video highlight.`,
+              C: `VIRAL FORMULA: Hero Object + Burning Question + Blurred Outcome.
+LAYOUT: Subject at Rule of Thirds focal intersection looking toward curiosity object with subtle depth-of-field blur.
+TEXT OVERLAY: "${shortHookText}" (Bold mystery question prompt, ≤4 words).
+COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight glow.`,
+            };
+
+            const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
+
+            const thumbVisualLock = buildVisualLockRefs({
+              character,
+              storyboardGridUrl: realGridUrl || takeGrids[0],
+            });
+
+            const thumbPrompt = `
+${thumbVisualLock.refPromptHeader}
+[${identityPack.aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
+CONCEPT: ${thumb.concept}
+${formulaSpec}
+RULE OF THIRDS LAW: Align character face and visual elements on rule-of-thirds grid intersections.
+CHARACTER LOCK: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive"}). Facial structure, hair, and wardrobe strictly identical to character sheet reference.
+${identityPack.combinedPromptPrefix}
+Brand: ${brand.name}
+`.trim();
+
+            let thumbUrl: string | undefined = undefined;
+
+            try {
+              checkAborted();
+              console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter ("storyboardImages") [Refs: ${thumbVisualLock.imageUrls.length}]...`);
+              const thumbImgData = await withTimeout(
+                ModelRouter.executeCategoryRequest("storyboardImages", {
+                  prompt: thumbPrompt,
+                  referenceImageUrl: thumbVisualLock.primaryRefUrl,
+                  referenceImageUrls: thumbVisualLock.imageUrls,
+                  aspectRatio: identityPack.aspectRatio,
+                }),
+                45000,
+                `Thumbnail variant ${variantLetter} generation timed out after 45s`,
+                signal
+              );
+              checkAborted();
+
+              if (isValidMediaData(thumbImgData)) {
+                let finalThumb = thumbImgData;
+                try {
+                  const storedThumb = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "thumbnail",
+                    storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
+                    dataUrlOrBlob: thumbImgData,
+                    mimeType: "image/png",
+                    prompt: thumbPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
+                } catch (storageErr) {
+                  console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
+                }
+                thumbUrl = finalThumb;
+              } else {
+                console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
+                if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
+              }
+            } catch (thumbErr: any) {
+              if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
+              console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
+              if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
+            }
+
+            if (thumbUrl) {
+              const thumbEntry = {
+                id: thumb.id || `t${tIdx + 1}`,
+                variant: variantLetter,
+                concept: thumb.concept,
+                image: thumbUrl,
+                url: thumbUrl,
+              };
+              enrichedThumbnails.push(thumbEntry);
+              currentThumbnails = [...enrichedThumbnails];
+            }
+
+            const currentPct = 88 + Math.round(((tIdx + 1) / totalThumbs) * 8);
+            emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
+            void persistCurrentStage("Thumbnails");
+          }
+        } catch (tLoopErr: any) {
+          if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
+          console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
+          if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
+        }
+
+        stages[4].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
+        await persistCurrentStage("Thumbnails");
+      }
+
+      // Stage 5 — Finalizing Media Package
+      stages[5].status = "active";
+      emitProgress(98, "Saving", "Finalizing verified media assets package...");
+      void persistCurrentStage("Saving");
 
       brief.videoUrl = realVideoUrl;
       brief.audioUrl = realVoiceUrl;
       if (!brief.generatedAssets) brief.generatedAssets = {};
       brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
       brief.generatedAssets.voiceoverUrl = realVoiceUrl;
+      brief.generatedAssets.thumbnails = enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails;
 
-      await persistCurrentStage("Video");
+      const isExpressNarrator = mode === "express";
+      if (isExpressNarrator) {
+        if (!realVoiceUrl) {
+          lastError = lastError || "Voiceover generation failed or audio was missing for Narrator mode.";
+        }
+        if (!realVideoUrl) {
+          lastError = lastError || "Narrator slideshow compilation failed to produce a verified durable video in Storage.";
+        }
+      }
 
-      emitProgress(
-        isVideoSuccess ? 96 : 85,
-        isVideoSuccess ? "Saving" : "Failed",
-        isVideoSuccess ? "Synchronizing storage assets & metadata..." : `Video synthesis failed to produce playable video. ${lastError}`,
-        { videoUrl: realVideoUrl, voiceUrl: realVoiceUrl, lastError }
+      const isOverallSuccess = Boolean(
+        realVideoUrl &&
+        isDurableMasterVideoReady(realVideoUrl) &&
+        (!isExpressNarrator || (realVoiceUrl && isValidMediaData(realVoiceUrl)))
       );
+      const finalStatus = isOverallSuccess ? "Completed" : "Failed";
+      if (!isOverallSuccess && !lastError) {
+        lastError = isExpressNarrator
+          ? "Narrator slideshow compilation failed to produce a verified durable video in Storage."
+          : "Video generation failed to produce a verified durable master video in permanent Storage.";
+      }
+      const finalMsg = isOverallSuccess
+        ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
+        : lastError;
+
+      stages[5].status = isOverallSuccess ? "done" : "failed";
+      await persistCurrentStage(isOverallSuccess ? "Complete" : "Failed");
 
       const renderCompletedAt = new Date().toISOString();
 
       const finalProgress: import("../../domain/types").GenerationProgress = {
-        percent: isVideoSuccess ? 100 : 85,
-        stage: isVideoSuccess ? "Complete" : "Failed",
+        percent: isOverallSuccess ? 100 : 85,
+        stage: isOverallSuccess ? "Complete" : "Failed",
         stages: stages.map((s) => ({
           ...s,
-          status: s.status === "active" ? (isVideoSuccess ? "done" : "failed") : s.status,
+          status: s.status === "active" ? (isOverallSuccess ? "done" : "failed") : s.status,
         })),
-        message: isVideoSuccess
-          ? `${mode.toUpperCase()} media assets synthesized with continuous staged craft and ready for executive review.`
-          : `Video synthesis failed or incomplete. ${lastError || "Check error logs and click Regenerate."}`,
+        message: finalMsg,
         updatedAt: renderCompletedAt,
         partialAssets: {
           storyboard: currentStoryboard,
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
-          lastError: isVideoSuccess ? lastError : (lastError || "Video stage failed to produce a valid video URL."),
+          lastError: isOverallSuccess ? undefined : (lastError || "Video stage failed to produce a valid video URL."),
         },
       };
 
@@ -1798,7 +1833,7 @@ Brand: ${brand.name}
             renderStartedAt,
             renderCompletedAt,
             providerUsed: "AIProviderOrchestrator",
-            generationStatus: isVideoSuccess ? "Completed" : "Failed",
+            generationStatus: finalStatus,
             lastError,
           },
         },
@@ -1851,32 +1886,6 @@ Brand: ${brand.name}
           updatedAt: renderCompletedAt,
         };
       });
-
-      const isExpressNarrator = mode === "express";
-      if (isExpressNarrator) {
-        if (!realVoiceUrl) {
-          lastError = lastError || "Voiceover generation failed or audio was missing for Narrator mode.";
-        }
-        if (!realVideoUrl) {
-          lastError = lastError || "Narrator slideshow compilation failed to produce a verified durable video in Storage.";
-        }
-      }
-
-      const isOverallSuccess = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
-      const finalStatus = isOverallSuccess ? "Completed" : "Failed";
-      if (!isOverallSuccess && !lastError) {
-        lastError = isExpressNarrator
-          ? "Narrator slideshow compilation failed to produce a verified durable video in Storage."
-          : "Video generation failed to produce a verified durable master video in permanent Storage.";
-      }
-      const finalMsg = isOverallSuccess
-        ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
-        : lastError;
-
-      if (updatedBrief.generatedAssets?.generationMetadata) {
-        updatedBrief.generatedAssets.generationMetadata.generationStatus = finalStatus;
-        updatedBrief.generatedAssets.generationMetadata.lastError = lastError;
-      }
 
       emitProgress(isOverallSuccess ? 100 : 50, isOverallSuccess ? "Complete" : "Failed", finalMsg);
 
