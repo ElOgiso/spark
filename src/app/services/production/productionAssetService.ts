@@ -1989,11 +1989,8 @@ Brand: ${brand.name}
       }));
 
       const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => {
-        const isExpress = mode === "express";
-        const sceneStillUrl = sb.image || sceneImages[idx] || realGridUrl;
-        const sceneClipUrl = isExpress
-          ? (realVideoUrl || sb.videoUrl)
-          : (sb.videoUrl || sceneClips[idx]);
+        const sceneStillUrl = sb.image || sceneImages[idx] || undefined;
+        const sceneClipUrl = sb.videoUrl || (mode === "deep" ? sceneClips[idx] : mode === "standard" && idx === 0 ? sceneClips[0] : undefined);
         return {
           scene: sb.scene || idx + 1,
           index: sb.scene || idx + 1,
@@ -2010,7 +2007,7 @@ Brand: ${brand.name}
           pacing: sb.pacing || "Balanced",
           scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
           spokenLines: sb.spokenLines || sb.scriptSnippet || "",
-          audio: sb.audio || (isExpress ? "vo" : mode === "deep" ? "talent" : "talent"),
+          audio: sb.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : "talent"),
           scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
           visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
           action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,

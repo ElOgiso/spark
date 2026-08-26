@@ -181,12 +181,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           id: t.id || String(idx + 1),
           concept: asText(t.concept, `Variant ${t.variant || ["A", "B", "C"][idx] || "A"} optimized for CTR`),
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: t.image || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
+          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
       : [
-          { id: "1", variant: "A", concept: "Cinematic Split hook preview", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[0] },
-          { id: "2", variant: "B", concept: "Bold Reaction Accent curiosity card", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[1] },
-          { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[2] },
+          { id: "1", variant: "A", concept: "Cinematic Split hook preview", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image },
+          { id: "2", variant: "B", concept: "Bold Reaction Accent curiosity card", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image },
+          { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
         ],
     narrative: {
       hook: asText(brief?.hook || item?.scriptSnippet, "Failed marketing campaigns waste billions annually"),
@@ -195,21 +195,29 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these tactics to 10x your results",
     },
-    storyboard: activeProd?.scenes?.length
+    storyboard: activeProd?.productionScenes?.length
+      ? activeProd.productionScenes.map((s: any, idx: number) => ({
+          scene: s.scene || idx + 1,
+          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
+          duration: s.duration || "0–10s",
+          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
+          videoUrl: s.videoUrl || undefined,
+        }))
+      : activeProd?.scenes?.length
       ? activeProd.scenes.map((s: any, idx: number) => ({
           scene: s.scene || idx + 1,
           description: s.description,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || (activeProd?.productionScenes?.[idx]?.videoUrl) || (brief?.generatedAssets?.sceneClips?.[idx]) || (isExpress ? (activeProd?.videoUrl || brief?.videoUrl) : undefined),
+          image: s.image || brief?.storyboard?.[idx]?.image,
+          videoUrl: s.videoUrl || undefined,
         }))
       : brief?.storyboard?.length
       ? brief.storyboard.map((s: any, idx: number) => ({
           scene: s.scene || idx + 1,
           description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || (brief?.generatedAssets?.sceneClips?.[idx]) || (isExpress ? (brief?.videoUrl || activeProd?.videoUrl) : undefined),
+          image: s.image,
+          videoUrl: s.videoUrl || undefined,
         }))
       : [
           { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: brief?.generatedAssets?.generatedFrames?.[0] },

@@ -49,16 +49,27 @@ export function MobileProductionAssetsGallery({
   const initialScenes: ProductionSceneItem[] =
     rawStoryboard.length > 0
       ? rawStoryboard.map((s: any, idx: number) => {
-          const clipUrl = rawClips[idx] || (idx === 0 ? activeProd?.videoUrl || brief?.videoUrl : undefined);
+          const clipUrl = s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? activeProd?.videoUrl || brief?.videoUrl : undefined);
+          const stillUrl = s.image || s.keyframeImageUrl || s.keyframeUrl || undefined;
           return {
             id: `scene-${idx + 1}`,
             index: idx + 1,
             title: `Scene ${idx + 1}`,
-            durationSec: s.durationSec || 8,
-            status: clipUrl ? "Ready" : idx === 0 && activeProd?.isGeneratingAssets ? "Generating" : "Ready",
-            thumbUrl: s.image || s.keyframeUrl || brief?.generatedAssets?.generatedThumbnails?.[idx] || undefined,
+            durationSec: s.durationSec || parseInt(s.duration) || 5,
+            status: s.status === "needs_fix" || s.status === "needs_edit"
+              ? "Needs fix"
+              : s.status === "generating"
+              ? "Generating"
+              : s.status === "approved"
+              ? "Approved"
+              : (clipUrl || stillUrl)
+              ? "Ready"
+              : activeProd?.isGeneratingAssets
+              ? "Generating"
+              : "Ready",
+            thumbUrl: stillUrl,
             videoUrl: clipUrl,
-            beatLine: s.onScreenText || s.scriptSnippet || s.visualDescription || s.primaryChange || "Sequential scene beat",
+            beatLine: s.onScreenText || s.scriptSnippet || s.visualDescription || s.primaryChange || `Scene ${idx + 1}`,
             visualDescription: s.visualDescription,
             audio: s.audio,
           };
@@ -70,9 +81,9 @@ export function MobileProductionAssetsGallery({
             title: "Master Production",
             durationSec: 12,
             status: activeProd?.videoUrl || brief?.videoUrl ? "Ready" : "Generating",
-            thumbUrl: brief?.generatedAssets?.generatedThumbnails?.[0] || undefined,
+            thumbUrl: brief?.thumbnailUrl || activeProd?.thumbnailUrl || undefined,
             videoUrl: activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
-            beatLine: brief?.hook || "Full production one-take master video",
+            beatLine: brief?.hook || "Full production master video",
           },
         ];
 
@@ -116,6 +127,7 @@ export function MobileProductionAssetsGallery({
                 ? {
                     ...s,
                     status: res.status === "ready" ? "Ready" : "Needs fix",
+                    thumbUrl: res.image || res.keyframeImageUrl || s.thumbUrl,
                     videoUrl: res.videoUrl || s.videoUrl,
                     beatLine: notes ? `Revised: ${notes.slice(0, 40)}` : s.beatLine,
                   }
@@ -229,8 +241,8 @@ export function MobileProductionAssetsGallery({
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-purple-950/40 via-background to-black flex flex-col items-center justify-center p-3 text-center">
-                      <Film className="w-8 h-8 text-white/20 mb-2" />
-                      <span className="text-[11px] text-white/40 font-mono">Scene {scene.index}</span>
+                      <Loader2 className="w-5 h-5 text-purple-400 animate-spin mb-2" />
+                      <span className="text-[11px] text-white/60 font-medium">Preparing scene {scene.index}…</span>
                     </div>
                   )}
 
@@ -378,7 +390,16 @@ export function MobileProductionAssetsGallery({
       )}
 
       {/* Sticky Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 bg-[#0B0F17]/95 border-t border-white/10 backdrop-blur-md z-40 space-y-1.5" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+      <footer className="fixed bottom-0 left-0 right-0 p-4 bg-[#0B0F17]/95 border-t border-white/10 backdrop-blur-md z-40 space-y-2" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+        {(activeProd?.videoUrl || brief?.videoUrl) && (
+          <button
+            onClick={() => setActiveVideo({ url: (activeProd?.videoUrl || brief?.videoUrl)!, title: `Master Film · ${title}` })}
+            className="w-full py-2.5 rounded-xl border border-white/20 bg-white/5 text-xs font-semibold text-white flex items-center justify-center gap-1.5 active:scale-[0.99]"
+          >
+            <Play className="w-3.5 h-3.5 fill-current text-purple-300" />
+            Play master film
+          </button>
+        )}
         <button
           onClick={handleApproveMerge}
           disabled={approvedMaster}

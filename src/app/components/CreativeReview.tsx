@@ -276,12 +276,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           id: t.id || String(idx + 1),
           concept: asText(t.concept, `Thumbnail Variant ${t.variant || ["A", "B", "C"][idx] || "A"}`),
           variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image || brief?.storyboardGridUrl,
+          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
         }))
       : [
-          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image || brief?.storyboardGridUrl },
-          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image || brief?.storyboardGridUrl },
-          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image || brief?.storyboardGridUrl },
+          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image },
+          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image },
+          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
         ],
     narrative: {
       hook: asText(brief?.hook || activeReview?.scriptSnippet, "Failed marketing campaigns waste time and energy"),
@@ -290,21 +290,29 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       reveal: "Here's exactly what works",
       payoff: "Implement these and 10× your organic reach",
     },
-    storyboard: activeProd?.scenes?.length
+    storyboard: activeProd?.productionScenes?.length
+      ? activeProd.productionScenes.map((s: any, idx: number) => ({
+          scene: s.scene || idx + 1,
+          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
+          duration: s.duration || "0–10s",
+          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
+          videoUrl: s.videoUrl || undefined,
+        }))
+      : activeProd?.scenes?.length
       ? activeProd.scenes.map((s: any, idx: number) => ({
           scene: s.scene || idx + 1,
           description: s.description,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || (activeProd?.productionScenes?.[idx]?.videoUrl) || (brief?.generatedAssets?.sceneClips?.[idx]) || (isExpressMode ? (activeProd?.videoUrl || brief?.videoUrl) : undefined),
+          image: s.image || brief?.storyboard?.[idx]?.image,
+          videoUrl: s.videoUrl || undefined,
         }))
       : brief?.storyboard?.length
       ? brief.storyboard.map((s: any, idx: number) => ({
           scene: s.scene || idx + 1,
           description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || (brief?.generatedAssets?.sceneClips?.[idx]) || (isExpressMode ? (brief?.videoUrl || activeProd?.videoUrl) : undefined),
+          image: s.image,
+          videoUrl: s.videoUrl || undefined,
         }))
       : [
           { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
