@@ -139,57 +139,6 @@ function CreditControlMobile({ onNavigate }: { onNavigate: (path: string) => voi
             ))}
           </div>
         </div>
-
-        {/* 3. Shorts length */}
-        <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground">Shorts length</span>
-            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-accent/15 text-accent">
-              {settings.shortsDurationSec}s
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[5, 8, 10, 15].map((sec) => (
-              <button
-                key={sec}
-                onClick={() => setSettings({ ...settings, shortsDurationSec: sec })}
-                className={`py-2.5 rounded-xl border text-xs font-bold transition-all active:scale-[0.97] ${
-                  settings.shortsDurationSec === sec
-                    ? "border-accent bg-accent text-accent-foreground shadow-sm shadow-accent/20"
-                    : "border-border bg-background text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {sec}s
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. Cinematic length */}
-        <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground">Cinematic length</span>
-            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-accent/15 text-accent">
-              {settings.cinematicDurationSec}s
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[8, 12, 15, 20].map((sec) => (
-              <button
-                key={sec}
-                onClick={() => setSettings({ ...settings, cinematicDurationSec: sec })}
-                className={`py-2.5 rounded-xl border text-xs font-bold transition-all active:scale-[0.97] ${
-                  settings.cinematicDurationSec === sec
-                    ? "border-accent bg-accent text-accent-foreground shadow-sm shadow-accent/20"
-                    : "border-border bg-background text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {sec}s
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Save CTA */}
         <button
           onClick={handleSave}
@@ -317,65 +266,6 @@ function CreditControlDesktop({ onNavigate }: { onNavigate: (path: string) => vo
           ))}
         </div>
       </div>
-
-      {/* 3. Duration Limits */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-5">
-        <div className="border-b border-border/40 pb-3">
-          <h3 className="text-base font-semibold text-foreground">Target Video Clip Durations</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Default target durations applied to motion synthesis based on production mode.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Express/Standard */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">Shorts Length (Express / Narrator)</span>
-              <span className="text-xs font-mono font-bold text-accent">{settings.shortsDurationSec}s</span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[5, 8, 10, 15].map((sec) => (
-                <button
-                  key={sec}
-                  onClick={() => setSettings({ ...settings, shortsDurationSec: sec })}
-                  className={`py-2.5 rounded-lg border text-xs font-bold transition-all ${
-                    settings.shortsDurationSec === sec
-                      ? "border-accent bg-accent text-accent-foreground shadow-sm"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {sec}s
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Deep Cinematic */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">Cinematic Length (Deep Mode)</span>
-              <span className="text-xs font-mono font-bold text-accent">{settings.cinematicDurationSec}s</span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[8, 12, 15, 20].map((sec) => (
-                <button
-                  key={sec}
-                  onClick={() => setSettings({ ...settings, cinematicDurationSec: sec })}
-                  className={`py-2.5 rounded-lg border text-xs font-bold transition-all ${
-                    settings.cinematicDurationSec === sec
-                      ? "border-accent bg-accent text-accent-foreground shadow-sm"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {sec}s
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Save Action Bar */}
       <div className="flex items-center justify-between gap-4 pt-2">
         <button
