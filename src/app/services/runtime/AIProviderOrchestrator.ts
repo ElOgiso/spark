@@ -397,11 +397,27 @@ export class AIProviderOrchestrator {
               const { GoogleGenAI } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any }));
               if (GoogleGenAI) {
                 const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+                const refList = options.referenceImageUrls?.length
+                  ? options.referenceImageUrls
+                  : options.referenceImageUrl
+                  ? [options.referenceImageUrl]
+                  : [];
+
                 for (const modelId of candidateNativeModels) {
                   try {
+                    const sdkParts: any[] = [];
+                    for (const ref of refList) {
+                      if (ref && ref.startsWith("data:")) {
+                        const [mimePart, b64Part] = ref.split(";base64,");
+                        const mimeType = mimePart.replace("data:", "") || "image/png";
+                        sdkParts.push({ inlineData: { data: b64Part, mimeType } });
+                      }
+                    }
+                    sdkParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
+
                     const response = await (ai.models as any).generateContent({
                       model: modelId,
-                      contents: [{ role: "user", parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                      contents: [{ role: "user", parts: sdkParts }],
                       config: {
                         responseModalities: ["IMAGE"],
                         imageConfig: { aspectRatio: "9:16" },
@@ -427,13 +443,29 @@ export class AIProviderOrchestrator {
             }
 
             // Direct REST generateContent with responseModalities
+            const refList = options.referenceImageUrls?.length
+              ? options.referenceImageUrls
+              : options.referenceImageUrl
+              ? [options.referenceImageUrl]
+              : [];
+
             for (const modelId of candidateNativeModels) {
               try {
+                const restParts: any[] = [];
+                for (const ref of refList) {
+                  if (ref && ref.startsWith("data:")) {
+                    const [mimePart, b64Part] = ref.split(";base64,");
+                    const mimeType = mimePart.replace("data:", "") || "image/png";
+                    restParts.push({ inline_data: { data: b64Part, mime_type: mimeType } });
+                  }
+                }
+                restParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
+
                 const restRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    contents: [{ parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                    contents: [{ parts: restParts }],
                     generationConfig: {
                       responseModalities: ["IMAGE"],
                       imageConfig: { aspectRatio: "9:16" },
@@ -976,12 +1008,15 @@ export class AIProviderOrchestrator {
         // 4A. Grok Image Generation (grok-imagine-image-quality 9:16)
         if (options.capability === "Image Generation") {
           const imageModel = options.model || "grok-imagine-image-quality";
-          const grokImagePayload = {
+          const grokImagePayload: any = {
             model: imageModel,
             prompt: options.prompt,
             n: 1,
             response_format: "b64_json",
           };
+          if (options.referenceImageUrl) {
+            grokImagePayload.image_url = options.referenceImageUrl;
+          }
 
           // 1. Direct call
           if (apiKey) {
@@ -1517,6 +1552,11 @@ export class AIProviderOrchestrator {
     let lastError: Error | null = null;
     const maxCandidates = capability === "Image Generation" || capability === "Video Generation" ? 3 : 2;
     const candidatesToTry = candidates.slice(0, maxCandidates);
+
+    if (options.referenceImageUrl || options.referenceImageUrls?.length) {
+      const refCount = options.referenceImageUrls?.length || (options.referenceImageUrl ? 1 : 0);
+      console.log(`[AIProviderOrchestrator] Visual Lock Active: Executing capability "${capability}" with ${refCount} reference image(s) [Primary: ${options.referenceImageUrl ? options.referenceImageUrl.slice(0, 50) + "..." : "none"}]`);
+    }
 
     for (let i = 0; i < candidatesToTry.length; i++) {
       const provider = candidatesToTry[i];
