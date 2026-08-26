@@ -1549,7 +1549,7 @@ Brand: ${brand.name}
               realVideoUrl = undefined;
             }
           } else {
-            // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion
+            // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion conditioned on Take Grids + Character Sheet
             // CONSISTENCY GATE: Do not call videoGeneration unless at least Take 1 grid exists and is valid
             if (takeGrids.length === 0 || !isValidMediaData(takeGrids[0])) {
               const errMsg = "Consistency Gate Failure: Take 1 storyboard grid is missing or invalid. Video motion requires a verified Take 1 grid.";
@@ -1563,289 +1563,202 @@ Brand: ${brand.name}
             });
             const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
-            const enablePerSceneClips = Boolean(
-              (params as any)?.enablePerSceneClips ||
-              ((mode === "standard" || mode === "deep") && (targetSec > nativeMaxClipSec || currentStoryboard.length > 1))
-            );
+            const takeClips: string[] = [];
 
-            if (enablePerSceneClips) {
-              // Per-scene clip generation with mode-specific motion directives and automatic merge
-              const totalVideoStages = currentStoryboard.length || 3;
-              const isDeep = mode === "deep";
+            // REQUIRED MOTION MODEL: 1 take grid = 1 videoGeneration call
+            for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
+              checkAborted();
+              const startIdx = tIdx * panelsPerTake;
+              const takeScenes = currentStoryboard.slice(startIdx, startIdx + panelsPerTake);
+              const takeGridForTake = takeGrids[tIdx] || realGridUrl;
 
-              for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
-                checkAborted();
-                const scene = currentStoryboard[sIdx];
-                const sceneStill = scene.image || sceneImages[sIdx];
-                const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+              // References strictly in order: [0] character sheet, [1] take grid, [2] previous take last frame (if tIdx > 0)
+              const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
+              const orderedTakeRefs: string[] = [];
+              const refLabels: string[] = [];
 
-                const takeIdxForScene = Math.floor(sIdx / panelsPerTake);
-                const takeGridForScene = takeGrids[takeIdxForScene] || realGridUrl;
-                const takeScenesForPrompt = currentStoryboard.slice(takeIdxForScene * panelsPerTake, (takeIdxForScene + 1) * panelsPerTake);
-
-                const stageVisualLock = buildVisualLockRefs({
-                  character,
-                  storyboardGridUrl: takeGridForScene,
-                  sceneKeyframeUrl: sceneStill,
-                  previousLastFrameUrl: sIdx > 0 ? (sceneClips[sIdx - 1] || sceneImages[sIdx - 1]) : undefined,
-                });
-
-                const rawSceneDur = parseInt(scene.duration) || snapToAllowedDuration(Math.ceil(targetSec / totalVideoStages), activeVideo.providerId);
-                const sceneTargetDuration = snapToAllowedDuration(rawSceneDur, activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
-
-                const stageMotionPrompt = `${stageVisualLock.refPromptHeader}\n${buildTakeMotionPrompt({
-                  mode,
-                  aspectRatio: identityPack.aspectRatio,
-                  takeIndex: takeIdxForScene + 1,
-                  totalTakes: totalTakes,
-                  takeDurationSec: sceneTargetDuration,
-                  panels: takeScenesForPrompt.map((ts, pIdx) => ({
-                    panelIndex: pIdx,
-                    shotFraming: ts.cameraDirection,
-                    action: ts.primaryChange || ts.visualDescription,
-                    spokenLines: ts.spokenLines || ts.scriptSnippet,
-                    onScreenText: ts.onScreenText,
-                    audio: ts.audio,
-                  })),
-                  characterName: character?.name || "Host",
-                  characterStyle: character?.style || "Executive Presenter",
-                  environment: identityPack.environmentString,
-                })}`;
-
-                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [Refs: ${stageVisualLock.imageUrls.length}]...`);
-
-                try {
-                  checkAborted();
-                  const generatedClip = await withTimeout(
-                    ModelRouter.executeCategoryRequest("videoGeneration", {
-                      prompt: stageMotionPrompt,
-                      referenceImageUrl: stageVisualLock.primaryRefUrl,
-                      referenceImageUrls: stageVisualLock.imageUrls,
-                      aspectRatio: identityPack.aspectRatio,
-                      durationSec: sceneTargetDuration,
-                    }),
-                    90000,
-                    `Video stage ${sIdx + 1} generation timed out after 90s`,
-                    signal
-                  );
-                  checkAborted();
-
-                  if (isValidMediaData(generatedClip)) {
-                    let finalClip = generatedClip;
-                    try {
-                      const storedClip = await this.uploadAssetToStorage({
-                        productionId: production.id,
-                        brandId: (brand as any).id,
-                        assetType: "video",
-                        storagePath: getStoragePath(`video/scene-0${sIdx + 1}.mp4`),
-                        dataUrlOrBlob: generatedClip,
-                        mimeType: "video/mp4",
-                        prompt: stageMotionPrompt,
-                        provider: "ModelRouter",
-                      });
-                      if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
-                      console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
-                    } catch (storageErr: any) {
-                      console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
-                    }
-
-                    scene.videoUrl = finalClip;
-                    sceneClips.push(finalClip);
-                    if (!realVideoUrl) realVideoUrl = finalClip;
-                  }
-                } catch (stageVidErr: any) {
-                  if (stageVidErr?.name === "AbortError" || signal?.aborted) throw stageVidErr;
-                  console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} generation notice:`, stageVidErr);
-                  if (!lastError) lastError = `Video Scene ${sIdx + 1}: ${stageVidErr?.message || String(stageVidErr)}`;
-                }
-
-                const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
-                emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
-                void persistCurrentStage(`Video-Scene-${sIdx + 1}`);
+              if (charSheetUrl && isValidMediaData(charSheetUrl)) {
+                orderedTakeRefs.push(charSheetUrl);
+                refLabels.push(`INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`);
               }
 
-              // MERGE SCENE CLIPS INTO ONE PLAYABLE MASTER VIDEO
-              const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
-              const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
-              const targetMergeTexts = currentStoryboard.map((s, idx) => {
-                const primaryOnScreen = s.onScreenText;
-                if (primaryOnScreen) {
-                  const formatted = formatBurnedOnScreenText(primaryOnScreen);
-                  if (formatted) return formatted;
-                }
-                const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-                if (beatOnScreen) {
-                  const formatted = formatBurnedOnScreenText(beatOnScreen);
-                  if (formatted) return formatted;
-                }
-                if (idx === 0 && brief.hook) {
-                  return formatBurnedOnScreenText(brief.hook);
-                }
-                return "";
-              });
+              if (takeGridForTake && isValidMediaData(takeGridForTake) && !orderedTakeRefs.includes(takeGridForTake)) {
+                orderedTakeRefs.push(takeGridForTake);
+                refLabels.push(`INPUT REF [${orderedTakeRefs.length + 1}]: Take ${tIdx + 1} Storyboard Grid (Sequential Shot List)`);
+              }
 
-              if (sceneClips.length > 1) {
-                emitProgress(95, "Merge", `Merging ${sceneClips.length} approved scene videos into master MP4...`);
-                try {
-                  const { mergeSceneVideos } = await import("./sceneVideoMerger");
-                  const mergeResult = await withTimeout(
-                    mergeSceneVideos({
-                      videoUrls: sceneClips,
-                      audioUrl: mergeAudioUrl,
-                      onScreenTexts: targetMergeTexts,
-                      width: aspectRatio === "16:9" ? 1920 : 1080,
-                      height: aspectRatio === "16:9" ? 1080 : 1920,
-                    }),
-                    60000,
-                    "Automatic scene video merge timed out after 60s",
-                    signal
-                  );
+              const prevTakeLastFrame = tIdx > 0 ? (takeClips[tIdx - 1] || takeGrids[tIdx - 1]) : undefined;
+              if (tIdx > 0 && prevTakeLastFrame && isValidMediaData(prevTakeLastFrame) && !orderedTakeRefs.includes(prevTakeLastFrame)) {
+                orderedTakeRefs.push(prevTakeLastFrame);
+                refLabels.push(`INPUT REF [${orderedTakeRefs.length + 1}]: Preceding Take ${tIdx} Resolution Frame`);
+              }
 
-                  if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
-                    const ext = mergeResult.extension || "mp4";
-                    const storedMergedVid = await this.uploadAssetToStorage({
-                      productionId: production.id,
-                      brandId: (brand as any).id,
-                      assetType: "video",
-                      storagePath: getStoragePath(`video/master.${ext}`),
-                      dataUrlOrBlob: mergeResult.blob,
-                      mimeType: mergeResult.mimeType || `video/${ext}`,
-                      prompt: `Merged ${mode} master video from ${sceneClips.length} scenes`,
-                      provider: "SceneVideoMerger",
-                    });
-                    if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
-                      realVideoUrl = storedMergedVid.publicUrl;
-                      console.log(`[SPARK Pipeline] Storage Upload: Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
-                    } else {
-                      realVideoUrl = undefined;
-                      lastError = "Merged video upload failed to return a verified durable Storage URL.";
-                    }
-                  } else {
-                    realVideoUrl = undefined;
-                    lastError = "Automatic scene video merger produced an empty video blob.";
-                  }
-                } catch (mergeErr: any) {
-                  console.warn("[SPARK Pipeline] Automatic scene merge execution notice:", mergeErr);
-                  realVideoUrl = undefined;
-                  lastError = `Automatic scene merge failed: ${mergeErr?.message || String(mergeErr)}`;
-                }
-              } else if (sceneClips.length === 1) {
-                if (isDurableMasterVideoReady(sceneClips[0])) {
-                  realVideoUrl = sceneClips[0];
-                } else {
+              const refHeader = refLabels.length > 0
+                ? `${refLabels.join("\n")}\nVISUAL LOCK LAW: The physical identity, face, outfit, and studio set look strictly lives in the reference images above. Use IMAGE 1 as identity and IMAGE 2 as sequential shot list.\n`
+                : "";
+
+              const rawTakeDur = takeSec;
+              const takeTargetDuration = snapToAllowedDuration(Math.min(rawTakeDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
+
+              const takeMotionPrompt = `${refHeader}\n${buildTakeMotionPrompt({
+                mode,
+                aspectRatio: identityPack.aspectRatio,
+                takeIndex: tIdx + 1,
+                totalTakes: totalTakes,
+                takeDurationSec: takeTargetDuration,
+                panels: takeScenes.map((ts, pIdx) => ({
+                  panelIndex: pIdx,
+                  shotFraming: ts.cameraDirection,
+                  action: ts.primaryChange || ts.visualDescription,
+                  spokenLines: ts.spokenLines || ts.scriptSnippet,
+                  onScreenText: ts.onScreenText,
+                  audio: ts.audio,
+                })),
+                characterName: character?.name || "Host",
+                characterStyle: character?.style || "Executive Presenter",
+                environment: identityPack.environmentString,
+              })}`;
+
+              console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [Refs: ${orderedTakeRefs.length} -> Sheet: ${Boolean(charSheetUrl)}, Grid: ${Boolean(takeGridForTake)}, Duration: ${takeTargetDuration}s]...`);
+
+              try {
+                checkAborted();
+                const generatedClip = await withTimeout(
+                  ModelRouter.executeCategoryRequest("videoGeneration", {
+                    prompt: takeMotionPrompt,
+                    referenceImageUrl: orderedTakeRefs[0],
+                    referenceImageUrls: orderedTakeRefs,
+                    aspectRatio: identityPack.aspectRatio,
+                    durationSec: takeTargetDuration,
+                  }),
+                  90000,
+                  `Take ${tIdx + 1} video generation timed out after 90s`,
+                  signal
+                );
+                checkAborted();
+
+                if (isValidMediaData(generatedClip)) {
+                  let finalClip = generatedClip;
                   try {
-                    const storedSingle = await this.uploadAssetToStorage({
+                    const storedClip = await this.uploadAssetToStorage({
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
-                      storagePath: getStoragePath("video/master.mp4"),
-                      dataUrlOrBlob: sceneClips[0],
+                      storagePath: getStoragePath(`video/take-0${tIdx + 1}.mp4`),
+                      dataUrlOrBlob: generatedClip,
                       mimeType: "video/mp4",
-                      prompt: `Master video from single scene clip (${mode})`,
+                      prompt: takeMotionPrompt,
                       provider: "ModelRouter",
                     });
-                    if (storedSingle?.publicUrl && isDurableMasterVideoReady(storedSingle.publicUrl)) {
-                      realVideoUrl = storedSingle.publicUrl;
-                    }
-                  } catch (singleErr: any) {
-                    console.warn("[SPARK Pipeline] Single scene master storage upload notice:", singleErr);
+                    if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Take ${tIdx + 1} Video -> ${finalClip}`);
+                  } catch (storageErr: any) {
+                    console.warn(`[SPARK Pipeline] Take ${tIdx + 1} video upload failed, retaining provider URL:`, storageErr);
                   }
+
+                  takeScenes.forEach((s) => {
+                    s.videoUrl = finalClip;
+                  });
+                  takeClips.push(finalClip);
+                  sceneClips.push(finalClip);
+                  if (!realVideoUrl) realVideoUrl = finalClip;
                 }
+              } catch (takeVidErr: any) {
+                if (takeVidErr?.name === "AbortError" || signal?.aborted) throw takeVidErr;
+                console.warn(`[SPARK Pipeline] Take ${tIdx + 1} video generation notice:`, takeVidErr);
+                if (!lastError) lastError = `Take ${tIdx + 1} Video: ${takeVidErr?.message || String(takeVidErr)}`;
               }
-            } else {
-              // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
-              const activeVideo = resolveActiveVideoProvider({
-                preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
-              });
-              const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
-              const targetSec = activeFormatSettings?.targetDurationSec || 60;
-              const allowedDuration = snapToAllowedDuration(Math.min(targetSec, nativeMaxClipSec), activeVideo.providerId);
-              const videoDurationSec = allowedDuration || (mode === "deep" ? Math.min(targetSec, 12) : Math.min(targetSec, 8));
-              const beatInterval = Math.max(3, Math.floor(videoDurationSec / Math.max(1, currentStoryboard.length)));
-              const sceneDescriptions = currentStoryboard
-                .map((s, i) => {
-                  const startSec = i * beatInterval;
-                  const endSec = (i + 1) * beatInterval;
-                  const timeStr = `${startSec}-${endSec}s:`;
-                  const actionStr = s.primaryChange || s.visualDescription || s.startState || "Action beat";
-                  const cameraStr = s.cameraDirection || (mode === "deep" ? "Slow motivated push-in tracking shot" : "Host-on-camera medium frame");
-                  const spoken = s.spokenLines || s.scriptSnippet || "";
-                  const dialogueStr = spoken ? ` "${spoken.replace(/"/g, "'")}"` : "";
-                  return `${timeStr} ACTION: ${actionStr}. CAMERA: ${cameraStr}.${dialogueStr}`;
-                })
-                .join("\n");
 
-              const masterMotionVisualLock = buildVisualLockRefs({
-                character,
-                storyboardGridUrl: realGridUrl,
-                sceneKeyframeUrl: sceneImages[0] || currentStoryboard[0]?.image,
-                previousLastFrameUrl: sceneImages[1] || currentStoryboard[1]?.image,
-              });
+              const currentPct = 80 + Math.round(((tIdx + 1) / totalTakes) * 15);
+              emitProgress(currentPct, "Video", `Rendered Take ${tIdx + 1} of ${totalTakes} video motion...`);
+              void persistCurrentStage(`Take-Video-${tIdx + 1}`);
+            }
 
-              const motionRefImages = masterMotionVisualLock.imageUrls;
-              const masterMotionPrompt = `
-${masterMotionVisualLock.refPromptHeader}
-${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
-`.trim();
+            // MERGE TAKE CLIPS INTO ONE PLAYABLE MASTER VIDEO
+            const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
+            const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
+            const targetMergeTexts = currentStoryboard.map((s, idx) => {
+              const primaryOnScreen = s.onScreenText;
+              if (primaryOnScreen) {
+                const formatted = formatBurnedOnScreenText(primaryOnScreen);
+                if (formatted) return formatted;
+              }
+              const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+              if (beatOnScreen) {
+                const formatted = formatBurnedOnScreenText(beatOnScreen);
+                if (formatted) return formatted;
+              }
+              if (idx === 0 && brief.hook) {
+                return formatBurnedOnScreenText(brief.hook);
+              }
+              return "";
+            });
 
-              console.log(`[SPARK Pipeline] Provider Request: Master Video via ModelRouter ("videoGeneration") [Refs: ${motionRefImages.length}, Duration: ${videoDurationSec}s]...`);
-              emitProgress(85, "Video", `Synthesizing master ${mode.toUpperCase()} video from keyframes...`);
+            if (takeClips.length > 1) {
+              emitProgress(95, "Merge", `Merging ${takeClips.length} approved take videos into master MP4...`);
+              try {
+                const { mergeSceneVideos } = await import("./sceneVideoMerger");
+                const mergeResult = await withTimeout(
+                  mergeSceneVideos({
+                    videoUrls: takeClips,
+                    audioUrl: mergeAudioUrl,
+                    onScreenTexts: targetMergeTexts,
+                    width: aspectRatio === "16:9" ? 1920 : 1080,
+                    height: aspectRatio === "16:9" ? 1080 : 1920,
+                  }),
+                  60000,
+                  "Automatic take video merge timed out after 60s",
+                  signal
+                );
 
-              checkAborted();
-              const generatedMaster = await withTimeout(
-                ModelRouter.executeCategoryRequest("videoGeneration", {
-                  prompt: masterMotionPrompt,
-                  referenceImageUrl: masterMotionVisualLock.primaryRefUrl,
-                  referenceImageUrls: motionRefImages,
-                  aspectRatio: identityPack.aspectRatio,
-                  durationSec: videoDurationSec,
-                }),
-                90000,
-                "Master video generation timed out after 90s",
-                signal
-              );
-              checkAborted();
-
-              if (isValidMediaData(generatedMaster)) {
-                let finalMasterUrl: string | undefined = undefined;
+                if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
+                  const ext = mergeResult.extension || "mp4";
+                  const storedMergedVid = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "video",
+                    storagePath: getStoragePath(`video/master.${ext}`),
+                    dataUrlOrBlob: mergeResult.blob,
+                    mimeType: mergeResult.mimeType || `video/${ext}`,
+                    prompt: `Merged ${mode} master video from ${takeClips.length} takes`,
+                    provider: "SceneVideoMerger",
+                  });
+                  if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
+                    realVideoUrl = storedMergedVid.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Merged Master Video (${takeClips.length} takes) -> ${realVideoUrl}`);
+                  } else {
+                    realVideoUrl = undefined;
+                    lastError = "Merged video upload failed to return a verified durable Storage URL.";
+                  }
+                } else {
+                  realVideoUrl = undefined;
+                  lastError = "Automatic take video merger produced an empty video blob.";
+                }
+              } catch (mergeErr: any) {
+                console.warn("[SPARK Pipeline] Automatic take merge execution notice:", mergeErr);
+                realVideoUrl = undefined;
+                lastError = `Automatic take merge failed: ${mergeErr?.message || String(mergeErr)}`;
+              }
+            } else if (takeClips.length === 1) {
+              if (isDurableMasterVideoReady(takeClips[0])) {
+                realVideoUrl = takeClips[0];
+              } else {
                 try {
-                  const storedVid = await this.uploadAssetToStorage({
+                  const storedSingle = await this.uploadAssetToStorage({
                     productionId: production.id,
                     brandId: (brand as any).id,
                     assetType: "video",
                     storagePath: getStoragePath("video/master.mp4"),
-                    dataUrlOrBlob: generatedMaster,
+                    dataUrlOrBlob: takeClips[0],
                     mimeType: "video/mp4",
-                    prompt: masterMotionPrompt,
+                    prompt: `Master video from single take clip (${mode})`,
                     provider: "ModelRouter",
                   });
-                  if (storedVid?.publicUrl && isDurableMasterVideoReady(storedVid.publicUrl)) {
-                    finalMasterUrl = storedVid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
+                  if (storedSingle?.publicUrl && isDurableMasterVideoReady(storedSingle.publicUrl)) {
+                    realVideoUrl = storedSingle.publicUrl;
                   }
-                } catch (storageErr: any) {
-                  console.warn("[SPARK Pipeline] Master video storage upload failed:", storageErr);
-                  lastError = `Master video storage upload failed: ${storageErr?.message || String(storageErr)}`;
-                }
-
-                // If direct upload failed or returned non-durable, try refetch from Storage before giving up
-                if (!finalMasterUrl) {
-                  const refetched = await ProductionAssetService.refetchVideoFromStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                  });
-                  if (refetched.videoUrl && isDurableMasterVideoReady(refetched.videoUrl)) {
-                    finalMasterUrl = refetched.videoUrl;
-                  }
-                }
-
-                if (finalMasterUrl && isDurableMasterVideoReady(finalMasterUrl)) {
-                  realVideoUrl = finalMasterUrl;
-                } else {
-                  realVideoUrl = undefined;
-                  if (!lastError) {
-                    lastError = "AI video generated but failed to persist to permanent Supabase Storage.";
-                  }
+                } catch (singleErr: any) {
+                  console.warn("[SPARK Pipeline] Single take master storage upload notice:", singleErr);
                 }
               }
             }
