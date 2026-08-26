@@ -403,15 +403,39 @@ export class AIProviderOrchestrator {
                   ? [options.referenceImageUrl]
                   : [];
 
+                const inlineParts: { data: string; mimeType: string }[] = [];
+                for (const ref of refList) {
+                  if (ref && ref.startsWith("data:")) {
+                    const [mimePart, b64Part] = ref.split(";base64,");
+                    const mimeType = mimePart.replace("data:", "") || "image/png";
+                    inlineParts.push({ data: b64Part, mimeType });
+                  } else if (ref && (ref.startsWith("http://") || ref.startsWith("https://"))) {
+                    try {
+                      const resp = await fetch(ref);
+                      if (resp.ok) {
+                        const buf = await resp.arrayBuffer();
+                        const bytes = new Uint8Array(buf);
+                        let binary = "";
+                        const chunkSize = 8192;
+                        for (let i = 0; i < bytes.length; i += chunkSize) {
+                          const chunk = bytes.subarray(i, i + chunkSize);
+                          binary += String.fromCharCode.apply(null, chunk as any);
+                        }
+                        const b64 = btoa(binary);
+                        const mimeType = resp.headers.get("content-type") || "image/png";
+                        inlineParts.push({ data: b64, mimeType });
+                      }
+                    } catch (fErr) {
+                      console.warn("[Gemini Provider] Reference image fetch notice:", fErr);
+                    }
+                  }
+                }
+
                 for (const modelId of candidateNativeModels) {
                   try {
                     const sdkParts: any[] = [];
-                    for (const ref of refList) {
-                      if (ref && ref.startsWith("data:")) {
-                        const [mimePart, b64Part] = ref.split(";base64,");
-                        const mimeType = mimePart.replace("data:", "") || "image/png";
-                        sdkParts.push({ inlineData: { data: b64Part, mimeType } });
-                      }
+                    for (const p of inlineParts) {
+                      sdkParts.push({ inlineData: { data: p.data, mimeType: p.mimeType } });
                     }
                     sdkParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
 
@@ -449,15 +473,39 @@ export class AIProviderOrchestrator {
               ? [options.referenceImageUrl]
               : [];
 
+            const restInlineParts: { data: string; mimeType: string }[] = [];
+            for (const ref of refList) {
+              if (ref && ref.startsWith("data:")) {
+                const [mimePart, b64Part] = ref.split(";base64,");
+                const mimeType = mimePart.replace("data:", "") || "image/png";
+                restInlineParts.push({ data: b64Part, mimeType });
+              } else if (ref && (ref.startsWith("http://") || ref.startsWith("https://"))) {
+                try {
+                  const resp = await fetch(ref);
+                  if (resp.ok) {
+                    const buf = await resp.arrayBuffer();
+                    const bytes = new Uint8Array(buf);
+                    let binary = "";
+                    const chunkSize = 8192;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                      const chunk = bytes.subarray(i, i + chunkSize);
+                      binary += String.fromCharCode.apply(null, chunk as any);
+                    }
+                    const b64 = btoa(binary);
+                    const mimeType = resp.headers.get("content-type") || "image/png";
+                    restInlineParts.push({ data: b64, mimeType });
+                  }
+                } catch (fErr) {
+                  console.warn("[Gemini Provider] REST reference image fetch notice:", fErr);
+                }
+              }
+            }
+
             for (const modelId of candidateNativeModels) {
               try {
                 const restParts: any[] = [];
-                for (const ref of refList) {
-                  if (ref && ref.startsWith("data:")) {
-                    const [mimePart, b64Part] = ref.split(";base64,");
-                    const mimeType = mimePart.replace("data:", "") || "image/png";
-                    restParts.push({ inline_data: { data: b64Part, mime_type: mimeType } });
-                  }
+                for (const p of restInlineParts) {
+                  restParts.push({ inline_data: { data: p.data, mime_type: p.mimeType } });
                 }
                 restParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
 
@@ -1014,8 +1062,8 @@ export class AIProviderOrchestrator {
             n: 1,
             response_format: "b64_json",
           };
-          if (options.referenceImageUrl) {
-            grokImagePayload.image_url = options.referenceImageUrl;
+          if (options.referenceImageUrl || options.referenceImageUrls?.length) {
+            grokImagePayload.image_url = options.referenceImageUrl || options.referenceImageUrls?.[0];
           }
 
           // 1. Direct call
@@ -1111,8 +1159,8 @@ export class AIProviderOrchestrator {
               prompt: options.prompt,
               aspect_ratio: targetAspect,
             };
-            if (options.referenceImageUrl) {
-              grokVideoPayload.image_url = options.referenceImageUrl;
+            if (options.referenceImageUrl || options.referenceImageUrls?.length) {
+              grokVideoPayload.image_url = options.referenceImageUrl || options.referenceImageUrls?.[0];
               console.log(`[Grok Provider] Conditioning Grok video generation on scene still reference`);
             }
 
