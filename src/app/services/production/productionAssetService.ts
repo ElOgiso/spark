@@ -1474,6 +1474,22 @@ No resets, no new character, no scrambled order.
               // MERGE SCENE CLIPS INTO ONE PLAYABLE MASTER VIDEO
               const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
               const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
+              const targetMergeTexts = currentStoryboard.map((s, idx) => {
+                const primaryOnScreen = s.onScreenText;
+                if (primaryOnScreen) {
+                  const formatted = formatBurnedOnScreenText(primaryOnScreen);
+                  if (formatted) return formatted;
+                }
+                const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+                if (beatOnScreen) {
+                  const formatted = formatBurnedOnScreenText(beatOnScreen);
+                  if (formatted) return formatted;
+                }
+                if (idx === 0 && brief.hook) {
+                  return formatBurnedOnScreenText(brief.hook);
+                }
+                return "";
+              });
 
               if (sceneClips.length > 1) {
                 emitProgress(95, "Merge", `Merging ${sceneClips.length} approved scene videos into master MP4...`);
@@ -1482,6 +1498,7 @@ No resets, no new character, no scrambled order.
                   const mergeResult = await mergeSceneVideos({
                     videoUrls: sceneClips,
                     audioUrl: mergeAudioUrl,
+                    onScreenTexts: targetMergeTexts,
                     width: aspectRatio === "16:9" ? 1920 : 1080,
                     height: aspectRatio === "16:9" ? 1080 : 1920,
                   });
@@ -2117,12 +2134,29 @@ Apply revision while maintaining 100% subject identity and set continuity.
 
     const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
     const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
+    const targetMergeTexts = scenes.map((s, idx) => {
+      const primaryOnScreen = s.onScreenText;
+      if (primaryOnScreen) {
+        const formatted = formatBurnedOnScreenText(primaryOnScreen);
+        if (formatted) return formatted;
+      }
+      const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+      if (beatOnScreen) {
+        const formatted = formatBurnedOnScreenText(beatOnScreen);
+        if (formatted) return formatted;
+      }
+      if (idx === 0 && brief.hook) {
+        return formatBurnedOnScreenText(brief.hook);
+      }
+      return "";
+    });
 
     try {
       const { mergeSceneVideos } = await import("./sceneVideoMerger");
       const mergeResult = await mergeSceneVideos({
         videoUrls: readyClips,
         audioUrl: mergeAudioUrl,
+        onScreenTexts: targetMergeTexts,
       });
 
       if (!mergeResult || !mergeResult.blob || mergeResult.blob.size === 0) {

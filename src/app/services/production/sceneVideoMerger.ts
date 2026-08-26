@@ -7,6 +7,7 @@
 export interface MergeSceneVideosOptions {
   videoUrls: string[];
   audioUrl?: string;
+  onScreenTexts?: string[];
   width?: number;
   height?: number;
 }
@@ -69,7 +70,7 @@ async function fetchVideoAsObjectUrl(url: string): Promise<{ video: HTMLVideoEle
 export async function mergeSceneVideos(
   options: MergeSceneVideosOptions
 ): Promise<SceneMergeResult | null> {
-  const { videoUrls, audioUrl, width = 1080, height = 1920 } = options;
+  const { videoUrls, audioUrl, onScreenTexts, width = 1080, height = 1920 } = options;
 
   const validUrls = videoUrls.filter((u) => typeof u === "string" && u.trim().length > 5);
   if (validUrls.length === 0) return null;
@@ -132,7 +133,8 @@ export async function mergeSceneVideos(
 
     // Render scenes sequentially onto canvas
     let totalDuration = 0;
-    for (const { video } of loadedVideos) {
+    for (let vIdx = 0; vIdx < loadedVideos.length; vIdx++) {
+      const { video } = loadedVideos[vIdx];
       const sceneDuration = video.duration && !isNaN(video.duration) ? video.duration : 8;
       totalDuration += sceneDuration;
 
@@ -141,6 +143,7 @@ export async function mergeSceneVideos(
 
       const startTime = performance.now();
       const targetTimeMs = sceneDuration * 1000;
+      const currentCaption = onScreenTexts && onScreenTexts[vIdx] ? onScreenTexts[vIdx].trim() : "";
 
       while (performance.now() - startTime < targetTimeMs) {
         ctx.fillStyle = "#0B0F17";
@@ -163,6 +166,68 @@ export async function mergeSceneVideos(
         }
 
         ctx.drawImage(video, dx, dy, dWidth, dHeight);
+
+        // Burn lower-third on-screen text overlay
+        if (currentCaption) {
+          const fontSize = Math.round(width * 0.038);
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          const maxWidth = width * 0.82;
+          const words = currentCaption.split(" ");
+          const lines: string[] = [];
+          let currentLine = "";
+
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const testWidth = ctx.measureText(testLine).width;
+            if (testWidth > maxWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine) lines.push(currentLine);
+
+          const paddingX = Math.round(width * 0.035);
+          const paddingY = Math.round(height * 0.012);
+          const lineHeight = fontSize * 1.35;
+          const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+          const boxWidth = Math.min(width * 0.88, maxLineWidth + paddingX * 2);
+          const boxHeight = lines.length * lineHeight + paddingY * 2;
+          const boxX = (width - boxWidth) / 2;
+          const boxY = height * 0.80 - boxHeight / 2;
+
+          ctx.fillStyle = "rgba(11, 15, 23, 0.82)";
+          ctx.beginPath();
+          const radius = 14;
+          if (typeof ctx.roundRect === "function") {
+            ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+          } else {
+            ctx.rect(boxX, boxY, boxWidth, boxHeight);
+          }
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetY = 2;
+
+          lines.forEach((line, lIdx) => {
+            const lineY = boxY + paddingY + (lIdx + 0.5) * lineHeight;
+            ctx.fillText(line, width / 2, lineY);
+          });
+
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+        }
+
         await new Promise((r) => setTimeout(r, 33));
       }
 
