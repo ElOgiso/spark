@@ -18,6 +18,7 @@ import {
   Film,
 } from "lucide-react";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
+import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -329,9 +330,17 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             title={proposal.title} 
             scenes={proposal.storyboard} 
             durationText="3:20"
-            videoUrl={activeProd?.videoUrl || item?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
+            videoUrl={
+              isDurableMasterVideoReady(activeProd?.videoUrl)
+                ? activeProd?.videoUrl
+                : isDurableMasterVideoReady(item?.videoUrl)
+                ? item?.videoUrl
+                : isDurableMasterVideoReady(brief?.videoUrl)
+                ? brief?.videoUrl
+                : undefined
+            }
             audioUrl={
-              !hasPlayableVideo
+              !isDurableMasterVideoReady(activeProd?.videoUrl) && !isDurableMasterVideoReady(item?.videoUrl) && !isDurableMasterVideoReady(brief?.videoUrl)
                 ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])
                 : undefined
             }

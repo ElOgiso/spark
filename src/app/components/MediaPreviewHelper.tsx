@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
-import { extractSparkStoragePath, ProductionAssetService } from "../services/production/productionAssetService";
+import { extractSparkStoragePath, ProductionAssetService, isDurableMasterVideoReady } from "../services/production/productionAssetService";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -305,10 +305,16 @@ export function InteractiveVideoPlayer({
   const totalSeconds = duration || 60;
   const progressPercent = totalSeconds > 0 ? (currentTime / totalSeconds) * 100 : 0;
 
-  const activeSceneIndex = Math.min(
-    Math.floor((currentTime / Math.max(totalSeconds, 1)) * (scenes.length || 1)),
-    (scenes.length || 1) - 1
-  );
+  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number | null>(null);
+
+  const isMasterMerged = Boolean(videoUrl && isDurableMasterVideoReady(videoUrl));
+
+  const activeSceneIndex = !isMasterMerged && selectedSceneIndex !== null
+    ? selectedSceneIndex
+    : Math.min(
+        Math.floor((currentTime / Math.max(totalSeconds, 1)) * (scenes.length || 1)),
+        (scenes.length || 1) - 1
+      );
 
   const activeScene = scenes[activeSceneIndex] || {
     scene: 1,
@@ -316,8 +322,11 @@ export function InteractiveVideoPlayer({
     duration: "0–10s"
   };
 
-  const activeVideoUrl = activeScene.videoUrl || videoUrl || scenes.find((s) => Boolean(s.videoUrl))?.videoUrl;
-  const activeImageUrl = activeScene.image || scenes.find((s) => Boolean(s.image))?.image || scenes[0]?.image;
+  // Review player rule:
+  // Before merge: play the SELECTED scene clip (or still).
+  // After merge: play production.videoUrl master.
+  const activeVideoUrl = isMasterMerged ? videoUrl : (activeScene.videoUrl || undefined);
+  const activeImageUrl = isMasterMerged ? undefined : (activeScene.image || scenes.find((s) => Boolean(s.image))?.image || scenes[0]?.image);
 
   const togglePlay = () => {
     setIsPlaying(prev => !prev);
@@ -632,8 +641,13 @@ export function InteractiveVideoPlayer({
               <button
                 key={scene.scene}
                 onClick={() => {
-                  const chunk = totalSeconds / (scenes.length || 1);
-                  handleSeek(Math.floor(index * chunk + 0.5));
+                  setSelectedSceneIndex(index);
+                  if (isMasterMerged) {
+                    const chunk = totalSeconds / (scenes.length || 1);
+                    handleSeek(Math.floor(index * chunk + 0.5));
+                  } else {
+                    handleSeek(0);
+                  }
                   setIsPlaying(true);
                 }}
                 className={`w-full text-left p-2.5 rounded-lg border transition-all ${

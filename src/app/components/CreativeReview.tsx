@@ -28,7 +28,7 @@ import {
   Film,
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
-import { isPlayableVideoUrl } from "../services/production/productionAssetService";
+import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -585,10 +585,10 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 scenes={proposal.storyboard} 
                 durationText="3:20"
                 videoUrl={
-                  [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl, brief?.generatedAssets?.generatedVideos?.[0]].find((u) => isPlayableVideoUrl(u))
+                  [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].find((u) => isDurableMasterVideoReady(u))
                 }
                 audioUrl={
-                  ![activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl, brief?.generatedAssets?.generatedVideos?.[0]].some((u) => isPlayableVideoUrl(u))
+                  ![activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].some((u) => isDurableMasterVideoReady(u))
                     ? (activeProd?.audioUrl || activeReview?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.generatedAudio?.[0])
                     : undefined
                 }

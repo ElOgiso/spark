@@ -1541,7 +1541,9 @@ CRITICAL PRODUCTION LAWS:
                   s.videoUrl = finalClip;
                   currentStoryboard[sIdx] = { ...s, videoUrl: finalClip, lastFrameUrl: s.lastFrameUrl };
                   sceneClips.push(finalClip);
-                  if (sIdx === 0) realVideoUrl = finalClip;
+                  if (sIdx === 0 && (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false && currentStoryboard.length === 1) {
+                    realVideoUrl = finalClip;
+                  }
                 } else {
                   console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generatedClip || "").slice(0, 100));
                   if (!lastError) lastError = `Scene ${globalSceneNum} Video: Provider returned empty data`;
@@ -1558,8 +1560,8 @@ CRITICAL PRODUCTION LAWS:
             }
 
             // Gated merge policy:
-            // "Merge: do not auto-concat during generate if review_required. Leave scene clips. Master after Approve & merge (existing gallery action). If you must keep auto-merge for autonomous mode only, gate on automationMode."
-            const isAutonomous = (brand as any)?.automation_mode === "autonomous" || !(brand as any)?.review_required;
+            // "Do NOT call merge/compile-of-clips in generateAssets when brand.review_required !== false. Autonomous only: keep auto-merge."
+            const isAutonomous = (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false;
 
             if (isAutonomous && sceneClips.length > 1) {
               emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4 (autonomous mode)...`);
@@ -1617,11 +1619,10 @@ CRITICAL PRODUCTION LAWS:
               } catch (mergeErr: any) {
                 console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
               }
+            } else if (isAutonomous && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+              realVideoUrl = sceneClips[0];
             } else if (sceneClips.length > 0) {
-              console.log(`[SPARK Pipeline] Review Required / Manual workflow: Retaining ${sceneClips.length} distinct scene video clips for executive scene review.`);
-              if (sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
-                realVideoUrl = sceneClips[0];
-              }
+              console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clips. Master video merge gated on executive 'Approve & merge'.`);
             }
           }
         } catch (vidErr: any) {
@@ -1632,9 +1633,13 @@ CRITICAL PRODUCTION LAWS:
       }
 
       checkAborted();
-      const isVideoSuccess = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
+      const isVideoSuccess = mode === "express"
+        ? Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
+        : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
       if (!isVideoSuccess && !lastError) {
-        lastError = "Video synthesis completed but did not produce a verified durable video in Storage.";
+        lastError = mode === "express"
+          ? "Narrator video synthesis completed but did not produce a verified durable video in Storage."
+          : "Scene video synthesis completed but did not produce verified scene clips in Storage.";
       }
 
       stages[3].status = isVideoSuccess ? "done" : "failed";
@@ -1803,6 +1808,7 @@ Brand: ${brand.name}
       brief.generatedAssets.thumbnails = enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails;
 
       const isExpressNarrator = mode === "express";
+      const isAutonomous = (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false;
       if (isExpressNarrator) {
         if (!realVoiceUrl) {
           lastError = lastError || "Voiceover generation failed or audio was missing for Narrator mode.";
@@ -1824,14 +1830,18 @@ Brand: ${brand.name}
           ? (hasDurableMaster && realVoiceUrl && isValidMediaData(realVoiceUrl))
           : (hasDurableSceneClips || hasDurableMaster)
       );
-      const finalStatus = isOverallSuccess ? "Completed" : "Failed";
+      const finalStatus = isOverallSuccess
+        ? (isExpressNarrator || isAutonomous ? "Completed" : "Ready for Review")
+        : "Failed";
       if (!isOverallSuccess && !lastError) {
         lastError = isExpressNarrator
           ? "Narrator slideshow compilation failed to produce a verified durable video in Storage."
           : "Video generation failed to produce verified scene video clips in permanent Storage.";
       }
       const finalMsg = isOverallSuccess
-        ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
+        ? (isExpressNarrator || isAutonomous
+            ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
+            : `${mode.toUpperCase()} ${sceneClips.length} scene clips synthesized. Ready for shot review and executive merge.`)
         : lastError;
 
       stages[5].status = isOverallSuccess ? "done" : "failed";
@@ -1915,7 +1925,7 @@ Brand: ${brand.name}
         const sceneStillUrl = sb.image || sceneImages[idx] || realGridUrl;
         const sceneClipUrl = isExpress
           ? (realVideoUrl || sb.videoUrl)
-          : (sb.videoUrl || sceneClips[idx] || (idx === 0 ? realVideoUrl : undefined));
+          : (sb.videoUrl || sceneClips[idx]);
         return {
           scene: sb.scene || idx + 1,
           index: sb.scene || idx + 1,
@@ -1943,7 +1953,7 @@ Brand: ${brand.name}
           keyframeImageUrl: sceneStillUrl,
           lastFrameUrl: sb.lastFrameUrl || currentStoryboard[idx]?.lastFrameUrl,
           videoUrl: sceneClipUrl,
-          status: (sceneClipUrl || (idx === 0 && realVideoUrl)) ? "ready" : sceneStillUrl ? "ready" : "pending",
+          status: sceneClipUrl ? "ready" : sceneStillUrl ? "ready" : "pending",
           createdAt: renderStartedAt,
           updatedAt: renderCompletedAt,
         };
@@ -2290,10 +2300,23 @@ Apply revision while maintaining 100% subject identity and set continuity.
   }): Promise<string | null> {
     const { productionId, production, brand } = params;
     const brief = production.brief || ({} as ProductionBrief);
-    const scenes = production.productionScenes || [];
+    const scenes = (production.productionScenes && production.productionScenes.length > 0)
+      ? production.productionScenes
+      : (brief.storyboard || []).map((sb, idx) => ({
+          scene: sb.scene || idx + 1,
+          index: sb.scene || idx + 1,
+          id: `scene-${productionId}-${sb.scene || idx + 1}`,
+          productionId,
+          duration: sb.duration || "5s",
+          durationSec: parseInt(sb.duration) || 5,
+          onScreenText: sb.onScreenText,
+          audio: sb.audio,
+          videoUrl: sb.videoUrl,
+          status: sb.videoUrl ? "ready" : "pending",
+        })) as any[];
 
     const readyClips = scenes
-      .filter((s) => (s.status === "ready" || s.status === "approved") && s.videoUrl)
+      .filter((s) => s.videoUrl && isPlayableVideoUrl(s.videoUrl))
       .sort((a, b) => (a.index || a.scene) - (b.index || b.scene))
       .map((s) => s.videoUrl!);
 

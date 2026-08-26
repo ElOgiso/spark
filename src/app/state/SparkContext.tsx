@@ -1852,25 +1852,31 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       if (masterUrl) {
+        const updatedProd = {
+          ...prod,
+          videoUrl: masterUrl,
+          status: "Ready for Review",
+          brief: {
+            ...(prod.brief || {}),
+            videoUrl: masterUrl,
+            generatedAssets: {
+              ...(prod.brief?.generatedAssets || {}),
+              generatedVideos: [masterUrl],
+            },
+          },
+        };
+
         setState((prev: any) => ({
           ...prev,
-          productions: prev.productions.map((p: any) => {
-            if (p.id !== productionId) return p;
-            return {
-              ...p,
-              videoUrl: masterUrl,
-              status: "Ready for Review",
-              brief: {
-                ...(p.brief || {}),
-                videoUrl: masterUrl,
-                generatedAssets: {
-                  ...(p.brief?.generatedAssets || {}),
-                  generatedVideos: [masterUrl],
-                },
-              },
-            };
-          }),
+          productions: prev.productions.map((p: any) => (p.id === productionId ? updatedProd : p)),
         }));
+
+        const bId = getBrandWorkspaceId();
+        if (isSupabaseConfigured() && bId) {
+          void import("../backend/workspaceSync").then(({ persistProductionUpdate }) => {
+            void persistProductionUpdate(bId, updatedProd as any);
+          });
+        }
       }
       return masterUrl;
     },
