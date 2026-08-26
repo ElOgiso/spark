@@ -39,6 +39,22 @@ export function normalizeModeString(rawMode?: string | null): ResolvedMode | und
   return undefined;
 }
 
+/**
+ * Returns the executive-facing Notion mode label: "Narrator" | "Hybrid" | "Cinematic"
+ */
+export function getNotionModeLabel(rawMode?: string | null): "Narrator" | "Hybrid" | "Cinematic" {
+  const resolved = normalizeModeString(rawMode) || "standard";
+  switch (resolved) {
+    case "express":
+      return "Narrator";
+    case "deep":
+      return "Cinematic";
+    case "standard":
+    default:
+      return "Hybrid";
+  }
+}
+
 export interface ModeResolutionParams {
   modeOverride?: string;
   production?: Production;

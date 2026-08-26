@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
 import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
+import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -255,7 +256,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
   const proposal = {
     title: asText(brief?.title || activeProd?.title || activeReview?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
-    contentType: brief?.productionMode ? `${asText(brief.productionMode)} Production` : "Educational Short",
+    contentType: `${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)} Production`,
     series: asText(activeReview?.series, "Viral Concept Series"),
     account: asText(brief?.platformRecommendation || activeReview?.account, "YouTube Shorts"),
     opportunityScore: brief?.brandFitScore || 94,
@@ -263,7 +264,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText, "Reveal proven viral tactics adapted to brand identity"),
     targetAudience: asText(activeProd?.reasoning?.research?.audience, "Target Audience & Brand Followers"),
     expectedReach: "2.4M – 3.8M views",
-    format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${asText(brief?.productionMode, "Narrator")})`,
+    format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)})`,
     platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
     hook: asText(brief?.hook || activeReview?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
     hookType: "High-curiosity gap angle",

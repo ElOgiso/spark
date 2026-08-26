@@ -10,6 +10,7 @@ import {
   Flame, Zap, TrendingUp, Users, Clock, X, CheckCircle2,
   Loader2, AlertTriangle, ArrowRight, Shield, Sparkles,
 } from "lucide-react";
+import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 
 interface ViralSparksProps {
   onNavigate: (path: string) => void;
@@ -222,7 +223,7 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
                   </div>
                   <div className="p-3 rounded-xl bg-background border border-border">
                     <p className="text-xs text-muted-foreground mb-1">Suggested Production Mode</p>
-                    <p className="text-sm font-medium">{spark.suggestedProductionMode}</p>
+                    <p className="text-sm font-medium">{getNotionModeLabel(spark.suggestedProductionMode)}</p>
                   </div>
                   <div className="p-3 rounded-xl bg-background border border-border">
                     <p className="text-xs text-muted-foreground mb-2">Platform Fit</p>
@@ -319,7 +320,7 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
     timeWindow: v.timeWindow,
     expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
     difficulty: v.difficulty || "Medium",
-    suggestedProductionMode: v.suggestedProductionMode || "Autonomous Draft",
+    suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
   }));
 
   const createdSparks = new Set<string>(

@@ -4,8 +4,8 @@
  */
 
 export type Tab = 'spark' | 'my-spark' | 'viral-sparks' | 'review' | 'calendar' | 'analytics' | 'more';
-export type ProductionMode = 'Auto-Pilot' | 'Co-Pilot' | 'Draft Only';
-export type AutomationMode = 'Full' | 'Approve Actions' | 'Manual';
+export type ProductionMode = 'Narrator' | 'Hybrid' | 'Cinematic' | 'express' | 'standard' | 'deep';
+export type AutomationMode = 'manual' | 'balanced' | 'autonomous' | 'Full' | 'Approve Actions' | 'Manual';
 
 export interface Brand {
   id: string;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { Flame, TrendingUp, Zap, Users, Clock, CheckCircle2, Loader2, X, Shield, Sparkles, ArrowRight } from "lucide-react";
+import { getNotionModeLabel } from "../../services/production/resolveProductionMode";
 
 type FilterTab = "all" | "hot" | "rising" | "niche";
 type DrawerState = "idle" | "creating" | "created";
@@ -54,7 +55,7 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
     timeWindow: v.timeWindow,
     expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
     difficulty: v.difficulty || "Medium",
-    suggestedProductionMode: v.suggestedProductionMode || "Autonomous Draft",
+    suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
   }));
   const [selectedSpark, setSelectedSpark] = useState<MobileSpark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
@@ -358,7 +359,7 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                   {/* Suggested Production Mode */}
                   <div className="p-3.5 rounded-xl bg-background border border-border">
                     <p className="text-xs text-muted-foreground mb-1">Suggested Production Mode</p>
-                    <p className="text-sm font-medium">{selectedSpark.suggestedProductionMode}</p>
+                    <p className="text-sm font-medium">{getNotionModeLabel(selectedSpark.suggestedProductionMode)}</p>
                   </div>
 
                   {/* Platforms */}

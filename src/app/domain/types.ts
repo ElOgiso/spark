@@ -51,7 +51,7 @@ export interface Character {
 }
 
 export type AutomationMode = "manual" | "balanced" | "autonomous";
-export type ProductionMode = "express" | "standard" | "deep";
+export type ProductionMode = "express" | "standard" | "deep" | "narrator" | "hybrid" | "cinematic" | "Narrator" | "Hybrid" | "Cinematic";
 
 export interface Account {
   platform: string;

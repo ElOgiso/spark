@@ -646,7 +646,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                     { id: "standard" as const, label: "Hybrid", desc: "Animated hook + narrator pipeline", time: "6–12 hours" },
                     { id: "deep" as const, label: "Cinematic", desc: "Storyboard + video generation + consistency + voice + audio", time: "24–48 hours" },
                   ].map((m) => {
-                    const isActive = spark.productionMode === m.id;
+                    const isActive = spark.productionMode === m.id || (m.id === "express" && spark.productionMode === "narrator") || (m.id === "standard" && spark.productionMode === "hybrid") || (m.id === "deep" && spark.productionMode === "cinematic");
                     return (
                       <button
                         key={m.id}

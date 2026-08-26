@@ -934,7 +934,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
               <div className="grid grid-cols-3 gap-3">
                 {(["express", "standard", "deep"] as const).map((mode) => {
                   const cfg = productionConfig[mode];
-                  const isActive = productionMode === mode;
+                  const isActive = productionMode === mode || (mode === "express" && productionMode === "narrator") || (mode === "standard" && productionMode === "hybrid") || (mode === "deep" && productionMode === "cinematic");
                   return (
                     <button
                       key={mode}
