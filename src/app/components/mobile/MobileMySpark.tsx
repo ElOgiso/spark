@@ -52,6 +52,7 @@ import {
   seedDefaultAudience,
 } from "../../domain/brandOptions";
 import { normalizeHandle } from "../../domain/accountUtils";
+import { VIDEO_LENGTH_OPTIONS } from "../../domain/types";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -800,16 +801,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               </span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { sec: 15, label: "15s" },
-                { sec: 30, label: "30s" },
-                { sec: 60, label: "1m" },
-                { sec: 180, label: "3m" },
-                { sec: 300, label: "5m" },
-                { sec: 600, label: "10m" },
-                { sec: 900, label: "15m" },
-                { sec: 1800, label: "30m" },
-              ].map((dur) => {
+              {VIDEO_LENGTH_OPTIONS.map((dur) => {
                 const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
                 return (
                   <button

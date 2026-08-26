@@ -675,14 +675,67 @@ export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
   preferredVideoProvider: "auto",
 };
 
+export interface VideoLengthOption {
+  sec: number;
+  label: string;
+  desc?: string;
+}
+
+export const VIDEO_LENGTH_OPTIONS: VideoLengthOption[] = [
+  { sec: 15, label: "15s", desc: "Fast Hook" },
+  { sec: 30, label: "30s", desc: "Shorts / Reel" },
+  { sec: 60, label: "1m", desc: "Standard Short" },
+  { sec: 180, label: "3m", desc: "Deep Dive" },
+  { sec: 300, label: "5m", desc: "Explainer" },
+  { sec: 600, label: "10m", desc: "Featurette" },
+  { sec: 900, label: "15m", desc: "Broadcast" },
+  { sec: 1200, label: "20m", desc: "Mini-Doc" },
+  { sec: 1800, label: "30m", desc: "Full Episode" },
+  { sec: 2700, label: "45m", desc: "Documentary" },
+  { sec: 3600, label: "60m", desc: "Masterclass" },
+];
+
 export function getEffectiveFormatSettings(source?: any): ProductionFormatSettings {
   if (!source) return { ...DEFAULT_FORMAT_SETTINGS };
   const direct = source?.formatSettings || (typeof source?.targetDurationSec === "number" ? source : undefined);
   const brandSettings = source?.brand?.formatSettings;
+
+  let localCacheSettings: Partial<ProductionFormatSettings> | undefined = undefined;
+  if (typeof localStorage !== "undefined") {
+    const brandId = source?.brand?.id || source?.id || (typeof source === "string" ? source : undefined);
+    if (brandId) {
+      try {
+        const cached = localStorage.getItem(`spark_format_settings_${brandId}`);
+        if (cached) localCacheSettings = JSON.parse(cached);
+      } catch {}
+    }
+  }
+
+  const rawTargetDuration =
+    (typeof direct?.targetDurationSec === "number" ? direct.targetDurationSec : undefined) ??
+    (typeof brandSettings?.targetDurationSec === "number" ? brandSettings.targetDurationSec : undefined) ??
+    (typeof localCacheSettings?.targetDurationSec === "number" ? localCacheSettings.targetDurationSec : undefined) ??
+    DEFAULT_FORMAT_SETTINGS.targetDurationSec;
+
+  const rawAspect =
+    direct?.aspectMode ||
+    brandSettings?.aspectMode ||
+    localCacheSettings?.aspectMode ||
+    DEFAULT_FORMAT_SETTINGS.aspectMode;
+
+  const rawPreferredProvider =
+    direct?.preferredVideoProvider ||
+    brandSettings?.preferredVideoProvider ||
+    localCacheSettings?.preferredVideoProvider ||
+    DEFAULT_FORMAT_SETTINGS.preferredVideoProvider;
+
   return {
     ...DEFAULT_FORMAT_SETTINGS,
     ...(brandSettings || {}),
     ...(direct || {}),
+    aspectMode: rawAspect,
+    targetDurationSec: rawTargetDuration,
+    preferredVideoProvider: rawPreferredProvider,
   };
 }
 

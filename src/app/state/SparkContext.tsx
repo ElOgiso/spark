@@ -252,9 +252,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [thinkingState, setThinkingState] = useState<ThinkingState | null>(null);
 
   const [state, setState] = useState(() => {
+    let localFormatSettings: Partial<ProductionFormatSettings> | undefined = undefined;
+    if (typeof localStorage !== "undefined") {
+      try {
+        const scopedKey = activeBrandId ? `spark_format_settings_${activeBrandId}` : null;
+        const cached = (scopedKey ? localStorage.getItem(scopedKey) : null) || localStorage.getItem("spark_format_settings_active") || localStorage.getItem("spark_format_settings_default");
+        if (cached) localFormatSettings = JSON.parse(cached);
+      } catch {}
+    }
+
     const local = loadPersistedState<any>(currentUserId || undefined, activeBrandId || undefined);
     if (local) {
-      const effectiveFmt = getEffectiveFormatSettings(local);
+      const effectiveFmt = getEffectiveFormatSettings({
+        ...local,
+        formatSettings: local.formatSettings || localFormatSettings,
+      });
       const effectiveCrd = getEffectiveCreditSettings(local);
       return {
         ...local,
@@ -266,8 +278,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         chatMessages: Array.isArray(local.chatMessages) ? local.chatMessages : [],
       };
     }
+    const initialFormatSettings = getEffectiveFormatSettings(localFormatSettings || DEFAULT_FORMAT_SETTINGS);
     return {
-      brand: { ...defaultBrand, formatSettings: DEFAULT_FORMAT_SETTINGS, creditSettings: DEFAULT_CREDIT_SETTINGS },
+      brand: { ...defaultBrand, formatSettings: initialFormatSettings, creditSettings: DEFAULT_CREDIT_SETTINGS },
       character: defaultCharacter,
       executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
       accounts: [],
@@ -286,7 +299,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       researchPatterns: [],
       aiSettings: defaultAISettings,
       creditSettings: DEFAULT_CREDIT_SETTINGS,
-      formatSettings: DEFAULT_FORMAT_SETTINGS,
+      formatSettings: initialFormatSettings,
       thinkingState: null,
       chatMessages: [],
     };
@@ -590,16 +603,36 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           });
           
+          let localCachedFormat: Partial<ProductionFormatSettings> | undefined = undefined;
+          if (typeof localStorage !== "undefined") {
+            try {
+              const scopedKey = activeBrandId ? `spark_format_settings_${activeBrandId}` : null;
+              const cached = (scopedKey ? localStorage.getItem(scopedKey) : null) || localStorage.getItem("spark_format_settings_active");
+              if (cached) localCachedFormat = JSON.parse(cached);
+            } catch {}
+          }
+
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings || snap.creditSettings;
           const cloudFormatSettings = (execContext as any)?.summary?.current_objectives?.format_settings || snap.formatSettings || snap.brand?.formatSettings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
-          const mergedFormatSettings = {
+          const resolvedDuration =
+            (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
+            (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
+            (typeof (prev.brand?.formatSettings as any)?.targetDurationSec === "number" && (prev.brand?.formatSettings as any).targetDurationSec !== 60 ? (prev.brand?.formatSettings as any).targetDurationSec : undefined) ??
+            (typeof (prev.formatSettings as any)?.targetDurationSec === "number" && (prev.formatSettings as any).targetDurationSec !== 60 ? (prev.formatSettings as any).targetDurationSec : undefined) ??
+            (typeof (prev.brand?.formatSettings as any)?.targetDurationSec === "number" ? (prev.brand?.formatSettings as any).targetDurationSec : undefined) ??
+            (typeof (prev.formatSettings as any)?.targetDurationSec === "number" ? (prev.formatSettings as any).targetDurationSec : undefined) ??
+            DEFAULT_FORMAT_SETTINGS.targetDurationSec;
+
+          const mergedFormatSettings: ProductionFormatSettings = {
             ...DEFAULT_FORMAT_SETTINGS,
-            ...(cloudFormatSettings || {}),
             ...(prev.brand?.formatSettings || {}),
             ...(prev.formatSettings || {}),
+            ...(localCachedFormat || {}),
+            ...(cloudFormatSettings || {}),
+            targetDurationSec: resolvedDuration,
           };
 
           const mergedCreditSettings = {
@@ -894,7 +927,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const resolvedFormatSettings: ProductionFormatSettings = {
       aspectMode: data.aspectMode || "portrait",
-      targetDurationSec: data.targetDurationSec || 60,
+      targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
     };
 

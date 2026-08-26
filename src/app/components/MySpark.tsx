@@ -52,6 +52,7 @@ import {
   BRAND_STYLE_OPTIONS,
   seedDefaultAudience,
 } from "../domain/brandOptions";
+import { VIDEO_LENGTH_OPTIONS } from "../domain/types";
 
 interface MySparkProps {
   onNavigate: (path: string) => void;
@@ -1077,19 +1078,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {[
-                      { sec: 15, label: "15s" },
-                      { sec: 30, label: "30s" },
-                      { sec: 60, label: "1m" },
-                      { sec: 180, label: "3m" },
-                      { sec: 300, label: "5m" },
-                      { sec: 600, label: "10m" },
-                      { sec: 900, label: "15m" },
-                      { sec: 1200, label: "20m" },
-                      { sec: 1800, label: "30m" },
-                      { sec: 2700, label: "45m" },
-                      { sec: 3600, label: "60m" },
-                    ].map((dur) => {
+                    {VIDEO_LENGTH_OPTIONS.map((dur) => {
                       const active = (formatSettings?.targetDurationSec || 60) === dur.sec;
                       return (
                         <button

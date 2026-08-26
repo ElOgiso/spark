@@ -218,11 +218,33 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
   const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
   const cloudFormatSettings = (brandRes?.data?.settings as any)?.format_settings;
 
+  let localCachedFormat: Partial<ProductionFormatSettings> | undefined = undefined;
+  if (typeof localStorage !== "undefined" && brandId) {
+    try {
+      const cached = localStorage.getItem(`spark_format_settings_${brandId}`);
+      if (cached) localCachedFormat = JSON.parse(cached);
+    } catch {}
+  }
+
+  const resolvedFormatDuration =
+    (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
+    (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
+    DEFAULT_FORMAT_SETTINGS.targetDurationSec;
+
+  const resolvedFormat = (cloudFormatSettings || localCachedFormat)
+    ? {
+        ...DEFAULT_FORMAT_SETTINGS,
+        ...(localCachedFormat || {}),
+        ...(cloudFormatSettings || {}),
+        targetDurationSec: resolvedFormatDuration,
+      }
+    : undefined;
+
   return {
     brand,
     character: firstCharacter,
     creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
-    formatSettings: cloudFormatSettings ? { ...DEFAULT_FORMAT_SETTINGS, ...cloudFormatSettings } : undefined,
+    formatSettings: resolvedFormat,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
     memoryItems: (memory.data ?? []).map(memoryRowToDomain),
     viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
@@ -600,8 +622,17 @@ export async function persistFormatSettings(
   brandId: string,
   settings: ProductionFormatSettings
 ): Promise<boolean> {
+  const cleanDuration = typeof settings.targetDurationSec === "number" ? settings.targetDurationSec : 60;
+  const cleanSettings: ProductionFormatSettings = {
+    ...settings,
+    targetDurationSec: cleanDuration,
+  };
+
   if (typeof localStorage !== "undefined") {
-    localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(settings));
+    localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(cleanSettings));
+    if (brandId) {
+      localStorage.setItem(`spark_format_settings_active`, JSON.stringify(cleanSettings));
+    }
   }
   if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) return true;
 
@@ -619,7 +650,7 @@ export async function persistFormatSettings(
         ? { ...brandRow.settings }
         : {};
 
-    existingSettings.format_settings = { ...settings };
+    existingSettings.format_settings = { ...cleanSettings };
 
     await (supabase.from("brands") as any)
       .update({ settings: existingSettings, updated_at: new Date().toISOString() })

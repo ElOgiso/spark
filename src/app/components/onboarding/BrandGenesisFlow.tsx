@@ -26,7 +26,12 @@ import {
   FRAME_TO_SCRIPT_KEY,
   ONBOARD_SCRIPT_KEYS,
 } from "../../services/onboarding/onboardDirectorVoiceService";
-import type { ProductionMode, AutomationMode, AIProviderId } from "../../domain/types";
+import {
+  VIDEO_LENGTH_OPTIONS,
+  type ProductionMode,
+  type AutomationMode,
+  type AIProviderId,
+} from "../../domain/types";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 
@@ -1423,19 +1428,7 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Target Video Length</label>
         <div className="flex flex-wrap gap-2">
-          {[
-            { sec: 15, label: "15s" },
-            { sec: 30, label: "30s" },
-            { sec: 60, label: "1m" },
-            { sec: 180, label: "3m" },
-            { sec: 300, label: "5m" },
-            { sec: 600, label: "10m" },
-            { sec: 900, label: "15m" },
-            { sec: 1200, label: "20m" },
-            { sec: 1800, label: "30m" },
-            { sec: 2700, label: "45m" },
-            { sec: 3600, label: "60m" },
-          ].map((dur) => {
+          {VIDEO_LENGTH_OPTIONS.map((dur) => {
             const active = (data.targetDurationSec || 60) === dur.sec;
             return (
               <button
@@ -2202,7 +2195,7 @@ export function BrandGenesisFlow({
       researchSources: data.researchSources,
       connectedAccounts,
       aspectMode: data.aspectMode || "portrait",
-      targetDurationSec: data.targetDurationSec || 60,
+      targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
       mode: mode || "first_user",
     };
@@ -2214,7 +2207,7 @@ export function BrandGenesisFlow({
         const { persistFormatSettings } = await import("../../backend/workspaceSync");
         await persistFormatSettings(brandId, {
           aspectMode: data.aspectMode || "portrait",
-          targetDurationSec: data.targetDurationSec || 60,
+          targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
           preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
         });
       }
