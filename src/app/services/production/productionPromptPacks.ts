@@ -133,7 +133,7 @@ Clear sequential storytelling. Crisp lower-third text backdrop.
   }
 
   if (mode === "deep") {
-    // DEEP / CINEMATIC RECIPE (Lam One-Take System)
+    // DEEP / CINEMATIC RECIPE (Lam One-Take System with Timestamp Blocks & Speech in Picture)
     return {
       mode: "deep",
       globalLockBlock,
@@ -150,26 +150,21 @@ ON-SCREEN TYPOGRAPHY LAW: Render high-contrast crisp text overlay: "${sceneText}
 Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic render.
 `.trim(),
       videoPromptTemplate: (durationSec, sceneDescriptions) => `
-${globalLockBlock}
+GLOBAL LOCK:
+CHARACTER (from sheet image): ${charName} (Style: ${charStyle}, Traits: ${charTraits}). Reference sheet is image 1.
+LOCATION / SET (locked): ${environmentStr}.
+STYLE: ${brand.name} (${brand.niche || "Executive"}), cinematic anamorphic look, 8K photorealistic.
+ONLY spoken words are inside quotation marks.
 
-LAM ONE-TAKE CONTINUOUS CINEMATIC SEQUENCE (${aspectRatio}, Duration: ${durationSec}s):
-INPUT REF [1]: Primary Character Reference Sheet (${charName})
-INPUT REF [2]: Master Storyboard Grid / Keyframe Reference
-GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}". Look lives in reference images — text describes physical change only.
-
-TIMELINE & STAGED CONTINUITY BEATS:
+TIMELINE BEATS (0-${durationSec}s):
 ${sceneDescriptions}
 
-ONE-TAKE MOTION LAWS:
-- Single continuous camera move across all stages (Scene 1 -> Scene 2 -> Scene 3).
-- Scene N MUST open on Scene N-1's exact end state.
-- Exactly ONE primary physical change per stage. Do not rewrite character identity per beat.
-- Absolute identity, hair, and wardrobe lock; zero face morphing or AI slop.
-
-AUDIO & SPEECH POLICY:
-- Ambient sound design and synchronized SFX in chronological beat order.
-- Explicit "no background music" unless brand settings enable music.
-- Short quoted dialogue occurs only inside timestamp beats.
+CINEMATIC MOTION LAWS:
+- Single continuous camera move across all beats (push-in, lock-off, or tracking).
+- Scene N opens on Scene N-1's exact end state.
+- Exactly ONE primary physical action per timestamp block.
+- Absolute subject identity, hair, and wardrobe lock from reference sheet. Zero face morphing or AI slop.
+- Ambient audio and environment sound design; quoted speech delivered on-camera.
 `.trim(),
     };
   }

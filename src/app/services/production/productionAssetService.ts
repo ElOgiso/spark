@@ -1318,12 +1318,13 @@ Brand: ${brand.name}
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
             const enablePerSceneClips = Boolean(
               (params as any)?.enablePerSceneClips ||
-              (mode === "standard" && (targetSec > nativeMaxClipSec || currentStoryboard.length > 1))
+              ((mode === "standard" || mode === "deep") && (targetSec > nativeMaxClipSec || currentStoryboard.length > 1))
             );
 
             if (enablePerSceneClips) {
-              // Per-scene clip generation with hybrid audio directives and automatic merge
+              // Per-scene clip generation with mode-specific motion directives and automatic merge
               const totalVideoStages = currentStoryboard.length || 3;
+              const isDeep = mode === "deep";
 
               for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
                 checkAborted();
@@ -1338,13 +1339,40 @@ Brand: ${brand.name}
                   previousLastFrameUrl: sIdx > 0 ? (sceneClips[sIdx - 1] || sceneImages[sIdx - 1]) : undefined,
                 });
 
-                const isTalentSpeech = scene.audio === "talent";
-                const spokenDialogue = scene.spokenLines || scene.scriptSnippet || "";
-                const audioDirective = isTalentSpeech
-                  ? (spokenDialogue ? `TALENT PERFORMANCE (Dialogue Spoken On-Camera): Host speaks directly to camera: "${spokenDialogue.replace(/"/g, "'")}". Synchronized speech motion and authoritative presenter performance.` : "Host delivers energetic on-camera presentation directly to lens.")
-                  : `B-ROLL / GRAPHICS MOTION (VOICE-OVER SCENE): Smooth cinematic motion, host observing graphics, charts, or environment. Do NOT deliver on-camera spoken dialogue or mouth lip-sync movements.`;
+                const rawSceneDur = parseInt(scene.duration) || snapToAllowedDuration(Math.ceil(targetSec / totalVideoStages), activeVideo.providerId);
+                const sceneTargetDuration = snapToAllowedDuration(rawSceneDur, activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
 
-                const stageMotionPrompt = `
+                let stageMotionPrompt: string;
+                if (isDeep) {
+                  const spoken = scene.spokenLines || scene.scriptSnippet || "";
+                  const dialogueLine = spoken ? ` "${spoken.replace(/"/g, "'")}"` : "";
+                  const charName = character?.name || "Host";
+                  const charStyle = character?.style || "Executive Presenter";
+                  const charTraits = (character?.traits || ["Visionary", "Authoritative"]).join(", ");
+
+                  stageMotionPrompt = `
+${stageVisualLock.refPromptHeader}
+GLOBAL LOCK:
+CHARACTER (from sheet image): ${charName} (Style: ${charStyle}, Traits: ${charTraits}). Reference sheet is image 1.
+LOCATION / SET (locked): ${identityPack.environmentString}.
+STYLE: ${brand.name} (${brand.niche || "Executive"}), cinematic anamorphic look, 8K photorealistic render.
+ONLY spoken words are inside quotation marks.
+
+0-${sceneTargetDuration}s: ACTION: ${scene.primaryChange || scene.visualDescription}. CAMERA: ${panelFraming}.${dialogueLine}
+
+CINEMATIC MOTION LAWS:
+- Continuous physical motion; no cuts, no resets, no new character.
+- End state of this scene connects seamlessly to next sequence beat.
+- Absolute subject identity, hair, and wardrobe lock from reference sheet. Zero face morphing or AI slop.
+`.trim();
+                } else {
+                  const isTalentSpeech = scene.audio === "talent";
+                  const spokenDialogue = scene.spokenLines || scene.scriptSnippet || "";
+                  const audioDirective = isTalentSpeech
+                    ? (spokenDialogue ? `TALENT PERFORMANCE (Dialogue Spoken On-Camera): Host speaks directly to camera: "${spokenDialogue.replace(/"/g, "'")}". Synchronized speech motion and authoritative presenter performance.` : "Host delivers energetic on-camera presentation directly to lens.")
+                    : `B-ROLL / GRAPHICS MOTION (VOICE-OVER SCENE): Smooth cinematic motion, host observing graphics, charts, or environment. Do NOT deliver on-camera spoken dialogue or mouth lip-sync movements.`;
+
+                  stageMotionPrompt = `
 ${stageVisualLock.refPromptHeader}
 Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
 Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
@@ -1354,13 +1382,12 @@ Framing: ${panelFraming}.
 ${audioDirective}
 No resets, no new character, no scrambled order.
 `.trim();
+                }
 
-                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} via ModelRouter ("videoGeneration") [Refs: ${stageVisualLock.imageUrls.length}]...`);
+                console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [Refs: ${stageVisualLock.imageUrls.length}]...`);
 
                 try {
                   checkAborted();
-                  const rawSceneDur = parseInt(scene.duration) || snapToAllowedDuration(Math.ceil(targetSec / totalVideoStages), activeVideo.providerId);
-                  const sceneTargetDuration = snapToAllowedDuration(rawSceneDur, activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
                   const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: stageMotionPrompt,
                     referenceImageUrl: stageVisualLock.primaryRefUrl,
@@ -1423,7 +1450,7 @@ No resets, no new character, no scrambled order.
                       storagePath: getStoragePath(`video/master.${ext}`),
                       dataUrlOrBlob: mergeResult.blob,
                       mimeType: mergeResult.mimeType || `video/${ext}`,
-                      prompt: `Merged hybrid master video from ${sceneClips.length} scenes`,
+                      prompt: `Merged ${mode} master video from ${sceneClips.length} scenes`,
                       provider: "SceneVideoMerger",
                     });
                     if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
@@ -1449,11 +1476,12 @@ No resets, no new character, no scrambled order.
                 .map((s, i) => {
                   const startSec = i * beatInterval;
                   const endSec = (i + 1) * beatInterval;
-                  const timeStr = `[00:${startSec.toString().padStart(2, "0")}-00:${endSec.toString().padStart(2, "0")}]`;
+                  const timeStr = `${startSec}-${endSec}s:`;
                   const actionStr = s.primaryChange || s.visualDescription || s.startState || "Action beat";
-                  const cameraStr = s.cameraDirection || (mode === "deep" ? "Continuous tracking shot" : "Host-on-camera medium frame");
-                  const quoteStr = s.scriptSnippet ? ` | DIALOGUE: "${s.scriptSnippet.replace(/"/g, "'")}"` : "";
-                  return `${timeStr} ACTION: ${actionStr} | CAMERA: ${cameraStr}${quoteStr}`;
+                  const cameraStr = s.cameraDirection || (mode === "deep" ? "Slow motivated push-in tracking shot" : "Host-on-camera medium frame");
+                  const spoken = s.spokenLines || s.scriptSnippet || "";
+                  const dialogueStr = spoken ? ` "${spoken.replace(/"/g, "'")}"` : "";
+                  return `${timeStr} ACTION: ${actionStr}. CAMERA: ${cameraStr}.${dialogueStr}`;
                 })
                 .join("\n");
 
