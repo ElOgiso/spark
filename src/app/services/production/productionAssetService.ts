@@ -3,7 +3,7 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
-import { getProductionPromptPack } from "./productionPromptPacks";
+import { getProductionPromptPack, buildTakeMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
@@ -1430,9 +1430,13 @@ Brand: ${brand.name}
                 const sceneStill = scene.image || sceneImages[sIdx];
                 const panelFraming = scene.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
 
+                const takeIdxForScene = Math.floor(sIdx / panelsPerTake);
+                const takeGridForScene = takeGrids[takeIdxForScene] || realGridUrl;
+                const takeScenesForPrompt = currentStoryboard.slice(takeIdxForScene * panelsPerTake, (takeIdxForScene + 1) * panelsPerTake);
+
                 const stageVisualLock = buildVisualLockRefs({
                   character,
-                  storyboardGridUrl: realGridUrl,
+                  storyboardGridUrl: takeGridForScene,
                   sceneKeyframeUrl: sceneStill,
                   previousLastFrameUrl: sIdx > 0 ? (sceneClips[sIdx - 1] || sceneImages[sIdx - 1]) : undefined,
                 });
@@ -1440,47 +1444,24 @@ Brand: ${brand.name}
                 const rawSceneDur = parseInt(scene.duration) || snapToAllowedDuration(Math.ceil(targetSec / totalVideoStages), activeVideo.providerId);
                 const sceneTargetDuration = snapToAllowedDuration(rawSceneDur, activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
 
-                let stageMotionPrompt: string;
-                if (isDeep) {
-                  const spoken = scene.spokenLines || scene.scriptSnippet || "";
-                  const dialogueLine = spoken ? ` "${spoken.replace(/"/g, "'")}"` : "";
-                  const charName = character?.name || "Host";
-                  const charStyle = character?.style || "Executive Presenter";
-                  const charTraits = (character?.traits || ["Visionary", "Authoritative"]).join(", ");
-
-                  stageMotionPrompt = `
-${stageVisualLock.refPromptHeader}
-GLOBAL LOCK:
-CHARACTER (from sheet image): ${charName} (Style: ${charStyle}, Traits: ${charTraits}). Reference sheet is image 1.
-LOCATION / SET (locked): ${identityPack.environmentString}.
-STYLE: ${brand.name} (${brand.niche || "Executive"}), cinematic anamorphic look, 8K photorealistic render.
-ONLY spoken words are inside quotation marks.
-
-0-${sceneTargetDuration}s: ACTION: ${scene.primaryChange || scene.visualDescription}. CAMERA: ${panelFraming}.${dialogueLine}
-
-CINEMATIC MOTION LAWS:
-- Continuous physical motion; no cuts, no resets, no new character.
-- End state of this scene connects seamlessly to next sequence beat.
-- Absolute subject identity, hair, and wardrobe lock from reference sheet. Zero face morphing or AI slop.
-`.trim();
-                } else {
-                  const isTalentSpeech = scene.audio === "talent";
-                  const spokenDialogue = scene.spokenLines || scene.scriptSnippet || "";
-                  const audioDirective = isTalentSpeech
-                    ? (spokenDialogue ? `TALENT PERFORMANCE (Dialogue Spoken On-Camera): Host speaks directly to camera: "${spokenDialogue.replace(/"/g, "'")}". Synchronized speech motion and authoritative presenter performance.` : "Host delivers energetic on-camera presentation directly to lens.")
-                    : `B-ROLL / GRAPHICS MOTION (VOICE-OVER SCENE): Smooth cinematic motion, host observing graphics, charts, or environment. Do NOT deliver on-camera spoken dialogue or mouth lip-sync movements.`;
-
-                  stageMotionPrompt = `
-${stageVisualLock.refPromptHeader}
-Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
-Character must remain identical to the reference sheet throughout (${character?.name || "Host"}).
-Environment must remain continuous (${identityPack.environmentString}).
-One primary action per scene: ${scene.primaryChange || scene.visualDescription}.
-Framing: ${panelFraming}.
-${audioDirective}
-No resets, no new character, no scrambled order.
-`.trim();
-                }
+                const stageMotionPrompt = `${stageVisualLock.refPromptHeader}\n${buildTakeMotionPrompt({
+                  mode,
+                  aspectRatio: identityPack.aspectRatio,
+                  takeIndex: takeIdxForScene + 1,
+                  totalTakes: totalTakes,
+                  takeDurationSec: sceneTargetDuration,
+                  panels: takeScenesForPrompt.map((ts, pIdx) => ({
+                    panelIndex: pIdx,
+                    shotFraming: ts.cameraDirection,
+                    action: ts.primaryChange || ts.visualDescription,
+                    spokenLines: ts.spokenLines || ts.scriptSnippet,
+                    onScreenText: ts.onScreenText,
+                    audio: ts.audio,
+                  })),
+                  characterName: character?.name || "Host",
+                  characterStyle: character?.style || "Executive Presenter",
+                  environment: identityPack.environmentString,
+                })}`;
 
                 console.log(`[SPARK Pipeline] Provider Request: Video stage ${sIdx + 1} (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [Refs: ${stageVisualLock.imageUrls.length}]...`);
 

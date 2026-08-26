@@ -215,3 +215,92 @@ AUDIO & SPEECH POLICY:
 `.trim(),
   };
 }
+
+export interface TakeMotionPanel {
+  panelIndex: number;
+  shotFraming?: string;
+  action?: string;
+  spokenLines?: string;
+  onScreenText?: string;
+  audio?: "vo" | "talent";
+}
+
+export interface TakeMotionPromptParams {
+  mode: "express" | "standard" | "deep";
+  aspectRatio: string;
+  takeIndex: number;
+  totalTakes: number;
+  takeDurationSec: number;
+  panels: TakeMotionPanel[];
+  characterName?: string;
+  characterStyle?: string;
+  environment?: string;
+}
+
+export function buildTakeMotionPrompt(params: TakeMotionPromptParams): string {
+  const {
+    mode,
+    aspectRatio,
+    takeIndex,
+    totalTakes,
+    takeDurationSec,
+    panels,
+    characterName = "Host",
+    characterStyle = "Executive Presenter",
+    environment = "Modern High-Contrast Production Studio",
+  } = params;
+
+  const isDeep = mode === "deep";
+  const isPortrait = aspectRatio.includes("9:16") || aspectRatio.toLowerCase().includes("portrait");
+  const cellAspect = isPortrait ? "9:16" : "16:9";
+
+  const panelListText = panels.map((p) => {
+    const pNum = p.panelIndex + 1;
+    const framing = p.shotFraming || (p.panelIndex === 0 ? "Wide/Medium establishing shot" : "Medium dynamic action shot");
+    const act = p.action || "Host presents key core insight";
+    const spoken = p.spokenLines ? ` Dialogue: "${p.spokenLines.replace(/"/g, "'")}"` : "";
+    const onScreen = p.onScreenText ? ` [On-Screen: "${p.onScreenText.slice(0, 40)}"]` : "";
+    return `- PANEL ${pNum}: [${framing}] ${act}.${spoken}${onScreen}`;
+  }).join("\n");
+
+  const modeDirectives = isDeep
+    ? `
+DEEP / CINEMATIC DIRECTIVES:
+- No burned text, no subtitles, no captions on frame.
+- Audio: Diegetic only — natural room ambience, subtle foley, subject-driven sound.
+- No narrator voiceover bed.
+- Aspect: ${cellAspect}.
+`.trim()
+    : `
+STANDARD / HYBRID DIRECTIVES:
+${panels.some((p) => p.audio === "vo") ? "- B-ROLL / EXTERNAL VO: No on-character speech lipsync; leave acoustic room for external voiceover bed; minimal subtle diegetic audio." : "- TALENT SPEECH: Direct on-camera speech synchronized with presenter performance; diegetic sound design."}
+- No random subtitles unless short on-screen graphic text (<=6 words).
+- Aspect: ${cellAspect}.
+`.trim();
+
+  return `
+LOCKED SPARK MOTION INSTRUCTION — TAKE ${takeIndex} OF ${totalTakes} (${takeDurationSec}s):
+
+INPUT REFERENCES:
+- IMAGE 1 = Character Reference Sheet (Identity Law for "${characterName}").
+- IMAGE 2 = Storyboard Take Grid (Sequential Shot List).
+
+BASE ANIMATION DIRECTIVE:
+Use the reference STORYBOARD GRID as the shot list and the CHARACTER SHEET as identity law.
+Animate this take into one continuous clip in PANEL ORDER (1 -> ${panels.length}).
+Preserve exact character from the sheet (face, hair, body, wardrobe, colors: "${characterStyle}").
+Preserve set, lighting, style from the grid ("${environment}"). Do not redesign.
+Smooth camera only as labeled. One primary action per panel.
+Natural pacing. No skipped panels. No new characters.
+End on a held frame matching the LAST panel.
+
+PANEL BREAKDOWN FOR THIS TAKE:
+${panelListText}
+
+${modeDirectives}
+
+NEGATIVE LAWS:
+No face morphing, no outfit change, no extra limbs, no shuffled panel order, no title cards, no watermarks, no glitch artifacts. Do not treat the grid as an unrelated collage to invent a new story.
+`.trim();
+}
+
