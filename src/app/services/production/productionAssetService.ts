@@ -947,68 +947,6 @@ Return valid JSON with this exact structure:
       );
     };
 
-    // Generate ONE master multi-panel storyboard GRID image mapping scenes 1 -> N
-    checkAborted();
-    if (!forceRegenerate && isValidMediaData(realGridUrl)) {
-      console.log(`[SPARK Pipeline] Reusing existing Master Storyboard Grid -> ${realGridUrl}`);
-    } else {
-      try {
-        checkAborted();
-        console.log(`[SPARK Pipeline] Generating Master Multi-Panel Storyboard Grid Map (${storyboard.length} panels)...`);
-        const gridVisualLock = buildVisualLockRefs({
-          character,
-        });
-
-        const masterGridPrompt = `
-${gridVisualLock.refPromptHeader}
-Production storyboard master grid map, sequential visual map of ${storyboard.length} panels.
-PANEL 1 (Top / Scene 1 - Establishing): ${storyboard[0]?.startState || storyboard[0]?.visualDescription || "Scene 1 opening"} (Framing: Wide/Medium establishing shot).
-PANEL 2 (Middle / Scene 2 - Action): ${storyboard[1]?.startState || storyboard[1]?.visualDescription || "Scene 2 transition"} (Framing: Medium action shot).
-PANEL 3 (Bottom / Scene 3 - Resolution): ${storyboard[2]?.endState || storyboard[2]?.visualDescription || "Scene 3 resolution"} (Framing: Medium close-up resolving shot).
-CHARACTER (locked, identical every panel): ${character?.name || "Host"}, style: ${character?.style || "Executive Presenter"}, traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}. Use reference image. Do not change face or outfit.
-ENVIRONMENT (locked): ${identityPack.environmentString}. Same set across all panels.
-LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid map showing Scene 1, Scene 2, Scene 3 in exact order from top to bottom. Clear readable scene progression with shot variety, not extreme facial close-ups.
-`.trim();
-
-        const gridImgData = await withTimeout(
-          ModelRouter.executeCategoryRequest("storyboardImages", {
-            prompt: masterGridPrompt,
-            referenceImageUrl: gridVisualLock.primaryRefUrl,
-            referenceImageUrls: gridVisualLock.imageUrls,
-            aspectRatio: identityPack.aspectRatio,
-          }),
-          60000,
-          "Master storyboard grid image generation timed out after 60s",
-          signal
-        );
-          checkAborted();
-
-          if (isValidMediaData(gridImgData)) {
-            let finalGrid = gridImgData;
-            try {
-              const storedGrid = await this.uploadAssetToStorage({
-                productionId: production.id,
-                brandId: (brand as any).id,
-                assetType: "storyboard",
-                storagePath: getStoragePath("storyboard/master-grid.png"),
-                dataUrlOrBlob: gridImgData,
-                mimeType: "image/png",
-                prompt: masterGridPrompt,
-                provider: "ModelRouter",
-              });
-              if (storedGrid?.publicUrl) finalGrid = storedGrid.publicUrl;
-              console.log(`[SPARK Pipeline] Storage Upload: Master Storyboard Grid -> ${finalGrid}`);
-            } catch (storageErr) {
-              console.warn("[SPARK Pipeline] Master Storyboard Grid upload notice:", storageErr);
-            }
-            realGridUrl = finalGrid;
-          }
-        } catch (gridErr: any) {
-          if (gridErr?.name === "AbortError" || signal?.aborted) throw gridErr;
-          console.warn("[SPARK Pipeline] Master Storyboard Grid generation notice:", gridErr);
-        }
-      }
-
       stages[0].status = "done";
       stages[1].status = "active";
 
@@ -1262,64 +1200,69 @@ PRODUCTION LAWS:
       startHeartbeat("Thumbnails");
 
       // Thumbnail Variants Image Generation Loop via ModelRouter with Locked Identity Pack
+      const targetThumbCount = typeof activeCreditSettings.thumbnailCount === "number" ? Math.max(0, activeCreditSettings.thumbnailCount) : 3;
       const enrichedThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
-      try {
-        const { ModelRouter } = await import("../runtime/modelRouter");
-        const targetThumbCount = typeof activeCreditSettings.thumbnailCount === "number" ? Math.max(0, activeCreditSettings.thumbnailCount) : 3;
-        const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
-        const totalThumbs = effectiveThumbnails.length || 3;
-        for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
-          checkAborted();
-          const thumb = effectiveThumbnails[tIdx];
-          const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
-          if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
-            const existingThumbUrl = thumb.image || thumb.url;
-            console.log(`[SPARK Pipeline] Reusing existing Thumbnail Variant ${variantLetter} -> ${existingThumbUrl}`);
-            enrichedThumbnails.push({
-              id: thumb.id || `t${tIdx + 1}`,
-              variant: variantLetter,
-              concept: thumb.concept,
-              image: existingThumbUrl,
-              url: existingThumbUrl,
-            });
-            currentThumbnails = [...enrichedThumbnails];
-            const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
-            emitProgress(currentPct, "Thumbnails", `Verified thumbnail variant ${variantLetter}...`);
-            continue;
-          }
 
-          const shortHookText = (typeof brief.hook === "string" ? brief.hook : brief.title || "VIRAL INSIGHT")
-            .replace(/[^\w\s]/gi, "")
-            .split(" ")
-            .filter(Boolean)
-            .slice(0, 4)
-            .join(" ")
-            .toUpperCase();
+      if (targetThumbCount === 0) {
+        console.log("[SPARK Pipeline] Thumbnail count is 0 in credit controls. Skipping thumbnail generation loop.");
+        stages[3].status = "done";
+        await persistCurrentStage("Thumbnails");
+      } else {
+        try {
+          const { ModelRouter } = await import("../runtime/modelRouter");
+          const effectiveThumbnails = thumbnails.slice(0, targetThumbCount);
+          const totalThumbs = effectiveThumbnails.length || targetThumbCount;
+          for (let tIdx = 0; tIdx < effectiveThumbnails.length; tIdx++) {
+            checkAborted();
+            const thumb = effectiveThumbnails[tIdx];
+            const variantLetter = thumb.variant || ["A", "B", "C"][tIdx] || "A";
+            if (!forceRegenerate && isValidMediaData(thumb.image || thumb.url)) {
+              const existingThumbUrl = thumb.image || thumb.url;
+              console.log(`[SPARK Pipeline] Reusing existing Thumbnail Variant ${variantLetter} -> ${existingThumbUrl}`);
+              enrichedThumbnails.push({
+                id: thumb.id || `t${tIdx + 1}`,
+                variant: variantLetter,
+                concept: thumb.concept,
+                image: existingThumbUrl,
+                url: existingThumbUrl,
+              });
+              currentThumbnails = [...enrichedThumbnails];
+              const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
+              emitProgress(currentPct, "Thumbnails", `Verified thumbnail variant ${variantLetter}...`);
+              continue;
+            }
 
-          const formulaDirectives: Record<string, string> = {
-            A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
+            const shortHookText = (typeof brief.hook === "string" ? brief.hook : brief.title || "VIRAL INSIGHT")
+              .replace(/[^\w\s]/gi, "")
+              .split(" ")
+              .filter(Boolean)
+              .slice(0, 4)
+              .join(" ")
+              .toUpperCase();
+
+            const formulaDirectives: Record<string, string> = {
+              A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
 LAYOUT: Subject on left vertical third (Rule of Thirds grid), short bold 2-4 word headline on right third.
 TEXT OVERLAY: "${shortHookText}" (Short, bold, high-contrast typography, ≤4 words).
 COLOR PALETTE: Primary brand accent + high-contrast monochrome base (black/white) + neon magenta highlight glow.`,
-            B: `VIRAL FORMULA: Big Number Transformation + Character Scale Comparison.
+              B: `VIRAL FORMULA: Big Number Transformation + Character Scale Comparison.
 LAYOUT: Subject on right vertical third gesturing toward large metric graphic card on left vertical third.
 TEXT OVERLAY: "${shortHookText}" (Bold numerical highlight & metric callout, ≤4 words).
 COLOR PALETTE: Primary brand accent + dark obsidian base + electric amber per-video highlight.`,
-            C: `VIRAL FORMULA: Hero Object + Burning Question + Blurred Outcome.
+              C: `VIRAL FORMULA: Hero Object + Burning Question + Blurred Outcome.
 LAYOUT: Subject at Rule of Thirds focal intersection looking toward curiosity object with subtle depth-of-field blur.
 TEXT OVERLAY: "${shortHookText}" (Bold mystery question prompt, ≤4 words).
 COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight glow.`,
-          };
+            };
 
-          const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
+            const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
 
-          const thumbVisualLock = buildVisualLockRefs({
-            character,
-            storyboardGridUrl: realGridUrl,
-            sceneKeyframeUrl: sceneImages[0],
-          });
+            const thumbVisualLock = buildVisualLockRefs({
+              character,
+              storyboardGridUrl: realGridUrl || takeGrids[0],
+            });
 
-          const thumbPrompt = `
+            const thumbPrompt = `
 ${thumbVisualLock.refPromptHeader}
 [${identityPack.aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
 CONCEPT: ${thumb.concept}
@@ -1330,81 +1273,84 @@ ${identityPack.combinedPromptPrefix}
 Brand: ${brand.name}
 `.trim();
 
-          let thumbUrl: string | undefined = undefined;
+            let thumbUrl: string | undefined = undefined;
 
-          try {
-            checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter...`);
-            const thumbImgData = await withTimeout(
-              ModelRouter.executeCategoryRequest("storyboardImages", {
-                prompt: thumbPrompt,
-                referenceImageUrl: thumbVisualLock.primaryRefUrl,
-                referenceImageUrls: thumbVisualLock.imageUrls,
-                aspectRatio: identityPack.aspectRatio,
-              }),
-              45000,
-              `Thumbnail variant ${variantLetter} generation timed out after 45s`,
-              signal
-            );
-            checkAborted();
-
-            if (isValidMediaData(thumbImgData)) {
-              let finalThumb = thumbImgData;
-              try {
-                const storedThumb = await this.uploadAssetToStorage({
-                  productionId: production.id,
-                  brandId: (brand as any).id,
-                  assetType: "thumbnail",
-                  storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
-                  dataUrlOrBlob: thumbImgData,
-                  mimeType: "image/png",
+            try {
+              checkAborted();
+              console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter ("storyboardImages")...`);
+              const thumbImgData = await withTimeout(
+                ModelRouter.executeCategoryRequest("storyboardImages", {
                   prompt: thumbPrompt,
-                  provider: "ModelRouter",
-                });
-                if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
-                console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
-              } catch (storageErr) {
-                console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
+                  referenceImageUrl: thumbVisualLock.primaryRefUrl,
+                  referenceImageUrls: thumbVisualLock.imageUrls,
+                  aspectRatio: identityPack.aspectRatio,
+                }),
+                45000,
+                `Thumbnail variant ${variantLetter} generation timed out after 45s`,
+                signal
+              );
+              checkAborted();
+
+              if (isValidMediaData(thumbImgData)) {
+                let finalThumb = thumbImgData;
+                try {
+                  const storedThumb = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "thumbnail",
+                    storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
+                    dataUrlOrBlob: thumbImgData,
+                    mimeType: "image/png",
+                    prompt: thumbPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
+                } catch (storageErr) {
+                  console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
+                }
+                thumbUrl = finalThumb;
+              } else {
+                console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
+                if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
               }
-              thumbUrl = finalThumb;
-            } else {
-              console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
-              if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
+            } catch (thumbErr: any) {
+              if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
+              console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
+              if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
             }
-          } catch (thumbErr: any) {
-            if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
-            console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
-            if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: ${thumbErr?.message || String(thumbErr)}`;
+
+            if (thumbUrl) {
+              const thumbEntry = {
+                id: thumb.id || `t${tIdx + 1}`,
+                variant: variantLetter,
+                concept: thumb.concept,
+                image: thumbUrl,
+                url: thumbUrl,
+              };
+              enrichedThumbnails.push(thumbEntry);
+              currentThumbnails = [...enrichedThumbnails];
+            }
+
+            const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
+            emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
+            void persistCurrentStage("Thumbnails");
           }
-
-          const resolvedThumbImage = thumbUrl || (isValidMediaData(sceneImages[tIdx]) ? sceneImages[tIdx] : undefined);
-          const thumbEntry = {
-            id: thumb.id || `t${tIdx + 1}`,
-            variant: variantLetter,
-            concept: thumb.concept,
-            image: resolvedThumbImage,
-            url: resolvedThumbImage,
-          };
-          enrichedThumbnails.push(thumbEntry);
-          currentThumbnails = [...enrichedThumbnails];
-
-          const currentPct = 58 + Math.round(((tIdx + 1) / totalThumbs) * 20);
-          emitProgress(currentPct, "Thumbnails", `Synthesized thumbnail variant ${variantLetter}...`);
-          void persistCurrentStage("Thumbnails");
+        } catch (tLoopErr: any) {
+          if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
+          console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
+          if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
         }
-      } catch (tLoopErr: any) {
-        if (tLoopErr?.name === "AbortError" || signal?.aborted) throw tLoopErr;
-        console.error("[SPARK Pipeline] Thumbnail generation loop failed:", tLoopErr);
-        if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
-      }
 
-      stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
-      await persistCurrentStage("Thumbnails");
+        stages[3].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
+        await persistCurrentStage("Thumbnails");
+      }
       stages[4].status = "active";
       emitProgress(80, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on scene stills...`);
 
       // PART 3 — Stills Drive Motion: Image-Conditioned Video Generation Loop via ModelRouter ("videoGeneration")
       const sceneClips: string[] = [];
+      const takeClips: string[] = [];
 
       checkAborted();
 
@@ -1563,7 +1509,6 @@ Brand: ${brand.name}
             });
             const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
-            const takeClips: string[] = [];
 
             // REQUIRED MOTION MODEL: 1 take grid = 1 videoGeneration call
             for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
@@ -1871,36 +1816,41 @@ Brand: ${brand.name}
         videoUrl: s.videoUrl,
       }));
 
-      const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => ({
-        scene: sb.scene || idx + 1,
-        index: sb.scene || idx + 1,
-        id: `scene-${production.id}-${sb.scene || idx + 1}`,
-        productionId: production.id,
-        brandId: (brand as any)?.id,
-        duration: sb.duration || "5s",
-        durationSec: parseInt(sb.duration) || 5,
-        shotList: sb.shotList || `Scene ${idx + 1} framing`,
-        cameraDirection: sb.cameraDirection || "Medium shot",
-        camera: sb.cameraDirection || "Medium shot",
-        transitions: sb.transitions || "Seamless flow",
-        onScreenText: sb.onScreenText || `SCENE ${idx + 1}`,
-        pacing: sb.pacing || "Balanced",
-        scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
-        spokenLines: sb.spokenLines || sb.scriptSnippet || "",
-        audio: sb.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : "talent"),
-        scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
-        visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
-        action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,
-        startState: sb.startState || `Scene ${idx + 1} start`,
-        endState: sb.endState || `Scene ${idx + 1} end`,
-        primaryChange: sb.primaryChange || sb.visualDescription,
-        image: sb.image || sceneImages[idx] || (thumbnails[idx] as any)?.image,
-        keyframeImageUrl: sb.image || sceneImages[idx] || (thumbnails[idx] as any)?.image,
-        videoUrl: sb.videoUrl || sceneClips[idx] || (idx === 0 ? realVideoUrl : undefined),
-        status: (sb.videoUrl || sceneClips[idx] || (idx === 0 && realVideoUrl)) ? "ready" : sb.image ? "ready" : "pending",
-        createdAt: renderStartedAt,
-        updatedAt: renderCompletedAt,
-      }));
+      const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => {
+        const takeIndex = Math.floor(idx / panelsPerTake);
+        const takeGridUrl = takeGrids[takeIndex] || sb.image || realGridUrl || sceneImages[idx];
+        const sceneClipUrl = sb.videoUrl || (takeIndex < takeClips.length ? takeClips[takeIndex] : undefined) || (idx === 0 ? realVideoUrl : undefined);
+        return {
+          scene: sb.scene || idx + 1,
+          index: sb.scene || idx + 1,
+          id: `scene-${production.id}-${sb.scene || idx + 1}`,
+          productionId: production.id,
+          brandId: (brand as any)?.id,
+          duration: sb.duration || "5s",
+          durationSec: parseInt(sb.duration) || 5,
+          shotList: sb.shotList || `Scene ${idx + 1} framing`,
+          cameraDirection: sb.cameraDirection || "Medium shot",
+          camera: sb.cameraDirection || "Medium shot",
+          transitions: sb.transitions || "Seamless flow",
+          onScreenText: sb.onScreenText || `SCENE ${idx + 1}`,
+          pacing: sb.pacing || "Balanced",
+          scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
+          spokenLines: sb.spokenLines || sb.scriptSnippet || "",
+          audio: sb.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : "talent"),
+          scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
+          visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
+          action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,
+          startState: sb.startState || `Scene ${idx + 1} start`,
+          endState: sb.endState || `Scene ${idx + 1} end`,
+          primaryChange: sb.primaryChange || sb.visualDescription,
+          image: takeGridUrl,
+          keyframeImageUrl: takeGridUrl,
+          videoUrl: sceneClipUrl,
+          status: (sceneClipUrl || (idx === 0 && realVideoUrl)) ? "ready" : takeGridUrl ? "ready" : "pending",
+          createdAt: renderStartedAt,
+          updatedAt: renderCompletedAt,
+        };
+      });
 
       const isExpressNarrator = mode === "express";
       if (isExpressNarrator) {
