@@ -1,4 +1,5 @@
 export interface Brand {
+  id?: string;
   name: string;
   niche: string;
   archetype: string;
@@ -18,6 +19,7 @@ export interface Brand {
   automation_mode?: AutomationMode;
   productionMode?: string;
   formatSettings?: ProductionFormatSettings;
+  creditSettings?: GenerationCreditSettings;
   review_required?: boolean;
   publish_requires_approval?: boolean;
   autonomous_publishing_enabled?: boolean;
@@ -198,6 +200,7 @@ export interface ProductionBrief {
   brandFitScore: number;
   suggestedDuration: string;
   targetDurationSec?: number;
+  formatSettings?: ProductionFormatSettings;
   storyboard?: ProductionScene[];
   storyboardGridUrl?: string;
   takeGrids?: string[];
@@ -238,6 +241,7 @@ export interface Production {
   sparkId?: string;
   status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed" | "Cancelled";
   mode: ProductionMode;
+  productionMode?: string;
   dateCreated: string;
   aspectRatio: string;
   formats: string[];
@@ -651,6 +655,8 @@ export interface GenerationCreditSettings {
   cinematicDurationSec: number; // default 12, allowed [8, 12, 15, 20]
   maxVideoClips?: number;       // default = keyframeCount
 }
+
+export type CreditSettings = GenerationCreditSettings;
 
 export const DEFAULT_CREDIT_SETTINGS: GenerationCreditSettings = {
   thumbnailCount: 3,

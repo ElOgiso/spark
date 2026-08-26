@@ -1308,10 +1308,10 @@ Brand: ${brand.name}
       const currentProvider = activeFormatSettings?.preferredVideoProvider || "auto";
       const currentAspect = activeFormatSettings?.aspectMode || "portrait";
 
-      const durationMatches = prevProdDuration === undefined || prevProdDuration === currentDuration;
-      const modeMatches = prevProdMode === undefined || prevProdMode === currentMode;
-      const providerMatches = prevProdProvider === undefined || prevProdProvider === currentProvider;
-      const aspectMatches = prevProdAspect === undefined || prevProdAspect === currentAspect;
+      const durationMatches = typeof prevProdDuration === "number" && prevProdDuration === currentDuration;
+      const modeMatches = typeof prevProdMode === "string" && prevProdMode === currentMode;
+      const providerMatches = typeof prevProdProvider === "string" && prevProdProvider === currentProvider;
+      const aspectMatches = typeof prevProdAspect === "string" && prevProdAspect === currentAspect;
 
       const canReuseExistingVideo = !forceRegenerate && durationMatches && modeMatches && providerMatches && aspectMatches;
 
@@ -1767,6 +1767,9 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
 
       const updatedBrief: ProductionBrief = {
         ...brief,
+        targetDurationSec: currentDuration,
+        productionMode: mode,
+        formatSettings: { ...activeFormatSettings, targetDurationSec: currentDuration },
         storyboard: currentStoryboard.length > 0 ? currentStoryboard : [
           {
             scene: 1,

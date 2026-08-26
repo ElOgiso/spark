@@ -81,12 +81,30 @@ export class ProductionService implements IProductionService {
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
     const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
 
+    const effectiveFormat = (params.brand as any)?.formatSettings || {
+      aspectMode: "portrait",
+      targetDurationSec: typeof params.targetDurationSec === "number" ? params.targetDurationSec : 60,
+      preferredVideoProvider: "auto",
+    };
+    const targetDurationSec = typeof params.targetDurationSec === "number"
+      ? params.targetDurationSec
+      : (typeof brief.targetDurationSec === "number" ? brief.targetDurationSec : effectiveFormat.targetDurationSec || 60);
+
+    const resolvedMode = (params.productionMode as any) || "standard";
+
+    brief.formatSettings = { ...effectiveFormat, targetDurationSec };
+    brief.targetDurationSec = targetDurationSec;
+    brief.productionMode = resolvedMode;
+
     const production: Production = {
       id: prodId,
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
       status: "Ready for Review",
-      mode: (params.productionMode as any) || "Narrator",
+      mode: resolvedMode,
+      productionMode: resolvedMode,
+      targetDurationSec,
+      formatSettings: { ...effectiveFormat, targetDurationSec },
       dateCreated: dateStr,
       aspectRatio: platformRec.includes("16:9") ? "16:9" : "9:16",
       formats,
@@ -197,6 +215,9 @@ export class ProductionService implements IProductionService {
       ...production,
       id: production.id,
       status: finalProdStatus,
+      targetDurationSec: result.brief.targetDurationSec || (production as any).targetDurationSec || 60,
+      productionMode: (result.brief.productionMode || production.productionMode || production.mode || "standard") as any,
+      formatSettings: result.brief.formatSettings || production.formatSettings,
       brief: result.brief,
       scenes: result.scenes,
       productionScenes: result.productionScenes || production.productionScenes,

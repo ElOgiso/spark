@@ -89,6 +89,7 @@ export interface BrandRow {
   audience: Json;
   tone: Json;
   content_pillars: Json;
+  settings?: Json;
   automation_mode: AutomationMode;
   review_required: boolean;
   publish_requires_approval: boolean;

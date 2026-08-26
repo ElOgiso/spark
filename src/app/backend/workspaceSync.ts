@@ -95,7 +95,24 @@ function brandRowToDomain(row: BrandRow): Brand {
   const rawToneList = toneObj?.tones || (Array.isArray(row.tone) ? row.tone : null);
   const rawStyleList = toneObj?.style;
 
+  const settingsObj = (row.settings && typeof row.settings === "object" && !Array.isArray(row.settings))
+    ? (row.settings as any)
+    : {};
+
+  const rawFormatSettings = settingsObj.format_settings;
+  const formatSettings: ProductionFormatSettings | undefined = rawFormatSettings
+    ? {
+        aspectMode: rawFormatSettings.aspectMode || "portrait",
+        targetDurationSec: typeof rawFormatSettings.targetDurationSec === "number" ? rawFormatSettings.targetDurationSec : 60,
+        preferredVideoProvider: rawFormatSettings.preferredVideoProvider || "auto",
+        preferredVideoModel: rawFormatSettings.preferredVideoModel,
+      }
+    : undefined;
+
+  const creditSettings = settingsObj.credit_settings || audienceObj.credit_settings;
+
   return {
+    id: row.id,
     name: row.name || "My Brand",
     niche: row.niche || "Content Creation",
     archetype: row.archetype || "Visionary Creator",
@@ -103,6 +120,8 @@ function brandRowToDomain(row: BrandRow): Brand {
     website: audienceObj.website || "",
     country: audienceObj.country || "United States",
     language: audienceObj.language || "English (US)",
+    formatSettings,
+    creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
       : [
@@ -239,6 +258,10 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
         targetDurationSec: resolvedFormatDuration,
       }
     : undefined;
+
+  if (brand && resolvedFormat) {
+    brand.formatSettings = resolvedFormat;
+  }
 
   return {
     brand,
