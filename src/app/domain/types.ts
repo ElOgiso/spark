@@ -179,10 +179,13 @@ export interface Offer {
 
 export interface ProductionBriefBeat {
   timecode: string;
-  valueJob: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta";
+  valueJob: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
   spokenLines: string;
   onScreenText: string;
   cameraDirection?: string;
+  startState?: string;
+  endState?: string;
+  audio?: "vo" | "talent";
 }
 
 export interface ProductionBrief {

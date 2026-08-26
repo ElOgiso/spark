@@ -27,39 +27,52 @@ export interface LockedIdentityPack {
   environmentString: string;
 }
 
-export function buildCompleteVoiceScript(brief: ProductionBrief): string {
-  const hook = typeof brief.hook === "string" ? brief.hook.trim() : "";
-  const outline = typeof brief.scriptOutline === "string" ? brief.scriptOutline.trim() : "";
-
-  let cta = brief.spokenCta?.trim() || "";
-  if (!cta && typeof brief.caption === "string" && brief.caption.trim()) {
-    const firstSentence = brief.caption.split(/[.!?\n]/)[0]?.trim();
-    if (firstSentence && firstSentence.length > 5 && firstSentence.length < 120) {
-      cta = firstSentence;
-    }
-  }
-  if (!cta && brief.storyboard && brief.storyboard.length > 0) {
-    const lastScene = brief.storyboard[brief.storyboard.length - 1];
-    cta = lastScene?.onScreenText || lastScene?.scriptSnippet || "";
-  }
-  if (!cta) {
-    cta = "Follow for more strategies.";
-  }
-
+export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationSec: number = 60): string {
   const clean = (str: string) =>
     str
       .replace(/[*_#`~\[\]()]/g, "")
       .replace(/\s+/g, " ")
       .trim();
 
-  const cleanHook = clean(hook);
-  const cleanOutline = clean(outline);
-  const cleanCta = clean(cta);
+  // If structured beats exist, assemble the voice script directly: Hook + All beat spoken lines + Spoken CTA
+  const beats = brief.beats || [];
+  if (beats.length > 0) {
+    const lines: string[] = [];
+    for (let i = 0; i < beats.length; i++) {
+      const beatSpoken = clean(beats[i].spokenLines || "");
+      if (beatSpoken) {
+        lines.push(beatSpoken);
+      }
+    }
 
-  const parts = [cleanHook, cleanOutline, cleanCta].filter(Boolean);
+    if (lines.length > 0) {
+      const fullScript = lines.join(" ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
+      const maxCharBudget = Math.max(800, targetDurationSec * 22);
+      return fullScript.slice(0, maxCharBudget);
+    }
+  }
+
+  const hook = typeof brief.hook === "string" ? clean(brief.hook) : "";
+  const outline = typeof brief.scriptOutline === "string" ? clean(brief.scriptOutline) : "";
+  let cta = brief.spokenCta ? clean(brief.spokenCta) : "";
+  if (!cta && typeof brief.caption === "string" && brief.caption.trim()) {
+    const firstSentence = clean(brief.caption.split(/[.!?\n]/)[0] || "");
+    if (firstSentence && firstSentence.length > 5 && firstSentence.length < 120) {
+      cta = firstSentence;
+    }
+  }
+  if (!cta && brief.storyboard && brief.storyboard.length > 0) {
+    const lastScene = brief.storyboard[brief.storyboard.length - 1];
+    cta = clean(lastScene?.spokenLines || lastScene?.scriptSnippet || lastScene?.onScreenText || "");
+  }
+  if (!cta) {
+    cta = "Follow for more strategies.";
+  }
+
+  const parts = [hook, outline, cta].filter(Boolean);
   const fullScript = parts.join(". ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
-
-  return fullScript.slice(0, 600);
+  const maxCharBudget = Math.max(800, targetDurationSec * 22);
+  return fullScript.slice(0, maxCharBudget);
 }
 
 /**
@@ -1998,9 +2011,9 @@ Brand: ${brand.name}
 
     // Calculate total scenes count: enforce scene segmentation when target exceeds engine max clip
     const minScenesForDuration = Math.ceil(targetSec / providerMaxClipSec);
-    const totalScenesCount = isOneTake
-      ? (briefBeats.length > 0 ? Math.min(briefBeats.length, 3) : 1)
-      : Math.max(minScenesForDuration, briefBeats.length);
+    const totalScenesCount = briefBeats.length > 0
+      ? briefBeats.length
+      : Math.max(minScenesForDuration, (brief.storyboard as any[])?.length || 1);
 
     // Calculate per-scene legal duration snapped to provider capability map (e.g. Veo: 4|6|8s, Grok: 1..15s)
     const rawPerSceneSec = Math.max(1, Math.min(providerMaxClipSec, Math.ceil(targetSec / totalScenesCount)));

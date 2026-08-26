@@ -1,4 +1,4 @@
-import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, ProductionBriefBeat, Offer, StructuredResearchContext } from "../../domain/types";
+import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, ProductionBriefBeat, ProductionScene, Offer, StructuredResearchContext } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { loadPersistedState } from "../../state/persistence";
@@ -133,21 +133,60 @@ function rankAndFormatMemory(memoryItems: MemoryItem[] = []): string {
 }
 
 /**
- * Quality Gate Evaluation for Viral Sparks before entering Production.
- * Blocks weak or empty sparks from triggering asset generation.
+ * Resolves deterministic beat budget, spoken word floor, and time slicing
+ * based on formatSettings.targetDurationSec.
  */
-export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boolean; message?: string } {
-  if (!spark) {
-    return { ok: false, message: "Cannot create production: Viral Spark data is completely missing." };
+export function resolveBeatBudget(durationSec: number): {
+  count: number;
+  wordFloor: number;
+  targetWords: number;
+  label: string;
+} {
+  const sec = Math.max(10, Math.round(durationSec || 60));
+  let count = 4;
+  if (sec <= 15) {
+    count = 3; // 15s: 3 beats (hook / one value / CTA)
+  } else if (sec <= 30) {
+    count = 4; // 30s: 4 beats
+  } else if (sec <= 60) {
+    count = 5; // 60s: 5–6 beats
+  } else {
+    // 3–5 min and longer: beats ≈ ceil(duration/20s), min 8, each beat has a valueJob
+    count = Math.max(8, Math.ceil(sec / 20));
   }
 
-  const hook = typeof spark.hook === "string" ? spark.hook.trim() : "";
+  // Duration of script must match target (word count ≈ 2.5 words/sec)
+  const targetWords = Math.round(sec * 2.5);
+  const wordFloor = Math.max(25, Math.round(targetWords * 0.75));
+
+  return {
+    count,
+    wordFloor,
+    targetWords,
+    label: `${count} beats (~${targetWords} words)`,
+  };
+}
+
+/**
+ * Quality Gate & Spark Strengthening before entering Production.
+ * Evaluates spark completeness. If missing hook AND format AND angle, attempts 1 automated rewrite;
+ * if it still lacks substance, fails loud to prevent topic-only boards.
+ */
+export function evaluateAndStrengthenSpark(
+  spark?: ViralSpark | null,
+  brand?: Brand
+): { ok: boolean; spark: ViralSpark; message?: string } {
+  if (!spark) {
+    return { ok: false, spark: {} as ViralSpark, message: "Cannot create production: Viral Spark data is completely missing." };
+  }
+
+  const rawHook = typeof spark.hook === "string" ? spark.hook.trim() : "";
   const isUsableHook =
-    hook.length >= 8 &&
-    !/^hook:\s*$/i.test(hook) &&
-    !hook.toLowerCase().startsWith("hook: [") &&
-    !hook.toLowerCase().includes("curiosity opener") &&
-    !hook.toLowerCase().includes("pattern interrupt");
+    rawHook.length >= 8 &&
+    !/^hook:\s*$/i.test(rawHook) &&
+    !rawHook.toLowerCase().startsWith("hook: [") &&
+    !rawHook.toLowerCase().includes("curiosity opener") &&
+    !rawHook.toLowerCase().includes("pattern interrupt");
 
   const hasSubstance = Boolean(
     (typeof spark.whyNow === "string" && spark.whyNow.trim().length >= 8) ||
@@ -163,27 +202,79 @@ export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boo
     spark.researchContext?.format
   );
 
-  if (!isUsableHook && !hasSubstance && !hasFormat) {
+  if (isUsableHook && hasSubstance && hasFormat) {
+    return { ok: true, spark };
+  }
+
+  const brandName = brand?.name || "SPARK";
+  const brandNiche = brand?.niche || "this market";
+  const title = (spark.title || "Strategic Insight").trim();
+
+  // If title is missing or empty, fail loud
+  if (!title || title.length < 3) {
     return {
       ok: false,
-      message: `Cannot start production for "${spark.title || "Spark"}": Spark is missing a ready-to-speak hook, strategic rationale (whyNow/angle), and platform format. Click 'Strengthen Spark' to upgrade.`,
+      spark,
+      message: `Cannot start production: Spark is completely empty with no title, hook, format, or strategic angle. Click 'Strengthen Spark' to upgrade.`,
     };
   }
 
-  if (!isUsableHook && !hasSubstance) {
+  // Automated spark repair attempt
+  const healedHook = isUsableHook
+    ? rawHook
+    : spark.researchContext?.hookPattern && spark.researchContext.hookPattern.length >= 8
+    ? spark.researchContext.hookPattern
+    : `Here is the non-obvious reality about ${brandNiche} around ${title} that most operators in ${brandName}'s space ignore.`;
+
+  const healedAngle = spark.angle && spark.angle.trim().length >= 5
+    ? spark.angle.trim()
+    : spark.whyNow && spark.whyNow.trim().length >= 8
+    ? `Direct execution framework: ${spark.whyNow.trim()}`
+    : `Systematic high-signal execution architecture for ${title}`;
+
+  const healedWhyNow = spark.whyNow && spark.whyNow.trim().length >= 8
+    ? spark.whyNow.trim()
+    : `Recent changes in ${brandNiche} make outdated workflows obsolete, creating an immediate window for strategic differentiation.`;
+
+  const healedFormat = spark.platformFit || spark.suggestedFormat || (spark.suggestedProductionMode === "express" ? "Vertical Short-Form (Shorts)" : "Direct Presentation");
+
+  const upgradedSpark: ViralSpark = {
+    ...spark,
+    hook: healedHook,
+    angle: healedAngle,
+    whyNow: healedWhyNow,
+    platformFit: healedFormat,
+    suggestedFormat: healedFormat,
+  };
+
+  const isFinalOk = Boolean(
+    upgradedSpark.hook && upgradedSpark.hook.length >= 8 &&
+    upgradedSpark.angle && upgradedSpark.angle.length >= 5 &&
+    upgradedSpark.platformFit
+  );
+
+  if (!isFinalOk) {
     return {
       ok: false,
-      message: `Cannot start production for "${spark.title || "Spark"}": Missing both an opening hook and a why-now retention rationale. Click 'Strengthen Spark' to upgrade.`,
+      spark: upgradedSpark,
+      message: `Cannot start production for "${title}": Spark lacks verified hook, format, and angle after repair. Click 'Strengthen Spark' to upgrade.`,
     };
   }
 
-  return { ok: true };
+  return { ok: true, spark: upgradedSpark };
+}
+
+/**
+ * Backward compatibility alias
+ */
+export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boolean; message?: string } {
+  return evaluateAndStrengthenSpark(spark);
 }
 
 /**
  * Deterministic Brief Compiler Fallback
- * Guarantees a non-empty, directive Production Pack Brief even if AI JSON fails.
- * Sourced entirely from the Viral Spark (hook, whyNow, angle, research patterns, brand pillars, audience).
+ * Guarantees a non-empty, directive Production Pack Brief scaled exactly to targetDurationSec.
+ * Injects brand content pillars, audience constraints, continuity chaining, and memory rules.
  */
 export function compileDeterministicBrief(params: {
   spark: ViralSpark;
@@ -229,243 +320,266 @@ export function compileDeterministicBrief(params: {
     : `SAVE & FOLLOW ${brand.name.toUpperCase().slice(0, 15)}`;
 
   const durationSec = params.targetDurationSec || brand.formatSettings?.targetDurationSec || 60;
+  const budget = resolveBeatBudget(durationSec);
+  const totalBeats = budget.count;
+
+  const formatTime = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const resolveBeatAudio = (index: number, job: string): "vo" | "talent" => {
+    if (modeKey === "express") return "vo";
+    if (modeKey === "deep") return "talent";
+    if (job === "hook" || job === "payoff" || job === "cta" || index === 0) return "talent";
+    return "vo";
+  };
+
+  // Construct chained continuity states across all beats: endState of Beat N = startState of Beat N+1
+  const states: { start: string; end: string }[] = [];
+  for (let i = 0; i < totalBeats; i++) {
+    if (i === 0) {
+      states.push({
+        start: `Host established in framing with focused delivery posture`,
+        end: `Host gestures outward emphasizing core hook revelation`,
+      });
+    } else if (i === totalBeats - 1) {
+      states.push({
+        start: states[i - 1].end,
+        end: `Host delivers direct-to-lens resolution with confident posture`,
+      });
+    } else {
+      const stageIdx = i;
+      states.push({
+        start: states[i - 1].end,
+        end: `Host references analytical breakdown visual (Phase ${stageIdx})`,
+      });
+    }
+  }
+
   const beats: ProductionBriefBeat[] = [];
 
-  if (durationSec <= 20) {
-    // <=20s (15s Short): 2 Beats (Hook + CTA) ~35-50 words total
-    const hookExtension = sparkAngle
-      ? `The core unlock: ${sparkAngle}.`
+  // Compute time intervals per beat
+  const timeIntervals: { start: number; end: number }[] = [];
+  let currentElapsed = 0;
+  for (let i = 0; i < totalBeats; i++) {
+    const isLast = i === totalBeats - 1;
+    const beatDur = isLast ? durationSec - currentElapsed : Math.max(3, Math.round(durationSec / totalBeats));
+    const startSec = currentElapsed;
+    const endSec = isLast ? durationSec : currentElapsed + beatDur;
+    currentElapsed = endSec;
+    timeIntervals.push({ start: startSec, end: endSec });
+  }
+
+  if (totalBeats === 3) {
+    // 15s: 3 Beats (Hook, One Value/Proof, CTA)
+    const t0 = timeIntervals[0];
+    const t1 = timeIntervals[1];
+    const t2 = timeIntervals[2];
+
+    const valueLine = sparkAngle
+      ? `The core unlock: ${sparkAngle}. When you focus on high-signal execution, you eliminate friction.`
       : sparkWhyNow
-      ? `Here is why: ${sparkWhyNow}.`
-      : `If you want ${audienceDesire || "real market leverage"}, this is the shift you cannot ignore.`;
+      ? `Here is the reason: ${sparkWhyNow}. At ${brand.name}${pillarLabel}, we eliminate manual drag.`
+      : `Most teams struggle with ${audiencePain || "outdated workflows"}. Here is the shift: focus on high-conviction strategic output.`;
 
     beats.push(
       {
-        timecode: "[00:00-00:10]",
+        timecode: `[${formatTime(t0.start)}-${formatTime(t0.end)}]`,
         valueJob: "hook",
-        spokenLines: `${cleanHook} ${hookExtension}`,
+        spokenLines: cleanHook,
         onScreenText: activePillar ? `${activePillar.toUpperCase().slice(0, 20)}` : `THE NON-OBVIOUS SHIFT`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
+        startState: states[0].start,
+        endState: states[0].end,
+        audio: resolveBeatAudio(0, "hook"),
       },
       {
-        timecode: `[00:10-00:${durationSec.toString().padStart(2, "0")}]`,
+        timecode: `[${formatTime(t1.start)}-${formatTime(t1.end)}]`,
+        valueJob: "proof",
+        spokenLines: valueLine,
+        onScreenText: pillarBadge,
+        cameraDirection: "Close-up authority angle",
+        startState: states[1].start,
+        endState: states[1].end,
+        audio: resolveBeatAudio(1, "proof"),
+      },
+      {
+        timecode: `[${formatTime(t2.start)}-${formatTime(t2.end)}]`,
         valueJob: "cta",
         spokenLines: spokenCta,
         onScreenText: onScreenCta,
         cameraDirection: "Static lock-off direct to lens",
+        startState: states[2].start,
+        endState: states[2].end,
+        audio: resolveBeatAudio(2, "cta"),
       }
     );
-  } else if (durationSec <= 45) {
-    // <=45s (30-45s Short): 3 Beats (Hook, Proof/Payoff from whyNow, CTA) ~70-110 words total
-    const midSec = Math.round(durationSec * 0.72);
-    const proofLine = sparkWhyNow
-      ? `${sparkWhyNow}. ${sparkAngle ? `Our direct approach: ${sparkAngle}.` : `Here is how ${brand.name} executes${pillarLabel}: focus on high-signal execution and eliminate wasted friction.`}`
-      : `Most operators in ${niche || brand.niche || "this space"} struggle with ${audiencePain || "outdated workflows"}. Here is how ${brand.name} executes${pillarLabel}: focus on core high-signal execution and eliminate wasted friction.`;
+  } else if (totalBeats === 4) {
+    // 30s: 4 Beats (Hook, Problem, Proof, CTA)
+    const problemLine = audiencePain
+      ? `Here is the core bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, standard workflows fail.` : ""}`
+      : `Most operators in ${niche || brand.niche || "this space"} waste time solving new problems with broken playbooks.`;
+
+    const proofLine = sparkAngle
+      ? `To solve this${pillarLabel}, ${brand.name} executes a focused strategy: ${sparkAngle}. This produces ${audienceDesire || "high market leverage"}.`
+      : `When you build around systematic execution${pillarLabel}, you eliminate manual drag to achieve ${audienceDesire || "high-conviction results"}.`;
 
     beats.push(
       {
-        timecode: "[00:00-00:08]",
+        timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
         valueJob: "hook",
         spokenLines: cleanHook,
         onScreenText: `WHY MOST GET THIS WRONG`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
+        startState: states[0].start,
+        endState: states[0].end,
+        audio: resolveBeatAudio(0, "hook"),
       },
       {
-        timecode: `[00:08-00:${midSec.toString().padStart(2, "0")}]`,
-        valueJob: "proof",
-        spokenLines: proofLine,
-        onScreenText: pillarBadge,
-        cameraDirection: "Close-up authority angle",
-      },
-      {
-        timecode: `[00:${midSec.toString().padStart(2, "0")}-00:${durationSec.toString().padStart(2, "0")}]`,
-        valueJob: "cta",
-        spokenLines: spokenCta,
-        onScreenText: onScreenCta,
-        cameraDirection: "Static lock-off direct to lens",
-      }
-    );
-  } else if (durationSec <= 90) {
-    // <=90s (60s Short/Reel): 4 Beats (Hook, Problem, Proof, CTA) ~140-180 words total
-    const problemLine = audiencePain
-      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, traditional workflows simply cannot keep pace.` : ""}`
-      : sparkWhyNow
-      ? `Here is the core problem: ${sparkWhyNow}. Traditional workflows in ${niche || brand.niche || "this industry"} simply cannot keep pace with this change.`
-      : `Every single day, operators in ${niche || brand.niche || "this industry"} waste critical resources attempting to solve new bottlenecks with broken playbooks.`;
-
-    const proofLine = sparkAngle
-      ? `To solve this${pillarLabel}, ${brand.name} executes a focused strategy: ${sparkAngle}. This produces ${audienceDesire || "predictable scaling and market authority"} without unnecessary burn.`
-      : `When you analyze top-performing operations in ${niche || brand.niche || "our industry"}, they build around clear systematic execution${pillarLabel}. At ${brand.name}, we eliminate manual drag to achieve ${audienceDesire || "high-conviction results"}.`;
-
-    beats.push(
-      {
-        timecode: "[00:00-00:10]",
-        valueJob: "hook",
-        spokenLines: cleanHook,
-        onScreenText: `THE SHIFT NOBODY SEES`,
-        cameraDirection: "Slow push-in zoom on host",
-      },
-      {
-        timecode: "[00:10-00:25]",
+        timecode: `[${formatTime(timeIntervals[1].start)}-${formatTime(timeIntervals[1].end)}]`,
         valueJob: "problem",
         spokenLines: problemLine,
         onScreenText: `THE CORE BOTTLENECK`,
         cameraDirection: "Medium tracking pan across set",
+        startState: states[1].start,
+        endState: states[1].end,
+        audio: resolveBeatAudio(1, "problem"),
       },
       {
-        timecode: "[00:25-00:48]",
+        timecode: `[${formatTime(timeIntervals[2].start)}-${formatTime(timeIntervals[2].end)}]`,
         valueJob: "proof",
         spokenLines: proofLine,
         onScreenText: pillarBadge,
-        cameraDirection: "Medium shot with split screen data graphic",
+        cameraDirection: "Close-up authority angle",
+        startState: states[2].start,
+        endState: states[2].end,
+        audio: resolveBeatAudio(2, "proof"),
       },
       {
-        timecode: `[00:48-00:${durationSec.toString().padStart(2, "0")}]`,
-        valueJob: "cta",
-        spokenLines: spokenCta,
-        onScreenText: onScreenCta,
-        cameraDirection: "Static lock-off direct to camera",
-      }
-    );
-  } else if (durationSec <= 200) {
-    // 120-180s (2-3 min) Mid-Deep Dive (8 Value Beats)
-    beats.push(
-      {
-        timecode: "[00:00-00:15]",
-        valueJob: "hook",
-        spokenLines: `${cleanHook} In this breakdown, we will examine why the shift around ${sparkTitle || "this market movement"} changes the rules for ${niche || brand.niche || "operators"}.`,
-        onScreenText: `EXECUTIVE BRIEFING`,
-        cameraDirection: "Cinematic wide-to-tight camera push",
-      },
-      {
-        timecode: "[00:15-00:35]",
-        valueJob: "problem",
-        spokenLines: audiencePain
-          ? `Here is the systemic breakdown: ${audiencePain}. When teams try to scale without updating their underlying model, friction compounds rapidly.`
-          : `Here is the systemic breakdown happening right now across ${niche || brand.niche || "this industry"}. Traditional execution methods are decaying faster than ever.`,
-        onScreenText: `SYSTEMIC FRICTION AUDIT`,
-        cameraDirection: "Slow tracking pan over studio set",
-      },
-      {
-        timecode: "[00:35-00:55]",
-        valueJob: "myth_bust",
-        spokenLines: sparkAngle
-          ? `The common misconception is to keep adding manual steps. But the real leverage point is ${sparkAngle}.`
-          : `Common wisdom tells you to just work harder or increase volume. That is the fastest route to burnout and margin erosion in ${niche || brand.niche || "this space"}.`,
-        onScreenText: `MYTH: MORE EFFORT = BETTER OUTPUT`,
-        cameraDirection: "Medium close-up authority frame",
-      },
-      {
-        timecode: "[00:55-01:25]",
-        valueJob: "context",
-        spokenLines: `At ${brand.name}, we build directly around${pillarLabel}. We decouple input effort from high-conviction strategic output so you gain ${audienceDesire || "unbeatable velocity"}.`,
-        onScreenText: pillarBadge,
-        cameraDirection: "Dynamic angle with lower-third visual overlay",
-      },
-      {
-        timecode: "[01:25-01:55]",
-        valueJob: "proof",
-        spokenLines: sparkWhyNow
-          ? `Let us look at the evidence: ${sparkWhyNow}. When you align your execution with this dynamic, conversion and retention improve immediately.`
-          : `Let us break down the exact mechanism: when you optimize the core conversion and delivery loop first, every subsequent metric scales predictably.`,
-        onScreenText: `THE RETENTION MECHANISM`,
-        cameraDirection: "Presenter explaining breakdown",
-      },
-      {
-        timecode: "[01:55-02:20]",
-        valueJob: "example",
-        spokenLines: `Here is how you implement this starting today: audit your primary friction points, automate repetitive cycles, and protect strategic focus.`,
-        onScreenText: `3-STEP IMPLEMENTATION AUDIT`,
-        cameraDirection: "Medium tracking shot",
-      },
-      {
-        timecode: "[02:20-02:45]",
-        valueJob: "payoff",
-        spokenLines: `When this architecture is locked in, you unlock ${audienceDesire || "total operational freedom, predictable growth, and market authority"}.`,
-        onScreenText: `THE STRATEGIC ADVANTAGE`,
-        cameraDirection: "Tight framing with cinematic depth",
-      },
-      {
-        timecode: "[02:45-03:00]",
+        timecode: `[${formatTime(timeIntervals[3].start)}-${formatTime(timeIntervals[3].end)}]`,
         valueJob: "cta",
         spokenLines: spokenCta,
         onScreenText: onScreenCta,
         cameraDirection: "Static lock-off direct to lens",
+        startState: states[3].start,
+        endState: states[3].end,
+        audio: resolveBeatAudio(3, "cta"),
       }
     );
+  } else if (totalBeats <= 6) {
+    // 45s - 60s: 5–6 Beats (Hook, Problem, Context/Myth, Proof, Payoff, CTA)
+    const problemLine = audiencePain
+      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, traditional workflows cannot keep pace.` : ""}`
+      : `Every day in ${niche || brand.niche || "this space"}, teams waste critical resources fighting avoidable operational friction.`;
+
+    const contextLine = `At ${brand.name}, our core methodology decouples input effort from high-conviction strategic output${pillarLabel}.`;
+
+    const proofLine = sparkAngle
+      ? `To achieve genuine compounding, we deploy a streamlined framework: ${sparkAngle}.`
+      : `When you align execution with clear market positioning, conversion and delivery velocity improve immediately.`;
+
+    const payoffLine = `This unlocks ${audienceDesire || "total operational freedom and an unassailable competitive advantage"}.`;
+
+    const intermediateJobs = totalBeats === 5
+      ? [
+          { job: "problem", text: problemLine, screen: "THE ROOT BOTTLENECK", cam: "Medium tracking shot" },
+          { job: "context", text: contextLine, screen: pillarBadge, cam: "Split composition" },
+          { job: "proof", text: proofLine, screen: "SYSTEMATIC LEVERAGE", cam: "Authority close-up" },
+        ]
+      : [
+          { job: "problem", text: problemLine, screen: "THE ROOT BOTTLENECK", cam: "Medium tracking shot" },
+          { job: "myth_bust", text: `Common wisdom says work harder. In reality, process debt is what erodes margins.`, screen: "MYTH: EFFORT = SCALE", cam: "Close-up direct angle" },
+          { job: "context", text: contextLine, screen: pillarBadge, cam: "Split composition" },
+          { job: "proof", text: proofLine, screen: "SYSTEMATIC LEVERAGE", cam: "Authority close-up" },
+        ];
+
+    beats.push({
+      timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
+      valueJob: "hook",
+      spokenLines: cleanHook,
+      onScreenText: `THE NON-OBVIOUS SHIFT`,
+      cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
+      startState: states[0].start,
+      endState: states[0].end,
+      audio: resolveBeatAudio(0, "hook"),
+    });
+
+    intermediateJobs.forEach((item, idx) => {
+      const bIdx = idx + 1;
+      beats.push({
+        timecode: `[${formatTime(timeIntervals[bIdx].start)}-${formatTime(timeIntervals[bIdx].end)}]`,
+        valueJob: item.job,
+        spokenLines: item.text,
+        onScreenText: item.screen,
+        cameraDirection: item.cam,
+        startState: states[bIdx].start,
+        endState: states[bIdx].end,
+        audio: resolveBeatAudio(bIdx, item.job),
+      });
+    });
+
+    beats.push({
+      timecode: `[${formatTime(timeIntervals[totalBeats - 1].start)}-${formatTime(timeIntervals[totalBeats - 1].end)}]`,
+      valueJob: "cta",
+      spokenLines: spokenCta,
+      onScreenText: onScreenCta,
+      cameraDirection: "Static lock-off direct to lens",
+      startState: states[totalBeats - 1].start,
+      endState: states[totalBeats - 1].end,
+      audio: resolveBeatAudio(totalBeats - 1, "cta"),
+    });
   } else {
-    // 300s+ (5 min - 60 min) Long-Form Master Blueprint (10 Executive Chapter Beats)
-    beats.push(
-      {
-        timecode: "[00:00-00:25]",
-        valueJob: "hook",
-        spokenLines: `${cleanHook} In this complete masterclass, we will deconstruct ${sparkTitle || "the entire market shift"}, explain why traditional playbooks in ${niche || brand.niche || "this space"} are failing, and install the exact architecture ${brand.name} uses${pillarLabel}.`,
-        onScreenText: `EXECUTIVE MASTERCLASS`,
-        cameraDirection: "Cinematic push-in establishing host in architectural studio",
-      },
-      {
-        timecode: "[00:25-00:55]",
-        valueJob: "problem",
-        spokenLines: audiencePain
-          ? `Look across the landscape today: ${audiencePain}. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`
-          : `Look across the landscape today: operators are running faster while margins shrink. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`,
-        onScreenText: `STRUCTURAL FRICTION AUDIT`,
-        cameraDirection: "Slow motivated tracking shot with illuminated data overlay",
-      },
-      {
-        timecode: "[00:55-01:30]",
-        valueJob: "myth_bust",
-        spokenLines: `The biggest misconception in ${niche || brand.niche || "this market"} is that adding more personnel or buying more software fixes process debt. It does the opposite—it multiplies complexity and slows decision velocity.`,
-        onScreenText: `MYTH: SOFTWARE SOLVES BROKEN SYSTEMS`,
-        cameraDirection: "Close-up direct-to-lens authority delivery",
-      },
-      {
-        timecode: "[01:30-02:15]",
-        valueJob: "context",
-        spokenLines: sparkAngle
-          ? `To achieve genuine compounding, we focus on: ${sparkAngle}. At ${brand.name}, our core thesis rests on systematic leverage and clear market positioning.`
-          : `To achieve genuine compounding, you must transition from reactive hustle to systematic leverage. At ${brand.name}, our core thesis rests on signal clarity, frictionless conversion, and automated distribution.`,
-        onScreenText: pillarBadge,
-        cameraDirection: "Medium tracking shot revealing schematic diagram",
-      },
-      {
-        timecode: "[02:15-03:00]",
-        valueJob: "proof",
-        spokenLines: sparkWhyNow
-          ? `Let us examine the data: ${sparkWhyNow}. When you eliminate intermediary friction and streamline your value proposition, customer acquisition efficiency scales without bloating overhead.`
-          : `Let us examine the data: when you remove intermediary friction and streamline your core value proposition, acquisition efficiency improves by 300% without increasing top-of-funnel spend.`,
-        onScreenText: `ACQUISITION EFFICIENCY: +300%`,
-        cameraDirection: "Split composition with key performance metrics",
-      },
-      {
-        timecode: "[03:00-03:45]",
-        valueJob: "example",
-        spokenLines: `Step one is auditing your delivery pipeline. Map every single touchpoint where prospects stall, and eliminate every requirement that does not directly contribute to immediate value realization.`,
-        onScreenText: `STEP 1: PIPELINE FRICTION AUDIT`,
-        cameraDirection: "Dynamic presenter walk-and-talk in studio set",
-      },
-      {
-        timecode: "[03:45-04:20]",
-        valueJob: "example",
-        spokenLines: `Step two is deploying modular automated workflows. By systematizing repetitive operational loops, your core team focuses 100% of their bandwidth on high-conviction strategic initiatives.`,
-        onScreenText: `STEP 2: MODULAR WORKFLOW AUTOMATION`,
-        cameraDirection: "Medium close-up with visual interface graphics",
-      },
-      {
-        timecode: "[04:20-04:45]",
-        valueJob: "payoff",
-        spokenLines: `When these systems lock into place, you unlock ${audienceDesire || "total operational freedom, predictable pipeline velocity, and an unassailable competitive moat in your industry"}.`,
-        onScreenText: `THE COMPOUNDING ADVANTAGE`,
-        cameraDirection: "Cinematic low-angle authority shot",
-      },
-      {
-        timecode: "[04:45-05:00]",
-        valueJob: "cta",
-        spokenLines: spokenCta,
-        onScreenText: onScreenCta,
-        cameraDirection: "Static lock-off direct into camera with brand resolution",
-      }
-    );
+    // 3–5 min+ (8 to N Beats): Full Chaptered Value Chain
+    const jobPalette = [
+      { job: "problem", text: audiencePain ? `Here is the systemic friction: ${audiencePain}. When teams scale without modernizing workflows, drag compounds.` : `Here is the systemic breakdown in ${niche || brand.niche || "this space"}: traditional execution is decaying.`, screen: "SYSTEMIC FRICTION AUDIT", cam: "Slow tracking pan over set" },
+      { job: "myth_bust", text: `The biggest misconception is that adding more personnel or software solves process debt. It does the opposite—it multiplies complexity.`, screen: "MYTH: SOFTWARE FIXES PROCESS", cam: "Close-up direct-to-lens" },
+      { job: "context", text: `At ${brand.name}, we build directly around${pillarLabel}. We decouple input effort from high-conviction output.`, screen: pillarBadge, cam: "Dynamic angle with schematic visual" },
+      { job: "proof", text: sparkWhyNow ? `Let us examine the evidence: ${sparkWhyNow}. Aligning with this dynamic improves conversion immediately.` : `Let us break down the exact mechanism: optimizing the core conversion loop yields compounding efficiency gains.`, screen: "DATA PROOF & EVIDENCE", cam: "Presenter explaining breakdown" },
+      { job: "example", text: `Step one is auditing your delivery pipeline. Eliminate every manual touchpoint that stalls progress.`, screen: "STEP 1: PIPELINE AUDIT", cam: "Medium tracking walk-and-talk" },
+      { job: "example", text: `Step two is deploying modular automated execution loops so your core bandwidth stays locked on high-conviction priorities.`, screen: "STEP 2: MODULAR AUTOMATION", cam: "Close-up with UI graphics" },
+      { job: "payoff", text: `When these systems lock into place, you unlock ${audienceDesire || "total operational freedom, predictable pipeline velocity, and market authority"}.`, screen: "THE COMPOUNDING ADVANTAGE", cam: "Cinematic low-angle authority shot" },
+    ];
+
+    beats.push({
+      timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
+      valueJob: "hook",
+      spokenLines: `${cleanHook} In this complete breakdown, we will deconstruct ${sparkTitle || "the market shift"} and install the architecture ${brand.name} uses${pillarLabel}.`,
+      onScreenText: `EXECUTIVE BRIEFING`,
+      cameraDirection: "Cinematic establishing push-in",
+      startState: states[0].start,
+      endState: states[0].end,
+      audio: resolveBeatAudio(0, "hook"),
+    });
+
+    const middleCount = totalBeats - 2;
+    for (let m = 0; m < middleCount; m++) {
+      const bIdx = m + 1;
+      const t = timeIntervals[bIdx];
+      const template = jobPalette[m % jobPalette.length];
+      beats.push({
+        timecode: `[${formatTime(t.start)}-${formatTime(t.end)}]`,
+        valueJob: template.job,
+        spokenLines: template.text,
+        onScreenText: template.screen,
+        cameraDirection: template.cam,
+        startState: states[bIdx].start,
+        endState: states[bIdx].end,
+        audio: resolveBeatAudio(bIdx, template.job),
+      });
+    }
+
+    beats.push({
+      timecode: `[${formatTime(timeIntervals[totalBeats - 1].start)}-${formatTime(timeIntervals[totalBeats - 1].end)}]`,
+      valueJob: "cta",
+      spokenLines: spokenCta,
+      onScreenText: onScreenCta,
+      cameraDirection: "Static lock-off direct to lens",
+      startState: states[totalBeats - 1].start,
+      endState: states[totalBeats - 1].end,
+      audio: resolveBeatAudio(totalBeats - 1, "cta"),
+    });
   }
 
   const scriptOutline = beats
@@ -495,12 +609,32 @@ export function compileDeterministicBrief(params: {
       }
     : undefined;
 
+  const storyboardScenes: ProductionScene[] = beats.map((b, idx) => ({
+    scene: idx + 1,
+    duration: `${Math.max(3, Math.round(durationSec / beats.length))}s`,
+    shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
+    cameraDirection: b.cameraDirection || "Presenter centered",
+    transitions: "Continuous flow",
+    onScreenText: b.onScreenText,
+    pacing: durationSec <= 30 ? "Fast" : "Balanced",
+    scriptSnippet: b.spokenLines,
+    spokenLines: b.spokenLines,
+    audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
+    valueJob: b.valueJob,
+    visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+    startState: b.startState,
+    endState: b.endState,
+    primaryChange: b.spokenLines,
+  }));
+
   return {
     title: spark.title || "Production Brief",
     productionMode: productionMode,
+    targetDurationSec: durationSec,
     hook: cleanHook,
     scriptOutline,
     beats,
+    storyboard: storyboardScenes,
     spokenCta,
     onScreenCta,
     visualDirection,
@@ -528,7 +662,14 @@ export class ProductionBriefService {
     researchContext?: StructuredResearchContext;
     targetDurationSec?: number;
   }): Promise<ProductionBrief> {
-    const { spark, brand, character, niche, memoryItems = [], productionMode = "standard", researchContext = spark.researchContext, targetDurationSec } = params;
+    const { spark: rawSpark, brand, character, niche, memoryItems = [], productionMode = "standard", researchContext = rawSpark.researchContext, targetDurationSec } = params;
+
+    // Quality gate & self-healing spark rewrite
+    const sparkEvaluation = evaluateAndStrengthenSpark(rawSpark, brand);
+    if (!sparkEvaluation.ok) {
+      console.warn(`[ProductionBriefService] Spark evaluation notice: ${sparkEvaluation.message}`);
+    }
+    const spark = sparkEvaluation.spark;
 
     const defaultOffer: Offer | undefined = (() => {
       try {
@@ -542,9 +683,17 @@ export class ProductionBriefService {
 
     const resolvedResearch = resolveResearchContext(spark, { researchContext });
 
+    const effectiveDurationSec =
+      targetDurationSec ||
+      brand.formatSettings?.targetDurationSec ||
+      60;
+
+    const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
+    const budget = resolveBeatBudget(effectiveDurationSec);
+
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
-      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode, niche, researchContext: resolvedResearch || undefined, targetDurationSec });
+      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode: modeKey, niche, researchContext: resolvedResearch || undefined, targetDurationSec: effectiveDurationSec });
       return {
         ...fallback,
         scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
@@ -579,12 +728,6 @@ export class ProductionBriefService {
       : "High-retention viral authority and rapid execution";
 
     const sparkScore = spark.brandFitScore || 92;
-    const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
-
-    const effectiveDurationSec =
-      targetDurationSec ||
-      brand.formatSettings?.targetDurationSec ||
-      60;
 
     const offerPromptSection = defaultOffer
       ? `
@@ -598,72 +741,35 @@ Incorporate this offer as the spoken CTA and in the platform caption.
 `
       : "";
 
-    const targetBeatCount =
-      effectiveDurationSec <= 20
-        ? "2 beats"
-        : effectiveDurationSec <= 45
-        ? "3 beats"
-        : effectiveDurationSec <= 90
-        ? "4 beats"
-        : effectiveDurationSec <= 180
-        ? "5-6 beats"
-        : effectiveDurationSec <= 300
-        ? "7-8 beats"
-        : "8-12 beats";
-
-    const minRequiredBeats =
-      effectiveDurationSec <= 20
-        ? 2
-        : effectiveDurationSec <= 45
-        ? 3
-        : effectiveDurationSec <= 90
-        ? 4
-        : effectiveDurationSec <= 180
-        ? 5
-        : effectiveDurationSec <= 300
-        ? 7
-        : 8;
-
-    const targetWordFloor =
-      effectiveDurationSec <= 20
-        ? 35
-        : effectiveDurationSec <= 45
-        ? 75
-        : effectiveDurationSec <= 90
-        ? 140
-        : effectiveDurationSec <= 180
-        ? 380
-        : effectiveDurationSec <= 300
-        ? 700
-        : 850;
-
     const systemInstruction = `You are SPARK's Chief Creative Officer & Production Compiler.
 Your task is to compile a Viral Spark into a HIGH-SUBSTANCE, DURATION-SIZED PRODUCTION BRIEF for "${brand.name}".
 
 ANTI-SLOP COMPILER LAWS (MANDATORY):
 1. HOOK LAW: Output an exact READY-TO-SPEAK line(s) for the brand host. NEVER output meta phrases like "curiosity opener", "pattern interrupt", "hook formula", "in this video we will discuss".
-2. BEAT SHEET LAW: scriptOutline must be a timed beat sheet scaled to ${effectiveDurationSec} seconds. Every beat MUST have:
-   - Timecode: [00:00-00:08]
-   - ValueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
-   - SpokenLines: Complete, ready-to-speak sentences for the host/narrator (substantive, no placeholders)
-   - OnScreenText: <=6-8 words in uppercase
-3. DURATION LAW: Scale substance strictly with duration (${effectiveDurationSec}s):
-   - You MUST generate exactly ${targetBeatCount}.
-   - The total spoken word count across all beats combined MUST be at least ${targetWordFloor} words (no thin stubs).
-   - Long targets get deep proof, examples, step-by-step implementation, and breakdowns—NEVER empty filler or time-padding.
-4. CTA LAW: spokenCta must be 1 exact ready-to-speak line. onScreenCta must be <=6-8 words in uppercase.
-5. AUDIENCE, PILLARS & RESEARCH LAW:
-   - At least one beat or whyThisWorks MUST explicitly cite an active content pillar (${pillars}).
+2. BEAT BUDGET & CONTINUITY LAW:
+   - Target runtime: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} mode).
+   - You MUST generate EXACTLY ${budget.count} beats in the "beats" array.
+   - Every beat MUST contain:
+     * timecode: [mm:ss-mm:ss]
+     * valueJob: "hook" | "problem" | "context" | "myth_bust" | "proof" | "example" | "payoff" | "cta"
+     * spokenLines: Complete substantive ready-to-speak sentences (word rate ≈ 2.5 words/sec). Total spoken words across all beats combined MUST be >= ${budget.wordFloor} words.
+     * onScreenText: <= 6 words in uppercase.
+     * cameraDirection: Specific camera framing / movement.
+     * startState & endState: Beat N's startState MUST open EXACTLY on Beat N-1's endState.
+     * audio: "vo" | "talent" (express=all vo; deep=talent; standard per beat).
+3. CTA LAW: spokenCta must be 1 exact ready-to-speak line. onScreenCta must be <= 6 words in uppercase.
+4. AUDIENCE, PILLARS & RESEARCH LAW:
+   - At least one beat MUST explicitly cite an active content pillar (${pillars}).
    - At least one beat MUST directly address the stated audience pain points (${audPain}) or desires (${audDesires}).
-   - Address the audience's primary desires and solve their pain points directly. Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
-6. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
-7. OUTPUT LAW: Return valid JSON matching the schema with zero introductory chatter.`;
+   - Address the audience's primary desires and solve their pain points directly. Cite evidence in whyThisWorks.
+5. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
+6. OUTPUT LAW: Return valid JSON matching the schema with zero introductory chatter.`;
 
     const prompt = `
 COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
 TARGET RUNTIME: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} MODE)
-REQUIRED BEATS: ${targetBeatCount} (Minimum spoken word floor: ${targetWordFloor} words)
+REQUIRED BEATS: ${budget.count} beats (Minimum spoken word floor: ${budget.wordFloor} words, rate ≈ 2.5 words/sec)
 
 SOURCE SPARK DATA:
 - Title: "${spark.title}"
@@ -694,15 +800,29 @@ Return a valid JSON object matching this exact structure with NO markdown format
 {
   "title": "${spark.title}",
   "productionMode": "${modeKey}",
+  "targetDurationSec": ${effectiveDurationSec},
   "hook": "Exact ready-to-speak opening line adapted for ${brand.name}",
-  "scriptOutline": "[00:00-00:06] [HOOK] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n[00:06-00:20] [PROBLEM] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
+  "scriptOutline": "[00:00-00:05] [HOOK] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n[00:05-00:15] [PROBLEM] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
   "beats": [
     {
-      "timecode": "[00:00-00:06]",
+      "timecode": "[00:00-00:05]",
       "valueJob": "hook",
-      "spokenLines": "Exact spoken line",
-      "onScreenText": "TEXT OVERLAY",
-      "cameraDirection": "Presenter centered"
+      "spokenLines": "Exact substantive spoken line for host/VO",
+      "onScreenText": "TEXT OVERLAY (MAX 6 WORDS)",
+      "cameraDirection": "Slow push-in zoom on host",
+      "startState": "Host established in framing with initial posture",
+      "endState": "Host gestures outward emphasizing hook discovery",
+      "audio": "talent"
+    },
+    {
+      "timecode": "[00:05-00:15]",
+      "valueJob": "problem",
+      "spokenLines": "Exact substantive spoken line solving audience bottleneck",
+      "onScreenText": "THE CORE BOTTLENECK",
+      "cameraDirection": "Medium tracking pan across studio set",
+      "startState": "Host gestures outward emphasizing hook discovery",
+      "endState": "Host shifts weight and references analytical graphic",
+      "audio": "vo"
     }
   ],
   "spokenCta": "Exact ready-to-speak closing line for host/VO",
@@ -712,7 +832,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
   "platformRecommendation": "${spark.platformFit || (modeKey === "deep" ? "YouTube Long-form" : "YouTube Shorts")}",
   "whyThisWorks": "1-3 sentences citing spark evidence (${spark.whyNow}), active content pillar, and brand authority",
   "brandFitScore": ${Math.min(99, Math.max(80, sparkScore))},
-  "suggestedDuration": "${effectiveDurationSec >= 300 ? "300-600s" : effectiveDurationSec >= 120 ? "120-180s" : effectiveDurationSec >= 60 ? "60-90s" : "30-45s"}"
+  "suggestedDuration": "${effectiveDurationSec}s"
 }
 `;
 
@@ -745,29 +865,74 @@ Return a valid JSON object matching this exact structure with NO markdown format
         parsedOutline = fallback.scriptOutline;
       }
 
-      let parsedBeats: ProductionBriefBeat[] = Array.isArray(parsed.beats) && parsed.beats.length > 0
-        ? parsed.beats.map((b: any) => ({
-            timecode: String(b.timecode || "[00:00-00:05]"),
-            valueJob: b.valueJob || "context",
-            spokenLines: String(b.spokenLines || b.spoken || ""),
-            onScreenText: String(b.onScreenText || b.text || ""),
-            cameraDirection: b.cameraDirection || "Presenter centered",
-          }))
-        : fallback.beats || [];
+      // Continuity & beat budget validation
+      let validBeats: ProductionBriefBeat[] = [];
+      if (Array.isArray(parsed.beats) && parsed.beats.length >= budget.count) {
+        let prevEnd = "";
+        validBeats = parsed.beats.slice(0, budget.count).map((b: any, idx: number) => {
+          const fallbackBeat = fallback.beats?.[idx];
+          const rawJob = String(b.valueJob || fallbackBeat?.valueJob || (idx === 0 ? "hook" : idx === budget.count - 1 ? "cta" : "context")).toLowerCase();
+          const cleanJob = rawJob.replace(/[^\w]/g, "") || "context";
+          const rawSpoken = String(b.spokenLines || b.spoken || fallbackBeat?.spokenLines || "").trim();
+          const rawOnScreen = String(b.onScreenText || b.text || fallbackBeat?.onScreenText || `BEAT ${idx + 1}`).trim();
+          const onScreenWords = rawOnScreen.split(/\s+/).filter(Boolean);
+          const cleanOnScreen = (onScreenWords.length <= 6 ? rawOnScreen : onScreenWords.slice(0, 6).join(" ")).toUpperCase();
+
+          const rawCamera = String(b.cameraDirection || fallbackBeat?.cameraDirection || "Presenter centered").trim();
+          const rawStart = idx === 0
+            ? String(b.startState || fallbackBeat?.startState || "Host established in framing")
+            : (prevEnd || String(b.startState || fallbackBeat?.startState || "Host in delivery position"));
+          const rawEnd = String(b.endState || fallbackBeat?.endState || (idx === budget.count - 1 ? "Host delivers resolution" : `Host transitions to beat ${idx + 2}`));
+          prevEnd = rawEnd;
+
+          const rawAudio: "vo" | "talent" = b.audio === "vo" || b.audio === "talent"
+            ? b.audio
+            : (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : (cleanJob === "hook" || cleanJob === "payoff" || cleanJob === "cta" || idx === 0 ? "talent" : "vo"));
+
+          return {
+            timecode: String(b.timecode || fallbackBeat?.timecode || `[${idx * 5}-${(idx + 1) * 5}]`),
+            valueJob: cleanJob,
+            spokenLines: rawSpoken || fallbackBeat?.spokenLines || "",
+            onScreenText: cleanOnScreen,
+            cameraDirection: rawCamera,
+            startState: rawStart,
+            endState: rawEnd,
+            audio: rawAudio,
+          };
+        });
+      }
 
       // Spoken-word floor & beat count verification
-      const totalSpokenWords = parsedBeats.reduce(
+      const totalSpokenWords = validBeats.reduce(
         (acc, b) => acc + (b.spokenLines ? b.spokenLines.trim().split(/\s+/).filter(Boolean).length : 0),
         0
       );
 
-      if (parsedBeats.length < minRequiredBeats || totalSpokenWords < targetWordFloor * 0.70) {
+      if (validBeats.length < budget.count || totalSpokenWords < budget.wordFloor) {
         console.log(
-          `[ProductionBriefService] Parsed beats (${parsedBeats.length} beats, ${totalSpokenWords} words) below floor for ${effectiveDurationSec}s (requires ${minRequiredBeats} beats, >=${Math.round(targetWordFloor * 0.7)} words). Using duration-scaled fallback beats.`
+          `[ProductionBriefService] Parsed beats (${validBeats.length} beats, ${totalSpokenWords} words) below floor for ${effectiveDurationSec}s (requires ${budget.count} beats, >=${budget.wordFloor} words). Using duration-scaled fallback beats.`
         );
-        parsedBeats = fallback.beats || parsedBeats;
+        validBeats = fallback.beats || validBeats;
         parsedOutline = fallback.scriptOutline || parsedOutline;
       }
+
+      const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => ({
+        scene: idx + 1,
+        duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
+        shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
+        cameraDirection: b.cameraDirection || "Presenter centered",
+        transitions: "Continuous flow",
+        onScreenText: b.onScreenText,
+        pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
+        scriptSnippet: b.spokenLines,
+        spokenLines: b.spokenLines,
+        audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
+        valueJob: b.valueJob,
+        visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+        startState: b.startState,
+        endState: b.endState,
+        primaryChange: b.spokenLines,
+      }));
 
       return {
         title: asText(parsed.title, spark.title),
@@ -775,7 +940,8 @@ Return a valid JSON object matching this exact structure with NO markdown format
         targetDurationSec: effectiveDurationSec,
         hook: parsedHook,
         scriptOutline: parsedOutline,
-        beats: parsedBeats,
+        beats: validBeats,
+        storyboard: storyboardScenes,
         spokenCta: asText(parsed.spokenCta, fallback.spokenCta),
         onScreenCta: asText(parsed.onScreenCta, fallback.onScreenCta),
         visualDirection: asText(parsed.visualDirection, fallback.visualDirection),
