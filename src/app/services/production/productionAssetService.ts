@@ -791,10 +791,11 @@ Return valid JSON with this exact structure:
       const parsedStoryboard: any[] = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
-      // Ensure every parsed scene has valueJob and spokenLines
+      // Ensure every parsed scene has valueJob, spokenLines, and audio mode
       const storyboard: ProductionScene[] = parsedStoryboard.map((s, idx) => ({
         ...s,
         scene: typeof s.scene === "number" ? s.scene : idx + 1,
+        audio: s.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : (s.valueJob === "slide" || s.valueJob === "still" ? "vo" : "talent")),
         valueJob: s.valueJob || brief.beats?.[idx]?.valueJob || "context",
         spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
         scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
@@ -882,10 +883,17 @@ LAYOUT INSTRUCTION: Create a 9:16 vertical continuous 3-panel storyboard grid ma
       stages[1].status = "active";
 
       const isExpressMode = mode === "express";
-      const shouldSynthesizeExternalVoice = true; // Synthesize voiceover bed across ALL modes for guaranteed speech audio
+      const scenesNeedVo = (sb: typeof currentStoryboard) => {
+        if (!sb || sb.length === 0) return false;
+        return sb.some((s) => s.audio === "vo");
+      };
+
+      const shouldSynthesizeExternalVoice =
+        mode === "express" ||
+        (mode === "standard" && scenesNeedVo(currentStoryboard));
 
       if (!shouldSynthesizeExternalVoice) {
-        console.log(`[SPARK Pipeline] Mode is "${mode}" (standard/deep hybrid). Skipping separate ElevenLabs voiceover bed (narration/dialogue built into videoGeneration).`);
+        console.log(`[SPARK Pipeline] Mode is "${mode}" (${mode === "deep" ? "cinematic picture speech" : "talent-led hybrid"}). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
         stages[1].status = "done";
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
@@ -1536,6 +1544,7 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
         pacing: sb.pacing || "Balanced",
         scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
         spokenLines: sb.spokenLines || sb.scriptSnippet || "",
+        audio: sb.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : "talent"),
         scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
         visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
         action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,
@@ -1715,6 +1724,9 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       const resolvedSpoken = beatItem?.spokenLines || sbItem?.scriptSnippet || (idx === 1 ? brief.hook : brief.spokenCta || "");
       const resolvedOnScreen = beatItem?.onScreenText || sbItem?.onScreenText || (idx === 1 ? "HOOK" : `SCENE ${idx}`);
       const resolvedCamera = beatItem?.cameraDirection || sbItem?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot");
+      const resolvedAudio: "vo" | "talent" =
+        sbItem?.audio ||
+        (mode === "express" ? "vo" : mode === "deep" ? "talent" : ((beatItem?.valueJob as string) === "slide" || (beatItem?.valueJob as string) === "still" ? "vo" : "talent"));
 
       scenesList.push({
         scene: idx,
@@ -1725,6 +1737,8 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
         onScreenText: resolvedOnScreen,
         pacing: sbItem?.pacing || "Balanced",
         scriptSnippet: resolvedSpoken,
+        spokenLines: resolvedSpoken,
+        audio: resolvedAudio,
         visualDescription: sbItem?.visualDescription || `${continuousTimecode} [${(beatItem?.valueJob || "beat").toUpperCase()}] ${resolvedSpoken}`,
         startState: sbItem?.startState || `Scene ${idx} start state (${formatTime(sceneStartSec)})`,
         endState: sbItem?.endState || `Scene ${idx} end state (${formatTime(sceneEndSec)})`,

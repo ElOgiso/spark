@@ -111,6 +111,7 @@ export interface ProductionScene {
   pacing: string;
   scriptSnippet: string;
   spokenLines?: string;
+  audio?: "vo" | "talent";
   valueJob?: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
   visualDescription: string;
   startState?: string;
