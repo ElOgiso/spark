@@ -501,16 +501,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!currentUserId) return;
 
-    const localTokens = getStoredAccountTokens();
-    const tokenAccounts: Account[] = Object.values(localTokens)
-      .filter((t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase()))
-      .map((t) => ({
-        platform: t.platform,
-        handle: normalizeHandle(t.handle),
-        status: "connected" as const,
-        posts: t.postsCount || 0,
-      }));
-
     if (isSupabaseConfigured() && activeBrandId && isUuid(activeBrandId)) {
       let isCancelled = false;
       Promise.all([
@@ -520,7 +510,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isCancelled) return;
         setState((prev: any) => {
           const byPlatform = new Map<string, Account>();
-          // Hydrate with Supabase accounts (both connected and needs_reconnect)
+          // Hydrate with Supabase accounts for THIS brand only (listByBrand)
           (snap.accounts || []).forEach((a: any) => {
             const pKey = normalizePlatformKey(a.platform);
             const statusStr = String(a.status || "").toLowerCase();
@@ -580,34 +570,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
             }
           });
-
-          // Merge local tokens
-          tokenAccounts.forEach((a: any) => {
-            const pKey = normalizePlatformKey(a.platform);
-            const statusStr = String(a.status || "").toLowerCase();
-            const hasRefresh = Boolean(a.refreshToken);
-            const isExplicitInvalid =
-              statusStr === "needs_reconnect" ||
-              statusStr === "needs reauthorization" ||
-              statusStr === "disconnected" ||
-              statusStr === "invalid_grant";
-            const isConn =
-              !isExplicitInvalid &&
-              (statusStr === "connected" || statusStr === "active" || statusStr === "refreshing" || hasRefresh);
-
-            byPlatform.set(pKey, {
-              platform: pKey,
-              handle: normalizeHandle(a.handle),
-              status: isConn ? "connected" : "needs_reconnect",
-              posts: 0,
-            });
-          });
           
           let localCachedFormat: Partial<ProductionFormatSettings> | undefined = undefined;
-          if (typeof localStorage !== "undefined") {
+          if (typeof localStorage !== "undefined" && activeBrandId) {
             try {
-              const scopedKey = activeBrandId ? `spark_format_settings_${activeBrandId}` : null;
-              const cached = (scopedKey ? localStorage.getItem(scopedKey) : null) || localStorage.getItem("spark_format_settings_active");
+              const cached = localStorage.getItem(`spark_format_settings_${activeBrandId}`);
               if (cached) localCachedFormat = JSON.parse(cached);
             } catch {}
           }
@@ -1062,116 +1029,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } as ResearchSource));
     }
 
-    setState((prev: any) => {
-      const byPlatform = new Map<string, Account>();
-      (prev.accounts || []).forEach((a: Account) => byPlatform.set(a.platform, a));
-      connectedFromOAuth.forEach((a) => byPlatform.set(a.platform, a));
-
-      // Merge explicit onboarding connection map or array
-      if (data.connectedAccounts) {
-        if (Array.isArray(data.connectedAccounts)) {
-          data.connectedAccounts.forEach((acc: any) => {
-            if (acc && acc.connected !== false) {
-              const platform = acc.platform || "YouTube Shorts";
-              const handle = acc.username || acc.handle || (platform.toLowerCase().includes("youtube") ? "@youtube" : "@x");
-              byPlatform.set(platform, {
-                platform,
-                handle,
-                status: "connected",
-                posts: 0,
-              });
-              try {
-                socialConnectorFramework.saveToken({
-                  platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
-                  handle: handle,
-                  displayName: handle,
-                  token: "oauth_genesis_" + Date.now(),
-                  connectedAt: new Date().toISOString(),
-                  scopes: ["read", "write", "publish"],
-                  status: "active",
-                } as any);
-              } catch {}
-            }
-          });
-        } else if (typeof data.connectedAccounts === "object") {
-          Object.entries(data.connectedAccounts).forEach(([platform, meta]: [string, any]) => {
-            if (meta?.connected && meta?.handle) {
-              byPlatform.set(platform, {
-                platform,
-                handle: meta.handle,
-                status: "connected",
-                posts: 0,
-              });
-              try {
-                socialConnectorFramework.saveToken({
-                  platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
-                  handle: meta.handle,
-                  displayName: meta.handle,
-                  token: "oauth_genesis_" + Date.now(),
-                  connectedAt: new Date().toISOString(),
-                  scopes: ["read", "write", "publish"],
-                  status: "active",
-                } as any);
-              } catch {}
-            }
-          });
-        }
-      }
-
-      return {
-        ...prev,
-        brand: {
-          ...prev.brand,
-          name: brandName,
-          niche: niche,
-          purpose: vision,
-          automation_mode: automationMode,
-          review_required: reviewRequired,
-          formatSettings: resolvedFormatSettings,
-          audience: {
-            ...prev.brand?.audience,
-            primary: audience,
-          },
-        },
-        formatSettings: resolvedFormatSettings,
-        character: {
-          ...prev.character,
-          name: creatorName,
-          role: "Lead Host",
-          style: `${visualStyle} — ${creatorName} representing ${brandName}`,
-          avatarUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.avatarUrl || null,
-          imageUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.imageUrl || null,
-          characterSheetUrl: data.characterSheetUrl || data.characterImageUrl || prev.character?.characterSheetUrl || null,
-          voice: {
-            name: data.voiceProfile?.name || "Rachel",
-            language: data.voiceProfile?.language || "English (American)",
-            tone: tone,
-            locked: true,
-            voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
-            description: data.voiceProfile?.accent || data.voiceProfile?.description || "Clear, reassuring executive narrator voice",
-          },
-        },
-        accounts: Array.from(byPlatform.values()),
-        automationMode: automationMode,
-        productionMode: productionMode,
-        chatMessages: finalChatHistory,
-        viralSparks: initialSparks,
-        productions: [],
-        reviewItems: [],
-        publishJobs: [],
-        memoryItems: initialMemoryItems,
-        researchSources: Array.from(
-          new Map(
-            [...(prev.researchSources || []), ...initialResearchSources].map((s) => [s.url.toLowerCase().trim(), s])
-          ).values()
-        ),
-      };
-    });
-
     const isAdditionalWorkspace = data.mode === "additional_workspace";
     let brandId = "";
 
-    if (isAdditionalWorkspace && auth.currentUser?.id && isSupabaseConfigured()) {
+    if (isAdditionalWorkspace) {
+      if (!auth.currentUser?.id || !isSupabaseConfigured()) {
+        throw new Error("Genesis failed: Unable to provision additional workspace without an active authenticated cloud user.");
+      }
       try {
         const { createBrand } = await import("../backend/repositories/brandRepository");
         const createRes = await createBrand({
@@ -1191,14 +1055,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           publish_requires_approval: true,
           autonomous_publishing_enabled: automationMode === "autonomous",
         });
-        if (createRes.data?.id) {
-          brandId = createRes.data.id;
-          localStorage.setItem("spark_current_brand_id", brandId);
-          localStorage.setItem("spark_current_brand_name", brandName);
-          auth.setBrand(createRes.data);
+        if (!createRes.data?.id) {
+          throw new Error("createBrand returned no ID for additional workspace.");
         }
-      } catch (createErr) {
-        console.warn("[SparkContext] createBrand for additional workspace error:", createErr);
+        brandId = createRes.data.id;
+        localStorage.setItem("spark_current_brand_id", brandId);
+        localStorage.setItem("spark_current_brand_name", brandName);
+        auth.setBrand(createRes.data);
+      } catch (createErr: any) {
+        console.error("[SparkContext] createBrand for additional workspace failed:", createErr);
+        throw new Error(`Failed to create additional workspace: ${createErr?.message || String(createErr)}`);
       }
     } else {
       brandId = auth.brand?.id || getBrandWorkspaceId();
@@ -1226,6 +1092,183 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       throw new Error("Genesis persistence failed: Unable to provision cloud brand workspace UUID.");
     }
 
+    // Scoped local storage caching for format settings
+    if (brandId) {
+      try {
+        localStorage.setItem(`spark_format_settings_${brandId}`, JSON.stringify(resolvedFormatSettings));
+      } catch {}
+    }
+
+    const byPlatform = new Map<string, Account>();
+    if (!isAdditionalWorkspace) {
+      connectedFromOAuth.forEach((a) => byPlatform.set(a.platform, a));
+    }
+
+    // Merge explicit onboarding connection map or array
+    if (data.connectedAccounts) {
+      if (Array.isArray(data.connectedAccounts)) {
+        data.connectedAccounts.forEach((acc: any) => {
+          if (acc && acc.connected !== false) {
+            const platform = acc.platform || "YouTube Shorts";
+            const handle = acc.username || acc.handle || (platform.toLowerCase().includes("youtube") ? "@youtube" : "@x");
+            byPlatform.set(platform, {
+              platform,
+              handle,
+              status: "connected",
+              posts: 0,
+            });
+            try {
+              socialConnectorFramework.saveToken({
+                platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
+                handle: handle,
+                displayName: handle,
+                token: "oauth_genesis_" + Date.now(),
+                connectedAt: new Date().toISOString(),
+                scopes: ["read", "write", "publish"],
+                status: "active",
+              } as any);
+            } catch {}
+          }
+        });
+      } else if (typeof data.connectedAccounts === "object") {
+        Object.entries(data.connectedAccounts).forEach(([platform, meta]: [string, any]) => {
+          if (meta?.connected && meta?.handle) {
+            byPlatform.set(platform, {
+              platform,
+              handle: meta.handle,
+              status: "connected",
+              posts: 0,
+            });
+            try {
+              socialConnectorFramework.saveToken({
+                platform: platform.toLowerCase().includes("youtube") ? "youtube" : "x",
+                handle: meta.handle,
+                displayName: meta.handle,
+                token: "oauth_genesis_" + Date.now(),
+                connectedAt: new Date().toISOString(),
+                scopes: ["read", "write", "publish"],
+                status: "active",
+              } as any);
+            } catch {}
+          }
+        });
+      }
+    }
+
+    // Upload character sheet image to Supabase Storage bucket 'Spark' for durable persistence
+    const rawSheetUrl = data.characterSheetUrl || data.characterImageUrl || null;
+    let durableSheetUrl = rawSheetUrl;
+    if (brandId && isUuid(brandId) && rawSheetUrl) {
+      try {
+        const { uploadCharacterSheetToStorage } = await import("../backend/workspaceSync");
+        durableSheetUrl = await uploadCharacterSheetToStorage(brandId, rawSheetUrl);
+      } catch (storageErr) {
+        console.warn("[SparkContext] Character sheet storage upload notice:", storageErr);
+      }
+    }
+
+    const voiceProfileObj = {
+      name: data.voiceProfile?.name || data.voiceName || "Executive Presenter",
+      language: data.voiceProfile?.language || "English",
+      tone: tone,
+      locked: true,
+      voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
+      description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
+    };
+
+    if (isAdditionalWorkspace) {
+      // FIX 1 & 2: Clean isolated state for additional workspace (do NOT merge with previous brand)
+      setState({
+        brand: {
+          id: brandId,
+          name: brandName,
+          niche: niche,
+          purpose: vision,
+          automation_mode: automationMode,
+          review_required: reviewRequired,
+          formatSettings: resolvedFormatSettings,
+          creditSettings: DEFAULT_CREDIT_SETTINGS,
+          audience: {
+            primary: audience,
+            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
+            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+          },
+          tone: [{ label: tone, active: true }],
+          content_pillars: [],
+        },
+        character: {
+          name: creatorName,
+          role: "Lead Host",
+          style: `${visualStyle} — ${creatorName} representing ${brandName}`,
+          avatarUrl: durableSheetUrl,
+          imageUrl: durableSheetUrl,
+          characterSheetUrl: durableSheetUrl,
+          traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
+          voice: voiceProfileObj,
+        },
+        executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
+        accounts: Array.from(byPlatform.values()),
+        automationMode: automationMode,
+        productionMode: productionMode,
+        chatMessages: finalChatHistory,
+        viralSparks: initialSparks,
+        productions: [],
+        reviewItems: [],
+        publishJobs: [],
+        exportPackages: [],
+        analyticsInsights: [],
+        assets: [],
+        offers: [],
+        memoryItems: initialMemoryItems,
+        researchSources: initialResearchSources,
+        researchPatterns: [],
+        aiSettings: defaultAISettings,
+        creditSettings: DEFAULT_CREDIT_SETTINGS,
+        formatSettings: resolvedFormatSettings,
+        thinkingState: null,
+      });
+    } else {
+      setState((prev: any) => ({
+        ...prev,
+        brand: {
+          ...prev.brand,
+          id: brandId || prev.brand?.id,
+          name: brandName,
+          niche: niche,
+          purpose: vision,
+          automation_mode: automationMode,
+          review_required: reviewRequired,
+          formatSettings: resolvedFormatSettings,
+          audience: {
+            ...prev.brand?.audience,
+            primary: audience,
+          },
+          tone: [{ label: tone, active: true }],
+        },
+        formatSettings: resolvedFormatSettings,
+        character: {
+          ...prev.character,
+          name: creatorName,
+          role: "Lead Host",
+          style: `${visualStyle} — ${creatorName} representing ${brandName}`,
+          avatarUrl: durableSheetUrl || prev.character?.avatarUrl || null,
+          imageUrl: durableSheetUrl || prev.character?.imageUrl || null,
+          characterSheetUrl: durableSheetUrl || prev.character?.characterSheetUrl || null,
+          voice: voiceProfileObj,
+        },
+        accounts: Array.from(byPlatform.values()),
+        automationMode: automationMode,
+        productionMode: productionMode,
+        chatMessages: finalChatHistory,
+        viralSparks: initialSparks,
+        productions: [],
+        reviewItems: [],
+        publishJobs: [],
+        memoryItems: initialMemoryItems,
+        researchSources: initialResearchSources,
+      }));
+    }
+
     if (brandId && isUuid(brandId)) {
       if (initialMemoryItems[0]) {
         void persistMemoryCreate(brandId, initialMemoryItems[0]);
@@ -1235,32 +1278,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           persistBrandUpdate,
           persistCharacterUpdate,
           persistResearchSourceCreate,
-          uploadCharacterSheetToStorage,
+          persistFormatSettings,
         } = await import("../backend/workspaceSync");
-
-        // Upload character sheet image to Supabase Storage bucket 'Spark' for durable persistence
-        const rawSheetUrl = data.characterSheetUrl || data.characterImageUrl || null;
-        let durableSheetUrl = rawSheetUrl;
-        if (rawSheetUrl) {
-          try {
-            durableSheetUrl = await uploadCharacterSheetToStorage(brandId, rawSheetUrl);
-          } catch (storageErr) {
-            console.warn("[SparkContext] Character sheet storage upload notice:", storageErr);
-          }
-        }
-
-        // Update local character state with durable storage URL
-        if (durableSheetUrl) {
-          setState((prev: any) => ({
-            ...prev,
-            character: {
-              ...prev.character,
-              avatarUrl: durableSheetUrl,
-              imageUrl: durableSheetUrl,
-              characterSheetUrl: durableSheetUrl,
-            },
-          }));
-        }
 
         await persistBrandUpdate(brandId, {
           name: brandName,
@@ -1276,15 +1295,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           review_required: reviewRequired,
         });
 
-        const voiceProfileObj = {
-          name: data.voiceProfile?.name || data.voiceName || "Executive Presenter",
-          language: data.voiceProfile?.language || "English",
-          tone: tone,
-          locked: true,
-          voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
-          description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
-        };
-
         await persistCharacterUpdate(brandId, {
           name: creatorName,
           role: "Lead Host",
@@ -1296,7 +1306,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           voice: voiceProfileObj,
         });
 
-        // Persist connected accounts to cloud
+        // Persist connected accounts to cloud for this brand
         if (data.connectedAccounts && Array.isArray(data.connectedAccounts)) {
           for (const acc of data.connectedAccounts) {
             if (acc && acc.connected && acc.username) {
@@ -1309,15 +1319,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
 
-        // Persist research sources to research_sources table in cloud
+        // Persist research sources to research_sources table in cloud for this brand
         if (initialResearchSources.length > 0) {
           for (const src of initialResearchSources) {
             await persistResearchSourceCreate(brandId, src);
           }
         }
 
-        // Persist initial format settings to cloud
-        const { persistFormatSettings } = await import("../backend/workspaceSync");
+        // Persist initial format settings to cloud for this brand
         await persistFormatSettings(brandId, resolvedFormatSettings);
       } catch (persistErr) {
         console.warn("[SparkContext] initializeBrandGenesis persist error:", persistErr);

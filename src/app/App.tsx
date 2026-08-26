@@ -271,7 +271,7 @@ function AppContent() {
           new Promise((resolve) => setTimeout(resolve, 8000)),
         ]);
         const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
-        if (targetBrandId && isUuid(targetBrandId)) {
+        if (!isAdditional && targetBrandId && isUuid(targetBrandId)) {
           await auth.markOnboardingComplete(targetBrandId);
         }
         await auth.refreshBrands();
