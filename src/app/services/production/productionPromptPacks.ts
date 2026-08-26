@@ -304,3 +304,70 @@ No face morphing, no outfit change, no extra limbs, no shuffled panel order, no 
 `.trim();
 }
 
+export interface SceneMotionPromptParams {
+  mode: "standard" | "deep" | "express";
+  aspectRatio: string;
+  sceneIndex: number;
+  totalScenes: number;
+  durationSec: number;
+  shotFraming?: string;
+  action?: string;
+  spokenLines?: string;
+  onScreenText?: string;
+  audio?: string;
+  endPose?: string;
+  characterName?: string;
+  characterStyle?: string;
+  environment?: string;
+}
+
+export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string {
+  const {
+    mode,
+    aspectRatio,
+    sceneIndex,
+    totalScenes,
+    durationSec,
+    shotFraming = "Medium dynamic shot",
+    action = "Host presents key insight with authoritative gestures",
+    spokenLines,
+    onScreenText,
+    audio,
+    endPose = "Resolving poised posture holding frame",
+    characterName = "Host",
+    characterStyle = "Executive Presenter",
+    environment = "Modern High-Contrast Production Studio",
+  } = params;
+
+  const isDeep = mode === "deep";
+  const spoken = spokenLines ? ` Dialogue: "${spokenLines.replace(/"/g, "'")}"` : "";
+
+  const audioDirectives = isDeep
+    ? "Diegetic natural sound, room acoustic ambience, subtle foley. No voiceover narration."
+    : audio === "vo"
+    ? "Clean visual motion leaving acoustic space for external voiceover bed; subtle diegetic foley."
+    : "Synchronized on-camera speech performance with natural lip movement and diegetic acoustics.";
+
+  return `
+LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s):
+
+IMAGE 1 (First Frame Reference) = Single Scene Keyframe Still.
+IMAGE 2 (Optional Identity Ref) = Character Reference Sheet for "${characterName}".
+
+ANIMATION INSTRUCTION:
+- Begin precisely from the first frame image (IMAGE 1). Animate the continuous ${durationSec}s action seamlessly from that starting composition.
+- Camera Framing & Movement: ${shotFraming}. Smooth cinematic camera motion.
+- Subject Action: ${action}.${spoken}
+- Character Consistency: Strict facial, hair, and wardrobe fidelity to "${characterName}" (${characterStyle}).
+- Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.
+- Resolving End Pose: Gracefully transition into "${endPose}".
+- Audio / Performance: ${audioDirectives}
+
+CRITICAL PRODUCTION LAWS:
+- Single continuous camera shot. NO jump cuts. NO transitions within this shot.
+- NO multi-panel grids or split frames.
+- Professional cinematic motion, natural motion blur, realistic physics.
+`.trim();
+}
+
+

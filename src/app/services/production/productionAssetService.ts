@@ -3,7 +3,7 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
-import { getProductionPromptPack, buildTakeMotionPrompt } from "./productionPromptPacks";
+import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
@@ -1104,52 +1104,43 @@ Return valid JSON with this exact structure:
       void persistCurrentStage("Keyframes");
       startHeartbeat("Keyframes");
 
-      // PART 1 & 4 — Visuals Generation
-      // EXPRESS (Narrator): 1 clean single-frame hero still per beat (full-bleed, NO contact sheets, NO grids)
-      // STANDARD / DEEP (Hybrid / Cinematic): Sequential Take Grids (3-4 panels per contact sheet) for I2V motion
+      // PART 1 — Official Shot Method: 1 Full-Bleed Keyframe Still Per Scene (All Modes)
+      // FOR EACH scene: Generate 1 clean single-frame hero still conditioned on Character Sheet
       const sceneImages: string[] = [];
-      const takeGrids: string[] = [];
       const renderStartedAt = new Date().toISOString();
-
-      const panelsPerTake = aspectRatio === "16:9" ? 4 : 3;
-      const totalTakes = Math.max(1, Math.ceil(currentStoryboard.length / panelsPerTake));
-      const targetSec = activeFormatSettings?.targetDurationSec || 60;
-      const takeSec = Math.max(4, Math.round(targetSec / totalTakes));
 
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
-        if (mode === "express") {
-          // EXPRESS / NARRATOR STILLS: Generate 1 clean single-frame hero still per beat
-          emitProgress(20, "Keyframes", `Rendering ${currentStoryboard.length} full-bleed scene stills for Narrator slideshow...`);
+        emitProgress(20, "Keyframes", `Rendering ${currentStoryboard.length} full-bleed scene stills (${aspectRatio})...`);
 
-          for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
-            checkAborted();
-            const s = currentStoryboard[sIdx];
-            const globalSceneNum = s.scene || sIdx + 1;
+        for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
+          checkAborted();
+          const s = currentStoryboard[sIdx];
+          const globalSceneNum = s.scene || sIdx + 1;
 
-            // Check if existing still is already stored / durable
-            const existingStill = s.image || (brief.beats?.[sIdx] as any)?.image || brief.generatedAssets?.generatedFrames?.[sIdx];
-            if (!forceRegenerate && isValidMediaData(existingStill)) {
-              console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} Still -> ${existingStill}`);
-              sceneImages.push(existingStill);
-              s.image = existingStill;
-              s.keyframeImageUrl = existingStill;
-              currentStoryboard[sIdx] = { ...s, image: existingStill, keyframeImageUrl: existingStill };
-              continue;
-            }
+          // Check if existing still is already stored / durable
+          const existingStill = s.image || (brief.beats?.[sIdx] as any)?.image || brief.generatedAssets?.generatedFrames?.[sIdx];
+          if (!forceRegenerate && isValidMediaData(existingStill)) {
+            console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} Still -> ${existingStill}`);
+            sceneImages.push(existingStill);
+            s.image = existingStill;
+            s.keyframeImageUrl = existingStill;
+            currentStoryboard[sIdx] = { ...s, image: existingStill, keyframeImageUrl: existingStill };
+            continue;
+          }
 
-            const shotFraming = s.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-            const spoken = s.spokenLines || s.scriptSnippet ? `SPOKEN: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
-            const onScreen = s.onScreenText ? formatBurnedOnScreenText(s.onScreenText) : "";
-            const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
+          const shotFraming = s.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+          const spoken = s.spokenLines || s.scriptSnippet ? `SPOKEN: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
+          const onScreen = s.onScreenText ? formatBurnedOnScreenText(s.onScreenText) : "";
+          const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
 
-            const stillVisualLock = buildVisualLockRefs({
-              character,
-              previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
-            });
+          const stillVisualLock = buildVisualLockRefs({
+            character,
+            previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
+          });
 
-            const stillPrompt = `
+          const stillPrompt = `
 ${stillVisualLock.refPromptHeader}
 [SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
 ASPECT RATIO: ${aspectRatio} full-bleed single frame.
@@ -1166,212 +1157,59 @@ CRITICAL PRODUCTION LAWS:
 - Professional high-production cinematography, crisp lighting, depth of field.
 `.trim();
 
-            try {
-              checkAborted();
-              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}]...`);
-              const stillImgUrl = await withTimeout(
-                ModelRouter.executeCategoryRequest("storyboardImages", {
-                  prompt: stillPrompt,
-                  referenceImageUrl: stillVisualLock.primaryRefUrl,
-                  referenceImageUrls: stillVisualLock.imageUrls,
-                  aspectRatio: identityPack.aspectRatio,
-                }),
-                60000,
-                `Scene ${globalSceneNum} still generation timed out after 60s`,
-                signal
-              );
-              checkAborted();
-
-              if (isValidMediaData(stillImgUrl)) {
-                let finalStill = stillImgUrl;
-                try {
-                  const storedStill = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "image",
-                    storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
-                    dataUrlOrBlob: stillImgUrl,
-                    mimeType: "image/png",
-                    prompt: stillPrompt,
-                    provider: "ModelRouter",
-                  });
-                  if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Still -> ${finalStill}`);
-                } catch (storageErr) {
-                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} Still upload notice:`, storageErr);
-                }
-
-                sceneImages.push(finalStill);
-                if (sIdx === 0) realGridUrl = finalStill;
-                s.image = finalStill;
-                s.keyframeImageUrl = finalStill;
-                currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill };
-              } else {
-                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} returned empty/invalid image data:`, String(stillImgUrl || "").slice(0, 100));
-                if (!lastError) lastError = `Scene ${globalSceneNum} Still: No image bytes returned by provider`;
-              }
-            } catch (sceneErr: any) {
-              if (sceneErr?.name === "AbortError" || signal?.aborted) throw sceneErr;
-              console.error(`[SPARK Pipeline] Scene ${globalSceneNum} still generation failed:`, sceneErr);
-              if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${sceneErr?.message || String(sceneErr)}`;
-            }
-
-            const currentPct = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
-            emitProgress(currentPct, "Keyframes", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} still frame...`);
-            void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
-          }
-
-          stages[2].status = sceneImages.length > 0 ? "done" : "failed";
-          await persistCurrentStage("Keyframes");
-
-          if (sceneImages.length > 0) {
-            brief.storyboardGridUrl = sceneImages[0];
-            if (!brief.generatedAssets) brief.generatedAssets = {};
-            brief.generatedAssets.storyboardGridUrl = sceneImages[0];
-            brief.generatedAssets.generatedFrames = sceneImages;
-          }
-        } else {
-          // HYBRID / CINEMATIC (standard / deep): Sequential Take Grids for I2V Motion
-          for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
+          try {
             checkAborted();
-            const startIdx = tIdx * panelsPerTake;
-            const takeScenes = currentStoryboard.slice(startIdx, startIdx + panelsPerTake);
-            if (takeScenes.length === 0) continue;
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}]...`);
+            const stillImgUrl = await withTimeout(
+              ModelRouter.executeCategoryRequest("storyboardImages", {
+                prompt: stillPrompt,
+                referenceImageUrl: stillVisualLock.primaryRefUrl,
+                referenceImageUrls: stillVisualLock.imageUrls,
+                aspectRatio: identityPack.aspectRatio,
+              }),
+              60000,
+              `Scene ${globalSceneNum} still generation timed out after 60s`,
+              signal
+            );
+            checkAborted();
 
-            // Check if existing take grid is already stored / durable
-            const existingTakeGrid = brief.takeGrids?.[tIdx] || (tIdx === 0 ? realGridUrl : undefined);
-            if (!forceRegenerate && isValidMediaData(existingTakeGrid)) {
-              console.log(`[SPARK Pipeline] Reusing existing Take ${tIdx + 1} Grid -> ${existingTakeGrid}`);
-              takeGrids.push(existingTakeGrid);
-              takeScenes.forEach((s, idx) => {
-                const globalIdx = startIdx + idx;
-                s.image = existingTakeGrid;
-                sceneImages.push(existingTakeGrid);
-                currentStoryboard[globalIdx] = { ...s, image: existingTakeGrid };
-              });
-              continue;
-            }
-
-            const prevTakeGrid = tIdx > 0 ? takeGrids[tIdx - 1] : undefined;
-            const visualLock = buildVisualLockRefs({
-              character,
-              storyboardGridUrl: prevTakeGrid || realGridUrl,
-              previousLastFrameUrl: prevTakeGrid,
-            });
-
-            const charAnalysis = `
-CHARACTER CONTINUITY (Strictly locked from sheet):
-- Name: ${character?.name || "Host"} (${character?.style || "Executive Presenter"}).
-- Traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.
-- Signature Wardrobe: Proportions, face, hair, and wardrobe strictly identical to IMAGE 1. Never change mid-board. No second costume.
-- Environment (locked): ${identityPack.environmentString}.
-`.trim();
-
-            const panelBreakdown = takeScenes.map((s, pIdx) => {
-              const panelNum = pIdx + 1;
-              const globalSceneNum = startIdx + pIdx + 1;
-              const shotFraming = s.cameraDirection || (pIdx === 0 ? "Wide/Medium establishing shot" : pIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-              const spoken = s.spokenLines || s.scriptSnippet ? `LINE: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
-              const onScreen = formatBurnedOnScreenText(s.onScreenText || brief.beats?.[startIdx + pIdx]?.onScreenText || (globalSceneNum === 1 ? brief.hook : `SCENE ${globalSceneNum}`));
-              const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
-              const endPose = s.endState || "Host delivers clear resolving gesture";
-              return `PANEL ${panelNum} (Scene ${globalSceneNum}): [${shotFraming}] | ACTION: ${action} | ${spoken} | ON-SCREEN: "${onScreen}" | CAMERA: ${shotFraming} | END POSE: ${endPose}`;
-            }).join("\n");
-
-            const takeGridPrompt = `
-${visualLock.refPromptHeader}
-Cinematic storyboard CONTACT SHEET for TAKE ${tIdx + 1} of ${totalTakes}.
-Duration this take: ${takeSec}s. Cell aspect: ${aspectRatio}.
-IMAGE 1 = Character sheet/avatar reference (${character?.name || "Lead Host"}).
-${tIdx > 0 ? `IMAGE 2 = Previous take grid continuing from Take ${tIdx} last panel end pose.` : ""}
-
-${charAnalysis}
-
-LAYOUT ON ONE IMAGE:
-- ${takeScenes.length} numbered sequential panels with thin gutters (${aspectRatio === "16:9" ? "2x2 grid layout" : "vertical continuous 3-panel stack"}).
-- Panel order from 1 to ${takeScenes.length}.
-- Panel k starts from panel k-1 end pose. ${tIdx === 0 ? "Take 1 Panel 1 = Wide/Medium establishing shot." : `Take ${tIdx + 1} Panel 1 continues from Take ${tIdx} resolution.`}
-
-PANEL BREAKDOWN:
-${panelBreakdown}
-
-PRODUCTION LAWS:
-- Looks like a finished professional film/manhua storyboard contact sheet.
-- No extra cast members. No random moodboard collage. No text walls.
-- Ultra-crisp storyboard rendering, readable action staging, consistent framing variety.
-`.trim();
-
-            try {
-              checkAborted();
-              console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} storyboard grid via ModelRouter ("storyboardImages") [Refs: ${visualLock.imageUrls.length}]...`);
-              const gridImgUrl = await withTimeout(
-                ModelRouter.executeCategoryRequest("storyboardImages", {
-                  prompt: takeGridPrompt,
-                  referenceImageUrl: visualLock.primaryRefUrl,
-                  referenceImageUrls: visualLock.imageUrls,
-                  aspectRatio: identityPack.aspectRatio,
-                }),
-                60000,
-                `Take ${tIdx + 1} storyboard grid generation timed out after 60s`,
-                signal
-              );
-              checkAborted();
-
-              if (isValidMediaData(gridImgUrl)) {
-                let finalGrid = gridImgUrl;
-                try {
-                  const storedGrid = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "storyboard",
-                    storagePath: `${production.id}/take-grids/take-0${tIdx + 1}.png`,
-                    dataUrlOrBlob: gridImgUrl,
-                    mimeType: "image/png",
-                    prompt: takeGridPrompt,
-                    provider: "ModelRouter",
-                  });
-                  if (storedGrid?.publicUrl) finalGrid = storedGrid.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Take ${tIdx + 1} Grid -> ${finalGrid}`);
-                } catch (storageErr) {
-                  console.warn(`[SPARK Pipeline] Take ${tIdx + 1} Grid upload notice:`, storageErr);
-                }
-
-                takeGrids.push(finalGrid);
-                if (tIdx === 0) realGridUrl = finalGrid;
-
-                takeScenes.forEach((s, idx) => {
-                  const globalIdx = startIdx + idx;
-                  s.image = finalGrid;
-                  sceneImages.push(finalGrid);
-                  currentStoryboard[globalIdx] = { ...s, image: finalGrid };
+            if (isValidMediaData(stillImgUrl)) {
+              let finalStill = stillImgUrl;
+              try {
+                const storedStill = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "image",
+                  storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                  dataUrlOrBlob: stillImgUrl,
+                  mimeType: "image/png",
+                  prompt: stillPrompt,
+                  provider: "ModelRouter",
                 });
-              } else {
-                console.warn(`[SPARK Pipeline] Take ${tIdx + 1} returned empty/invalid image data:`, String(gridImgUrl || "").slice(0, 100));
-                if (!lastError) lastError = `Take ${tIdx + 1} Grid: No image bytes returned by provider`;
+                if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+                console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Still -> ${finalStill}`);
+              } catch (storageErr) {
+                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} Still upload notice:`, storageErr);
               }
-            } catch (takeErr: any) {
-              if (takeErr?.name === "AbortError" || signal?.aborted) throw takeErr;
-              console.error(`[SPARK Pipeline] Take ${tIdx + 1} grid generation failed:`, takeErr);
-              if (!lastError) lastError = `Take ${tIdx + 1} Grid: ${takeErr?.message || String(takeErr)}`;
+
+              sceneImages.push(finalStill);
+              if (sIdx === 0) realGridUrl = finalStill;
+              s.image = finalStill;
+              s.keyframeImageUrl = finalStill;
+              currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill };
+            } else {
+              console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} returned empty/invalid image data:`, String(stillImgUrl || "").slice(0, 100));
+              if (!lastError) lastError = `Scene ${globalSceneNum} Still: No image bytes returned by provider`;
             }
-
-            const currentPct = 20 + Math.round(((tIdx + 1) / totalTakes) * 35);
-            emitProgress(currentPct, "Keyframes", `Rendered Take ${tIdx + 1} of ${totalTakes} storyboard grid...`);
-            void persistCurrentStage(`Take-${tIdx + 1}`);
+          } catch (sceneErr: any) {
+            if (sceneErr?.name === "AbortError" || signal?.aborted) throw sceneErr;
+            console.error(`[SPARK Pipeline] Scene ${globalSceneNum} still generation failed:`, sceneErr);
+            if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${sceneErr?.message || String(sceneErr)}`;
           }
 
-          stages[2].status = takeGrids.length > 0 ? "done" : "failed";
-          await persistCurrentStage("Keyframes");
-
-          // Bind take grids as master storyboard visuals for preview and motion
-          if (takeGrids.length > 0) {
-            brief.storyboardGridUrl = takeGrids[0];
-            brief.takeGrids = takeGrids;
-            if (!brief.generatedAssets) brief.generatedAssets = {};
-            brief.generatedAssets.storyboardGridUrl = takeGrids[0];
-            brief.generatedAssets.takeGrids = takeGrids;
-            brief.generatedAssets.generatedFrames = takeGrids;
-          }
+          const currentPct = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
+          emitProgress(currentPct, "Keyframes", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} still frame...`);
+          void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
         }
       } catch (imgErr: any) {
         if (imgErr?.name === "AbortError" || signal?.aborted) throw imgErr;
@@ -1379,18 +1217,27 @@ PRODUCTION LAWS:
         if (!lastError) lastError = `Visuals Stage: ${imgErr?.message || String(imgErr)}`;
       }
 
+      stages[2].status = sceneImages.length > 0 ? "done" : "failed";
+      await persistCurrentStage("Keyframes");
+
+      if (sceneImages.length > 0) {
+        brief.storyboardGridUrl = sceneImages[0];
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        brief.generatedAssets.storyboardGridUrl = sceneImages[0];
+        brief.generatedAssets.generatedFrames = sceneImages;
+      }
+
       stages[3].status = "active";
-      emitProgress(60, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on storyboard take grids...`);
+      emitProgress(60, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on single-scene keyframes...`);
       void persistCurrentStage("Video");
       startHeartbeat("Video");
 
-      // PART 3 — Stills Drive Motion: Image-Conditioned Video Generation Loop via ModelRouter ("videoGeneration")
+      // PART 2 — Stills Drive Motion: 1 Video Generation Call Per Scene (Standard & Deep)
       const sceneClips: string[] = [];
-      const takeClips: string[] = [];
 
       checkAborted();
 
-      // Stored production generation fingerprint comparison (BUG 3)
+      // Stored production generation fingerprint comparison
       const prevProdDuration =
         (production as any)?.formatSettings?.targetDurationSec ??
         (production as any)?.targetDurationSec ??
@@ -1459,7 +1306,7 @@ PRODUCTION LAWS:
           if (isExpressNarrator) {
             // NARRATOR PIPELINE (express): Compile stills + voiceover into video without calling videoGeneration provider
             console.log(`[SPARK Pipeline] Mode is "${mode}" (Narrator). Compiling ordered stills + voiceover narration into master MP4 (0 AI video credits burned).`);
-            emitProgress(70, "Compile", "Compiling Narrator slideshow video from storyboard grids & voiceover...");
+            emitProgress(70, "Compile", "Compiling Narrator slideshow video from single-scene stills & voiceover...");
 
             try {
               const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
@@ -1531,89 +1378,82 @@ PRODUCTION LAWS:
               realVideoUrl = undefined;
             }
           } else {
-            // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion conditioned on Take Grids + Character Sheet
-            // CONSISTENCY GATE: Do not call videoGeneration unless at least Take 1 grid exists and is valid
-            if (takeGrids.length === 0 || !isValidMediaData(takeGrids[0])) {
-              const errMsg = "Consistency Gate Failure: Take 1 storyboard grid is missing or invalid. Video motion requires a verified Take 1 grid.";
-              console.error(`[SPARK Pipeline] ${errMsg}`);
-              throw new Error(errMsg);
-            }
-
+            // HYBRID (standard) & CINEMATIC (deep): Official Shot Method — 1 videoGeneration call per scene conditioned on THAT scene's still
             const { ModelRouter } = await import("../runtime/modelRouter");
             const activeVideo = resolveActiveVideoProvider({
               preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
             });
             const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
+            const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
 
-            // REQUIRED MOTION MODEL: 1 take grid = 1 videoGeneration call
-            for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
+            for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
               checkAborted();
-              const startIdx = tIdx * panelsPerTake;
-              const takeScenes = currentStoryboard.slice(startIdx, startIdx + panelsPerTake);
-              const takeGridForTake = takeGrids[tIdx] || realGridUrl;
+              const s = currentStoryboard[sIdx];
+              const globalSceneNum = s.scene || sIdx + 1;
+              const sceneFirstFrame = s.image || sceneImages[sIdx];
 
-              // References strictly in order: [0] character sheet, [1] take grid, [2] previous take last frame (if tIdx > 0)
-              const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
-              const orderedTakeRefs: string[] = [];
-              const refLabels: string[] = [];
-
-              if (charSheetUrl && isValidMediaData(charSheetUrl)) {
-                orderedTakeRefs.push(charSheetUrl);
-                refLabels.push(`INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`);
+              // Check if existing durable clip exists for this scene
+              if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
+                console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} video clip -> ${s.videoUrl}`);
+                sceneClips.push(s.videoUrl);
+                if (sIdx === 0 && !realVideoUrl) realVideoUrl = s.videoUrl;
+                continue;
               }
 
-              if (takeGridForTake && isValidMediaData(takeGridForTake) && !orderedTakeRefs.includes(takeGridForTake)) {
-                orderedTakeRefs.push(takeGridForTake);
-                refLabels.push(`INPUT REF [${orderedTakeRefs.length + 1}]: Take ${tIdx + 1} Storyboard Grid (Sequential Shot List)`);
+              // Consistency Gate: scene image must exist
+              if (!sceneFirstFrame || !isValidMediaData(sceneFirstFrame)) {
+                const errMsg = `Consistency Gate Failure: Scene ${globalSceneNum} still frame is missing or invalid. I2V motion requires a verified scene still.`;
+                console.error(`[SPARK Pipeline] ${errMsg}`);
+                throw new Error(errMsg);
               }
 
-              const prevTakeLastFrame = tIdx > 0 ? (takeClips[tIdx - 1] || takeGrids[tIdx - 1]) : undefined;
-              if (tIdx > 0 && prevTakeLastFrame && isValidMediaData(prevTakeLastFrame) && !orderedTakeRefs.includes(prevTakeLastFrame)) {
-                orderedTakeRefs.push(prevTakeLastFrame);
-                refLabels.push(`INPUT REF [${orderedTakeRefs.length + 1}]: Preceding Take ${tIdx} Resolution Frame`);
+              // Calculate native duration for this single scene shot (never whole film, snap to provider map)
+              const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
+              const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
+
+              // Build reference array: [0] = scene.image (First Frame), [1] = characterSheetUrl (Identity Law)
+              const orderedSceneRefs: string[] = [sceneFirstFrame];
+              const refLabels: string[] = [`INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`];
+
+              if (charSheetUrl && isValidMediaData(charSheetUrl) && charSheetUrl !== sceneFirstFrame) {
+                orderedSceneRefs.push(charSheetUrl);
+                refLabels.push(`INPUT REF [2]: Character Model Sheet (${character?.name || "Host"})`);
               }
 
-              const refHeader = refLabels.length > 0
-                ? `${refLabels.join("\n")}\nVISUAL LOCK LAW: The physical identity, face, outfit, and studio set look strictly lives in the reference images above. Use IMAGE 1 as identity and IMAGE 2 as sequential shot list.\n`
-                : "";
+              const refHeader = `${refLabels.join("\n")}\nVISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. IMAGE 2 is character identity law.\n`;
 
-              const rawTakeDur = takeSec;
-              const takeTargetDuration = snapToAllowedDuration(Math.min(rawTakeDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
-
-              const takeMotionPrompt = `${refHeader}\n${buildTakeMotionPrompt({
+              const sceneMotionPrompt = `${refHeader}\n${buildSceneMotionPrompt({
                 mode,
                 aspectRatio: identityPack.aspectRatio,
-                takeIndex: tIdx + 1,
-                totalTakes: totalTakes,
-                takeDurationSec: takeTargetDuration,
-                panels: takeScenes.map((ts, pIdx) => ({
-                  panelIndex: pIdx,
-                  shotFraming: ts.cameraDirection,
-                  action: ts.primaryChange || ts.visualDescription,
-                  spokenLines: ts.spokenLines || ts.scriptSnippet,
-                  onScreenText: ts.onScreenText,
-                  audio: ts.audio,
-                })),
+                sceneIndex: globalSceneNum,
+                totalScenes: currentStoryboard.length,
+                durationSec: sceneTargetDuration,
+                shotFraming: s.cameraDirection,
+                action: s.primaryChange || s.visualDescription || s.startState,
+                spokenLines: s.spokenLines || s.scriptSnippet,
+                onScreenText: s.onScreenText,
+                audio: s.audio,
+                endPose: s.endState,
                 characterName: character?.name || "Host",
                 characterStyle: character?.style || "Executive Presenter",
                 environment: identityPack.environmentString,
               })}`;
 
-              console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [Refs: ${orderedTakeRefs.length} -> Sheet: ${Boolean(charSheetUrl)}, Grid: ${Boolean(takeGridForTake)}, Duration: ${takeTargetDuration}s]...`);
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [FirstFrame: ${Boolean(sceneFirstFrame)}, Duration: ${sceneTargetDuration}s]...`);
 
               try {
                 checkAborted();
                 const generatedClip = await withTimeout(
                   ModelRouter.executeCategoryRequest("videoGeneration", {
-                    prompt: takeMotionPrompt,
-                    referenceImageUrl: orderedTakeRefs[0],
-                    referenceImageUrls: orderedTakeRefs,
+                    prompt: sceneMotionPrompt,
+                    referenceImageUrl: sceneFirstFrame,
+                    referenceImageUrls: orderedSceneRefs,
                     aspectRatio: identityPack.aspectRatio,
-                    durationSec: takeTargetDuration,
+                    durationSec: sceneTargetDuration,
                   }),
                   90000,
-                  `Take ${tIdx + 1} video generation timed out after 90s`,
+                  `Scene ${globalSceneNum} video generation timed out after 90s`,
                   signal
                 );
                 checkAborted();
@@ -1625,70 +1465,74 @@ PRODUCTION LAWS:
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
-                      storagePath: getStoragePath(`video/take-0${tIdx + 1}.mp4`),
+                      storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.mp4`,
                       dataUrlOrBlob: generatedClip,
                       mimeType: "video/mp4",
-                      prompt: takeMotionPrompt,
+                      prompt: sceneMotionPrompt,
                       provider: "ModelRouter",
                     });
                     if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Take ${tIdx + 1} Video -> ${finalClip}`);
+                    console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Video -> ${finalClip}`);
                   } catch (storageErr: any) {
-                    console.warn(`[SPARK Pipeline] Take ${tIdx + 1} video upload failed, retaining provider URL:`, storageErr);
+                    console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video upload notice:`, storageErr);
                   }
 
-                  takeScenes.forEach((s) => {
-                    s.videoUrl = finalClip;
-                  });
-                  takeClips.push(finalClip);
+                  s.videoUrl = finalClip;
+                  currentStoryboard[sIdx] = { ...s, videoUrl: finalClip };
                   sceneClips.push(finalClip);
-                  if (!realVideoUrl) realVideoUrl = finalClip;
+                  if (sIdx === 0) realVideoUrl = finalClip;
+                } else {
+                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generatedClip || "").slice(0, 100));
+                  if (!lastError) lastError = `Scene ${globalSceneNum} Video: Provider returned empty data`;
                 }
-              } catch (takeVidErr: any) {
-                if (takeVidErr?.name === "AbortError" || signal?.aborted) throw takeVidErr;
-                console.warn(`[SPARK Pipeline] Take ${tIdx + 1} video generation notice:`, takeVidErr);
-                if (!lastError) lastError = `Take ${tIdx + 1} Video: ${takeVidErr?.message || String(takeVidErr)}`;
+              } catch (sceneVidErr: any) {
+                if (sceneVidErr?.name === "AbortError" || signal?.aborted) throw sceneVidErr;
+                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation notice:`, sceneVidErr);
+                if (!lastError) lastError = `Scene ${globalSceneNum} Video: ${sceneVidErr?.message || String(sceneVidErr)}`;
               }
 
-              const currentPct = 60 + Math.round(((tIdx + 1) / totalTakes) * 20);
-              emitProgress(currentPct, "Video", `Rendered Take ${tIdx + 1} of ${totalTakes} video motion...`);
-              void persistCurrentStage(`Take-Video-${tIdx + 1}`);
+              const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
+              emitProgress(currentPct, "Video", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} video clip...`);
+              void persistCurrentStage(`Scene-Video-${globalSceneNum}`);
             }
 
-            // MERGE TAKE CLIPS INTO ONE PLAYABLE MASTER VIDEO
-            const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
-            const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
-            const targetMergeTexts = currentStoryboard.map((s, idx) => {
-              const primaryOnScreen = s.onScreenText;
-              if (primaryOnScreen) {
-                const formatted = formatBurnedOnScreenText(primaryOnScreen);
-                if (formatted) return formatted;
-              }
-              const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-              if (beatOnScreen) {
-                const formatted = formatBurnedOnScreenText(beatOnScreen);
-                if (formatted) return formatted;
-              }
-              if (idx === 0 && brief.hook) {
-                return formatBurnedOnScreenText(brief.hook);
-              }
-              return "";
-            });
+            // Gated merge policy:
+            // "Merge: do not auto-concat during generate if review_required. Leave scene clips. Master after Approve & merge (existing gallery action). If you must keep auto-merge for autonomous mode only, gate on automationMode."
+            const isAutonomous = (brand as any)?.automation_mode === "autonomous" || !(brand as any)?.review_required;
 
-            if (takeClips.length > 1) {
-              emitProgress(82, "Merge", `Merging ${takeClips.length} approved take videos into master MP4...`);
+            if (isAutonomous && sceneClips.length > 1) {
+              emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4 (autonomous mode)...`);
               try {
+                const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
+                const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
+                const targetMergeTexts = currentStoryboard.map((s, idx) => {
+                  const primaryOnScreen = s.onScreenText;
+                  if (primaryOnScreen) {
+                    const formatted = formatBurnedOnScreenText(primaryOnScreen);
+                    if (formatted) return formatted;
+                  }
+                  const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+                  if (beatOnScreen) {
+                    const formatted = formatBurnedOnScreenText(beatOnScreen);
+                    if (formatted) return formatted;
+                  }
+                  if (idx === 0 && brief.hook) {
+                    return formatBurnedOnScreenText(brief.hook);
+                  }
+                  return "";
+                });
+
                 const { mergeSceneVideos } = await import("./sceneVideoMerger");
                 const mergeResult = await withTimeout(
                   mergeSceneVideos({
-                    videoUrls: takeClips,
+                    videoUrls: sceneClips,
                     audioUrl: mergeAudioUrl,
                     onScreenTexts: targetMergeTexts,
                     width: aspectRatio === "16:9" ? 1920 : 1080,
                     height: aspectRatio === "16:9" ? 1080 : 1920,
                   }),
                   60000,
-                  "Automatic take video merge timed out after 60s",
+                  "Automatic scene video merge timed out after 60s",
                   signal
                 );
 
@@ -1701,46 +1545,21 @@ PRODUCTION LAWS:
                     storagePath: getStoragePath(`video/master.${ext}`),
                     dataUrlOrBlob: mergeResult.blob,
                     mimeType: mergeResult.mimeType || `video/${ext}`,
-                    prompt: `Merged ${mode} master video from ${takeClips.length} takes`,
+                    prompt: `Merged ${mode} master video from ${sceneClips.length} scenes`,
                     provider: "SceneVideoMerger",
                   });
                   if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
                     realVideoUrl = storedMergedVid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Merged Master Video (${takeClips.length} takes) -> ${realVideoUrl}`);
-                  } else {
-                    realVideoUrl = undefined;
-                    lastError = "Merged video upload failed to return a verified durable Storage URL.";
+                    console.log(`[SPARK Pipeline] Storage Upload: Autonomous Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                   }
-                } else {
-                  realVideoUrl = undefined;
-                  lastError = "Automatic take video merger produced an empty video blob.";
                 }
               } catch (mergeErr: any) {
-                console.warn("[SPARK Pipeline] Automatic take merge execution notice:", mergeErr);
-                realVideoUrl = undefined;
-                lastError = `Automatic take merge failed: ${mergeErr?.message || String(mergeErr)}`;
+                console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
               }
-            } else if (takeClips.length === 1) {
-              if (isDurableMasterVideoReady(takeClips[0])) {
-                realVideoUrl = takeClips[0];
-              } else {
-                try {
-                  const storedSingle = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "video",
-                    storagePath: getStoragePath("video/master.mp4"),
-                    dataUrlOrBlob: takeClips[0],
-                    mimeType: "video/mp4",
-                    prompt: `Master video from single take clip (${mode})`,
-                    provider: "ModelRouter",
-                  });
-                  if (storedSingle?.publicUrl && isDurableMasterVideoReady(storedSingle.publicUrl)) {
-                    realVideoUrl = storedSingle.publicUrl;
-                  }
-                } catch (singleErr: any) {
-                  console.warn("[SPARK Pipeline] Single take master storage upload notice:", singleErr);
-                }
+            } else if (sceneClips.length > 0) {
+              console.log(`[SPARK Pipeline] Review Required / Manual workflow: Retaining ${sceneClips.length} distinct scene video clips for executive scene review.`);
+              if (sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+                realVideoUrl = sceneClips[0];
               }
             }
           }
@@ -1823,7 +1642,7 @@ COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight gl
 
             const thumbVisualLock = buildVisualLockRefs({
               character,
-              storyboardGridUrl: realGridUrl || takeGrids[0],
+              storyboardGridUrl: realGridUrl || sceneImages[0],
             });
 
             const thumbPrompt = `
@@ -1930,18 +1749,25 @@ Brand: ${brand.name}
         if (!realVideoUrl) {
           lastError = lastError || "Narrator slideshow compilation failed to produce a verified durable video in Storage.";
         }
+      } else {
+        if (sceneClips.length === 0 && !realVideoUrl) {
+          lastError = lastError || "Video generation failed to produce verified scene video clips in permanent Storage.";
+        }
       }
 
+      const hasDurableSceneClips = sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c));
+      const hasDurableMaster = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
+
       const isOverallSuccess = Boolean(
-        realVideoUrl &&
-        isDurableMasterVideoReady(realVideoUrl) &&
-        (!isExpressNarrator || (realVoiceUrl && isValidMediaData(realVoiceUrl)))
+        isExpressNarrator
+          ? (hasDurableMaster && realVoiceUrl && isValidMediaData(realVoiceUrl))
+          : (hasDurableSceneClips || hasDurableMaster)
       );
       const finalStatus = isOverallSuccess ? "Completed" : "Failed";
       if (!isOverallSuccess && !lastError) {
         lastError = isExpressNarrator
           ? "Narrator slideshow compilation failed to produce a verified durable video in Storage."
-          : "Video generation failed to produce a verified durable master video in permanent Storage.";
+          : "Video generation failed to produce verified scene video clips in permanent Storage.";
       }
       const finalMsg = isOverallSuccess
         ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
@@ -1991,11 +1817,9 @@ Brand: ${brand.name}
             visualDescription: brief.visualDirection,
           },
         ],
-        takeGrids: takeGrids.length > 0 ? takeGrids : brief.takeGrids,
-        storyboardGridUrl: realGridUrl || takeGrids[0] || brief.storyboardGridUrl,
+        storyboardGridUrl: realGridUrl || brief.storyboardGridUrl,
         generatedAssets: {
-          storyboardGridUrl: realGridUrl || takeGrids[0] || brief.storyboardGridUrl,
-          takeGrids: takeGrids.length > 0 ? takeGrids : brief.takeGrids,
+          storyboardGridUrl: realGridUrl || brief.storyboardGridUrl,
           sceneClips: sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined),
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceoverUrl: realVoiceUrl,
@@ -2027,13 +1851,10 @@ Brand: ${brand.name}
 
       const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => {
         const isExpress = mode === "express";
-        const takeIndex = Math.floor(idx / panelsPerTake);
-        const sceneStillUrl = isExpress
-          ? (sb.image || sceneImages[idx] || realGridUrl)
-          : (takeGrids[takeIndex] || sb.image || realGridUrl || sceneImages[idx]);
+        const sceneStillUrl = sb.image || sceneImages[idx] || realGridUrl;
         const sceneClipUrl = isExpress
           ? (realVideoUrl || sb.videoUrl)
-          : (sb.videoUrl || (takeIndex < takeClips.length ? takeClips[takeIndex] : undefined) || (idx === 0 ? realVideoUrl : undefined));
+          : (sb.videoUrl || sceneClips[idx] || (idx === 0 ? realVideoUrl : undefined));
         return {
           scene: sb.scene || idx + 1,
           index: sb.scene || idx + 1,
