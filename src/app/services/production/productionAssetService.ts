@@ -1368,9 +1368,14 @@ No resets, no new character, no scrambled order.
                 const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
                 emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
               }
-            } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
-              const videoDurationSec = mode === "deep" ? (activeCreditSettings?.cinematicDurationSec || 8) : (activeCreditSettings?.shortsDurationSec || 8);
+              const activeVideo = resolveActiveVideoProvider({
+                preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
+              });
+              const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
+              const targetSec = activeFormatSettings?.targetDurationSec || 60;
+              const allowedDuration = snapToAllowedDuration(Math.min(targetSec, nativeMaxClipSec), activeVideo.providerId);
+              const videoDurationSec = allowedDuration || (mode === "deep" ? Math.min(targetSec, 12) : Math.min(targetSec, 8));
               const beatInterval = Math.max(3, Math.floor(videoDurationSec / Math.max(1, currentStoryboard.length)));
               const sceneDescriptions = currentStoryboard
                 .map((s, i) => {
