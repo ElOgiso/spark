@@ -28,6 +28,7 @@ export interface DesktopSceneItem {
   videoUrl?: string;
   beatLine?: string;
   visualDescription?: string;
+  audio?: "vo" | "talent";
 }
 
 export interface DesktopProductionAssetsGalleryProps {
@@ -45,7 +46,7 @@ export function DesktopProductionAssetsGallery({
   const brief = activeProd?.brief || item?.brief;
   const title = brief?.title || activeProd?.title || item?.title || "Production Assets";
 
-  const rawStoryboard = brief?.storyboard || activeProd?.storyboard || [];
+  const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
   const rawClips = brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
 
   const initialScenes: DesktopSceneItem[] =
@@ -62,6 +63,7 @@ export function DesktopProductionAssetsGallery({
             videoUrl: clipUrl,
             beatLine: s.onScreenText || s.scriptSnippet || s.visualDescription || s.primaryChange || "Sequential scene beat",
             visualDescription: s.visualDescription,
+            audio: s.audio,
           };
         })
       : [
@@ -256,11 +258,20 @@ export function DesktopProductionAssetsGallery({
                         </div>
                       )}
 
-                      {/* Top-Left Scene Badge */}
-                      <div className="absolute top-2 left-2 z-10">
+                      {/* Top-Left Scene Badge & Audio Tag */}
+                      <div className="absolute top-2 left-2 z-10 flex items-center gap-1">
                         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-black/70 border border-white/10 text-white backdrop-blur-md">
                           Scene {scene.index}
                         </span>
+                        {scene.audio && (
+                          <span className={`text-[9px] font-semibold font-mono px-1.5 py-0.5 rounded-md backdrop-blur-md border ${
+                            scene.audio === "talent"
+                              ? "bg-blue-500/30 border-blue-400 text-blue-200"
+                              : "bg-purple-500/30 border-purple-400 text-purple-200"
+                          }`}>
+                            {scene.audio === "talent" ? "Talent" : "VO"}
+                          </span>
+                        )}
                       </div>
 
                       {/* Top-Right Status Chip */}

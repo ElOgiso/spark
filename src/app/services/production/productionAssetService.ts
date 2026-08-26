@@ -1311,10 +1311,18 @@ Brand: ${brand.name}
           } else {
             // HYBRID (standard) & CINEMATIC (deep): Use videoGeneration model for motion
             const { ModelRouter } = await import("../runtime/modelRouter");
-            const enablePerSceneClips = Boolean((params as any)?.enablePerSceneClips);
+            const activeVideo = resolveActiveVideoProvider({
+              preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
+            });
+            const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
+            const targetSec = activeFormatSettings?.targetDurationSec || 60;
+            const enablePerSceneClips = Boolean(
+              (params as any)?.enablePerSceneClips ||
+              (mode === "standard" && (targetSec > nativeMaxClipSec || currentStoryboard.length > 1))
+            );
 
             if (enablePerSceneClips) {
-              // Optional path: per-scene clip generation
+              // Per-scene clip generation with hybrid audio directives and automatic merge
               const totalVideoStages = currentStoryboard.length || 3;
 
               for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
@@ -1330,6 +1338,12 @@ Brand: ${brand.name}
                   previousLastFrameUrl: sIdx > 0 ? (sceneClips[sIdx - 1] || sceneImages[sIdx - 1]) : undefined,
                 });
 
+                const isTalentSpeech = scene.audio === "talent";
+                const spokenDialogue = scene.spokenLines || scene.scriptSnippet || "";
+                const audioDirective = isTalentSpeech
+                  ? (spokenDialogue ? `TALENT PERFORMANCE (Dialogue Spoken On-Camera): Host speaks directly to camera: "${spokenDialogue.replace(/"/g, "'")}". Synchronized speech motion and authoritative presenter performance.` : "Host delivers energetic on-camera presentation directly to lens.")
+                  : `B-ROLL / GRAPHICS MOTION (VOICE-OVER SCENE): Smooth cinematic motion, host observing graphics, charts, or environment. Do NOT deliver on-camera spoken dialogue or mouth lip-sync movements.`;
+
                 const stageMotionPrompt = `
 ${stageVisualLock.refPromptHeader}
 Animate the provided storyboard reference in exact panel/scene order 1->N (Scene ${sIdx + 1} of ${totalVideoStages}).
@@ -1337,6 +1351,7 @@ Character must remain identical to the reference sheet throughout (${character?.
 Environment must remain continuous (${identityPack.environmentString}).
 One primary action per scene: ${scene.primaryChange || scene.visualDescription}.
 Framing: ${panelFraming}.
+${audioDirective}
 No resets, no new character, no scrambled order.
 `.trim();
 
@@ -1344,7 +1359,8 @@ No resets, no new character, no scrambled order.
 
                 try {
                   checkAborted();
-                  const sceneTargetDuration = parseInt(scene.duration) || (mode === "deep" ? 8 : 5);
+                  const rawSceneDur = parseInt(scene.duration) || snapToAllowedDuration(Math.ceil(targetSec / totalVideoStages), activeVideo.providerId);
+                  const sceneTargetDuration = snapToAllowedDuration(rawSceneDur, activeVideo.providerId) || Math.min(nativeMaxClipSec, 8);
                   const generatedClip = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: stageMotionPrompt,
                     referenceImageUrl: stageVisualLock.primaryRefUrl,
@@ -1384,6 +1400,40 @@ No resets, no new character, no scrambled order.
 
                 const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
                 emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
+              }
+
+              // MERGE SCENE CLIPS INTO ONE PLAYABLE MASTER VIDEO
+              if (sceneClips.length > 1) {
+                emitProgress(95, "Merge", `Merging ${sceneClips.length} approved scene videos into master MP4...`);
+                try {
+                  const { mergeSceneVideos } = await import("./sceneVideoMerger");
+                  const mergeResult = await mergeSceneVideos({
+                    videoUrls: sceneClips,
+                    audioUrl: shouldSynthesizeExternalVoice ? realVoiceUrl : undefined,
+                    width: aspectRatio === "16:9" ? 1920 : 1080,
+                    height: aspectRatio === "16:9" ? 1080 : 1920,
+                  });
+
+                  if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
+                    const ext = mergeResult.extension || "mp4";
+                    const storedMergedVid = await this.uploadAssetToStorage({
+                      productionId: production.id,
+                      brandId: (brand as any).id,
+                      assetType: "video",
+                      storagePath: getStoragePath(`video/master.${ext}`),
+                      dataUrlOrBlob: mergeResult.blob,
+                      mimeType: mergeResult.mimeType || `video/${ext}`,
+                      prompt: `Merged hybrid master video from ${sceneClips.length} scenes`,
+                      provider: "SceneVideoMerger",
+                    });
+                    if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
+                      realVideoUrl = storedMergedVid.publicUrl;
+                      console.log(`[SPARK Pipeline] Storage Upload: Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
+                    }
+                  }
+                } catch (mergeErr) {
+                  console.warn("[SPARK Pipeline] Automatic scene merge execution notice:", mergeErr);
+                }
               }
             } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
@@ -1774,9 +1824,24 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       const resolvedSpoken = beatItem?.spokenLines || sbItem?.scriptSnippet || (idx === 1 ? brief.hook : brief.spokenCta || "");
       const resolvedOnScreen = beatItem?.onScreenText || sbItem?.onScreenText || (idx === 1 ? "HOOK" : `SCENE ${idx}`);
       const resolvedCamera = beatItem?.cameraDirection || sbItem?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot");
-      const resolvedAudio: "vo" | "talent" =
-        sbItem?.audio ||
-        (mode === "express" ? "vo" : mode === "deep" ? "talent" : ((beatItem?.valueJob as string) === "slide" || (beatItem?.valueJob as string) === "still" ? "vo" : "talent"));
+      const job = (beatItem?.valueJob as string) || "";
+      let resolvedAudio: "vo" | "talent";
+      if (sbItem?.audio) {
+        resolvedAudio = sbItem.audio;
+      } else if (mode === "express") {
+        resolvedAudio = "vo";
+      } else if (mode === "deep") {
+        resolvedAudio = "talent";
+      } else {
+        // Hybrid (standard) mode: on-camera presentation for hook/proof/payoff/cta, VO for problem/context/example/b-roll
+        if (job === "hook" || job === "proof" || job === "payoff" || job === "cta") {
+          resolvedAudio = "talent";
+        } else if (job === "problem" || job === "context" || job === "example" || job === "myth_bust" || job === "slide" || job === "still" || job === "b-roll") {
+          resolvedAudio = "vo";
+        } else {
+          resolvedAudio = i % 2 === 0 ? "talent" : "vo";
+        }
+      }
 
       scenesList.push({
         scene: idx,
