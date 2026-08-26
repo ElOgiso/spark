@@ -168,31 +168,46 @@ function compileDeterministicBrief(params: {
   const durationSec = params.targetDurationSec || brand.formatSettings?.targetDurationSec || 60;
   const beats: ProductionBriefBeat[] = [];
 
-  if (durationSec <= 45) {
+  if (durationSec <= 20) {
+    // <=20s (15s Short): 2 Beats (Hook + CTA) ~35-50 words total
     beats.push(
       {
-        timecode: "[00:00-00:06]",
+        timecode: "[00:00-00:10]",
+        valueJob: "hook",
+        spokenLines: `${cleanHook} If you are running an operation in ${niche || brand.niche || "this space"}, this is the shift you cannot afford to overlook.`,
+        onScreenText: `THE NON-OBVIOUS SHIFT`,
+        cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
+      },
+      {
+        timecode: `[00:10-00:${durationSec.toString().padStart(2, "0")}]`,
+        valueJob: "cta",
+        spokenLines: spokenCta,
+        onScreenText: onScreenCta,
+        cameraDirection: "Static lock-off direct to lens",
+      }
+    );
+  } else if (durationSec <= 45) {
+    // <=45s (30-45s Short): 3 Beats (Hook, Proof/Payoff, CTA) ~70-110 words total
+    const midSec = Math.round(durationSec * 0.72);
+    beats.push(
+      {
+        timecode: "[00:00-00:08]",
         valueJob: "hook",
         spokenLines: cleanHook,
         onScreenText: `WHY MOST GET THIS WRONG`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
       },
       {
-        timecode: "[00:06-00:18]",
-        valueJob: "problem",
-        spokenLines: spark.whyNow || `Most leaders in ${niche || brand.niche || "this space"} make the costly mistake of applying outdated playbooks.`,
-        onScreenText: `THE COSTLY MISTAKE`,
-        cameraDirection: "Medium tracking shot with graphics",
-      },
-      {
-        timecode: "[00:18-00:36]",
+        timecode: `[00:08-00:${midSec.toString().padStart(2, "0")}]`,
         valueJob: "proof",
-        spokenLines: `Here is the framework ${brand.name} uses: focus on core leverage, eliminate wasted spend, and execute with disciplined precision.`,
+        spokenLines: spark.whyNow
+          ? `${spark.whyNow} Here is the exact architecture ${brand.name} uses: focus on core leverage, eliminate wasted spend, and execute with disciplined precision.`
+          : `Most operators in ${niche || brand.niche || "this space"} make the costly mistake of applying outdated playbooks. Here is the framework ${brand.name} uses: focus on core leverage, eliminate wasted spend, and execute with disciplined precision.`,
         onScreenText: `${brand.name.toUpperCase()} FRAMEWORK`,
         cameraDirection: "Close-up authority angle",
       },
       {
-        timecode: "[00:36-00:45]",
+        timecode: `[00:${midSec.toString().padStart(2, "0")}-00:${durationSec.toString().padStart(2, "0")}]`,
         valueJob: "cta",
         spokenLines: spokenCta,
         onScreenText: onScreenCta,
@@ -200,44 +215,33 @@ function compileDeterministicBrief(params: {
       }
     );
   } else if (durationSec <= 90) {
+    // <=90s (60s Short/Reel): 4 Beats (Hook, Problem, Proof, CTA) ~140-180 words total
     beats.push(
       {
-        timecode: "[00:00-00:08]",
+        timecode: "[00:00-00:10]",
         valueJob: "hook",
         spokenLines: cleanHook,
         onScreenText: `THE SHIFT NOBODY SEES`,
         cameraDirection: "Slow push-in zoom on host",
       },
       {
-        timecode: "[00:08-00:22]",
+        timecode: "[00:10-00:25]",
         valueJob: "problem",
-        spokenLines: spark.whyNow || `Every day, operators in ${niche || brand.niche || "this industry"} waste resources solving yesterday's problems.`,
+        spokenLines: spark.whyNow
+          ? `Here is the core problem: ${spark.whyNow}. Traditional workflows in ${niche || brand.niche || "this industry"} simply cannot keep pace with this change.`
+          : `Every single day, operators in ${niche || brand.niche || "this industry"} waste critical resources attempting to solve tomorrow's bottlenecks with yesterday's broken playbooks.`,
         onScreenText: `THE CORE BOTTLENECK`,
         cameraDirection: "Medium tracking pan across set",
       },
       {
-        timecode: "[00:22-00:40]",
-        valueJob: "context",
-        spokenLines: `When you look at the top 1% performing brands, they never rely on brute force. They deploy structured leverage.`,
-        onScreenText: `HOW THE TOP 1% EXECUTE`,
+        timecode: "[00:25-00:48]",
+        valueJob: "proof",
+        spokenLines: `When you look at the top 1% performing brands, they never rely on brute force. At ${brand.name}, we deploy structured leverage to automate repetitive cycles and guarantee compounding ROI.`,
+        onScreenText: `${brand.name.toUpperCase()} LEVERAGE SYSTEM`,
         cameraDirection: "Medium shot with split screen data graphic",
       },
       {
-        timecode: "[00:40-00:60]",
-        valueJob: "example",
-        spokenLines: `For example, instead of scaling broken processes, ${brand.name} restructures the entire delivery pipeline to guarantee consistent ROI.`,
-        onScreenText: `CASE IN POINT: SYSTEMATIC ROI`,
-        cameraDirection: "Presenter dynamic walk-and-talk",
-      },
-      {
-        timecode: "[00:60-00:78]",
-        valueJob: "payoff",
-        spokenLines: `The result is effortless compounding and total predictability in execution.`,
-        onScreenText: `THE COMPOUNDING ADVANTAGE`,
-        cameraDirection: "Tight close-up, high authority",
-      },
-      {
-        timecode: "[00:78-00:90]",
+        timecode: `[00:48-00:${durationSec.toString().padStart(2, "0")}]`,
         valueJob: "cta",
         spokenLines: spokenCta,
         onScreenText: onScreenCta,
@@ -503,6 +507,45 @@ Incorporate this offer as the spoken CTA and in the platform caption.
 `
       : "";
 
+    const targetBeatCount =
+      effectiveDurationSec <= 20
+        ? "2 beats"
+        : effectiveDurationSec <= 45
+        ? "3 beats"
+        : effectiveDurationSec <= 90
+        ? "4 beats"
+        : effectiveDurationSec <= 180
+        ? "5-6 beats"
+        : effectiveDurationSec <= 300
+        ? "7-8 beats"
+        : "8-12 beats";
+
+    const minRequiredBeats =
+      effectiveDurationSec <= 20
+        ? 2
+        : effectiveDurationSec <= 45
+        ? 3
+        : effectiveDurationSec <= 90
+        ? 4
+        : effectiveDurationSec <= 180
+        ? 5
+        : effectiveDurationSec <= 300
+        ? 7
+        : 8;
+
+    const targetWordFloor =
+      effectiveDurationSec <= 20
+        ? 35
+        : effectiveDurationSec <= 45
+        ? 75
+        : effectiveDurationSec <= 90
+        ? 140
+        : effectiveDurationSec <= 180
+        ? 380
+        : effectiveDurationSec <= 300
+        ? 700
+        : 850;
+
     const systemInstruction = `You are SPARK's Chief Creative Officer & Production Compiler.
 Your task is to compile a Viral Spark into a HIGH-SUBSTANCE, DURATION-SIZED PRODUCTION BRIEF for "${brand.name}".
 
@@ -513,7 +556,10 @@ ANTI-SLOP COMPILER LAWS (MANDATORY):
    - ValueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
    - SpokenLines: Complete, ready-to-speak sentences for the host/narrator (substantive, no placeholders)
    - OnScreenText: <=6-8 words in uppercase
-3. DURATION LAW: Scale substance with duration (${effectiveDurationSec}s). Long targets get more proof, examples, and breakdowns—NEVER empty filler or time-padding.
+3. DURATION LAW: Scale substance strictly with duration (${effectiveDurationSec}s):
+   - You MUST generate exactly ${targetBeatCount}.
+   - The total spoken word count across all beats combined MUST be at least ${targetWordFloor} words (no thin stubs).
+   - Long targets get deep proof, examples, step-by-step implementation, and breakdowns—NEVER empty filler or time-padding.
 4. CTA LAW: spokenCta must be 1 exact ready-to-speak line. onScreenCta must be <=6-8 words in uppercase.
 5. AUDIENCE & RESEARCH LAW: Address the audience's primary desires and solve their pain points directly. Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
 6. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
@@ -523,6 +569,7 @@ ANTI-SLOP COMPILER LAWS (MANDATORY):
 COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
 TARGET RUNTIME: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} MODE)
+REQUIRED BEATS: ${targetBeatCount} (Minimum spoken word floor: ${targetWordFloor} words)
 
 SOURCE SPARK DATA:
 - Title: "${spark.title}"
@@ -604,7 +651,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
         parsedOutline = fallback.scriptOutline;
       }
 
-      const parsedBeats: ProductionBriefBeat[] = Array.isArray(parsed.beats) && parsed.beats.length > 0
+      let parsedBeats: ProductionBriefBeat[] = Array.isArray(parsed.beats) && parsed.beats.length > 0
         ? parsed.beats.map((b: any) => ({
             timecode: String(b.timecode || "[00:00-00:05]"),
             valueJob: b.valueJob || "context",
@@ -613,6 +660,20 @@ Return a valid JSON object matching this exact structure with NO markdown format
             cameraDirection: b.cameraDirection || "Presenter centered",
           }))
         : fallback.beats || [];
+
+      // Spoken-word floor & beat count verification
+      const totalSpokenWords = parsedBeats.reduce(
+        (acc, b) => acc + (b.spokenLines ? b.spokenLines.trim().split(/\s+/).filter(Boolean).length : 0),
+        0
+      );
+
+      if (parsedBeats.length < minRequiredBeats || totalSpokenWords < targetWordFloor * 0.70) {
+        console.log(
+          `[ProductionBriefService] Parsed beats (${parsedBeats.length} beats, ${totalSpokenWords} words) below floor for ${effectiveDurationSec}s (requires ${minRequiredBeats} beats, >=${Math.round(targetWordFloor * 0.7)} words). Using duration-scaled fallback beats.`
+        );
+        parsedBeats = fallback.beats || parsedBeats;
+        parsedOutline = fallback.scriptOutline || parsedOutline;
+      }
 
       return {
         title: asText(parsed.title, spark.title),
