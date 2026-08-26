@@ -28,6 +28,7 @@ import {
   Film,
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
+import { isPlayableVideoUrl } from "../services/production/productionAssetService";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -390,7 +391,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   const rev = reviewItems.find((r: any) => r.productionId === p.id || r.id === p.id);
                   const brief = p.brief || rev?.brief;
 
-                  const videoUrl = p.videoUrl || rev?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
+                  const videoUrl = [
+                    p.videoUrl,
+                    rev?.videoUrl,
+                    brief?.videoUrl,
+                    brief?.generatedAssets?.generatedVideos?.[0],
+                  ].find((u) => isPlayableVideoUrl(u));
 
                   const storyboardImage =
                     p.scenes?.find((s: any) => s.image)?.image ||
@@ -564,9 +570,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 title={proposal.title} 
                 scenes={proposal.storyboard} 
                 durationText="3:20"
-                videoUrl={activeProd?.videoUrl || activeReview?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]}
+                videoUrl={
+                  [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl, brief?.generatedAssets?.generatedVideos?.[0]].find((u) => isPlayableVideoUrl(u))
+                }
                 audioUrl={
-                  !(activeProd?.videoUrl || activeReview?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0])
+                  ![activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl, brief?.generatedAssets?.generatedVideos?.[0]].some((u) => isPlayableVideoUrl(u))
                     ? (activeProd?.audioUrl || activeReview?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.generatedAudio?.[0])
                     : undefined
                 }

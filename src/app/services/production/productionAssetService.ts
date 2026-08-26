@@ -151,6 +151,23 @@ export function isPlayableVideoUrl(val?: string | null): val is string {
   );
 }
 
+export function isStorageVerifiedVideoUrl(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (!isPlayableVideoUrl(trimmed)) return false;
+  // Ephemeral provider URLs that expire quickly or are not durable storage
+  const isEphemeral =
+    trimmed.includes("vidgen.x.ai") ||
+    trimmed.includes("generativelanguage.googleapis.com") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:");
+  return !isEphemeral;
+}
+
+export function isDurableMasterVideoReady(val?: string | null): boolean {
+  return isPlayableVideoUrl(val) && isStorageVerifiedVideoUrl(val);
+}
+
 export function isValidMediaData(val?: string | null): val is string {
   if (!val || typeof val !== "string") return false;
   const trimmed = val.trim();
@@ -1203,28 +1220,28 @@ Brand: ${brand.name}
         brief.videoUrl,
         brief.generatedAssets?.generatedVideos?.[0],
         ...(brief.storyboard?.map((s) => s.videoUrl) || []),
-      ].find(isPlayableVideoUrl);
+      ].find((u) => isDurableMasterVideoReady(u));
 
       if (!forceRegenerate && existingVideoCandidate) {
         realVideoUrl = existingVideoCandidate;
-        console.log(`[SPARK Pipeline] Reusing existing playable master video -> ${realVideoUrl}`);
+        console.log(`[SPARK Pipeline] Reusing existing verified durable master video -> ${realVideoUrl}`);
         if (currentStoryboard.length > 0) {
           currentStoryboard.forEach((s) => {
             if (!s.videoUrl) s.videoUrl = realVideoUrl;
           });
         }
       } else if (!forceRegenerate) {
-        console.log("[SPARK Pipeline] No playable video in memory/brief. Attempting Storage refetch before AI video generation...");
+        console.log("[SPARK Pipeline] No verified durable video in memory/brief. Attempting Storage refetch before AI video generation...");
         const refetched = await ProductionAssetService.refetchVideoFromStorage({
           productionId: production.id,
           brandId: (brand as any).id,
         });
-        if (refetched.videoUrl && isPlayableVideoUrl(refetched.videoUrl)) {
+        if (refetched.videoUrl && isDurableMasterVideoReady(refetched.videoUrl)) {
           realVideoUrl = refetched.videoUrl;
           if (refetched.sceneClips?.length) {
             sceneClips.push(...refetched.sceneClips);
           }
-          console.log(`[SPARK Pipeline] Refetched existing playable video from Storage -> ${realVideoUrl}`);
+          console.log(`[SPARK Pipeline] Refetched existing verified durable video from Storage -> ${realVideoUrl}`);
           if (currentStoryboard.length > 0) {
             currentStoryboard.forEach((s, idx) => {
               s.videoUrl = refetched.sceneClips?.[idx] || realVideoUrl;
@@ -1273,7 +1290,7 @@ Brand: ${brand.name}
                   prompt: "Narrator compiled slideshow video with voiceover muxing",
                   provider: "NarratorSlideshowCompiler",
                 });
-                if (storedCompiledVid?.publicUrl && isPlayableVideoUrl(storedCompiledVid.publicUrl)) {
+                if (storedCompiledVid?.publicUrl && isDurableMasterVideoReady(storedCompiledVid.publicUrl)) {
                   realVideoUrl = storedCompiledVid.publicUrl;
                   sceneClips.length = 0;
                   currentStoryboard.forEach((s) => {
@@ -1281,7 +1298,7 @@ Brand: ${brand.name}
                   });
                   console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
                 } else {
-                  throw new Error("Narrator compiled video upload returned an empty or invalid public URL.");
+                  throw new Error("Narrator compiled video upload failed to return a verified durable URL in Supabase Storage.");
                 }
               } else {
                 throw new Error("Narrator slideshow compiler produced an empty video blob.");
@@ -1350,7 +1367,7 @@ No resets, no new character, no scrambled order.
                         prompt: stageMotionPrompt,
                         provider: "ModelRouter",
                       });
-                      if (storedClip?.publicUrl) finalClip = storedClip.publicUrl;
+                      if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
                       console.log(`[SPARK Pipeline] Storage Upload: Stage ${sIdx + 1} Video -> ${finalClip}`);
                     } catch (storageErr: any) {
                       console.warn(`[SPARK Pipeline] Video stage ${sIdx + 1} upload failed, retaining provider URL:`, storageErr);
@@ -1368,6 +1385,7 @@ No resets, no new character, no scrambled order.
                 const currentPct = 80 + Math.round(((sIdx + 1) / totalVideoStages) * 15);
                 emitProgress(currentPct, "Video", `Rendered video stage ${sIdx + 1} of ${totalVideoStages}...`);
               }
+            } else {
               // DEFAULT PATH: ONE MASTER VIDEO FROM STORYBOARD KEYFRAMES / GRID
               const activeVideo = resolveActiveVideoProvider({
                 preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
@@ -1416,7 +1434,7 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
               checkAborted();
 
               if (isValidMediaData(generatedMaster)) {
-                let finalMasterUrl = generatedMaster;
+                let finalMasterUrl: string | undefined = undefined;
                 try {
                   const storedVid = await this.uploadAssetToStorage({
                     productionId: production.id,
@@ -1428,13 +1446,34 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
                     prompt: masterMotionPrompt,
                     provider: "ModelRouter",
                   });
-                  if (storedVid?.publicUrl) finalMasterUrl = storedVid.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
+                  if (storedVid?.publicUrl && isDurableMasterVideoReady(storedVid.publicUrl)) {
+                    finalMasterUrl = storedVid.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Master Video -> ${finalMasterUrl}`);
+                  }
                 } catch (storageErr: any) {
-                  console.warn("[SPARK Pipeline] Master video storage upload failed, retaining provider URL:", storageErr);
+                  console.warn("[SPARK Pipeline] Master video storage upload failed:", storageErr);
+                  lastError = `Master video storage upload failed: ${storageErr?.message || String(storageErr)}`;
                 }
 
-                realVideoUrl = finalMasterUrl;
+                // If direct upload failed or returned non-durable, try refetch from Storage before giving up
+                if (!finalMasterUrl) {
+                  const refetched = await ProductionAssetService.refetchVideoFromStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                  });
+                  if (refetched.videoUrl && isDurableMasterVideoReady(refetched.videoUrl)) {
+                    finalMasterUrl = refetched.videoUrl;
+                  }
+                }
+
+                if (finalMasterUrl && isDurableMasterVideoReady(finalMasterUrl)) {
+                  realVideoUrl = finalMasterUrl;
+                } else {
+                  realVideoUrl = undefined;
+                  if (!lastError) {
+                    lastError = "AI video generated but failed to persist to permanent Supabase Storage.";
+                  }
+                }
               }
             }
           }
@@ -1446,9 +1485,9 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
       }
 
       checkAborted();
-      const isVideoSuccess = Boolean(realVideoUrl && isPlayableVideoUrl(realVideoUrl));
+      const isVideoSuccess = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
       if (!isVideoSuccess && !lastError) {
-        lastError = "Video synthesis completed but no valid playable video URL was generated.";
+        lastError = "Video synthesis completed but did not produce a verified durable video in Storage.";
       }
 
       stages[4].status = isVideoSuccess ? "done" : "failed";
