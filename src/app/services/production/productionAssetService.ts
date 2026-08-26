@@ -821,16 +821,29 @@ Return valid JSON with this exact structure:
       const thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
 
       // Ensure every parsed scene has valueJob, spokenLines, and audio mode
-      const storyboard: ProductionScene[] = parsedStoryboard.map((s, idx) => ({
-        ...s,
-        scene: typeof s.scene === "number" ? s.scene : idx + 1,
-        audio: s.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : (s.valueJob === "slide" || s.valueJob === "still" ? "vo" : "talent")),
-        valueJob: s.valueJob || brief.beats?.[idx]?.valueJob || "context",
-        spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-        scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-        onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
-        cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
-      }));
+      const storyboard: ProductionScene[] = parsedStoryboard.map((s, idx) => {
+        const job = s.valueJob || brief.beats?.[idx]?.valueJob || "context";
+        const resolvedAudio: "vo" | "talent" =
+          s.audio ||
+          (mode === "express"
+            ? "vo"
+            : mode === "deep"
+            ? "talent"
+            : (job === "slide" || job === "still" || job === "b-roll" || job === "context" || job === "example" || job === "problem" || job === "myth_bust"
+                ? "vo"
+                : "talent"));
+
+        return {
+          ...s,
+          scene: typeof s.scene === "number" ? s.scene : idx + 1,
+          audio: resolvedAudio,
+          valueJob: job,
+          spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+          scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
+          onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
+          cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+        };
+      });
 
       currentStoryboard = storyboard.length > 0 ? storyboard : ProductionAssetService.planProductionScenes({ production, brief, brand, formatSettings: activeFormatSettings });
       currentThumbnails = thumbnails.map((t: any, idx: number) => ({
@@ -1459,13 +1472,16 @@ No resets, no new character, no scrambled order.
               }
 
               // MERGE SCENE CLIPS INTO ONE PLAYABLE MASTER VIDEO
+              const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
+              const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
+
               if (sceneClips.length > 1) {
                 emitProgress(95, "Merge", `Merging ${sceneClips.length} approved scene videos into master MP4...`);
                 try {
                   const { mergeSceneVideos } = await import("./sceneVideoMerger");
                   const mergeResult = await mergeSceneVideos({
                     videoUrls: sceneClips,
-                    audioUrl: shouldSynthesizeExternalVoice ? realVoiceUrl : undefined,
+                    audioUrl: mergeAudioUrl,
                     width: aspectRatio === "16:9" ? 1920 : 1080,
                     height: aspectRatio === "16:9" ? 1080 : 1920,
                   });
@@ -1485,10 +1501,40 @@ No resets, no new character, no scrambled order.
                     if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
                       realVideoUrl = storedMergedVid.publicUrl;
                       console.log(`[SPARK Pipeline] Storage Upload: Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
+                    } else {
+                      realVideoUrl = undefined;
+                      lastError = "Merged video upload failed to return a verified durable Storage URL.";
                     }
+                  } else {
+                    realVideoUrl = undefined;
+                    lastError = "Automatic scene video merger produced an empty video blob.";
                   }
-                } catch (mergeErr) {
+                } catch (mergeErr: any) {
                   console.warn("[SPARK Pipeline] Automatic scene merge execution notice:", mergeErr);
+                  realVideoUrl = undefined;
+                  lastError = `Automatic scene merge failed: ${mergeErr?.message || String(mergeErr)}`;
+                }
+              } else if (sceneClips.length === 1) {
+                if (isDurableMasterVideoReady(sceneClips[0])) {
+                  realVideoUrl = sceneClips[0];
+                } else {
+                  try {
+                    const storedSingle = await this.uploadAssetToStorage({
+                      productionId: production.id,
+                      brandId: (brand as any).id,
+                      assetType: "video",
+                      storagePath: getStoragePath("video/master.mp4"),
+                      dataUrlOrBlob: sceneClips[0],
+                      mimeType: "video/mp4",
+                      prompt: `Master video from single scene clip (${mode})`,
+                      provider: "ModelRouter",
+                    });
+                    if (storedSingle?.publicUrl && isDurableMasterVideoReady(storedSingle.publicUrl)) {
+                      realVideoUrl = storedSingle.publicUrl;
+                    }
+                  } catch (singleErr: any) {
+                    console.warn("[SPARK Pipeline] Single scene master storage upload notice:", singleErr);
+                  }
                 }
               }
             } else {
@@ -2055,17 +2101,33 @@ Apply revision while maintaining 100% subject identity and set continuity.
       .sort((a, b) => (a.index || a.scene) - (b.index || b.scene))
       .map((s) => s.videoUrl!);
 
-    if (readyClips.length === 0) return production.videoUrl || brief.videoUrl || null;
+    if (readyClips.length === 0) {
+      return (isDurableMasterVideoReady(production.videoUrl) ? production.videoUrl : null) || null;
+    }
+
+    if (readyClips.length === 1) {
+      if (isDurableMasterVideoReady(readyClips[0])) {
+        production.videoUrl = readyClips[0];
+        brief.videoUrl = readyClips[0];
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        brief.generatedAssets.generatedVideos = [readyClips[0]];
+        return readyClips[0];
+      }
+    }
+
+    const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
+    const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
 
     try {
       const { mergeSceneVideos } = await import("./sceneVideoMerger");
       const mergeResult = await mergeSceneVideos({
         videoUrls: readyClips,
-        audioUrl: brief.audioUrl || production.audioUrl,
+        audioUrl: mergeAudioUrl,
       });
 
-      if (!mergeResult) {
-        return readyClips[0] || production.videoUrl || null;
+      if (!mergeResult || !mergeResult.blob || mergeResult.blob.size === 0) {
+        console.warn("[ProductionAssetService] Merge produced empty result.");
+        return null;
       }
 
       const storedMaster = await ProductionAssetService.uploadAssetToStorage({
@@ -2079,17 +2141,20 @@ Apply revision while maintaining 100% subject identity and set continuity.
         provider: "SceneVideoMerger",
       });
 
-      const masterUrl = storedMaster?.publicUrl || readyClips[0];
-      production.videoUrl = masterUrl;
-      brief.videoUrl = masterUrl;
-      if (!brief.generatedAssets) brief.generatedAssets = {};
-      brief.generatedAssets.generatedVideos = [masterUrl];
-      production.status = "Ready for Review";
+      if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
+        const masterUrl = storedMaster.publicUrl;
+        production.videoUrl = masterUrl;
+        brief.videoUrl = masterUrl;
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        brief.generatedAssets.generatedVideos = [masterUrl];
+        production.status = "Ready for Review";
+        return masterUrl;
+      }
 
-      return masterUrl;
+      return null;
     } catch (err) {
       console.error("[ProductionAssetService] Merge execution notice:", err);
-      return readyClips[0] || production.videoUrl || null;
+      return null;
     }
   }
 }
