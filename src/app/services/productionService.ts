@@ -2,7 +2,7 @@ import { IProductionService } from "../domain/contracts";
 import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
-import { ProductionAssetService } from "./production/productionAssetService";
+import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -190,9 +190,13 @@ export class ProductionService implements IProductionService {
       signal,
     });
 
+    const isVideoSuccess = Boolean(result.videoUrl && isDurableMasterVideoReady(result.videoUrl));
+    const finalProdStatus = isVideoSuccess ? "Ready for Review" : "Failed";
+
     const updatedProd: Production = {
       ...production,
       id: production.id,
+      status: finalProdStatus,
       brief: result.brief,
       scenes: result.scenes,
       productionScenes: result.productionScenes || production.productionScenes,

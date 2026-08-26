@@ -614,24 +614,32 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings || snap.creditSettings;
-          const cloudFormatSettings = (execContext as any)?.summary?.current_objectives?.format_settings || snap.formatSettings || snap.brand?.formatSettings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
 
+          // Source of truth hierarchy for formatSettings:
+          // 1) brands.settings.format_settings (snap.formatSettings / snap.brand.formatSettings)
+          // 2) localStorage spark_format_settings_{brandId} (localCachedFormat)
+          // 3) in-memory session changes (prev.brand.formatSettings / prev.formatSettings)
+          // 4) current_objectives.format_settings (fills missing keys only)
+          // 5) DEFAULT_FORMAT_SETTINGS
+          const brandFormatSettings = snap.formatSettings || snap.brand?.formatSettings;
+          const objectivesFormatSettings = (execContext as any)?.summary?.current_objectives?.format_settings;
+
           const resolvedDuration =
-            (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
+            (typeof brandFormatSettings?.targetDurationSec === "number" ? brandFormatSettings.targetDurationSec : undefined) ??
             (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
             (typeof (prev.brand?.formatSettings as any)?.targetDurationSec === "number" && (prev.brand?.formatSettings as any).targetDurationSec !== 60 ? (prev.brand?.formatSettings as any).targetDurationSec : undefined) ??
             (typeof (prev.formatSettings as any)?.targetDurationSec === "number" && (prev.formatSettings as any).targetDurationSec !== 60 ? (prev.formatSettings as any).targetDurationSec : undefined) ??
-            (typeof (prev.brand?.formatSettings as any)?.targetDurationSec === "number" ? (prev.brand?.formatSettings as any).targetDurationSec : undefined) ??
-            (typeof (prev.formatSettings as any)?.targetDurationSec === "number" ? (prev.formatSettings as any).targetDurationSec : undefined) ??
+            (typeof objectivesFormatSettings?.targetDurationSec === "number" ? objectivesFormatSettings.targetDurationSec : undefined) ??
             DEFAULT_FORMAT_SETTINGS.targetDurationSec;
 
           const mergedFormatSettings: ProductionFormatSettings = {
             ...DEFAULT_FORMAT_SETTINGS,
+            ...(objectivesFormatSettings || {}),
             ...(prev.brand?.formatSettings || {}),
             ...(prev.formatSettings || {}),
             ...(localCachedFormat || {}),
-            ...(cloudFormatSettings || {}),
+            ...(brandFormatSettings || {}),
             targetDurationSec: resolvedDuration,
           };
 

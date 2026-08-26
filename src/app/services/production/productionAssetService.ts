@@ -1291,22 +1291,48 @@ Brand: ${brand.name}
       const sceneClips: string[] = [];
 
       checkAborted();
-      let existingVideoCandidate = [
-        production.videoUrl,
-        brief.videoUrl,
-        brief.generatedAssets?.generatedVideos?.[0],
-        ...(brief.storyboard?.map((s) => s.videoUrl) || []),
-      ].find((u) => isDurableMasterVideoReady(u));
 
-      if (!forceRegenerate && existingVideoCandidate) {
+      // Stored production generation fingerprint comparison (BUG 3)
+      const prevProdDuration =
+        (production as any)?.formatSettings?.targetDurationSec ??
+        (production as any)?.targetDurationSec ??
+        brief?.targetDurationSec ??
+        (brief as any)?.formatSettings?.targetDurationSec;
+
+      const prevProdMode = (production as any)?.productionMode || (brief as any)?.productionMode;
+      const prevProdProvider = (production as any)?.formatSettings?.preferredVideoProvider || (brief as any)?.formatSettings?.preferredVideoProvider;
+      const prevProdAspect = (production as any)?.formatSettings?.aspectMode || (brief as any)?.formatSettings?.aspectMode;
+
+      const currentDuration = activeFormatSettings?.targetDurationSec || 60;
+      const currentMode = mode;
+      const currentProvider = activeFormatSettings?.preferredVideoProvider || "auto";
+      const currentAspect = activeFormatSettings?.aspectMode || "portrait";
+
+      const durationMatches = prevProdDuration === undefined || prevProdDuration === currentDuration;
+      const modeMatches = prevProdMode === undefined || prevProdMode === currentMode;
+      const providerMatches = prevProdProvider === undefined || prevProdProvider === currentProvider;
+      const aspectMatches = prevProdAspect === undefined || prevProdAspect === currentAspect;
+
+      const canReuseExistingVideo = !forceRegenerate && durationMatches && modeMatches && providerMatches && aspectMatches;
+
+      let existingVideoCandidate = canReuseExistingVideo
+        ? [
+            production.videoUrl,
+            brief.videoUrl,
+            brief.generatedAssets?.generatedVideos?.[0],
+            ...(brief.storyboard?.map((s) => s.videoUrl) || []),
+          ].find((u) => isDurableMasterVideoReady(u))
+        : undefined;
+
+      if (canReuseExistingVideo && existingVideoCandidate) {
         realVideoUrl = existingVideoCandidate;
-        console.log(`[SPARK Pipeline] Reusing existing verified durable master video -> ${realVideoUrl}`);
+        console.log(`[SPARK Pipeline] Reusing existing verified durable master video (${currentDuration}s ${currentMode}) -> ${realVideoUrl}`);
         if (currentStoryboard.length > 0) {
           currentStoryboard.forEach((s) => {
             if (!s.videoUrl) s.videoUrl = realVideoUrl;
           });
         }
-      } else if (!forceRegenerate) {
+      } else if (canReuseExistingVideo) {
         console.log("[SPARK Pipeline] No verified durable video in memory/brief. Attempting Storage refetch before AI video generation...");
         const refetched = await ProductionAssetService.refetchVideoFromStorage({
           productionId: production.id,
@@ -1324,6 +1350,8 @@ Brand: ${brand.name}
             });
           }
         }
+      } else if (!forceRegenerate) {
+        console.log(`[SPARK Pipeline] Generation parameters changed (target: ${currentDuration}s ${currentMode} [${currentProvider} · ${currentAspect}], prev: ${prevProdDuration}s ${prevProdMode} [${prevProdProvider} · ${prevProdAspect}]). Skipping stale video reuse and synthesizing fresh video.`);
       }
 
       if (!realVideoUrl) {
