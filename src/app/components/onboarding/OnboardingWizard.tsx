@@ -310,8 +310,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const refUrl = formData.characterSheetUrl || formData.characterImageUrl || undefined;
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
+        referenceImageUrl: refUrl,
+        referenceImageUrls: refUrl ? [refUrl] : undefined,
         capability: "Image Generation",
       });
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {

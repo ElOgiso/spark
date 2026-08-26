@@ -50,8 +50,11 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const refUrl = sheetUrl || character?.characterSheetUrl || character?.imageUrl || undefined;
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
+        referenceImageUrl: refUrl,
+        referenceImageUrls: refUrl ? [refUrl] : undefined,
         capability: "Image Generation",
       });
 

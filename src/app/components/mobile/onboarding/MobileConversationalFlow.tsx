@@ -251,6 +251,8 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       const { ModelRouter } = await import("../../../services/runtime/modelRouter");
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
+        referenceImageUrl: characterSheetUrl || undefined,
+        referenceImageUrls: characterSheetUrl ? [characterSheetUrl] : undefined,
         capability: "Image Generation",
       });
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {

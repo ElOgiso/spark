@@ -38,59 +38,33 @@ export function resolveGenreStyleLanguage(genre?: string): string {
 }
 
 export function buildProductionCharacterSheetPrompt(params: CharacterSheetPromptParams): string {
-  const name = params.creatorName?.trim() || "Lead Presenter";
-  const role = params.role?.trim() || "Brand Host & Lead Presenter";
-  const brandName = params.brandName?.trim() || "SPARK Media";
-  const niche = params.niche?.trim() || "Modern Media";
-  const purpose = params.purpose?.trim() || "Empowering audiences with high-signal insights";
-  const researchContext = params.researchOneLiner?.trim() ? ` — Theme: "${params.researchOneLiner.trim()}"` : "";
-  const styleLanguage = resolveGenreStyleLanguage(params.genre);
+  const name = params.creatorName?.trim() || "Lead Host";
+  const role = params.role?.trim() || "Brand Presenter";
+  const brandName = params.brandName?.trim() || "SPARK";
+  const genre = params.genre?.trim() || "Realistic";
+  const styleLanguage = resolveGenreStyleLanguage(genre);
 
   const wardrobe = params.wardrobe?.trim() || "Executive Tailored Suit";
   const personality = params.personality?.trim() || "Confident, Authoritative, Engaging";
   const hairStyle = params.hairStyle?.trim() || "Short styled professional hair";
   const skinTone = params.skinTone?.trim() || "Rich warm tone";
-  const directorNotes = params.directorNotes?.trim() || "Authoritative executive host in a modern high-contrast studio universe.";
+  const directorNotes = params.directorNotes?.trim() || "Authoritative host in modern high-contrast studio setting.";
 
   return `
-[PRODUCTION CHARACTER MODEL SHEET & DESIGN BIBLE: ${name.toUpperCase()}]
-Universe: "${brandName}" (Niche: "${niche}", Purpose: "${purpose}"${researchContext})
-Role: ${role}
-Style Specification: ${styleLanguage}
+Professional animation model sheet, single character, studio turnaround.
+STYLE: ${genre} (${styleLanguage}) consistent with brand ${brandName}.
+CHARACTER: ${name}, role ${role}, ${personality} (${skinTone} skin tone, ${hairStyle}).
+WARDROBE LOCK: ${wardrobe} — one locked signature costume inferred from genre. Do not invent a second costume.
+DIRECTOR NOTES: ${directorNotes}
 
-CHARACTER IDENTITY & WARDROBE LOCK:
-- Subject: "${name}" (${personality})
-- Features: ${skinTone} skin tone, ${hairStyle}
-- Signature Wardrobe: ${wardrobe}
-- Director Notes: ${directorNotes}
+LAYOUT ON ONE IMAGE (Studio Model Sheet / Production Bible):
+- Top: ${name} — ${role} + 5-6 labeled palette swatches (wardrobe primary/secondary, skin tone, hair tint, set accent)
+- Row: FRONT, 3/4 FRONT, LEFT, RIGHT, BACK, 3/4 REAR — same height, standing on neutral gray studio backdrop
+- Right: Face close-up + 2-3 costume & accessory details (tailoring texture, wristwear, tech prop)
+- Bottom-left: 8 labeled expressions (Calm, Smile, Intense Hook, Surprise, Thoughtful, Speaking, Skeptical, Confident)
+- Bottom-right: 4 action poses that fit this brand's content (Presenting, Pointing to graphic, Explaining insight, Sign-off CTA)
 
-SHEET LAYOUT & MULTI-VIEW BIBLE COMPOSITION (One unified widescreen master production model sheet):
-1. TOP TITLE BLOCK & COLOR SWATCHES:
-   - Title Header: "${name}" — Production Character Model Bible (${role}) | Brand: "${brandName}"
-   - Palette Swatches: 5-6 labeled hex color swatches defining wardrobe primary/secondary, skin tone, hair tint, and accent colors.
-
-2. FULL-BODY TURNAROUND ROW (Strictly same subject, identical height, standing on neutral gray studio ground line):
-   - FRONT: Full frontal standing pose, hands relaxed/open, facing camera.
-   - 3/4 FRONT: Three-quarter dynamic angle showing depth and wardrobe cut.
-   - LEFT PROFILE: Full 90-degree left side view showing silhouette and posture.
-   - RIGHT PROFILE: Full 90-degree right side view.
-   - BACK: Full rear view showing back of garment, hair, and shoulders.
-   - 3/4 REAR: Three-quarter back angle completing the 360 turnaround.
-
-3. DETAIL CALLOUT INSETS:
-   - Face Close-Up: High-resolution crop highlighting facial structure, eyes, and expressions.
-   - Costume Detail 1: Close-up of signature wardrobe fabric, collar tailoring, or texture.
-   - Costume Detail 2: Close-up of signature accessory, watch, tech prop, or footwear.
-
-4. EXPRESSION PALETTE ROW (6-8 labeled facial emotion crops):
-   - CALM / NEUTRAL, SMILE / WARM, INTENSE / HOOK, SURPRISE / REVELATION, THOUGHTFUL / ANALYSIS, SPEAKING / PRESENTING.
-
-5. ACTION POSES (3-4 brand-fit presenter poses):
-   - Presenting to viewer / Pointing to data graphic / Explaining insight / Authoritative CTA sign-off.
-
-STRICT CONTINUITY LAWS:
-- 100% Face, Hair, and Wardrobe Lock: Exactly the same individual character in every turnaround cell, expression crop, and action pose.
-- Zero collage of different people. Single coherent visual development model sheet.
-- Clean neutral studio background, crisp master lighting, 8K ultra-sharp reference clarity.
+Same face, hair, outfit, colors in every cell. No collage of different people.
+Reference any user-uploaded face if provided.
 `.trim();
 }

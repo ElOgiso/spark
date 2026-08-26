@@ -1944,6 +1944,8 @@ export function BrandGenesisFlow({
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
+        referenceImageUrl: data.characterSheetUrl || undefined,
+        referenceImageUrls: data.characterSheetUrl ? [data.characterSheetUrl] : undefined,
         capability: "Image Generation",
       });
 
