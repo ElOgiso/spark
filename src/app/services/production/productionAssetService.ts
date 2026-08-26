@@ -1104,7 +1104,9 @@ Return valid JSON with this exact structure:
       void persistCurrentStage("Keyframes");
       startHeartbeat("Keyframes");
 
-      // PART 1 & 4 — Professional Sequential Take Grids (3-4 panels per take contact sheet)
+      // PART 1 & 4 — Visuals Generation
+      // EXPRESS (Narrator): 1 clean single-frame hero still per beat (full-bleed, NO contact sheets, NO grids)
+      // STANDARD / DEEP (Hybrid / Cinematic): Sequential Take Grids (3-4 panels per contact sheet) for I2V motion
       const sceneImages: string[] = [];
       const takeGrids: string[] = [];
       const renderStartedAt = new Date().toISOString();
@@ -1117,34 +1119,147 @@ Return valid JSON with this exact structure:
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
-        for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
-          checkAborted();
-          const startIdx = tIdx * panelsPerTake;
-          const takeScenes = currentStoryboard.slice(startIdx, startIdx + panelsPerTake);
-          if (takeScenes.length === 0) continue;
+        if (mode === "express") {
+          // EXPRESS / NARRATOR STILLS: Generate 1 clean single-frame hero still per beat
+          emitProgress(20, "Keyframes", `Rendering ${currentStoryboard.length} full-bleed scene stills for Narrator slideshow...`);
 
-          // Check if existing take grid is already stored / durable
-          const existingTakeGrid = brief.takeGrids?.[tIdx] || (tIdx === 0 ? realGridUrl : undefined);
-          if (!forceRegenerate && isValidMediaData(existingTakeGrid)) {
-            console.log(`[SPARK Pipeline] Reusing existing Take ${tIdx + 1} Grid -> ${existingTakeGrid}`);
-            takeGrids.push(existingTakeGrid);
-            takeScenes.forEach((s, idx) => {
-              const globalIdx = startIdx + idx;
-              s.image = existingTakeGrid;
-              sceneImages.push(existingTakeGrid);
-              currentStoryboard[globalIdx] = { ...s, image: existingTakeGrid };
+          for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
+            checkAborted();
+            const s = currentStoryboard[sIdx];
+            const globalSceneNum = s.scene || sIdx + 1;
+
+            // Check if existing still is already stored / durable
+            const existingStill = s.image || (brief.beats?.[sIdx] as any)?.image || brief.generatedAssets?.generatedFrames?.[sIdx];
+            if (!forceRegenerate && isValidMediaData(existingStill)) {
+              console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} Still -> ${existingStill}`);
+              sceneImages.push(existingStill);
+              s.image = existingStill;
+              s.keyframeImageUrl = existingStill;
+              currentStoryboard[sIdx] = { ...s, image: existingStill, keyframeImageUrl: existingStill };
+              continue;
+            }
+
+            const shotFraming = s.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+            const spoken = s.spokenLines || s.scriptSnippet ? `SPOKEN: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
+            const onScreen = s.onScreenText ? formatBurnedOnScreenText(s.onScreenText) : "";
+            const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
+
+            const stillVisualLock = buildVisualLockRefs({
+              character,
+              previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
             });
-            continue;
+
+            const stillPrompt = `
+${stillVisualLock.refPromptHeader}
+[SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
+ASPECT RATIO: ${aspectRatio} full-bleed single frame.
+COMPOSITION: ${shotFraming}. Single camera perspective.
+SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.
+SET & ENVIRONMENT: ${identityPack.environmentString}.
+ACTION: ${action}.
+${spoken}
+${onScreen ? `ON-SCREEN GRAPHIC/TEXT: "${onScreen}" (≤6 words).` : ""}
+
+CRITICAL PRODUCTION LAWS:
+- THIS IS A SINGLE FULL-BLEED STILL IMAGE, NOT A STORYBOARD GRID.
+- NO multiple panels. NO split screen. NO collage. NO contact sheet. NO numbered boxes. NO borders.
+- Professional high-production cinematography, crisp lighting, depth of field.
+`.trim();
+
+            try {
+              checkAborted();
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}]...`);
+              const stillImgUrl = await withTimeout(
+                ModelRouter.executeCategoryRequest("storyboardImages", {
+                  prompt: stillPrompt,
+                  referenceImageUrl: stillVisualLock.primaryRefUrl,
+                  referenceImageUrls: stillVisualLock.imageUrls,
+                  aspectRatio: identityPack.aspectRatio,
+                }),
+                60000,
+                `Scene ${globalSceneNum} still generation timed out after 60s`,
+                signal
+              );
+              checkAborted();
+
+              if (isValidMediaData(stillImgUrl)) {
+                let finalStill = stillImgUrl;
+                try {
+                  const storedStill = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "image",
+                    storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                    dataUrlOrBlob: stillImgUrl,
+                    mimeType: "image/png",
+                    prompt: stillPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Still -> ${finalStill}`);
+                } catch (storageErr) {
+                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} Still upload notice:`, storageErr);
+                }
+
+                sceneImages.push(finalStill);
+                if (sIdx === 0) realGridUrl = finalStill;
+                s.image = finalStill;
+                s.keyframeImageUrl = finalStill;
+                currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill };
+              } else {
+                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} returned empty/invalid image data:`, String(stillImgUrl || "").slice(0, 100));
+                if (!lastError) lastError = `Scene ${globalSceneNum} Still: No image bytes returned by provider`;
+              }
+            } catch (sceneErr: any) {
+              if (sceneErr?.name === "AbortError" || signal?.aborted) throw sceneErr;
+              console.error(`[SPARK Pipeline] Scene ${globalSceneNum} still generation failed:`, sceneErr);
+              if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${sceneErr?.message || String(sceneErr)}`;
+            }
+
+            const currentPct = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
+            emitProgress(currentPct, "Keyframes", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} still frame...`);
+            void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
           }
 
-          const prevTakeGrid = tIdx > 0 ? takeGrids[tIdx - 1] : undefined;
-          const visualLock = buildVisualLockRefs({
-            character,
-            storyboardGridUrl: prevTakeGrid || realGridUrl,
-            previousLastFrameUrl: prevTakeGrid,
-          });
+          stages[2].status = sceneImages.length > 0 ? "done" : "failed";
+          await persistCurrentStage("Keyframes");
 
-          const charAnalysis = `
+          if (sceneImages.length > 0) {
+            brief.storyboardGridUrl = sceneImages[0];
+            if (!brief.generatedAssets) brief.generatedAssets = {};
+            brief.generatedAssets.storyboardGridUrl = sceneImages[0];
+            brief.generatedAssets.generatedFrames = sceneImages;
+          }
+        } else {
+          // HYBRID / CINEMATIC (standard / deep): Sequential Take Grids for I2V Motion
+          for (let tIdx = 0; tIdx < totalTakes; tIdx++) {
+            checkAborted();
+            const startIdx = tIdx * panelsPerTake;
+            const takeScenes = currentStoryboard.slice(startIdx, startIdx + panelsPerTake);
+            if (takeScenes.length === 0) continue;
+
+            // Check if existing take grid is already stored / durable
+            const existingTakeGrid = brief.takeGrids?.[tIdx] || (tIdx === 0 ? realGridUrl : undefined);
+            if (!forceRegenerate && isValidMediaData(existingTakeGrid)) {
+              console.log(`[SPARK Pipeline] Reusing existing Take ${tIdx + 1} Grid -> ${existingTakeGrid}`);
+              takeGrids.push(existingTakeGrid);
+              takeScenes.forEach((s, idx) => {
+                const globalIdx = startIdx + idx;
+                s.image = existingTakeGrid;
+                sceneImages.push(existingTakeGrid);
+                currentStoryboard[globalIdx] = { ...s, image: existingTakeGrid };
+              });
+              continue;
+            }
+
+            const prevTakeGrid = tIdx > 0 ? takeGrids[tIdx - 1] : undefined;
+            const visualLock = buildVisualLockRefs({
+              character,
+              storyboardGridUrl: prevTakeGrid || realGridUrl,
+              previousLastFrameUrl: prevTakeGrid,
+            });
+
+            const charAnalysis = `
 CHARACTER CONTINUITY (Strictly locked from sheet):
 - Name: ${character?.name || "Host"} (${character?.style || "Executive Presenter"}).
 - Traits: ${(character?.traits || ["Visionary", "Authoritative"]).join(", ")}.
@@ -1152,18 +1267,18 @@ CHARACTER CONTINUITY (Strictly locked from sheet):
 - Environment (locked): ${identityPack.environmentString}.
 `.trim();
 
-          const panelBreakdown = takeScenes.map((s, pIdx) => {
-            const panelNum = pIdx + 1;
-            const globalSceneNum = startIdx + pIdx + 1;
-            const shotFraming = s.cameraDirection || (pIdx === 0 ? "Wide/Medium establishing shot" : pIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-            const spoken = s.spokenLines || s.scriptSnippet ? `LINE: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
-            const onScreen = formatBurnedOnScreenText(s.onScreenText || brief.beats?.[startIdx + pIdx]?.onScreenText || (globalSceneNum === 1 ? brief.hook : `SCENE ${globalSceneNum}`));
-            const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
-            const endPose = s.endState || "Host delivers clear resolving gesture";
-            return `PANEL ${panelNum} (Scene ${globalSceneNum}): [${shotFraming}] | ACTION: ${action} | ${spoken} | ON-SCREEN: "${onScreen}" | CAMERA: ${shotFraming} | END POSE: ${endPose}`;
-          }).join("\n");
+            const panelBreakdown = takeScenes.map((s, pIdx) => {
+              const panelNum = pIdx + 1;
+              const globalSceneNum = startIdx + pIdx + 1;
+              const shotFraming = s.cameraDirection || (pIdx === 0 ? "Wide/Medium establishing shot" : pIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
+              const spoken = s.spokenLines || s.scriptSnippet ? `LINE: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
+              const onScreen = formatBurnedOnScreenText(s.onScreenText || brief.beats?.[startIdx + pIdx]?.onScreenText || (globalSceneNum === 1 ? brief.hook : `SCENE ${globalSceneNum}`));
+              const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
+              const endPose = s.endState || "Host delivers clear resolving gesture";
+              return `PANEL ${panelNum} (Scene ${globalSceneNum}): [${shotFraming}] | ACTION: ${action} | ${spoken} | ON-SCREEN: "${onScreen}" | CAMERA: ${shotFraming} | END POSE: ${endPose}`;
+            }).join("\n");
 
-          const takeGridPrompt = `
+            const takeGridPrompt = `
 ${visualLock.refPromptHeader}
 Cinematic storyboard CONTACT SHEET for TAKE ${tIdx + 1} of ${totalTakes}.
 Duration this take: ${takeSec}s. Cell aspect: ${aspectRatio}.
@@ -1186,81 +1301,82 @@ PRODUCTION LAWS:
 - Ultra-crisp storyboard rendering, readable action staging, consistent framing variety.
 `.trim();
 
-          try {
-            checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} storyboard grid via ModelRouter ("storyboardImages") [Refs: ${visualLock.imageUrls.length}]...`);
-            const gridImgUrl = await withTimeout(
-              ModelRouter.executeCategoryRequest("storyboardImages", {
-                prompt: takeGridPrompt,
-                referenceImageUrl: visualLock.primaryRefUrl,
-                referenceImageUrls: visualLock.imageUrls,
-                aspectRatio: identityPack.aspectRatio,
-              }),
-              60000,
-              `Take ${tIdx + 1} storyboard grid generation timed out after 60s`,
-              signal
-            );
-            checkAborted();
-
-            if (isValidMediaData(gridImgUrl)) {
-              let finalGrid = gridImgUrl;
-              try {
-                const storedGrid = await this.uploadAssetToStorage({
-                  productionId: production.id,
-                  brandId: (brand as any).id,
-                  assetType: "storyboard",
-                  storagePath: `${production.id}/take-grids/take-0${tIdx + 1}.png`,
-                  dataUrlOrBlob: gridImgUrl,
-                  mimeType: "image/png",
+            try {
+              checkAborted();
+              console.log(`[SPARK Pipeline] Provider Request: Take ${tIdx + 1} of ${totalTakes} storyboard grid via ModelRouter ("storyboardImages") [Refs: ${visualLock.imageUrls.length}]...`);
+              const gridImgUrl = await withTimeout(
+                ModelRouter.executeCategoryRequest("storyboardImages", {
                   prompt: takeGridPrompt,
-                  provider: "ModelRouter",
+                  referenceImageUrl: visualLock.primaryRefUrl,
+                  referenceImageUrls: visualLock.imageUrls,
+                  aspectRatio: identityPack.aspectRatio,
+                }),
+                60000,
+                `Take ${tIdx + 1} storyboard grid generation timed out after 60s`,
+                signal
+              );
+              checkAborted();
+
+              if (isValidMediaData(gridImgUrl)) {
+                let finalGrid = gridImgUrl;
+                try {
+                  const storedGrid = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "storyboard",
+                    storagePath: `${production.id}/take-grids/take-0${tIdx + 1}.png`,
+                    dataUrlOrBlob: gridImgUrl,
+                    mimeType: "image/png",
+                    prompt: takeGridPrompt,
+                    provider: "ModelRouter",
+                  });
+                  if (storedGrid?.publicUrl) finalGrid = storedGrid.publicUrl;
+                  console.log(`[SPARK Pipeline] Storage Upload: Take ${tIdx + 1} Grid -> ${finalGrid}`);
+                } catch (storageErr) {
+                  console.warn(`[SPARK Pipeline] Take ${tIdx + 1} Grid upload notice:`, storageErr);
+                }
+
+                takeGrids.push(finalGrid);
+                if (tIdx === 0) realGridUrl = finalGrid;
+
+                takeScenes.forEach((s, idx) => {
+                  const globalIdx = startIdx + idx;
+                  s.image = finalGrid;
+                  sceneImages.push(finalGrid);
+                  currentStoryboard[globalIdx] = { ...s, image: finalGrid };
                 });
-                if (storedGrid?.publicUrl) finalGrid = storedGrid.publicUrl;
-                console.log(`[SPARK Pipeline] Storage Upload: Take ${tIdx + 1} Grid -> ${finalGrid}`);
-              } catch (storageErr) {
-                console.warn(`[SPARK Pipeline] Take ${tIdx + 1} Grid upload notice:`, storageErr);
+              } else {
+                console.warn(`[SPARK Pipeline] Take ${tIdx + 1} returned empty/invalid image data:`, String(gridImgUrl || "").slice(0, 100));
+                if (!lastError) lastError = `Take ${tIdx + 1} Grid: No image bytes returned by provider`;
               }
-
-              takeGrids.push(finalGrid);
-              if (tIdx === 0) realGridUrl = finalGrid;
-
-              takeScenes.forEach((s, idx) => {
-                const globalIdx = startIdx + idx;
-                s.image = finalGrid;
-                sceneImages.push(finalGrid);
-                currentStoryboard[globalIdx] = { ...s, image: finalGrid };
-              });
-            } else {
-              console.warn(`[SPARK Pipeline] Take ${tIdx + 1} returned empty/invalid image data:`, String(gridImgUrl || "").slice(0, 100));
-              if (!lastError) lastError = `Take ${tIdx + 1} Grid: No image bytes returned by provider`;
+            } catch (takeErr: any) {
+              if (takeErr?.name === "AbortError" || signal?.aborted) throw takeErr;
+              console.error(`[SPARK Pipeline] Take ${tIdx + 1} grid generation failed:`, takeErr);
+              if (!lastError) lastError = `Take ${tIdx + 1} Grid: ${takeErr?.message || String(takeErr)}`;
             }
-          } catch (takeErr: any) {
-            if (takeErr?.name === "AbortError" || signal?.aborted) throw takeErr;
-            console.error(`[SPARK Pipeline] Take ${tIdx + 1} grid generation failed:`, takeErr);
-            if (!lastError) lastError = `Take ${tIdx + 1} Grid: ${takeErr?.message || String(takeErr)}`;
+
+            const currentPct = 20 + Math.round(((tIdx + 1) / totalTakes) * 35);
+            emitProgress(currentPct, "Keyframes", `Rendered Take ${tIdx + 1} of ${totalTakes} storyboard grid...`);
+            void persistCurrentStage(`Take-${tIdx + 1}`);
           }
 
-          const currentPct = 20 + Math.round(((tIdx + 1) / totalTakes) * 35);
-          emitProgress(currentPct, "Keyframes", `Rendered Take ${tIdx + 1} of ${totalTakes} storyboard grid...`);
-          void persistCurrentStage(`Take-${tIdx + 1}`);
+          stages[2].status = takeGrids.length > 0 ? "done" : "failed";
+          await persistCurrentStage("Keyframes");
+
+          // Bind take grids as master storyboard visuals for preview and motion
+          if (takeGrids.length > 0) {
+            brief.storyboardGridUrl = takeGrids[0];
+            brief.takeGrids = takeGrids;
+            if (!brief.generatedAssets) brief.generatedAssets = {};
+            brief.generatedAssets.storyboardGridUrl = takeGrids[0];
+            brief.generatedAssets.takeGrids = takeGrids;
+            brief.generatedAssets.generatedFrames = takeGrids;
+          }
         }
       } catch (imgErr: any) {
         if (imgErr?.name === "AbortError" || signal?.aborted) throw imgErr;
-        console.error("[SPARK Pipeline] Storyboard take grid generation notice:", imgErr);
-        if (!lastError) lastError = `Take Grid Stage: ${imgErr?.message || String(imgErr)}`;
-      }
-
-      stages[2].status = takeGrids.length > 0 ? "done" : "failed";
-      await persistCurrentStage("Keyframes");
-
-      // Bind take grids as master storyboard visuals for preview and motion
-      if (takeGrids.length > 0) {
-        brief.storyboardGridUrl = takeGrids[0];
-        brief.takeGrids = takeGrids;
-        if (!brief.generatedAssets) brief.generatedAssets = {};
-        brief.generatedAssets.storyboardGridUrl = takeGrids[0];
-        brief.generatedAssets.takeGrids = takeGrids;
-        brief.generatedAssets.generatedFrames = takeGrids;
+        console.error("[SPARK Pipeline] Visuals generation notice:", imgErr);
+        if (!lastError) lastError = `Visuals Stage: ${imgErr?.message || String(imgErr)}`;
       }
 
       stages[3].status = "active";
@@ -1910,9 +2026,14 @@ Brand: ${brand.name}
       }));
 
       const fullProductionScenes: ProductionScene[] = (updatedBrief.storyboard || []).map((sb, idx) => {
+        const isExpress = mode === "express";
         const takeIndex = Math.floor(idx / panelsPerTake);
-        const takeGridUrl = takeGrids[takeIndex] || sb.image || realGridUrl || sceneImages[idx];
-        const sceneClipUrl = sb.videoUrl || (takeIndex < takeClips.length ? takeClips[takeIndex] : undefined) || (idx === 0 ? realVideoUrl : undefined);
+        const sceneStillUrl = isExpress
+          ? (sb.image || sceneImages[idx] || realGridUrl)
+          : (takeGrids[takeIndex] || sb.image || realGridUrl || sceneImages[idx]);
+        const sceneClipUrl = isExpress
+          ? (realVideoUrl || sb.videoUrl)
+          : (sb.videoUrl || (takeIndex < takeClips.length ? takeClips[takeIndex] : undefined) || (idx === 0 ? realVideoUrl : undefined));
         return {
           scene: sb.scene || idx + 1,
           index: sb.scene || idx + 1,
@@ -1929,17 +2050,17 @@ Brand: ${brand.name}
           pacing: sb.pacing || "Balanced",
           scriptSnippet: sb.scriptSnippet || sb.spokenLines || "",
           spokenLines: sb.spokenLines || sb.scriptSnippet || "",
-          audio: sb.audio || (mode === "express" ? "vo" : mode === "deep" ? "talent" : "talent"),
+          audio: sb.audio || (isExpress ? "vo" : mode === "deep" ? "talent" : "talent"),
           scriptBeat: sb.spokenLines || sb.scriptSnippet || "",
           visualDescription: sb.visualDescription || sb.startState || `Scene ${idx + 1}`,
           action: sb.primaryChange || sb.visualDescription || `Scene ${idx + 1} action`,
           startState: sb.startState || `Scene ${idx + 1} start`,
           endState: sb.endState || `Scene ${idx + 1} end`,
           primaryChange: sb.primaryChange || sb.visualDescription,
-          image: takeGridUrl,
-          keyframeImageUrl: takeGridUrl,
+          image: sceneStillUrl,
+          keyframeImageUrl: sceneStillUrl,
           videoUrl: sceneClipUrl,
-          status: (sceneClipUrl || (idx === 0 && realVideoUrl)) ? "ready" : takeGridUrl ? "ready" : "pending",
+          status: (sceneClipUrl || (idx === 0 && realVideoUrl)) ? "ready" : sceneStillUrl ? "ready" : "pending",
           createdAt: renderStartedAt,
           updatedAt: renderCompletedAt,
         };

@@ -292,7 +292,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           scene: s.scene || idx + 1,
           description: s.description,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.storyboard?.[idx]?.image,
+          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0],
           videoUrl: s.videoUrl || activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
         }))
       : brief?.storyboard?.length
@@ -300,13 +300,13 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           scene: s.scene || idx + 1,
           description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
           duration: s.duration || "0–10s",
-          image: s.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief.generatedAssets?.generatedFrames?.[idx],
+          image: s.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image || brief?.takeGrids?.[Math.floor(idx / 3)] || brief?.storyboardGridUrl || brief?.takeGrids?.[0],
           videoUrl: s.videoUrl || brief.videoUrl || activeProd?.videoUrl || brief.generatedAssets?.generatedVideos?.[0],
         }))
       : [
-          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: brief?.storyboardGridUrl || brief?.takeGrids?.[0] || brief?.generatedAssets?.generatedFrames?.[2] },
+          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] },
+          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] },
+          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboardGridUrl || brief?.takeGrids?.[0] },
         ],
     platformStrategy: {
       youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
