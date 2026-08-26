@@ -147,8 +147,7 @@ function compileDeterministicBrief(params: {
   targetDurationSec?: number;
 }): ProductionBrief {
   const { spark, brand, character, defaultOffer, productionMode = "standard", niche, researchContext = spark.researchContext } = params;
-  const rawMode = (productionMode || spark.suggestedProductionMode || "standard").toLowerCase();
-  const modeKey = rawMode.includes("deep") || rawMode.includes("cinematic") ? "deep" : rawMode.includes("express") || rawMode.includes("narrator") ? "express" : "standard";
+  const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
 
   const hostTitle = character?.name || brand.name;
   const patternHook = researchContext?.hookPattern || spark.hook;
@@ -166,7 +165,7 @@ function compileDeterministicBrief(params: {
     ? `GET ${defaultOffer.title.toUpperCase().slice(0, 20)}`
     : `SAVE & FOLLOW ${brand.name.toUpperCase().slice(0, 15)}`;
 
-  const durationSec = params.targetDurationSec || (modeKey === "deep" ? 120 : 45);
+  const durationSec = params.targetDurationSec || brand.formatSettings?.targetDurationSec || 60;
   const beats: ProductionBriefBeat[] = [];
 
   if (durationSec <= 45) {
@@ -485,12 +484,12 @@ export class ProductionBriefService {
       : "High-retention viral authority and rapid execution";
 
     const sparkScore = spark.brandFitScore || 92;
-    const modeKey = resolveProductionMode({ modeOverride: productionMode, spark, brand });
+    const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
 
     const effectiveDurationSec =
       targetDurationSec ||
       brand.formatSettings?.targetDurationSec ||
-      (modeKey === "deep" ? 120 : 45);
+      60;
 
     const offerPromptSection = defaultOffer
       ? `

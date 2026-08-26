@@ -49,12 +49,12 @@ export interface ModeResolutionParams {
 
 /**
  * Single Source of Mode Truth.
- * Priority:
- * 1) Explicit modeOverride
- * 2) production.mode
- * 3) brief.productionMode
- * 4) spark.suggestedMode / spark.suggestedProductionMode
- * 5) brand.productionMode
+ * Locked Priority:
+ * 1) Explicit modeOverride (state.productionMode) if valid
+ * 2) production.mode if valid
+ * 3) brand.productionMode if valid
+ * 4) brief.productionMode if valid
+ * 5) spark.suggestedMode / spark.suggestedProductionMode ONLY if 1–4 empty
  * 6) Fallback: "standard"
  */
 export function resolveProductionMode(params: ModeResolutionParams): ResolvedMode {
@@ -66,6 +66,9 @@ export function resolveProductionMode(params: ModeResolutionParams): ResolvedMod
   const fromProd = normalizeModeString(production?.mode);
   if (fromProd) return fromProd;
 
+  const fromBrand = normalizeModeString(brand?.productionMode as any);
+  if (fromBrand) return fromBrand;
+
   const fromBrief = normalizeModeString(brief?.productionMode);
   if (fromBrief) return fromBrief;
 
@@ -73,9 +76,6 @@ export function resolveProductionMode(params: ModeResolutionParams): ResolvedMod
     normalizeModeString(spark?.suggestedMode) ||
     normalizeModeString(spark?.suggestedProductionMode);
   if (fromSpark) return fromSpark;
-
-  const fromBrand = normalizeModeString(brand?.productionMode as any);
-  if (fromBrand) return fromBrand;
 
   return "standard";
 }

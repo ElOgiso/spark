@@ -1433,7 +1433,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const prodId = `p-${Date.now()}`;
     const reviewId = `r-${Date.now()}`;
 
-    const resolvedMode = resolveProductionMode({ spark, brand: state.brand, modeOverride: state.productionMode });
+    const effectiveFormat = getEffectiveFormatSettings(state);
+    const effectiveCredit = getEffectiveCreditSettings(state);
+    const resolvedMode = resolveProductionMode({ modeOverride: state.productionMode, brand: state.brand, spark });
     const hostStyle = state.character?.style || "Executive Creator";
     const status = state.automationMode === "autonomous" ? "Ready for Review" : "Drafting";
     const platformFit = spark.platformFit || (resolvedMode === "deep" ? "YouTube Long-form" : "YouTube Shorts");
@@ -1447,8 +1449,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status: status,
       mode: resolvedMode as any,
       dateCreated: new Date().toISOString().split("T")[0],
-      aspectRatio: platformFit.includes("YouTube") && !platformFit.includes("TikTok") ? "16:9" : "9:16",
+      aspectRatio: effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16",
       formats,
+      formatSettings: effectiveFormat,
+      targetDurationSec: effectiveFormat.targetDurationSec,
       isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
       scenes: [
         { scene: 1, description: `Hook Angle: ${spark.angle} (${hostStyle} host presentation)`, duration: "0-5s" },
@@ -1491,9 +1495,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Background Production Brief Generation via ProductionService & ModelRouter / AIProviderOrchestrator
     void import("../services/productionService").then(({ productionService }) => {
-      const effectiveFormat = getEffectiveFormatSettings(state);
       const seriesBible = resolveSeriesBible({
-        brand: state.brand,
+        brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
         character: state.character,
         characters: state.characters,
         memoryItems: state.memoryItems || [],
@@ -1501,13 +1504,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
-      const effectiveMode = state.productionMode || seriesBible.productionMode;
-      const effectiveDuration = effectiveFormat.targetDurationSec || (effectiveMode === "deep" ? 120 : 45);
+      const effectiveMode = resolvedMode;
+      const effectiveDuration = effectiveFormat.targetDurationSec;
 
       void productionService
         .createProductionFromSpark({
           spark,
-          brand: { ...state.brand, formatSettings: effectiveFormat },
+          brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
           character: effectiveCharacter,
           niche: state.brand.niche,
           memoryItems: state.memoryItems || [],
@@ -1522,6 +1525,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...enrichedProd,
             id: prodId,
             sparkId: spark.id,
+            mode: resolvedMode as any,
+            formatSettings: effectiveFormat,
+            targetDurationSec: effectiveDuration,
+            aspectRatio: effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16",
             isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
           };
 
@@ -1555,10 +1562,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             try {
               const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
                 production: stableEnrichedProd,
-                brand: state.brand,
-                character: state.character,
+                brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
+                character: effectiveCharacter,
                 memoryItems: state.memoryItems || [],
-                creditSettings: state.creditSettings || DEFAULT_CREDIT_SETTINGS,
+                creditSettings: effectiveCredit,
                 signal: controller.signal,
                 onProgress: (progress) => {
                   if (controller.signal.aborted) return;
@@ -1896,7 +1903,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const effectiveCharacter = seriesBible.character || state.character;
 
       const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
-        production: { ...prod, formatSettings: effectiveFormat },
+        production: {
+          ...prod,
+          formatSettings: effectiveFormat,
+          targetDurationSec: effectiveFormat.targetDurationSec,
+          aspectRatio: effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16",
+        },
         brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
         character: effectiveCharacter,
         memoryItems: state.memoryItems || [],

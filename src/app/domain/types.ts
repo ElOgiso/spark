@@ -237,6 +237,8 @@ export interface Production {
   dateCreated: string;
   aspectRatio: string;
   formats: string[];
+  targetDurationSec?: number;
+  formatSettings?: ProductionFormatSettings;
   scenes: { scene: number; description: string; duration: string; image?: string; videoUrl?: string }[];
   productionScenes?: ProductionScene[];
   reasoning?: any;
