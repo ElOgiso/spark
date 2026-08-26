@@ -30,11 +30,16 @@ async function loadCorsSafeImage(url: string): Promise<{ img: HTMLImageElement; 
     let objectUrl: string | undefined = undefined;
 
     if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) {
-      const resp = await fetch(trimmed);
-      if (!resp.ok) return null;
-      const blob = await resp.blob();
-      objectUrl = URL.createObjectURL(blob);
-      src = objectUrl;
+      try {
+        const resp = await fetch(trimmed, { credentials: "omit" });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          objectUrl = URL.createObjectURL(blob);
+          src = objectUrl;
+        }
+      } catch (fetchErr) {
+        console.warn("[NarratorVideoCompiler] Image direct fetch notice, falling back to img.src:", fetchErr);
+      }
     }
 
     const img = new Image();
@@ -77,11 +82,16 @@ async function loadCorsSafeAudio(
     let objectUrl: string | undefined = undefined;
 
     if (!trimmed.startsWith("data:") && !trimmed.startsWith("blob:")) {
-      const resp = await fetch(trimmed);
-      if (!resp.ok) return null;
-      const blob = await resp.blob();
-      objectUrl = URL.createObjectURL(blob);
-      src = objectUrl;
+      try {
+        const resp = await fetch(trimmed, { credentials: "omit" });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          objectUrl = URL.createObjectURL(blob);
+          src = objectUrl;
+        }
+      } catch (fetchErr) {
+        console.warn("[NarratorVideoCompiler] Audio direct fetch notice, falling back to audio.src:", fetchErr);
+      }
     }
 
     const audio = new Audio();
@@ -163,6 +173,10 @@ export async function compileNarratorSlideshowVideo(
 
   if (typeof window === "undefined" || typeof document === "undefined") {
     throw new Error("Narrator video compiler requires a browser DOM environment.");
+  }
+
+  if (typeof MediaRecorder === "undefined") {
+    throw new Error("MediaRecorder API is not supported in this browser. Please retry on Chrome or desktop.");
   }
 
   if (!audioUrl) {

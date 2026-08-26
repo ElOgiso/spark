@@ -1722,16 +1722,20 @@ ${promptPack.videoPromptTemplate(videoDurationSec, sceneDescriptions)}
           lastError = lastError || "Voiceover generation failed or audio was missing for Narrator mode.";
         }
         if (!realVideoUrl) {
-          lastError = lastError || "Narrator slideshow compilation failed to produce a master video.";
+          lastError = lastError || "Narrator slideshow compilation failed to produce a verified durable video in Storage.";
         }
       }
 
-      const isExpressFailed = isExpressNarrator && (!realVideoUrl || !realVoiceUrl);
-      const isOverallSuccess = isExpressNarrator ? !isExpressFailed : Boolean(realVideoUrl || sceneImages.length > 0);
+      const isOverallSuccess = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
       const finalStatus = isOverallSuccess ? "Completed" : "Failed";
+      if (!isOverallSuccess && !lastError) {
+        lastError = isExpressNarrator
+          ? "Narrator slideshow compilation failed to produce a verified durable video in Storage."
+          : "Video generation failed to produce a verified durable master video in permanent Storage.";
+      }
       const finalMsg = isOverallSuccess
         ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
-        : lastError || `${mode.toUpperCase()} asset generation failed to produce a playable master.`;
+        : lastError;
 
       if (updatedBrief.generatedAssets?.generationMetadata) {
         updatedBrief.generatedAssets.generationMetadata.generationStatus = finalStatus;
