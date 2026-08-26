@@ -197,6 +197,7 @@ export interface ProductionBrief {
   whyThisWorks: string;
   brandFitScore: number;
   suggestedDuration: string;
+  targetDurationSec?: number;
   storyboard?: ProductionScene[];
   storyboardGridUrl?: string;
   audioUrl?: string;

@@ -34,7 +34,7 @@ export interface ModePromptPack {
   voiceScript: string;
 }
 
-export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationSec: number = 45): string {
+export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationSec: number = 60): string {
   const clean = (str: string) =>
     str
       .replace(/[*_#`~\[\]()]/g, "")
@@ -110,7 +110,13 @@ ${rankedLaws}
 ${ANTI_SLOP_RULES}
 `.trim();
 
-  const voiceScript = buildCompleteVoiceScript(brief);
+  const effectiveTargetDurationSec =
+    (production as any)?.formatSettings?.targetDurationSec ||
+    (production as any)?.targetDurationSec ||
+    (brief as any)?.targetDurationSec ||
+    (brand as any)?.formatSettings?.targetDurationSec ||
+    60;
+  const voiceScript = buildCompleteVoiceScript(brief, effectiveTargetDurationSec);
 
   if (mode === "express") {
     // EXPRESS / NARRATOR RECIPE

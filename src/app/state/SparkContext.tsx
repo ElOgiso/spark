@@ -53,6 +53,7 @@ import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
+import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
@@ -1398,7 +1399,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Quality Gate Evaluation
+    // Hard Quality Gate Evaluation
+    const hardGate = evaluateSparkForProduction(spark);
+    if (!hardGate.ok) {
+      NotificationService.addNotification({
+        title: "Spark Needs Strengthening",
+        message: hardGate.message || "Cannot start production: Spark lacks actionable hook or substance. Click 'Strengthen Spark' to upgrade.",
+        type: "warning",
+      });
+      return;
+    }
+
+    // Extended Quality Gate Evaluation
     const evalRes = isProductionReadySpark(spark, state.brand);
     if (!evalRes.ok) {
       console.log(`[SparkContext] Spark quality gate triggered auto-repair for "${spark.title}". Reasons:`, evalRes.reasons);

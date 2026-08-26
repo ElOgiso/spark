@@ -133,10 +133,59 @@ function rankAndFormatMemory(memoryItems: MemoryItem[] = []): string {
 }
 
 /**
+ * Quality Gate Evaluation for Viral Sparks before entering Production.
+ * Blocks weak or empty sparks from triggering asset generation.
+ */
+export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boolean; message?: string } {
+  if (!spark) {
+    return { ok: false, message: "Cannot create production: Viral Spark data is completely missing." };
+  }
+
+  const hook = typeof spark.hook === "string" ? spark.hook.trim() : "";
+  const isUsableHook =
+    hook.length >= 8 &&
+    !/^hook:\s*$/i.test(hook) &&
+    !hook.toLowerCase().startsWith("hook: [") &&
+    !hook.toLowerCase().includes("curiosity opener") &&
+    !hook.toLowerCase().includes("pattern interrupt");
+
+  const hasSubstance = Boolean(
+    (typeof spark.whyNow === "string" && spark.whyNow.trim().length >= 8) ||
+    (typeof spark.angle === "string" && spark.angle.trim().length >= 5) ||
+    (spark.researchContext?.hookPattern && spark.researchContext.hookPattern.trim().length >= 8)
+  );
+
+  const hasFormat = Boolean(
+    spark.platformFit ||
+    spark.suggestedFormat ||
+    spark.suggestedProductionMode ||
+    spark.category ||
+    spark.researchContext?.format
+  );
+
+  if (!isUsableHook && !hasSubstance && !hasFormat) {
+    return {
+      ok: false,
+      message: `Cannot start production for "${spark.title || "Spark"}": Spark is missing a ready-to-speak hook, strategic rationale (whyNow/angle), and platform format. Click 'Strengthen Spark' to upgrade.`,
+    };
+  }
+
+  if (!isUsableHook && !hasSubstance) {
+    return {
+      ok: false,
+      message: `Cannot start production for "${spark.title || "Spark"}": Missing both an opening hook and a why-now retention rationale. Click 'Strengthen Spark' to upgrade.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
  * Deterministic Brief Compiler Fallback
  * Guarantees a non-empty, directive Production Pack Brief even if AI JSON fails.
+ * Sourced entirely from the Viral Spark (hook, whyNow, angle, research patterns, brand pillars, audience).
  */
-function compileDeterministicBrief(params: {
+export function compileDeterministicBrief(params: {
   spark: ViralSpark;
   brand: Brand;
   character?: Character;
@@ -151,11 +200,25 @@ function compileDeterministicBrief(params: {
 
   const hostTitle = character?.name || brand.name;
   const patternHook = researchContext?.hookPattern || spark.hook;
-  const sparkHook = patternHook ? patternHook.trim() : `The ${niche || brand.niche || "industry"} shift nobody is talking about.`;
+  const rawHook = patternHook ? patternHook.trim() : "";
   const cleanHook =
-    sparkHook.length > 5 && !sparkHook.toLowerCase().startsWith("hook:") && !sparkHook.toLowerCase().includes("curiosity opener")
-      ? sparkHook
+    rawHook.length > 5 && !rawHook.toLowerCase().startsWith("hook:") && !rawHook.toLowerCase().includes("curiosity opener")
+      ? rawHook.replace(/^["']|["']$/g, "").trim()
       : `Here is the non-obvious reality about ${niche || brand.niche || "this market"} that most operators in ${brand.name}'s space ignore.`;
+
+  // Brand Pillars & Audience Constraints
+  const rawPillars = Array.isArray(brand.contentPillars) ? brand.contentPillars : [];
+  const activePillar = rawPillars.length > 0
+    ? (typeof rawPillars[0] === "string" ? rawPillars[0] : (rawPillars[0] as any)?.name || (rawPillars[0] as any)?.title || "")
+    : "";
+  const pillarLabel = activePillar ? ` under our ${activePillar} framework` : "";
+  const pillarBadge = activePillar ? activePillar.toUpperCase().slice(0, 22) : `${brand.name.toUpperCase()} METHOD`;
+
+  const audiencePain = (brand.audience?.painPoints?.[0] || (brand as any).painPoints?.[0] || (brand as any).targetAudience || "").replace(/["\r\n]+/g, " ").trim();
+  const audienceDesire = (brand.audience?.desires?.[0] || (brand as any).desires?.[0] || "").replace(/["\r\n]+/g, " ").trim();
+  const sparkAngle = spark.angle ? spark.angle.replace(/["\r\n]+/g, " ").trim() : "";
+  const sparkWhyNow = spark.whyNow ? spark.whyNow.replace(/["\r\n]+/g, " ").trim() : "";
+  const sparkTitle = spark.title ? spark.title.replace(/["\r\n]+/g, " ").trim() : "";
 
   const spokenCta = defaultOffer
     ? `Claim your access to ${defaultOffer.title} now — link in bio or comment below.`
@@ -170,12 +233,18 @@ function compileDeterministicBrief(params: {
 
   if (durationSec <= 20) {
     // <=20s (15s Short): 2 Beats (Hook + CTA) ~35-50 words total
+    const hookExtension = sparkAngle
+      ? `The core unlock: ${sparkAngle}.`
+      : sparkWhyNow
+      ? `Here is why: ${sparkWhyNow}.`
+      : `If you want ${audienceDesire || "real market leverage"}, this is the shift you cannot ignore.`;
+
     beats.push(
       {
         timecode: "[00:00-00:10]",
         valueJob: "hook",
-        spokenLines: `${cleanHook} If you are running an operation in ${niche || brand.niche || "this space"}, this is the shift you cannot afford to overlook.`,
-        onScreenText: `THE NON-OBVIOUS SHIFT`,
+        spokenLines: `${cleanHook} ${hookExtension}`,
+        onScreenText: activePillar ? `${activePillar.toUpperCase().slice(0, 20)}` : `THE NON-OBVIOUS SHIFT`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
       },
       {
@@ -187,8 +256,12 @@ function compileDeterministicBrief(params: {
       }
     );
   } else if (durationSec <= 45) {
-    // <=45s (30-45s Short): 3 Beats (Hook, Proof/Payoff, CTA) ~70-110 words total
+    // <=45s (30-45s Short): 3 Beats (Hook, Proof/Payoff from whyNow, CTA) ~70-110 words total
     const midSec = Math.round(durationSec * 0.72);
+    const proofLine = sparkWhyNow
+      ? `${sparkWhyNow}. ${sparkAngle ? `Our direct approach: ${sparkAngle}.` : `Here is how ${brand.name} executes${pillarLabel}: focus on high-signal execution and eliminate wasted friction.`}`
+      : `Most operators in ${niche || brand.niche || "this space"} struggle with ${audiencePain || "outdated workflows"}. Here is how ${brand.name} executes${pillarLabel}: focus on core high-signal execution and eliminate wasted friction.`;
+
     beats.push(
       {
         timecode: "[00:00-00:08]",
@@ -200,10 +273,8 @@ function compileDeterministicBrief(params: {
       {
         timecode: `[00:08-00:${midSec.toString().padStart(2, "0")}]`,
         valueJob: "proof",
-        spokenLines: spark.whyNow
-          ? `${spark.whyNow} Here is the exact architecture ${brand.name} uses: focus on core leverage, eliminate wasted spend, and execute with disciplined precision.`
-          : `Most operators in ${niche || brand.niche || "this space"} make the costly mistake of applying outdated playbooks. Here is the framework ${brand.name} uses: focus on core leverage, eliminate wasted spend, and execute with disciplined precision.`,
-        onScreenText: `${brand.name.toUpperCase()} FRAMEWORK`,
+        spokenLines: proofLine,
+        onScreenText: pillarBadge,
         cameraDirection: "Close-up authority angle",
       },
       {
@@ -216,6 +287,16 @@ function compileDeterministicBrief(params: {
     );
   } else if (durationSec <= 90) {
     // <=90s (60s Short/Reel): 4 Beats (Hook, Problem, Proof, CTA) ~140-180 words total
+    const problemLine = audiencePain
+      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, traditional workflows simply cannot keep pace.` : ""}`
+      : sparkWhyNow
+      ? `Here is the core problem: ${sparkWhyNow}. Traditional workflows in ${niche || brand.niche || "this industry"} simply cannot keep pace with this change.`
+      : `Every single day, operators in ${niche || brand.niche || "this industry"} waste critical resources attempting to solve new bottlenecks with broken playbooks.`;
+
+    const proofLine = sparkAngle
+      ? `To solve this${pillarLabel}, ${brand.name} executes a focused strategy: ${sparkAngle}. This produces ${audienceDesire || "predictable scaling and market authority"} without unnecessary burn.`
+      : `When you analyze top-performing operations in ${niche || brand.niche || "our industry"}, they build around clear systematic execution${pillarLabel}. At ${brand.name}, we eliminate manual drag to achieve ${audienceDesire || "high-conviction results"}.`;
+
     beats.push(
       {
         timecode: "[00:00-00:10]",
@@ -227,17 +308,15 @@ function compileDeterministicBrief(params: {
       {
         timecode: "[00:10-00:25]",
         valueJob: "problem",
-        spokenLines: spark.whyNow
-          ? `Here is the core problem: ${spark.whyNow}. Traditional workflows in ${niche || brand.niche || "this industry"} simply cannot keep pace with this change.`
-          : `Every single day, operators in ${niche || brand.niche || "this industry"} waste critical resources attempting to solve tomorrow's bottlenecks with yesterday's broken playbooks.`,
+        spokenLines: problemLine,
         onScreenText: `THE CORE BOTTLENECK`,
         cameraDirection: "Medium tracking pan across set",
       },
       {
         timecode: "[00:25-00:48]",
         valueJob: "proof",
-        spokenLines: `When you look at the top 1% performing brands, they never rely on brute force. At ${brand.name}, we deploy structured leverage to automate repetitive cycles and guarantee compounding ROI.`,
-        onScreenText: `${brand.name.toUpperCase()} LEVERAGE SYSTEM`,
+        spokenLines: proofLine,
+        onScreenText: pillarBadge,
         cameraDirection: "Medium shot with split screen data graphic",
       },
       {
@@ -254,50 +333,56 @@ function compileDeterministicBrief(params: {
       {
         timecode: "[00:00-00:15]",
         valueJob: "hook",
-        spokenLines: cleanHook,
+        spokenLines: `${cleanHook} In this breakdown, we will examine why the shift around ${sparkTitle || "this market movement"} changes the rules for ${niche || brand.niche || "operators"}.`,
         onScreenText: `EXECUTIVE BRIEFING`,
         cameraDirection: "Cinematic wide-to-tight camera push",
       },
       {
         timecode: "[00:15-00:35]",
         valueJob: "problem",
-        spokenLines: `Here is the systemic breakdown happening right now across ${niche || brand.niche || "this industry"}. Traditional methods are decaying faster than ever.`,
-        onScreenText: `SYSTEMIC FAILURE MODES`,
+        spokenLines: audiencePain
+          ? `Here is the systemic breakdown: ${audiencePain}. When teams try to scale without updating their underlying model, friction compounds rapidly.`
+          : `Here is the systemic breakdown happening right now across ${niche || brand.niche || "this industry"}. Traditional execution methods are decaying faster than ever.`,
+        onScreenText: `SYSTEMIC FRICTION AUDIT`,
         cameraDirection: "Slow tracking pan over studio set",
       },
       {
         timecode: "[00:35-00:55]",
         valueJob: "myth_bust",
-        spokenLines: `Common wisdom tells you to just work harder or increase volume. That is the fastest route to burnout and margin erosion.`,
-        onScreenText: `MYTH: MORE VOLUME = BETTER RESULTS`,
+        spokenLines: sparkAngle
+          ? `The common misconception is to keep adding manual steps. But the real leverage point is ${sparkAngle}.`
+          : `Common wisdom tells you to just work harder or increase volume. That is the fastest route to burnout and margin erosion in ${niche || brand.niche || "this space"}.`,
+        onScreenText: `MYTH: MORE EFFORT = BETTER OUTPUT`,
         cameraDirection: "Medium close-up authority frame",
       },
       {
         timecode: "[00:55-01:25]",
         valueJob: "context",
-        spokenLines: `At ${brand.name}, we operate on a completely different architecture. We decouple input effort from high-leverage output.`,
-        onScreenText: `THE NEW OPERATING MODEL`,
+        spokenLines: `At ${brand.name}, we build directly around${pillarLabel}. We decouple input effort from high-conviction strategic output so you gain ${audienceDesire || "unbeatable velocity"}.`,
+        onScreenText: pillarBadge,
         cameraDirection: "Dynamic angle with lower-third visual overlay",
       },
       {
         timecode: "[01:25-01:55]",
         valueJob: "proof",
-        spokenLines: `Let us break down the exact math: when you optimize the core conversion engine first, every subsequent metric scales exponentially.`,
-        onScreenText: `THE MATHEMATICS OF LEVERAGE`,
+        spokenLines: sparkWhyNow
+          ? `Let us look at the evidence: ${sparkWhyNow}. When you align your execution with this dynamic, conversion and retention improve immediately.`
+          : `Let us break down the exact mechanism: when you optimize the core conversion and delivery loop first, every subsequent metric scales predictably.`,
+        onScreenText: `THE RETENTION MECHANISM`,
         cameraDirection: "Presenter explaining breakdown",
       },
       {
         timecode: "[01:55-02:20]",
         valueJob: "example",
-        spokenLines: `Here is how you implement this starting today: audit your primary friction points, automate repetitive cycles, and protect focus.`,
+        spokenLines: `Here is how you implement this starting today: audit your primary friction points, automate repetitive cycles, and protect strategic focus.`,
         onScreenText: `3-STEP IMPLEMENTATION AUDIT`,
         cameraDirection: "Medium tracking shot",
       },
       {
         timecode: "[02:20-02:45]",
         valueJob: "payoff",
-        spokenLines: `When this architecture is locked in, you gain total clarity, speed, and unbeatable market positioning.`,
-        onScreenText: `PREDICTABLE SCALING`,
+        spokenLines: `When this architecture is locked in, you unlock ${audienceDesire || "total operational freedom, predictable growth, and market authority"}.`,
+        onScreenText: `THE STRATEGIC ADVANTAGE`,
         cameraDirection: "Tight framing with cinematic depth",
       },
       {
@@ -314,14 +399,16 @@ function compileDeterministicBrief(params: {
       {
         timecode: "[00:00-00:25]",
         valueJob: "hook",
-        spokenLines: `${cleanHook} In this complete masterclass, we will deconstruct why traditional playbooks in ${niche || brand.niche || "this space"} are failing, and install the exact high-leverage architecture ${brand.name} uses.`,
+        spokenLines: `${cleanHook} In this complete masterclass, we will deconstruct ${sparkTitle || "the entire market shift"}, explain why traditional playbooks in ${niche || brand.niche || "this space"} are failing, and install the exact architecture ${brand.name} uses${pillarLabel}.`,
         onScreenText: `EXECUTIVE MASTERCLASS`,
         cameraDirection: "Cinematic push-in establishing host in architectural studio",
       },
       {
         timecode: "[00:25-00:55]",
         valueJob: "problem",
-        spokenLines: `Look across the landscape today: operators are running faster on the treadmill while margins shrink. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`,
+        spokenLines: audiencePain
+          ? `Look across the landscape today: ${audiencePain}. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`
+          : `Look across the landscape today: operators are running faster while margins shrink. The underlying issue is not execution effort—it is structural friction and outdated operational paradigms.`,
         onScreenText: `STRUCTURAL FRICTION AUDIT`,
         cameraDirection: "Slow motivated tracking shot with illuminated data overlay",
       },
@@ -335,14 +422,18 @@ function compileDeterministicBrief(params: {
       {
         timecode: "[01:30-02:15]",
         valueJob: "context",
-        spokenLines: `To achieve genuine compounding, you must transition from reactive hustle to systematic leverage. At ${brand.name}, our core thesis rests on three non-negotiable pillars: signal clarity, frictionless conversion, and automated distribution.`,
-        onScreenText: `THE 3 PILLARS OF COMPOUNDING LEVERAGE`,
+        spokenLines: sparkAngle
+          ? `To achieve genuine compounding, we focus on: ${sparkAngle}. At ${brand.name}, our core thesis rests on systematic leverage and clear market positioning.`
+          : `To achieve genuine compounding, you must transition from reactive hustle to systematic leverage. At ${brand.name}, our core thesis rests on signal clarity, frictionless conversion, and automated distribution.`,
+        onScreenText: pillarBadge,
         cameraDirection: "Medium tracking shot revealing schematic diagram",
       },
       {
         timecode: "[02:15-03:00]",
         valueJob: "proof",
-        spokenLines: `Let us examine the data: when you remove intermediary friction and streamline your core value proposition, customer acquisition efficiency improves by 300% without increasing top-of-funnel spend.`,
+        spokenLines: sparkWhyNow
+          ? `Let us examine the data: ${sparkWhyNow}. When you eliminate intermediary friction and streamline your value proposition, customer acquisition efficiency scales without bloating overhead.`
+          : `Let us examine the data: when you remove intermediary friction and streamline your core value proposition, acquisition efficiency improves by 300% without increasing top-of-funnel spend.`,
         onScreenText: `ACQUISITION EFFICIENCY: +300%`,
         cameraDirection: "Split composition with key performance metrics",
       },
@@ -363,7 +454,7 @@ function compileDeterministicBrief(params: {
       {
         timecode: "[04:20-04:45]",
         valueJob: "payoff",
-        spokenLines: `When these systems lock into place, you unlock total operational freedom, predictable pipeline velocity, and an unassailable competitive moat in ${niche || brand.niche || "your industry"}.`,
+        spokenLines: `When these systems lock into place, you unlock ${audienceDesire || "total operational freedom, predictable pipeline velocity, and an unassailable competitive moat in your industry"}.`,
         onScreenText: `THE COMPOUNDING ADVANTAGE`,
         cameraDirection: "Cinematic low-angle authority shot",
       },
@@ -561,7 +652,10 @@ ANTI-SLOP COMPILER LAWS (MANDATORY):
    - The total spoken word count across all beats combined MUST be at least ${targetWordFloor} words (no thin stubs).
    - Long targets get deep proof, examples, step-by-step implementation, and breakdowns—NEVER empty filler or time-padding.
 4. CTA LAW: spokenCta must be 1 exact ready-to-speak line. onScreenCta must be <=6-8 words in uppercase.
-5. AUDIENCE & RESEARCH LAW: Address the audience's primary desires and solve their pain points directly. Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
+5. AUDIENCE, PILLARS & RESEARCH LAW:
+   - At least one beat or whyThisWorks MUST explicitly cite an active content pillar (${pillars}).
+   - At least one beat MUST directly address the stated audience pain points (${audPain}) or desires (${audDesires}).
+   - Address the audience's primary desires and solve their pain points directly. Translate inspiration patterns and niche language into authentic brand copy. Cite evidence in whyThisWorks.
 6. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
 7. OUTPUT LAW: Return valid JSON matching the schema with zero introductory chatter.`;
 
@@ -616,7 +710,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
   "visualDirection": "Concrete studio set, camera movement, and host posture direction for ${modeKey} mode",
   "caption": "Platform post text with hashtags and offer link",
   "platformRecommendation": "${spark.platformFit || (modeKey === "deep" ? "YouTube Long-form" : "YouTube Shorts")}",
-  "whyThisWorks": "1-3 sentences citing spark evidence (${spark.whyNow}) and brand authority",
+  "whyThisWorks": "1-3 sentences citing spark evidence (${spark.whyNow}), active content pillar, and brand authority",
   "brandFitScore": ${Math.min(99, Math.max(80, sparkScore))},
   "suggestedDuration": "${effectiveDurationSec >= 300 ? "300-600s" : effectiveDurationSec >= 120 ? "120-180s" : effectiveDurationSec >= 60 ? "60-90s" : "30-45s"}"
 }
@@ -678,6 +772,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
       return {
         title: asText(parsed.title, spark.title),
         productionMode: modeKey,
+        targetDurationSec: effectiveDurationSec,
         hook: parsedHook,
         scriptOutline: parsedOutline,
         beats: parsedBeats,
