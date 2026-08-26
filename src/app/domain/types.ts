@@ -200,6 +200,7 @@ export interface ProductionBrief {
   targetDurationSec?: number;
   storyboard?: ProductionScene[];
   storyboardGridUrl?: string;
+  takeGrids?: string[];
   audioUrl?: string;
   videoUrl?: string;
   generationProgress?: GenerationProgress;
@@ -213,6 +214,7 @@ export interface ProductionBrief {
   };
   generatedAssets?: {
     storyboardGridUrl?: string;
+    takeGrids?: string[];
     sceneClips?: string[];
     thumbnails?: { id: string; concept: string; variant: string; url?: string; image?: string }[];
     voiceoverUrl?: string;
