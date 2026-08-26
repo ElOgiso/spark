@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
+import { extractSparkStoragePath, ProductionAssetService } from "../services/production/productionAssetService";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -77,6 +78,17 @@ export function MiniMediaThumbnail({
           loop
           autoPlay
           playsInline
+          onError={async (e) => {
+            const currentSrc = (e.target as HTMLVideoElement).src;
+            const storagePath = extractSparkStoragePath(currentSrc);
+            if (storagePath) {
+              const freshUrl = await ProductionAssetService.resolveSignedUrl(storagePath, 60 * 60 * 24 * 7);
+              if (freshUrl && freshUrl !== currentSrc) {
+                (e.target as HTMLVideoElement).src = freshUrl;
+                (e.target as HTMLVideoElement).load();
+              }
+            }
+          }}
           className="w-full h-full object-cover"
         />
       ) : imageUrl ? (
@@ -397,6 +409,17 @@ export function InteractiveVideoPlayer({
             loop
             muted={isMuted}
             playsInline
+            onError={async (e) => {
+              const currentSrc = (e.target as HTMLVideoElement).src;
+              const storagePath = extractSparkStoragePath(currentSrc);
+              if (storagePath) {
+                const freshUrl = await ProductionAssetService.resolveSignedUrl(storagePath, 60 * 60 * 24 * 7);
+                if (freshUrl && freshUrl !== currentSrc) {
+                  (e.target as HTMLVideoElement).src = freshUrl;
+                  (e.target as HTMLVideoElement).load();
+                }
+              }
+            }}
             onLoadedMetadata={(e) => {
               const dur = (e.target as HTMLVideoElement).duration;
               if (dur && !isNaN(dur)) setDuration(Math.round(dur));

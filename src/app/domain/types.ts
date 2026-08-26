@@ -29,6 +29,8 @@ export interface Brand {
 }
 
 export interface Character {
+  id?: string;
+  brandId?: string;
   name: string;
   role: string;
   style: string;
@@ -209,6 +211,8 @@ export interface ProductionBrief {
   takeGrids?: string[];
   audioUrl?: string;
   videoUrl?: string;
+  thumbnailUrl?: string;
+  lastError?: string;
   generationProgress?: GenerationProgress;
   offerCta?: {
     id?: string;
@@ -223,6 +227,7 @@ export interface ProductionBrief {
     takeGrids?: string[];
     sceneClips?: string[];
     thumbnails?: { id: string; concept: string; variant: string; url?: string; image?: string }[];
+    thumbnailUrls?: string[];
     voiceoverUrl?: string;
     generatedFrames?: string[];
     generatedVideos?: string[];
@@ -240,6 +245,7 @@ export interface ProductionBrief {
 
 export interface Production {
   id: string;
+  brandId?: string;
   title: string;
   sparkId?: string;
   status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed" | "Cancelled";
@@ -256,6 +262,8 @@ export interface Production {
   brief?: ProductionBrief;
   audioUrl?: string;
   videoUrl?: string;
+  storyboardGridUrl?: string;
+  thumbnailUrl?: string;
   isGeneratingAssets?: boolean;
   generationProgress?: GenerationProgress;
   lastError?: string;

@@ -34,7 +34,8 @@ import { executiveSessionRepository } from "./repositories/executiveSessionRepos
 import { executiveSummaryRepository } from "./repositories/executiveSummaryRepository";
 import { executiveTimelineRepository } from "./repositories/executiveTimelineRepository";
 import { listByBrand } from "./repositories/repositoryUtils";
-import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow } from "./database.types";
+import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow, MediaAssetRow } from "./database.types";
+import { refreshProductionMediaAssets, refreshCharacterMediaAssets } from "../services/production/productionAssetService";
 import type {
   Account,
   AnalyticsInsight,
@@ -213,6 +214,7 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     analytics,
     sourcesRes,
     patternsRes,
+    mediaAssetsRes,
   ] = await Promise.all([
     isUuid(brandId) && supabase
       ? (supabase.from("brands") as any).select("*").eq("id", brandId).single()
@@ -227,12 +229,47 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     listAnalyticsSnapshots(brandId),
     listResearchSources(brandId),
     listResearchPatterns(brandId),
+    listByBrand("media_assets", brandId).catch(() => ({ data: [] })),
   ]);
 
   const brand = brandRes?.data ? brandRowToDomain(brandRes.data) : undefined;
   const firstCharacter = characters.data?.[0]
     ? characterRowToDomain(characters.data[0])
     : undefined;
+
+  const rawMediaAssets: MediaAssetRow[] = (mediaAssetsRes?.data as MediaAssetRow[] | null) || [];
+  const rawProductions = (productions.data ?? []).map(productionRowToDomain);
+
+  // Resign / refresh media URLs for each production
+  const refreshedProductions: Production[] = [];
+  for (const prod of rawProductions) {
+    const { production: refreshedProd, didResign } = await refreshProductionMediaAssets(prod, rawMediaAssets);
+    refreshedProductions.push(refreshedProd);
+
+    // If signed URL was refreshed, persist new signed URL on productions row in database
+    if (didResign && isUuid(refreshedProd.id)) {
+      void updateProduction(refreshedProd.id, {
+        brief: (refreshedProd.brief as any) || null,
+        assets: {
+          video_url: refreshedProd.videoUrl || null,
+          audio_url: refreshedProd.audioUrl || null,
+          ...(refreshedProd.brief?.generatedAssets || {}),
+        } as any,
+      }).catch((err) => console.warn("[workspaceSync] Production signed URL update notice:", err));
+    }
+  }
+
+  // Resign / refresh character media URLs
+  let refreshedCharacter = firstCharacter;
+  if (firstCharacter) {
+    const { character: charRefreshed, didResign } = await refreshCharacterMediaAssets(firstCharacter, rawMediaAssets);
+    refreshedCharacter = charRefreshed;
+    if (didResign && isUuid(brandId)) {
+      void persistCharacterUpdate(brandId, charRefreshed).catch((err) =>
+        console.warn("[workspaceSync] Character signed URL update notice:", err)
+      );
+    }
+  }
 
   const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
   const cloudFormatSettings = (brandRes?.data?.settings as any)?.format_settings;
@@ -265,13 +302,13 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
 
   return {
     brand,
-    character: firstCharacter,
+    character: refreshedCharacter,
     creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
     formatSettings: resolvedFormat,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
     memoryItems: (memory.data ?? []).map(memoryRowToDomain),
     viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
-    productions: (productions.data ?? []).map(productionRowToDomain),
+    productions: refreshedProductions,
     reviewItems: (reviews.data ?? []).map(reviewRowToDomain),
     publishJobs: (jobs.data ?? []).map(publishJobRowToDomain),
     analyticsInsights: (analytics.data ?? []).map(analyticsRowToDomain),

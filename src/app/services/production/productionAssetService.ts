@@ -164,17 +164,62 @@ export function isPlayableVideoUrl(val?: string | null): val is string {
   );
 }
 
+export function isEphemeralMediaUrl(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim().toLowerCase();
+  return (
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:") ||
+    trimmed.includes("vidgen.x.ai") ||
+    trimmed.includes("generativelanguage.googleapis.com") ||
+    trimmed.includes("oaidalleapiprodscus.blob.core.windows.net") ||
+    trimmed.includes("fal.media")
+  );
+}
+
+export function extractSparkStoragePath(url?: string | null): string | null {
+  if (!url || typeof url !== "string") return null;
+  const match = url.match(/\/storage\/v1\/object\/(?:sign|public)\/Spark\/([^?#]+)/i);
+  if (match && match[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+export function isSignedUrlExpiredOrExpiringSoon(url?: string | null, thresholdSec = 60): boolean {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const urlObj = new URL(url);
+    const token = urlObj.searchParams.get("token");
+    if (!token) {
+      // Public URL without token: does not expire via JWT token
+      return false;
+    }
+    const parts = token.split(".");
+    if (parts.length >= 2) {
+      const base64Url = parts[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jsonStr = typeof atob === "function"
+        ? atob(base64)
+        : Buffer.from(base64, "base64").toString("utf-8");
+      const payload = JSON.parse(jsonStr);
+      if (typeof payload.exp === "number") {
+        return payload.exp * 1000 <= Date.now() + thresholdSec * 1000;
+      }
+    }
+  } catch {}
+  return false;
+}
+
 export function isStorageVerifiedVideoUrl(val?: string | null): boolean {
   if (!val || typeof val !== "string") return false;
   const trimmed = val.trim();
   if (!isPlayableVideoUrl(trimmed)) return false;
-  // Ephemeral provider URLs that expire quickly or are not durable storage
-  const isEphemeral =
-    trimmed.includes("vidgen.x.ai") ||
-    trimmed.includes("generativelanguage.googleapis.com") ||
-    trimmed.startsWith("blob:") ||
-    trimmed.startsWith("data:");
-  return !isEphemeral;
+  return !isEphemeralMediaUrl(trimmed);
 }
 
 export function isDurableMasterVideoReady(val?: string | null): boolean {
@@ -2288,4 +2333,303 @@ Apply revision while maintaining 100% subject identity and set continuity.
       return null;
     }
   }
+}
+
+/**
+ * Resolves a fresh playable/viewable signed URL for any media asset in bucket "Spark".
+ * - If url is a non-expired Spark signed or public URL, returns it as-is.
+ * - If url is an expired Spark signed URL, extracts the storage_path and mints a fresh 7-day signed URL.
+ * - If url is ephemeral, checks known storagePath or queries media_assets for matching storage_path.
+ * - If storage_path is found, mints a fresh 7-day signed URL.
+ * - If url is ephemeral and NO storage path exists, returns null (do not invent or fabricate).
+ */
+export async function resolveFreshPlayableUrl(params: {
+  url?: string | null;
+  storagePath?: string | null;
+  productionId?: string;
+  brandId?: string;
+  assetType?: "video" | "audio" | "image";
+  mediaAssets?: import("../../backend/database.types").MediaAssetRow[];
+}): Promise<{ url?: string; storagePath?: string; resigned: boolean; isEphemeralWithoutStorage: boolean }> {
+  const { url, productionId, brandId, assetType, mediaAssets = [] } = params;
+  let targetPath = params.storagePath || null;
+
+  if (url) {
+    const extracted = extractSparkStoragePath(url);
+    if (extracted) {
+      targetPath = extracted;
+      const isExpired = isSignedUrlExpiredOrExpiringSoon(url);
+      if (!isExpired) {
+        return { url, storagePath: extracted, resigned: false, isEphemeralWithoutStorage: false };
+      }
+    }
+  }
+
+  // If no targetPath yet, search in mediaAssets table records
+  if (!targetPath && (productionId || brandId)) {
+    const matchedAsset = mediaAssets.find((m) => {
+      if (!m.storage_path) return false;
+      const matchesProd = productionId ? m.storage_path.includes(productionId) : true;
+      const matchesType = assetType
+        ? (m.file_type === assetType ||
+           (assetType === "video" && m.storage_path.endsWith(".mp4")) ||
+           (assetType === "audio" && (m.storage_path.endsWith(".mp3") || m.storage_path.endsWith(".wav"))))
+        : true;
+      return matchesProd && matchesType;
+    });
+    if (matchedAsset?.storage_path) {
+      targetPath = matchedAsset.storage_path;
+    }
+  }
+
+  // If targetPath is known, re-sign from Supabase storage bucket "Spark"
+  if (targetPath) {
+    const freshSignedUrl = await ProductionAssetService.resolveSignedUrl(targetPath, 60 * 60 * 24 * 7);
+    if (freshSignedUrl) {
+      return { url: freshSignedUrl, storagePath: targetPath, resigned: true, isEphemeralWithoutStorage: false };
+    }
+    return { url: undefined, storagePath: targetPath, resigned: false, isEphemeralWithoutStorage: false };
+  }
+
+  // If URL is ephemeral and we found no storage path
+  if (url && isEphemeralMediaUrl(url)) {
+    return { url: undefined, storagePath: undefined, resigned: false, isEphemeralWithoutStorage: true };
+  }
+
+  // Otherwise return whatever valid non-ephemeral URL we had
+  return { url: url || undefined, storagePath: targetPath || undefined, resigned: false, isEphemeralWithoutStorage: false };
+}
+
+/**
+ * Iterates through all media fields on a production and resigns expired or storage-backed URLs.
+ * Never alters production status (resigning is for playback/preview only).
+ */
+export async function refreshProductionMediaAssets(
+  production: Production,
+  mediaAssets: import("../../backend/database.types").MediaAssetRow[] = []
+): Promise<{ production: Production; didResign: boolean }> {
+  let didResign = false;
+
+  const brief = production.brief ? { ...production.brief } : undefined;
+  const genAssets = brief?.generatedAssets ? { ...brief.generatedAssets } : undefined;
+  let updatedVideoUrl = production.videoUrl || brief?.videoUrl;
+  let updatedAudioUrl = production.audioUrl || brief?.audioUrl || genAssets?.voiceoverUrl;
+  let updatedGridUrl = production.storyboardGridUrl || brief?.storyboardGridUrl || genAssets?.storyboardGridUrl;
+  let updatedThumbUrl = production.thumbnailUrl || brief?.thumbnailUrl;
+  let updatedLastError = production.lastError || brief?.lastError;
+
+  // 1. Video URL
+  if (updatedVideoUrl) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedVideoUrl,
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "video",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) {
+      updatedVideoUrl = res.url;
+    } else if (res.isEphemeralWithoutStorage) {
+      updatedVideoUrl = undefined;
+      updatedLastError = "Asset not in Spark storage";
+    }
+  } else {
+    // Check if storage has a video asset for this production
+    const res = await resolveFreshPlayableUrl({
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "video",
+      mediaAssets,
+    });
+    if (res.url) {
+      updatedVideoUrl = res.url;
+      didResign = true;
+    }
+  }
+
+  // 2. Audio URL
+  if (updatedAudioUrl) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedAudioUrl,
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "audio",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) {
+      updatedAudioUrl = res.url;
+    } else if (res.isEphemeralWithoutStorage) {
+      updatedAudioUrl = undefined;
+    }
+  } else {
+    const res = await resolveFreshPlayableUrl({
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "audio",
+      mediaAssets,
+    });
+    if (res.url) {
+      updatedAudioUrl = res.url;
+      didResign = true;
+    }
+  }
+
+  // 3. Storyboard Grid / Take Grids
+  if (updatedGridUrl) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedGridUrl,
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "image",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) {
+      updatedGridUrl = res.url;
+    } else if (res.isEphemeralWithoutStorage) {
+      updatedGridUrl = undefined;
+    }
+  }
+
+  // Take grids array
+  if (genAssets?.takeGrids && Array.isArray(genAssets.takeGrids)) {
+    const refreshedGrids: string[] = [];
+    for (const gridUrl of genAssets.takeGrids) {
+      const res = await resolveFreshPlayableUrl({
+        url: gridUrl,
+        productionId: production.id,
+        brandId: production.brandId,
+        assetType: "image",
+        mediaAssets,
+      });
+      if (res.resigned) didResign = true;
+      if (res.url) refreshedGrids.push(res.url);
+    }
+    if (refreshedGrids.length > 0) {
+      genAssets.takeGrids = refreshedGrids;
+    }
+  }
+
+  // 4. Thumbnail URL
+  if (updatedThumbUrl) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedThumbUrl,
+      productionId: production.id,
+      brandId: production.brandId,
+      assetType: "image",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) {
+      updatedThumbUrl = res.url;
+    } else if (res.isEphemeralWithoutStorage) {
+      updatedThumbUrl = undefined;
+    }
+  }
+
+  // Generated videos array
+  if (genAssets?.generatedVideos && Array.isArray(genAssets.generatedVideos)) {
+    const refreshedClips: string[] = [];
+    for (const clipUrl of genAssets.generatedVideos) {
+      const res = await resolveFreshPlayableUrl({
+        url: clipUrl,
+        productionId: production.id,
+        brandId: production.brandId,
+        assetType: "video",
+        mediaAssets,
+      });
+      if (res.resigned) didResign = true;
+      if (res.url) refreshedClips.push(res.url);
+    }
+    if (refreshedClips.length > 0) {
+      genAssets.generatedVideos = refreshedClips;
+    }
+  }
+
+  // Re-assemble brief
+  let updatedBrief = brief;
+  if (updatedBrief) {
+    if (genAssets) {
+      genAssets.storyboardGridUrl = updatedGridUrl;
+      genAssets.voiceoverUrl = updatedAudioUrl;
+      if (updatedThumbUrl && genAssets.thumbnailUrls) {
+        genAssets.thumbnailUrls = [updatedThumbUrl, ...(genAssets.thumbnailUrls.slice(1))];
+      }
+      updatedBrief.generatedAssets = genAssets;
+    }
+    updatedBrief.videoUrl = updatedVideoUrl;
+    updatedBrief.audioUrl = updatedAudioUrl;
+    updatedBrief.storyboardGridUrl = updatedGridUrl;
+    updatedBrief.thumbnailUrl = updatedThumbUrl;
+    if (updatedLastError) updatedBrief.lastError = updatedLastError;
+  }
+
+  const updatedProduction: Production = {
+    ...production,
+    videoUrl: updatedVideoUrl,
+    audioUrl: updatedAudioUrl,
+    storyboardGridUrl: updatedGridUrl,
+    thumbnailUrl: updatedThumbUrl,
+    lastError: updatedLastError,
+    brief: updatedBrief,
+  };
+
+  return { production: updatedProduction, didResign };
+}
+
+/**
+ * Resigns character sheet / avatar / image URLs if stored in bucket "Spark"
+ */
+export async function refreshCharacterMediaAssets(
+  character: Character,
+  mediaAssets: import("../../backend/database.types").MediaAssetRow[] = []
+): Promise<{ character: Character; didResign: boolean }> {
+  let didResign = false;
+  let updatedSheet = character.characterSheetUrl;
+  let updatedAvatar = character.avatarUrl;
+  let updatedImage = character.imageUrl;
+
+  if (updatedSheet) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedSheet,
+      brandId: character.brandId,
+      assetType: "image",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) updatedSheet = res.url;
+  }
+
+  if (updatedAvatar) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedAvatar,
+      brandId: character.brandId,
+      assetType: "image",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) updatedAvatar = res.url;
+  }
+
+  if (updatedImage) {
+    const res = await resolveFreshPlayableUrl({
+      url: updatedImage,
+      brandId: character.brandId,
+      assetType: "image",
+      mediaAssets,
+    });
+    if (res.resigned) didResign = true;
+    if (res.url) updatedImage = res.url;
+  }
+
+  const updatedCharacter: Character = {
+    ...character,
+    characterSheetUrl: updatedSheet,
+    avatarUrl: updatedAvatar,
+    imageUrl: updatedImage || updatedAvatar || updatedSheet,
+  };
+
+  return { character: updatedCharacter, didResign };
 }
