@@ -1017,10 +1017,10 @@ Return valid JSON with this exact structure:
 
       const shouldSynthesizeExternalVoice =
         mode === "express" ||
-        (mode === "standard" && scenesNeedVo(currentStoryboard));
+        mode === "standard";
 
       if (!shouldSynthesizeExternalVoice) {
-        console.log(`[SPARK Pipeline] Mode is "${mode}" (${mode === "deep" ? "cinematic picture speech" : "talent-led hybrid"}). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
+        console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic per-scene dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
         stages[1].status = "done";
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
@@ -1394,6 +1394,18 @@ CRITICAL PRODUCTION LAWS:
               const globalSceneNum = s.scene || sIdx + 1;
               const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
 
+              // HYBRID (standard) MODE LAW:
+              // Shot 1 = i2v of scene 1 still.
+              // Remaining shots (2..N) = narrator stills + VO (no videoGeneration call).
+              if (mode === "standard" && sIdx > 0) {
+                console.log(`[SPARK Pipeline] Mode is "standard" (Hybrid). Scene ${globalSceneNum} is narrator-led stills + VO (skipping videoGeneration).`);
+                s.audio = "vo";
+                currentStoryboard[sIdx] = { ...s, audio: "vo", videoUrl: undefined };
+                const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
+                emitProgress(currentPct, "Video", `Prepared Scene ${globalSceneNum} of ${currentStoryboard.length} (Narrator still + VO)...`);
+                continue;
+              }
+
               // Scene N+1 continuity: First frame / referenceImageUrl = scene[N].lastFrameUrl || scene[N+1].image
               const sceneFirstFrame = (sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl))
                 ? prevScene.lastFrameUrl
@@ -1563,7 +1575,57 @@ CRITICAL PRODUCTION LAWS:
             // "Do NOT call merge/compile-of-clips in generateAssets when brand.review_required !== false. Autonomous only: keep auto-merge."
             const isAutonomous = (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false;
 
-            if (isAutonomous && sceneClips.length > 1) {
+            if (isAutonomous && mode === "standard" && sceneClips.length === 1 && currentStoryboard.length > 1) {
+              // AUTONOMOUS HYBRID MUX: Hook video (scene 1) + remaining narrator stills (scenes 2..N) + full VO narration
+              emitProgress(82, "Merge", `Compiling Hybrid master MP4 (Hook video + ${currentStoryboard.length - 1} narrator stills + voiceover)...`);
+              try {
+                const remainingImages = currentStoryboard.slice(1).map((s, idx) => s.image || sceneImages[idx + 1]).filter(Boolean) as string[];
+                const targetMergeTexts = currentStoryboard.map((s, idx) => {
+                  const primaryOnScreen = s.onScreenText;
+                  if (primaryOnScreen) return formatBurnedOnScreenText(primaryOnScreen);
+                  const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+                  if (beatOnScreen) return formatBurnedOnScreenText(beatOnScreen);
+                  if (idx === 0 && brief.hook) return formatBurnedOnScreenText(brief.hook);
+                  return "";
+                });
+
+                const { compileHybridVideo } = await import("./narratorVideoCompiler");
+                const hybridResult = await withTimeout(
+                  compileHybridVideo({
+                    hookVideoUrl: sceneClips[0],
+                    remainingImageUrls: remainingImages,
+                    audioUrl: realVoiceUrl,
+                    onScreenTexts: targetMergeTexts,
+                    totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+                    width: aspectRatio === "16:9" ? 1920 : 1080,
+                    height: aspectRatio === "16:9" ? 1080 : 1920,
+                  }),
+                  60000,
+                  "Hybrid compilation timed out after 60s",
+                  signal
+                );
+
+                if (hybridResult && hybridResult.blob && hybridResult.blob.size > 0) {
+                  const ext = hybridResult.extension || "mp4";
+                  const storedHybrid = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "video",
+                    storagePath: getStoragePath(`video/master.${ext}`),
+                    dataUrlOrBlob: hybridResult.blob,
+                    mimeType: hybridResult.mimeType || `video/${ext}`,
+                    prompt: `Merged Hybrid master video (Hook clip + ${remainingImages.length} narrator stills)`,
+                    provider: "HybridVideoCompiler",
+                  });
+                  if (storedHybrid?.publicUrl && isDurableMasterVideoReady(storedHybrid.publicUrl)) {
+                    realVideoUrl = storedHybrid.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Autonomous Hybrid Master Video -> ${realVideoUrl}`);
+                  }
+                }
+              } catch (hybridErr: any) {
+                console.warn("[SPARK Pipeline] Autonomous hybrid compile notice:", hybridErr);
+              }
+            } else if (isAutonomous && sceneClips.length > 1) {
               emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4 (autonomous mode)...`);
               try {
                 const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
@@ -1622,7 +1684,7 @@ CRITICAL PRODUCTION LAWS:
             } else if (isAutonomous && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
               realVideoUrl = sceneClips[0];
             } else if (sceneClips.length > 0) {
-              console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clips. Master video merge gated on executive 'Approve & merge'.`);
+              console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clip(s). Master video merge gated on executive 'Approve & merge'.`);
             }
           }
         } catch (vidErr: any) {
@@ -1635,6 +1697,8 @@ CRITICAL PRODUCTION LAWS:
       checkAborted();
       const isVideoSuccess = mode === "express"
         ? Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
+        : mode === "standard"
+        ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
       if (!isVideoSuccess && !lastError) {
         lastError = mode === "express"
@@ -1822,7 +1886,9 @@ Brand: ${brand.name}
         }
       }
 
-      const hasDurableSceneClips = sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c));
+      const hasDurableSceneClips = mode === "standard"
+        ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0]))
+        : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c)));
       const hasDurableMaster = Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
 
       const isOverallSuccess = Boolean(
@@ -1840,7 +1906,9 @@ Brand: ${brand.name}
       }
       const finalMsg = isOverallSuccess
         ? (isExpressNarrator || isAutonomous
-            ? `${mode.toUpperCase()} media assets synthesized and ready for executive review.`
+            ? `${mode === "standard" ? "HYBRID" : mode.toUpperCase()} media assets synthesized and ready for executive review.`
+            : mode === "standard"
+            ? `HYBRID assets synthesized (Hook video + ${Math.max(0, currentStoryboard.length - 1)} narrator stills + voiceover). Ready for shot review and executive merge.`
             : `${mode.toUpperCase()} ${sceneClips.length} scene clips synthesized. Ready for shot review and executive merge.`)
         : lastError;
 
@@ -2320,20 +2388,6 @@ Apply revision while maintaining 100% subject identity and set continuity.
       .sort((a, b) => (a.index || a.scene) - (b.index || b.scene))
       .map((s) => s.videoUrl!);
 
-    if (readyClips.length === 0) {
-      return (isDurableMasterVideoReady(production.videoUrl) ? production.videoUrl : null) || null;
-    }
-
-    if (readyClips.length === 1) {
-      if (isDurableMasterVideoReady(readyClips[0])) {
-        production.videoUrl = readyClips[0];
-        brief.videoUrl = readyClips[0];
-        if (!brief.generatedAssets) brief.generatedAssets = {};
-        brief.generatedAssets.generatedVideos = [readyClips[0]];
-        return readyClips[0];
-      }
-    }
-
     const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
     const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
     const targetMergeTexts = scenes.map((s, idx) => {
@@ -2352,6 +2406,102 @@ Apply revision while maintaining 100% subject identity and set continuity.
       }
       return "";
     });
+
+    if (readyClips.length === 0) {
+      const allStills = scenes
+        .map((s, idx) => s.image || brief.storyboard?.[idx]?.image || brief.generatedAssets?.generatedFrames?.[idx])
+        .filter(Boolean) as string[];
+      const voAudio = brief.audioUrl || production.audioUrl || brief.generatedAssets?.voiceoverUrl;
+      if (allStills.length > 0 && voAudio) {
+        try {
+          const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+          const compileRes = await compileNarratorSlideshowVideo({
+            imageUrls: allStills,
+            audioUrl: voAudio,
+            onScreenTexts: targetMergeTexts,
+          });
+          if (compileRes?.blob && compileRes.blob.size > 0) {
+            const ext = compileRes.extension || "mp4";
+            const stored = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any).id,
+              assetType: "video",
+              storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.${ext}`,
+              dataUrlOrBlob: compileRes.blob,
+              mimeType: compileRes.mimeType,
+              prompt: "Narrator compiled master video",
+              provider: "NarratorSlideshowCompiler",
+            });
+            if (stored?.publicUrl && isDurableMasterVideoReady(stored.publicUrl)) {
+              production.videoUrl = stored.publicUrl;
+              brief.videoUrl = stored.publicUrl;
+              production.status = "Ready for Review";
+              return stored.publicUrl;
+            }
+          }
+        } catch (narrErr) {
+          console.warn("[ProductionAssetService] Narrator merge fallback notice:", narrErr);
+        }
+      }
+      return (isDurableMasterVideoReady(production.videoUrl) ? production.videoUrl : null) || null;
+    }
+
+    if (readyClips.length === 1 && scenes.length > 1) {
+      // HYBRID MUX: Hook video clip (scene 1) + remaining scene stills timed to VO audio
+      const remainingStills = scenes
+        .slice(1)
+        .map((s, idx) => s.image || brief.storyboard?.[idx + 1]?.image || brief.generatedAssets?.generatedFrames?.[idx + 1])
+        .filter(Boolean) as string[];
+      const hybridAudioUrl = brief.audioUrl || production.audioUrl || brief.generatedAssets?.voiceoverUrl;
+
+      if (remainingStills.length > 0) {
+        try {
+          const { compileHybridVideo } = await import("./narratorVideoCompiler");
+          const hybridResult = await compileHybridVideo({
+            hookVideoUrl: readyClips[0],
+            remainingImageUrls: remainingStills,
+            audioUrl: hybridAudioUrl,
+            onScreenTexts: targetMergeTexts,
+          });
+
+          if (hybridResult && hybridResult.blob && hybridResult.blob.size > 0) {
+            const ext = hybridResult.extension || "mp4";
+            const storedMaster = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any).id,
+              assetType: "video",
+              storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.${ext}`,
+              dataUrlOrBlob: hybridResult.blob,
+              mimeType: hybridResult.mimeType,
+              prompt: "Merged Hybrid Master Video (Hook Video + Narrator Stills)",
+              provider: "HybridVideoCompiler",
+            });
+
+            if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
+              const masterUrl = storedMaster.publicUrl;
+              production.videoUrl = masterUrl;
+              brief.videoUrl = masterUrl;
+              if (!brief.generatedAssets) brief.generatedAssets = {};
+              brief.generatedAssets.generatedVideos = [masterUrl];
+              production.status = "Ready for Review";
+              return masterUrl;
+            }
+          }
+        } catch (hybridErr) {
+          console.warn("[ProductionAssetService] Hybrid merge notice:", hybridErr);
+        }
+      }
+    }
+
+    if (readyClips.length === 1 && scenes.length <= 1) {
+      if (isDurableMasterVideoReady(readyClips[0])) {
+        production.videoUrl = readyClips[0];
+        brief.videoUrl = readyClips[0];
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        brief.generatedAssets.generatedVideos = [readyClips[0]];
+        return readyClips[0];
+      }
+    }
 
     try {
       const { mergeSceneVideos } = await import("./sceneVideoMerger");
