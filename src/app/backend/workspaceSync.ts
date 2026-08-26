@@ -168,9 +168,9 @@ function characterRowToDomain(row: CharacterRow): Character {
     name: row.name,
     role: row.role || "Primary Host",
     style: String(appearance.style ?? ""),
-    avatarUrl: typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : null),
-    imageUrl: typeof appearance.imageUrl === "string" ? appearance.imageUrl : (typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : null),
-    characterSheetUrl: typeof appearance.characterSheetUrl === "string" ? appearance.characterSheetUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : null),
+    avatarUrl: typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : (typeof appearance.characterSheetUrl === "string" ? appearance.characterSheetUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : null)),
+    imageUrl: typeof appearance.imageUrl === "string" ? appearance.imageUrl : (typeof appearance.characterSheetUrl === "string" ? appearance.characterSheetUrl : (typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : null)),
+    characterSheetUrl: typeof appearance.characterSheetUrl === "string" ? appearance.characterSheetUrl : (typeof appearance.imageUrl === "string" ? appearance.imageUrl : (typeof appearance.avatarUrl === "string" ? appearance.avatarUrl : null)),
     traits: Array.isArray(personality.traits) ? personality.traits.map(String) : [],
     voice: {
       name: String(voice.name ?? "Default"),
@@ -988,9 +988,9 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
   try {
     const appearancePayload = {
       style: character.style || "",
-      imageUrl: character.imageUrl || null,
-      avatarUrl: character.avatarUrl || character.imageUrl || null,
-      characterSheetUrl: character.characterSheetUrl || character.imageUrl || null,
+      imageUrl: character.imageUrl || character.characterSheetUrl || character.avatarUrl || null,
+      avatarUrl: character.avatarUrl || character.characterSheetUrl || character.imageUrl || null,
+      characterSheetUrl: character.characterSheetUrl || character.imageUrl || character.avatarUrl || null,
     };
     const personalityPayload = {
       traits: character.traits || [],
