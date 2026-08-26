@@ -60,6 +60,7 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "gemini", name: "Google Gemini", desc: "Gemini 2.5 1M-token multimodal vision", logoId: "gemini" },
       { id: "grok", name: "xAI Grok", desc: "Grok 4.5 Vision frame analysis", logoId: "grok" },
       { id: "openai", name: "OpenAI", desc: "GPT-5.6 Multimodal Vision", logoId: "openai" },
+      { id: "claude", name: "Anthropic Claude", desc: "Claude Sonnet 5 Multimodal Vision", logoId: "claude" },
     ],
   },
   {
