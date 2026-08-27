@@ -288,6 +288,7 @@ export function buildVisualLockRefs(params: {
   previousLastFrameUrl?: string;
   locationPlateUrl?: string;
   subjectType?: "main" | "support" | "set" | "insert" | string;
+  contentFormat?: string;
 }): VisualLockRefsResult {
   const {
     character,
@@ -297,57 +298,69 @@ export function buildVisualLockRefs(params: {
     previousLastFrameUrl,
     locationPlateUrl,
     subjectType = "main",
+    contentFormat,
   } = params;
 
-  const isSupport = subjectType === "support";
-  // If subject is support, use supportCharacter sheet if valid; otherwise fallback to main character (no random faces!)
-  const targetChar = isSupport && (supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl)
-    ? supportCharacter
-    : character;
-
-  const charSheetUrls: string[] = [];
-  if (targetChar) {
-    const directSheet = targetChar.characterSheetUrl;
-    if (directSheet && isValidMediaData(directSheet)) charSheetUrls.push(directSheet);
-
-    const sheetList = (targetChar as any).sheet_image_urls;
-    if (Array.isArray(sheetList)) {
-      for (const url of sheetList) {
-        if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) {
-          charSheetUrls.push(url);
-        }
-      }
-    }
-
-    const imgUrl = targetChar.imageUrl || targetChar.avatarUrl;
-    if (imgUrl && isValidMediaData(imgUrl) && !charSheetUrls.includes(imgUrl)) {
-      charSheetUrls.push(imgUrl);
-    }
-  }
+  const isFaceless = contentFormat === "faceless";
+  const isSetSubject = subjectType === "set" || subjectType === "establishing" || subjectType === "environment";
+  const isInsertSubject = isFaceless || subjectType === "insert" || subjectType === "product" || subjectType === "b-roll";
+  const isSupport = !isFaceless && !isSetSubject && !isInsertSubject && (subjectType === "support" || subjectType === "supporting");
 
   const validPlate = locationPlateUrl && isValidMediaData(locationPlateUrl) ? locationPlateUrl : undefined;
-  const isSetSubject =
-    subjectType === "set" ||
-    subjectType === "establishing" ||
-    subjectType === "environment";
-
   const orderedRefs: string[] = [];
   const labelLines: string[] = [];
+  const charSheetUrls: string[] = [];
   let refCounter = 1;
 
-  if (isSetSubject && validPlate) {
-    // stills with subject set → IMAGE 1 = plate (or plate + last set still)
-    orderedRefs.push(validPlate);
-    labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Location Plate Reference`);
-    refCounter++;
-
+  if (isInsertSubject) {
+    // INSERT / B-ROLL / FACELESS: No host face required. Hands, product, screen, chart, B-roll that illustrates spokenLines.
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
       refCounter++;
     }
+    if (validPlate && !orderedRefs.includes(validPlate)) {
+      orderedRefs.push(validPlate);
+      labelLines.push(`INPUT REF [${refCounter}]: Contextual Studio Environment Reference`);
+      refCounter++;
+    }
+  } else if (isSetSubject) {
+    // SET: Empty or wide set. Location only. No new people. Optional locationPlateUrl as ref.
+    if (validPlate) {
+      orderedRefs.push(validPlate);
+      labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Location Plate Reference`);
+      refCounter++;
+    }
+    if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
+      orderedRefs.push(previousLastFrameUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Preceding Set Continuity Reference`);
+      refCounter++;
+    }
   } else {
-    // stills with subject main/support → refs [sheet, scene intent]; plate may be extra ref AFTER sheet, never replace the face
+    // MAIN / SUPPORT (Host / Story / Anime):
+    // If subject is support and no support sheet exists → treat as main (no invented face)
+    const targetChar = isSupport && (supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl)
+      ? supportCharacter
+      : character;
+    if (targetChar) {
+      const directSheet = targetChar.characterSheetUrl;
+      if (directSheet && isValidMediaData(directSheet)) charSheetUrls.push(directSheet);
+
+      const sheetList = (targetChar as any).sheet_image_urls;
+      if (Array.isArray(sheetList)) {
+        for (const url of sheetList) {
+          if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) {
+            charSheetUrls.push(url);
+          }
+        }
+      }
+
+      const imgUrl = targetChar.imageUrl || targetChar.avatarUrl;
+      if (imgUrl && isValidMediaData(imgUrl) && !charSheetUrls.includes(imgUrl)) {
+        charSheetUrls.push(imgUrl);
+      }
+    }
+
     const charLabel = isSupport
       ? `Supporting Character Reference Sheet (${targetChar?.name || "Support Character"})`
       : `Character Reference Sheet (${targetChar?.name || "Host"})`;
@@ -358,26 +371,13 @@ export function buildVisualLockRefs(params: {
       refCounter++;
     }
 
-    if (storyboardGridUrl && isValidMediaData(storyboardGridUrl) && !orderedRefs.includes(storyboardGridUrl)) {
-      orderedRefs.push(storyboardGridUrl);
-      labelLines.push(`INPUT REF [${refCounter}]: Master Multi-Panel Storyboard Grid Reference Map`);
-      refCounter++;
-    }
-
-    if (sceneKeyframeUrl && isValidMediaData(sceneKeyframeUrl) && !orderedRefs.includes(sceneKeyframeUrl)) {
-      orderedRefs.push(sceneKeyframeUrl);
-      labelLines.push(`INPUT REF [${refCounter}]: Scene Hero Keyframe Still Reference`);
-      refCounter++;
-    }
-
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
       refCounter++;
     }
 
-    // Plate is an extra ref AFTER character sheet and scene intent (never replaces face)
-    if (validPlate && !orderedRefs.includes(validPlate) && subjectType !== "insert") {
+    if (validPlate && !orderedRefs.includes(validPlate)) {
       orderedRefs.push(validPlate);
       labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Studio Location Plate`);
       refCounter++;
@@ -391,7 +391,7 @@ export function buildVisualLockRefs(params: {
   return {
     imageUrls: orderedRefs,
     primaryRefUrl: orderedRefs[0],
-    charSheetUrls,
+    charSheetUrls: (isInsertSubject || isSetSubject) ? [] : (charSheetUrls || []),
     refPromptHeader,
   };
 }
@@ -1230,7 +1230,11 @@ Return valid JSON with this exact structure:
           const spoken = s.spokenLines || s.scriptSnippet ? `ACTION BEAT: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
           const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
 
-          const rawSubject = ((s as any).subject || (s as any).subjectType || "").toLowerCase();
+          // 1. Read contentFormat & beat subject
+          const contentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
+          const isFaceless = contentFormat === "faceless";
+
+          const rawSubject = ((s as any).subject || (s as any).subjectType || brief.beats?.[sIdx]?.subject || "").toLowerCase();
           const cam = (s.cameraDirection || "").toLowerCase();
           const desc = (s.visualDescription || (s as any).description || "").toLowerCase();
 
@@ -1243,12 +1247,8 @@ Return valid JSON with this exact structure:
             desc.includes("establishing shot of the studio") ||
             desc.includes("wide shot of the set");
 
-          const isSupportShot =
-            rawSubject === "support" ||
-            rawSubject === "supporting" ||
-            rawSubject.includes("support");
-
           const isInsertShot =
+            isFaceless ||
             rawSubject === "insert" ||
             rawSubject === "product" ||
             cam.includes("close up on hands") ||
@@ -1256,26 +1256,47 @@ Return valid JSON with this exact structure:
             desc.includes("close-up of the screen") ||
             desc.includes("product display");
 
-          const subjectType = isSetShot ? "set" : isSupportShot ? "support" : isInsertShot ? "insert" : (rawSubject || "main");
+          const isSupportShot =
+            !isFaceless &&
+            !isSetShot &&
+            !isInsertShot &&
+            (rawSubject === "support" || rawSubject === "supporting" || rawSubject.includes("support"));
+
+          const resolvedSubject: "main" | "support" | "insert" | "set" =
+            isFaceless ? "insert" : isSetShot ? "set" : isInsertShot ? "insert" : isSupportShot ? "support" : "main";
+
           const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
 
-          // Find support character from cast
+          // 2. Resolve target character (if support has no sheet, fallback to main - no invented face!)
           const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
-          const activeChar = isSupportShot && (supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character;
+          const hasSupportSheet = Boolean(supportChar?.characterSheetUrl || supportChar?.imageUrl);
+          const activeChar = (resolvedSubject === "support" && hasSupportSheet) ? supportChar : character;
+
+          // 3. Continuity Chaining: previous still URL as continuity ref when subject stays the same (chain)
+          const prevSceneSubject = sIdx > 0 ? ((currentStoryboard[sIdx - 1] as any)?.subject || (brief.beats?.[sIdx - 1]?.subject)) : undefined;
+          const isSameSubjectChain = sIdx > 0 && prevSceneSubject === resolvedSubject;
+          const prevStillUrl = (isSameSubjectChain && sceneImages[sIdx - 1]) ? sceneImages[sIdx - 1] : undefined;
 
           const stillVisualLock = buildVisualLockRefs({
             character,
-            supportCharacter: supportChar,
-            previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
+            supportCharacter: hasSupportSheet ? supportChar : undefined,
+            previousLastFrameUrl: prevStillUrl,
             locationPlateUrl: plateUrl,
-            subjectType,
+            subjectType: resolvedSubject,
+            contentFormat,
           });
 
-          const stillSubjectLine = isSetShot
-            ? "SUBJECT & IDENTITY: None (Empty establishing set / environment shot). Room geometry, lighting, textures, and architecture strictly match reference IMAGE 1."
-            : isSupportShot
-            ? `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.`
-            : `SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.`;
+          // 4. Branch table for still subject description
+          let stillSubjectLine = "";
+          if (resolvedSubject === "set") {
+            stillSubjectLine = "SUBJECT & COMPOSITION: Empty or wide establishing architectural set / location environment. NO people, NO characters, NO faces. Room geometry, lighting, interior design, textures, and architecture only.";
+          } else if (resolvedSubject === "insert") {
+            stillSubjectLine = "SUBJECT & COMPOSITION: Cinematic B-roll / Detail insert. NO host face required. Focus on hands, product, screen interface, conceptual data visualization, chart, or contextual cinematic detail illustrating the spoken lines. NO random or unprompted faces.";
+          } else if (resolvedSubject === "support") {
+            stillSubjectLine = `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Character is clearly visible in frame performing this beat's action.`;
+          } else {
+            stillSubjectLine = `SUBJECT & IDENTITY: Primary host "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Host is clearly visible in frame performing this beat's action.`;
+          }
 
           const stillPrompt = `
 ${stillVisualLock.refPromptHeader}
@@ -1283,7 +1304,7 @@ ${stillVisualLock.refPromptHeader}
 ASPECT RATIO: ${aspectRatio} full-bleed single frame.
 COMPOSITION: ${shotFraming}. Single camera perspective.
 ${stillSubjectLine}
-SET & ENVIRONMENT: ${identityPack.environmentString}.${plateUrl && !isSetShot ? " Studio set and architectural backdrop strictly aligned with Locked Set Plate reference." : ""}
+SET & ENVIRONMENT: ${identityPack.environmentString}.${plateUrl && resolvedSubject !== "set" && !isFaceless ? " Studio set and architectural backdrop strictly aligned with Locked Set Plate reference." : ""}
 ACTION: ${action}.
 ${spoken}
 
@@ -1296,7 +1317,7 @@ CRITICAL PRODUCTION LAWS:
 
           try {
             checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}]...`);
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}]...`);
             const stillImgUrl = await withTimeout(
               ModelRouter.executeCategoryRequest("storyboardImages", {
                 prompt: stillPrompt,
@@ -1333,7 +1354,8 @@ CRITICAL PRODUCTION LAWS:
               if (sIdx === 0) realGridUrl = finalStill;
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
-              currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill };
+              (s as any).subject = resolvedSubject;
+              currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill, subject: resolvedSubject };
             } else {
               console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} returned empty/invalid image data:`, String(stillImgUrl || "").slice(0, 100));
               if (!lastError) lastError = `Scene ${globalSceneNum} Still: No image bytes returned by provider`;
@@ -2575,11 +2597,20 @@ Brand: ${brand.name}
       const isImgUrl = (u?: string) => typeof u === "string" && isValidMediaData(u) && !u.endsWith(".mp4") && !u.endsWith(".webm") && !u.includes("video/");
       const prevFrameCandidate = [prevScene?.lastFrameUrl, prevScene?.keyframeImageUrl, prevScene?.image].find((u) => isImgUrl(u));
 
+      const contentFormat = getEffectiveContentFormat({ brand, production, brief });
+      const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+      const rawFixSubject = ((sceneToFix as any).subject || (sceneToFix as any).subjectType || "").toLowerCase();
+      const isFixInsert = contentFormat === "faceless" || rawFixSubject === "insert" || rawFixSubject === "product";
+      const isFixSet = rawFixSubject === "set" || rawFixSubject === "environment";
+      const isFixSupport = !isFixInsert && !isFixSet && (rawFixSubject === "support" || rawFixSubject === "supporting");
+      const resolvedFixSubject = isFixInsert ? "insert" : isFixSet ? "set" : isFixSupport ? "support" : "main";
+
       const fixVisualLock = buildVisualLockRefs({
         character,
-        storyboardGridUrl: (brief as any).storyboardGridUrl,
-        sceneKeyframeUrl: sceneToFix.image || sceneToFix.keyframeImageUrl,
         previousLastFrameUrl: prevFrameCandidate,
+        locationPlateUrl: plateUrl,
+        subjectType: resolvedFixSubject,
+        contentFormat,
       });
 
       const beatPrompt = `
