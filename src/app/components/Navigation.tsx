@@ -57,7 +57,7 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
     <nav className="w-56 h-screen bg-nav-background border-r border-border flex flex-col flex-shrink-0 relative">
       <div className="p-6 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <SparkLogo className="w-8 h-8 flex-shrink-0" />
+          <SparkLogo variant="superspark" className="w-8 h-8 flex-shrink-0" />
           <h1 className="text-lg font-bold text-foreground tracking-tight">
             Spark
           </h1>

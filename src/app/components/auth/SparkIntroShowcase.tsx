@@ -193,7 +193,7 @@ export const SparkIntroShowcase: React.FC<SparkIntroShowcaseProps> = ({ onComple
       {/* TOP BAR */}
       <header className="relative z-10 px-6 py-4 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <SparkLogo className="w-10 h-10" />
+          <SparkLogo variant="superspark" className="w-10 h-10" />
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-fuchsia-300">
