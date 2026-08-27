@@ -18,6 +18,7 @@ export interface Brand {
   // Future backend and automation configuration fields
   automation_mode?: AutomationMode;
   productionMode?: string;
+  locationPlateUrl?: string | null;
   formatSettings?: ProductionFormatSettings;
   creditSettings?: GenerationCreditSettings;
   review_required?: boolean;

@@ -127,11 +127,12 @@ export function buildLockedIdentityPack(params: {
   }
 
   const environmentString = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
+  const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
 
   const identityBlock = `CHARACTER (LOCKED IDENTITY): Primary subject is "${character?.name || "Host"}" (Style: ${character?.style || "Executive Presenter"}, Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}).
 IDENTITY CONTINUITY LAW: Must be the exact same person in every panel. Consistent facial structure, hair, and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.${characterReferenceImageUrl ? ` Reference Sheet: ${characterReferenceImageUrl}` : ""}`;
 
-  const setBlock = `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".
+  const setBlock = `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".${plateUrl ? ` Locked Set Reference: ${plateUrl}` : ""}
 SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and lighting atmosphere across all panels. Do not change set location mid-board unless brief explicitly changes scene location. Lighting aligned with ${brand.name || "Brand"}.`;
 
   const styleBlock = `CINEMATIC DISCIPLINE: Format: ${aspectRatio} aspect ratio. 8K UHD photorealistic render, prime cinema optics, coherent color grade, natural depth of field, realistic skin texture, zero AI distortion.`;
@@ -284,8 +285,17 @@ export function buildVisualLockRefs(params: {
   storyboardGridUrl?: string;
   sceneKeyframeUrl?: string;
   previousLastFrameUrl?: string;
+  locationPlateUrl?: string;
+  subjectType?: "main" | "support" | "set" | "insert" | string;
 }): VisualLockRefsResult {
-  const { character, storyboardGridUrl, sceneKeyframeUrl, previousLastFrameUrl } = params;
+  const {
+    character,
+    storyboardGridUrl,
+    sceneKeyframeUrl,
+    previousLastFrameUrl,
+    locationPlateUrl,
+    subjectType = "main",
+  } = params;
 
   const charSheetUrls: string[] = [];
   if (character) {
@@ -307,32 +317,59 @@ export function buildVisualLockRefs(params: {
     }
   }
 
+  const validPlate = locationPlateUrl && isValidMediaData(locationPlateUrl) ? locationPlateUrl : undefined;
+  const isSetSubject =
+    subjectType === "set" ||
+    subjectType === "establishing" ||
+    subjectType === "environment";
+
   const orderedRefs: string[] = [];
   const labelLines: string[] = [];
   let refCounter = 1;
 
-  for (const sheetUrl of charSheetUrls) {
-    orderedRefs.push(sheetUrl);
-    labelLines.push(`INPUT REF [${refCounter}]: Character Reference Sheet (${character?.name || "Host"})`);
+  if (isSetSubject && validPlate) {
+    // stills with subject set → IMAGE 1 = plate (or plate + last set still)
+    orderedRefs.push(validPlate);
+    labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Location Plate Reference`);
     refCounter++;
-  }
 
-  if (storyboardGridUrl && isValidMediaData(storyboardGridUrl) && !orderedRefs.includes(storyboardGridUrl)) {
-    orderedRefs.push(storyboardGridUrl);
-    labelLines.push(`INPUT REF [${refCounter}]: Master Multi-Panel Storyboard Grid Reference Map`);
-    refCounter++;
-  }
+    if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
+      orderedRefs.push(previousLastFrameUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
+      refCounter++;
+    }
+  } else {
+    // stills with subject main/support → refs [sheet, scene intent]; plate may be extra ref AFTER sheet, never replace the face
+    for (const sheetUrl of charSheetUrls) {
+      orderedRefs.push(sheetUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Character Reference Sheet (${character?.name || "Host"})`);
+      refCounter++;
+    }
 
-  if (sceneKeyframeUrl && isValidMediaData(sceneKeyframeUrl) && !orderedRefs.includes(sceneKeyframeUrl)) {
-    orderedRefs.push(sceneKeyframeUrl);
-    labelLines.push(`INPUT REF [${refCounter}]: Scene Hero Keyframe Still Reference`);
-    refCounter++;
-  }
+    if (storyboardGridUrl && isValidMediaData(storyboardGridUrl) && !orderedRefs.includes(storyboardGridUrl)) {
+      orderedRefs.push(storyboardGridUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Master Multi-Panel Storyboard Grid Reference Map`);
+      refCounter++;
+    }
 
-  if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
-    orderedRefs.push(previousLastFrameUrl);
-    labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
-    refCounter++;
+    if (sceneKeyframeUrl && isValidMediaData(sceneKeyframeUrl) && !orderedRefs.includes(sceneKeyframeUrl)) {
+      orderedRefs.push(sceneKeyframeUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Scene Hero Keyframe Still Reference`);
+      refCounter++;
+    }
+
+    if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
+      orderedRefs.push(previousLastFrameUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
+      refCounter++;
+    }
+
+    // Plate is an extra ref AFTER character sheet and scene intent (never replaces face)
+    if (validPlate && !orderedRefs.includes(validPlate) && subjectType !== "insert") {
+      orderedRefs.push(validPlate);
+      labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Studio Location Plate`);
+      refCounter++;
+    }
   }
 
   const refPromptHeader = labelLines.length > 0
@@ -1180,18 +1217,48 @@ Return valid JSON with this exact structure:
           const spoken = s.spokenLines || s.scriptSnippet ? `ACTION BEAT: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
           const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
 
+          const rawSubject = ((s as any).subject || (s as any).subjectType || "").toLowerCase();
+          const cam = (s.cameraDirection || "").toLowerCase();
+          const desc = (s.visualDescription || (s as any).description || "").toLowerCase();
+
+          const isSetShot =
+            rawSubject === "set" ||
+            rawSubject === "environment" ||
+            cam.includes("establishing shot") ||
+            desc.includes("empty set") ||
+            desc.includes("empty room") ||
+            desc.includes("establishing shot of the studio") ||
+            desc.includes("wide shot of the set");
+
+          const isInsertShot =
+            rawSubject === "insert" ||
+            rawSubject === "product" ||
+            cam.includes("close up on hands") ||
+            cam.includes("insert shot") ||
+            desc.includes("close-up of the screen") ||
+            desc.includes("product display");
+
+          const subjectType = isSetShot ? "set" : isInsertShot ? "insert" : (rawSubject || "main");
+          const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+
           const stillVisualLock = buildVisualLockRefs({
             character,
             previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
+            locationPlateUrl: plateUrl,
+            subjectType,
           });
+
+          const stillSubjectLine = isSetShot
+            ? "SUBJECT & IDENTITY: None (Empty establishing set / environment shot). Room geometry, lighting, textures, and architecture strictly match reference IMAGE 1."
+            : `SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.`;
 
           const stillPrompt = `
 ${stillVisualLock.refPromptHeader}
 [SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
 ASPECT RATIO: ${aspectRatio} full-bleed single frame.
 COMPOSITION: ${shotFraming}. Single camera perspective.
-SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.
-SET & ENVIRONMENT: ${identityPack.environmentString}.
+${stillSubjectLine}
+SET & ENVIRONMENT: ${identityPack.environmentString}.${plateUrl && !isSetShot ? " Studio set and architectural backdrop strictly aligned with Locked Set Plate reference." : ""}
 ACTION: ${action}.
 ${spoken}
 

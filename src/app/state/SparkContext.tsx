@@ -1171,6 +1171,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
+    // Upload location plate image to Supabase Storage bucket 'Spark' for durable persistence
+    const rawPlateUrl = data.locationPlateUrl || null;
+    let durablePlateUrl = rawPlateUrl;
+    if (brandId && isUuid(brandId) && rawPlateUrl) {
+      try {
+        const { uploadLocationPlateToStorage } = await import("../backend/workspaceSync");
+        durablePlateUrl = await uploadLocationPlateToStorage(brandId, rawPlateUrl);
+      } catch (storageErr) {
+        console.warn("[SparkContext] Location plate storage upload notice:", storageErr);
+      }
+    }
+
     const voiceProfileObj = {
       name: data.voiceProfile?.name || data.voiceName || "Executive Presenter",
       language: data.voiceProfile?.language || "English",
@@ -1188,6 +1200,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          locationPlateUrl: durablePlateUrl,
           automation_mode: automationMode,
           review_required: reviewRequired,
           formatSettings: resolvedFormatSettings,
@@ -1240,6 +1253,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          locationPlateUrl: durablePlateUrl || prev.brand?.locationPlateUrl || null,
           automation_mode: automationMode,
           review_required: reviewRequired,
           formatSettings: resolvedFormatSettings,
@@ -1289,6 +1303,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          locationPlateUrl: durablePlateUrl,
           audience: {
             primary: audience,
             painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],

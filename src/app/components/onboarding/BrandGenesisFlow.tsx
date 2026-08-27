@@ -3,7 +3,7 @@ import {
   ChevronLeft, Play, Pause, Plus, X, Check,
   Volume2, VolumeX, Link2, RefreshCw, Upload, Mic, Shuffle,
   CheckCircle2, Send, AlertCircle, ZoomIn, ZoomOut,
-  ChevronDown, ChevronUp, Zap, MessageSquare,
+  ChevronDown, ChevronUp, Zap, MessageSquare, Sparkles,
 } from "lucide-react";
 import mainLogo from "@/imports/MAIN_LOGO.png";
 import chatLogo from "@/imports/CHAT_LOGO.png";
@@ -53,6 +53,7 @@ export interface BrandGenesisData {
   characterDescription?: string;
   characterSheetUrl?: string | null;
   characterImageUrl?: string | null;
+  locationPlateUrl?: string | null;
   genre?: string;
   skinTone?: string;
   hairStyle?: string;
@@ -779,6 +780,7 @@ interface GenesisInternalState {
   characterPersonality: string;
   characterDescription: string;
   characterSheetUrl: string | null;
+  locationPlateUrl: string | null;
   characterGenerated: boolean;
   selectedVoice: string;
   selectedVoiceId: string;
@@ -804,6 +806,7 @@ const DEFAULT_STATE: GenesisInternalState = {
   characterPersonality: "Confident",
   characterDescription: "",
   characterSheetUrl: null,
+  locationPlateUrl: null,
   characterGenerated: false,
   selectedVoice: "nova",
   selectedVoiceId: "21m00Tcm4TlvDq8ikWAM",
@@ -1054,6 +1057,53 @@ function FrameCharacter({
 }) {
   const [viewer, setViewer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const plateFileInputRef = useRef<HTMLInputElement>(null);
+  const [isGeneratingPlate, setIsGeneratingPlate] = useState(false);
+
+  const isStoryOrAnime =
+    data.characterGenre?.toLowerCase().includes("anime") ||
+    data.characterGenre?.toLowerCase().includes("cinematic") ||
+    data.characterGenre?.toLowerCase().includes("3d") ||
+    data.characterGenre?.toLowerCase().includes("comic") ||
+    data.productionMode === "Cinematic";
+
+  const handleGeneratePlate = async () => {
+    setIsGeneratingPlate(true);
+    try {
+      const { buildLocationPlatePrompt } = await import("../../services/production/locationPlatePrompt");
+      const prompt = buildLocationPlatePrompt({
+        brandName: data.brandName,
+        niche: data.niche,
+        genre: data.characterGenre,
+        contentFormat: data.characterGenre?.toLowerCase().includes("anime") ? "anime" : "story",
+        environmentDescription: data.characterDescription || undefined,
+      });
+      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        prompt,
+        aspectRatio: data.aspectMode === "landscape" ? "16:9" : "9:16",
+        capability: "Image Generation",
+      });
+      if (imgUrl && typeof imgUrl === "string") {
+        onChange({ locationPlateUrl: imgUrl });
+      }
+    } catch (err) {
+      console.warn("[FrameCharacter] Set plate generation notice:", err);
+    } finally {
+      setIsGeneratingPlate(false);
+    }
+  };
+
+  const handlePlateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const uri = ev.target?.result as string;
+      if (uri) onChange({ locationPlateUrl: uri });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const skins = ["Fair", "Medium", "Olive", "Rich Brown", "Deep Dark"];
   const hairs = ["Short Crop", "Textured Curls", "Braids / Locs", "Sleek Bob", "Long Waves", "Buzz Cut"];
@@ -1178,6 +1228,96 @@ function FrameCharacter({
                 </div>
               </div>
             </button>
+          </div>
+        )}
+
+        {/* Optional Locked Set Plate for Story / Anime */}
+        {isStoryOrAnime && (
+          <div className="pt-4 border-t border-white/10 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] text-white/50 uppercase tracking-widest font-semibold">
+                  Locked Set Plate (Optional)
+                </label>
+                <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20">
+                  {data.characterGenre}
+                </span>
+              </div>
+              {data.locationPlateUrl && (
+                <button
+                  type="button"
+                  onClick={() => onChange({ locationPlateUrl: null })}
+                  className="text-[10px] text-red-400 hover:text-red-300"
+                >
+                  Clear Plate
+                </button>
+              )}
+            </div>
+
+            <input
+              ref={plateFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePlateUpload}
+            />
+
+            {data.locationPlateUrl ? (
+              <div className="relative h-28 rounded-xl overflow-hidden border border-purple-500/30 bg-black/40 group">
+                <img
+                  src={data.locationPlateUrl}
+                  alt="Set Plate"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-between px-3">
+                  <span className="text-[11px] text-purple-200 font-semibold bg-black/60 px-2.5 py-1 rounded-md">
+                    Establishing Set Active
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleGeneratePlate}
+                      disabled={isGeneratingPlate}
+                      className="px-2.5 py-1 rounded-md bg-purple-600/60 hover:bg-purple-600 text-[10px] font-semibold text-white transition-all"
+                    >
+                      {isGeneratingPlate ? "Generating..." : "Regenerate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => plateFileInputRef.current?.click()}
+                      className="px-2.5 py-1 rounded-md bg-white/20 hover:bg-white/30 text-[10px] font-semibold text-white transition-all"
+                    >
+                      Upload
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleGeneratePlate}
+                  disabled={isGeneratingPlate}
+                  className="py-2.5 px-3 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  {isGeneratingPlate ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating…</>
+                  ) : (
+                    <><Sparkles className="w-3.5 h-3.5" /> Generate Set Plate</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => plateFileInputRef.current?.click()}
+                  className="py-2.5 px-3 rounded-xl border border-white/10 hover:bg-white/5 text-white/60 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload Plate
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-white/35 leading-tight">
+              Reused across scenes to keep background architectural layout identical.
+            </p>
           </div>
         )}
       </div>
@@ -2185,6 +2325,7 @@ export function BrandGenesisFlow({
       characterDescription: data.characterDescription,
       characterSheetUrl: data.characterSheetUrl,
       characterImageUrl: data.characterSheetUrl,
+      locationPlateUrl: data.locationPlateUrl,
       genre: data.characterGenre,
       skinTone: data.characterSkin,
       hairStyle: data.characterHair,

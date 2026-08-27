@@ -121,6 +121,7 @@ function brandRowToDomain(row: BrandRow): Brand {
     website: audienceObj.website || "",
     country: audienceObj.country || "United States",
     language: audienceObj.language || "English (US)",
+    locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
     formatSettings,
     creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
@@ -804,6 +805,36 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
       rowPatch.audience = audienceObj;
     }
 
+    // Merge settings (locationPlateUrl, format_settings, credit_settings, etc.)
+    const supabase = getSupabaseClient();
+    let existingSettings: Record<string, any> = {};
+    if (supabase) {
+      const { data: bRow } = await (supabase.from("brands") as any).select("settings").eq("id", brandId).single();
+      const rawSettings = (bRow as any)?.settings;
+      if (rawSettings && typeof rawSettings === "object" && !Array.isArray(rawSettings)) {
+        existingSettings = { ...rawSettings };
+      }
+    }
+
+    const newSettings: Record<string, any> = { ...existingSettings };
+    if (patch.settings && typeof patch.settings === "object") {
+      Object.assign(newSettings, patch.settings);
+    }
+    if (patch.locationPlateUrl !== undefined) {
+      newSettings.locationPlateUrl = patch.locationPlateUrl || null;
+      newSettings.location_plate_url = patch.locationPlateUrl || null;
+    }
+    if (patch.formatSettings !== undefined) {
+      newSettings.format_settings = patch.formatSettings;
+    }
+    if (patch.creditSettings !== undefined) {
+      newSettings.credit_settings = patch.creditSettings;
+    }
+
+    if (Object.keys(newSettings).length > 0) {
+      rowPatch.settings = newSettings;
+    }
+
     const res = await updateBrand(brandId, rowPatch);
     if (res.error) {
       console.error("[workspaceSync] persistBrandUpdate cloud write error:", res.error);
@@ -813,6 +844,63 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
   } catch (err) {
     console.error("[workspaceSync] Brand update persist notice:", err);
     return false;
+  }
+}
+
+export async function uploadLocationPlateToStorage(brandId: string, imageUri: string): Promise<string> {
+  if (!isSupabaseConfigured() || !brandId || !imageUri) return imageUri;
+  if (imageUri.includes(".supabase.co/storage/v1/object/")) {
+    return imageUri;
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return imageUri;
+
+  try {
+    let uploadBlob: Blob | null = null;
+    let mimeType = "image/png";
+
+    if (imageUri.startsWith("data:")) {
+      const match = imageUri.match(/^data:([^;]+);base64,(.*)$/);
+      if (match) {
+        mimeType = match[1] || "image/png";
+        const base64Data = match[2];
+        const binaryStr = atob(base64Data);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        uploadBlob = new Blob([bytes], { type: mimeType });
+      }
+    } else if (imageUri.startsWith("blob:") || typeof fetch !== "undefined") {
+      const res = await fetch(imageUri);
+      if (res.ok) {
+        uploadBlob = await res.blob();
+        mimeType = uploadBlob.type || "image/png";
+      }
+    }
+
+    if (!uploadBlob) return imageUri;
+
+    const ext = mimeType.includes("webp") ? "webp" : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
+    const storagePath = `brands/${brandId}/set/location_plate.${ext}`;
+
+    const { error: uploadError } = await supabase.storage.from("Spark").upload(storagePath, uploadBlob, {
+      contentType: mimeType,
+      upsert: true,
+    });
+
+    if (uploadError) {
+      console.warn("[workspaceSync] uploadLocationPlateToStorage notice:", uploadError);
+      return imageUri;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
+    return publicUrlData?.publicUrl || imageUri;
+  } catch (err) {
+    console.warn("[workspaceSync] uploadLocationPlateToStorage failed:", err);
+    return imageUri;
   }
 }
 

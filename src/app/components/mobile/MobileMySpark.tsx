@@ -3,6 +3,7 @@ import { useSpark } from "../../state/SparkContext";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
 import { CharacterStudioModal } from "../ui/CharacterStudioModal";
 import { VoiceStudioModal } from "../ui/VoiceStudioModal";
+import { LocationPlateStudioModal } from "../ui/LocationPlateStudioModal";
 import { previewElevenLabsVoice } from "../../services/runtime/providers/elevenLabsTTS";
 import {
   Brain,
@@ -92,6 +93,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   const [showSheetLightbox, setShowSheetLightbox] = useState(false);
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
+  const [showLocationPlateStudio, setShowLocationPlateStudio] = useState(false);
 
   // Content Pillar Add State
   const [showAddPillar, setShowAddPillar] = useState(false);
@@ -558,6 +560,63 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             </button>
           </div>
         </div>
+      </section>
+
+      {/* 4.5. Locked Set & Location Plate (Optional) */}
+      <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Locked Set Plate
+            </h2>
+            <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20">
+              Optional
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowLocationPlateStudio(true)}
+            className="text-[11px] text-purple-300 font-medium flex items-center gap-1 cursor-pointer"
+          >
+            <Edit3 className="w-3 h-3" /> {brand?.locationPlateUrl ? "Edit" : "Add"}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-background border border-border">
+          <div
+            onClick={() => setShowLocationPlateStudio(true)}
+            className="w-16 h-12 rounded-lg bg-card border border-border/80 overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer"
+          >
+            {brand?.locationPlateUrl ? (
+              <img
+                src={brand.locationPlateUrl}
+                alt="Set Plate"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Sparkles className="w-4 h-4 text-muted-foreground/40" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-foreground truncate">
+              {brand?.locationPlateUrl ? "Locked Set Active" : "Dynamic Text Set"}
+            </p>
+            <p className="text-[10px] text-muted-foreground line-clamp-1">
+              {brand?.locationPlateUrl
+                ? "Reused for cinematic and anime background continuity"
+                : "Empty frame establishes room continuity"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowLocationPlateStudio(true)}
+          className="w-full py-2.5 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>{brand?.locationPlateUrl ? "Open Set Studio" : "Generate / Upload Set Plate"}</span>
+        </button>
       </section>
 
       {/* 5. Audience Profile */}
@@ -1590,6 +1649,11 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
       <VoiceStudioModal
         isOpen={showVoiceStudio}
         onClose={() => setShowVoiceStudio(false)}
+      />
+
+      <LocationPlateStudioModal
+        isOpen={showLocationPlateStudio}
+        onClose={() => setShowLocationPlateStudio(false)}
       />
     </div>
   );

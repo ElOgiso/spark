@@ -3,6 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
 import { VoiceStudioModal } from "./ui/VoiceStudioModal";
+import { LocationPlateStudioModal } from "./ui/LocationPlateStudioModal";
 import { previewElevenLabsVoice } from "../services/runtime/providers/elevenLabsTTS";
 import { getOAuthAuthorizationUrl, normalizeHandle } from "../services/socialIntegrationService";
 import {
@@ -89,6 +90,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
+  const [showLocationPlateStudio, setShowLocationPlateStudio] = useState(false);
 
   const [newRuleText, setNewRuleText] = useState("");
   const [showAddRule, setShowAddRule] = useState(false);
@@ -743,6 +745,66 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Locked Set & Location Plate (Optional) */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Locked Set & Location Plate</h2>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
+                  Optional
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationPlateStudio(true)}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+              >
+                <Edit3 className="w-3 h-3" /> {brand?.locationPlateUrl ? "Edit Set Plate" : "Add Set Plate"}
+              </button>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 justify-between">
+                <div className="flex items-center gap-4">
+                  <div
+                    onClick={() => setShowLocationPlateStudio(true)}
+                    className="w-24 h-16 rounded-xl bg-background border border-border/80 overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:border-purple-500/50 transition-all group relative"
+                  >
+                    {brand?.locationPlateUrl ? (
+                      <img
+                        src={brand.locationPlateUrl}
+                        alt="Locked Set Plate"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="text-center p-2">
+                        <Sparkles className="w-4 h-4 text-muted-foreground/50 mx-auto mb-1" />
+                        <span className="text-[9px] text-muted-foreground">No Plate</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {brand?.locationPlateUrl ? "Locked Architectural Environment" : "Dynamic Text Environment"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 max-w-md">
+                      {brand?.locationPlateUrl
+                        ? "Movies, stories, and anime productions reuse this empty establishing plate for background set continuity."
+                        : "No locked plate set. Productions generate ambient backdrops from text prompts."}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationPlateStudio(true)}
+                  className="px-4 py-2 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/40 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer self-stretch sm:self-auto justify-center"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{brand?.locationPlateUrl ? "Open Set Studio" : "Generate / Upload Set Plate"}</span>
+                </button>
               </div>
             </div>
           </section>
@@ -2040,6 +2102,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
           <VoiceStudioModal
             isOpen={showVoiceStudio}
             onClose={() => setShowVoiceStudio(false)}
+          />
+
+          <LocationPlateStudioModal
+            isOpen={showLocationPlateStudio}
+            onClose={() => setShowLocationPlateStudio(false)}
           />
         </div>
       </main>

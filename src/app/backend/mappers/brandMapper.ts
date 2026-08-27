@@ -107,6 +107,7 @@ export function brandRowToDomain(row: BrandRow): Brand {
     country: (row as any).country || aud.country || "United States",
     language: (row as any).language || aud.language || "English (US)",
     website: (row as any).website || aud.website || "",
+    locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
     formatSettings,
     creditSettings,
     contentPillars: asPillars(row.content_pillars),
