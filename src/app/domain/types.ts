@@ -137,6 +137,8 @@ export interface ProductionScene {
   scriptBeat?: string;
   keyframeImageUrl?: string;
   lastFrameUrl?: string;
+  subject?: "main" | "support" | "set" | "insert" | string;
+  subjectType?: "main" | "support" | "set" | "insert" | string;
   status?: SceneStatus;
   editNotes?: string;
   lastError?: string;
@@ -189,6 +191,8 @@ export interface ProductionBriefBeat {
   startState?: string;
   endState?: string;
   audio?: "vo" | "talent";
+  subject?: "main" | "support" | "set" | "insert" | string;
+  subjectType?: "main" | "support" | "set" | "insert" | string;
 }
 
 export interface ProductionBrief {

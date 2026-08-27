@@ -4,6 +4,8 @@ import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
 import { VoiceStudioModal } from "./ui/VoiceStudioModal";
 import { LocationPlateStudioModal } from "./ui/LocationPlateStudioModal";
+import { SupportCharacterModal } from "./ui/SupportCharacterModal";
+import { getEffectiveContentFormat } from "../services/production/characterSheetGate";
 import { previewElevenLabsVoice } from "../services/runtime/providers/elevenLabsTTS";
 import { getOAuthAuthorizationUrl, normalizeHandle } from "../services/socialIntegrationService";
 import {
@@ -53,7 +55,7 @@ import {
   BRAND_STYLE_OPTIONS,
   seedDefaultAudience,
 } from "../domain/brandOptions";
-import { VIDEO_LENGTH_OPTIONS } from "../domain/types";
+import { VIDEO_LENGTH_OPTIONS, getEffectiveFormatSettings } from "../domain/types";
 
 interface MySparkProps {
   onNavigate: (path: string) => void;
@@ -63,6 +65,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
   const {
     brand,
     character,
+    characters = [],
     accounts,
     automationMode,
     productionMode,
@@ -70,6 +73,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
     memoryItems,
     researchSources = [],
     updateBrand,
+    updateCharacter,
+    addSupportCharacter,
+    deleteSupportCharacter,
     updateAutomationMode,
     updateProductionMode,
     updateFormatSettings,
@@ -91,6 +97,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
   const [showLocationPlateStudio, setShowLocationPlateStudio] = useState(false);
+  const [showSupportCharacterModal, setShowSupportCharacterModal] = useState(false);
 
   const [newRuleText, setNewRuleText] = useState("");
   const [showAddRule, setShowAddRule] = useState(false);
@@ -748,6 +755,93 @@ export function MySpark({ onNavigate }: MySparkProps) {
               </div>
             </div>
           </section>
+
+          {/* Supporting Cast (Story & Anime Only - Max 2) */}
+          {(() => {
+            const effectiveFmt = getEffectiveFormatSettings({ formatSettings, brand });
+            const contentFormat = getEffectiveContentFormat({ brand, formatSettings: effectiveFmt });
+            const isStoryOrAnime = contentFormat === "story" || contentFormat === "anime";
+            if (!isStoryOrAnime) return null;
+
+            const supportCharacters = (characters || []).filter((c: any) => c.role === "support");
+
+            return (
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Supporting Cast</h2>
+                    <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                      Story & Anime (Max 2)
+                    </span>
+                  </div>
+                  {supportCharacters.length < 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSupportCharacterModal(true)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Supporting Character
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {supportCharacters.map((sc: any) => (
+                    <div key={sc.id} className="p-4 rounded-xl border border-border/80 bg-card/60 flex items-start gap-3 relative group">
+                      {sc.characterSheetUrl || sc.imageUrl || sc.avatarUrl ? (
+                        <img
+                          src={sc.characterSheetUrl || sc.imageUrl || sc.avatarUrl}
+                          alt={sc.name}
+                          className="w-14 h-14 rounded-lg object-cover border border-border/60 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center font-bold text-indigo-300 shrink-0">
+                          {sc.name?.[0] || "S"}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0 pr-6">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <p className="text-sm font-semibold text-foreground truncate">{sc.name}</p>
+                          <span className="text-[9px] font-mono bg-indigo-500/15 text-indigo-300 px-1.5 py-0.5 rounded">
+                            Support
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-1 mb-1.5">{sc.style || "Supporting Role"}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {(sc.traits || []).slice(0, 2).map((t: string) => (
+                            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-muted-foreground">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteSupportCharacter && deleteSupportCharacter(sc.id)}
+                        className="absolute top-3 right-3 p-1.5 rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title="Remove supporting character"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {supportCharacters.length === 0 && (
+                    <div className="col-span-full p-6 rounded-xl border border-dashed border-border/70 text-center bg-card/20">
+                      <p className="text-xs text-muted-foreground mb-2">No supporting characters added yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowSupportCharacterModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 text-xs font-semibold inline-flex items-center gap-1.5 border border-indigo-500/30 transition-all cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Supporting Character (Turnaround Sheet)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
 
           {/* Locked Set & Location Plate (Optional) */}
           <section>
@@ -2107,6 +2201,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
           <LocationPlateStudioModal
             isOpen={showLocationPlateStudio}
             onClose={() => setShowLocationPlateStudio(false)}
+          />
+
+          <SupportCharacterModal
+            isOpen={showSupportCharacterModal}
+            onClose={() => setShowSupportCharacterModal(false)}
           />
         </div>
       </main>

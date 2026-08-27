@@ -20,16 +20,22 @@ export interface CharacterSheetPromptParams {
 }
 
 export function buildProductionCharacterSheetPrompt(params: CharacterSheetPromptParams): string {
-  const name = params.creatorName?.trim() || "Lead Host";
+  const name = params.creatorName?.trim() || (params.role === "support" ? "Supporting Character" : "Lead Host");
   const brandName = params.brandName?.trim() || "SPARK";
   const characterGenre = params.genre?.trim() || "Realistic";
-  const personality = params.personality?.trim() || "Authoritative, engaging visionary";
+  const personality = params.personality?.trim() || (params.role === "support" ? "Dynamic supporting character" : "Authoritative, engaging visionary");
+  const roleDesc = params.role === "support" ? "support" : (params.role || "host");
+  const isSupport = params.role === "support" || roleDesc.toLowerCase().includes("support");
+
+  const wardrobeDirective = isSupport
+    ? "WARDROBE & SILHOUETTE LOCK: distinct silhouette and distinct color palette from primary lead; one single outfit inferred from genre + brand; do not invent a second costume."
+    : "WARDROBE LOCK: one outfit inferred from genre + brand; do not invent a second costume.";
 
   return `
 Professional animation model sheet, single character, studio turnaround.
 STYLE: ${characterGenre} consistent with brand ${brandName}.
-CHARACTER: ${name}, role host, personality ${personality}.
-WARDROBE LOCK: one outfit inferred from genre + brand; do not invent a second costume.
+CHARACTER: ${name}, role ${roleDesc}, personality ${personality}.
+${wardrobeDirective}
 LAYOUT ON ONE IMAGE:
 - Top: name + role + 3 palette swatches
 - Row: FRONT, 3/4 FRONT, LEFT, RIGHT, BACK, 3/4 REAR, same height, neutral gray

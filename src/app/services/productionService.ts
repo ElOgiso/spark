@@ -154,13 +154,14 @@ export class ProductionService implements IProductionService {
     production: Production;
     brand: Brand;
     character?: Character;
+    characters?: Character[];
     memoryItems?: MemoryItem[];
     creditSettings?: import("../domain/types").GenerationCreditSettings;
     onProgress?: (progress: import("../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
-    const { production, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
+    const { production, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -175,20 +176,22 @@ export class ProductionService implements IProductionService {
 
     if (!gate.allowed) {
       console.warn(`[ProductionService] Asset generation gated (${gate.contentFormat}): ${gate.reason}`);
-      const updatedProd: Production = {
-        ...production,
-        isGeneratingAssets: false,
-        lastError: gate.reason,
-      };
       const updatedBrief: ProductionBrief = {
         ...production.brief,
         lastError: gate.reason,
       };
-      return { production: updatedProd, brief: updatedBrief };
+      const gatedProd: Production = {
+        ...production,
+        brief: updatedBrief,
+        lastError: gate.reason,
+        status: "Failed",
+        isGeneratingAssets: false,
+      };
+      return { production: gatedProd, brief: updatedBrief };
     }
 
     const handleProgress = (prog: import("../domain/types").GenerationProgress) => {
-      if (onProgress) onProgress(prog);
+      onProgress?.(prog);
       const state = this.getFullState();
       const currentProds: Production[] = state.productions || [];
       const currentReviews: ReviewItem[] = state.reviewItems || [];
@@ -225,6 +228,7 @@ export class ProductionService implements IProductionService {
       brief: production.brief,
       brand,
       character,
+      characters,
       memoryItems,
       creditSettings,
       onProgress: handleProgress,

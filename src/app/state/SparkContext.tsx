@@ -82,6 +82,7 @@ export interface ChatMessage {
 interface SparkContextType {
   brand: Brand;
   character: Character;
+  characters: Character[];
   executiveVoiceProfile: typeof SPARK_EXECUTIVE_VOICE_PROFILE;
   accounts: Account[];
   automationMode: AutomationMode;
@@ -109,6 +110,8 @@ interface SparkContextType {
   // Actions
   updateBrand: (data: Partial<Brand>) => void;
   updateCharacter: (data: Partial<Character>) => void;
+  addSupportCharacter?: (character: Partial<Character>) => Promise<Character | null>;
+  deleteSupportCharacter?: (characterId: string) => Promise<boolean>;
   resetWorkspace: () => void;
   initializeBrandGenesis: (data: any) => Promise<void> | void;
   updateAutomationMode: (mode: AutomationMode) => void;
@@ -286,6 +289,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return {
       brand: { ...defaultBrand, formatSettings: initialFormatSettings, creditSettings: DEFAULT_CREDIT_SETTINGS },
       character: defaultCharacter,
+      characters: [defaultCharacter],
       executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
       accounts: [],
       automationMode: "balanced" as AutomationMode,
@@ -640,6 +644,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   },
                 }
               : prev.character,
+            characters: snap.characters || (snap.character ? [snap.character] : (prev.characters || [])),
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
@@ -886,6 +891,60 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     void import("../backend/workspaceSync").then(({ persistCharacterUpdate }) => {
       void persistCharacterUpdate(brandId, updatedChar!);
     });
+  };
+
+  const addSupportCharacter = async (characterData: Partial<Character>): Promise<Character | null> => {
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (!brandId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(brandId)) {
+      console.error("[SparkContext] addSupportCharacter failed: valid UUID brand ID required", brandId);
+      return null;
+    }
+
+    try {
+      const { uploadCharacterSheetToStorage, persistCharacterCreate } = await import("../backend/workspaceSync");
+      const charId = characterData.id || crypto.randomUUID();
+      let sheetUrl = characterData.characterSheetUrl || characterData.imageUrl || null;
+      if (sheetUrl && (sheetUrl.startsWith("data:") || sheetUrl.startsWith("blob:"))) {
+        sheetUrl = await uploadCharacterSheetToStorage(brandId, sheetUrl, charId);
+      }
+
+      const created = await persistCharacterCreate(brandId, {
+        ...characterData,
+        id: charId,
+        role: "support",
+        characterSheetUrl: sheetUrl,
+        imageUrl: sheetUrl,
+        avatarUrl: sheetUrl,
+      });
+
+      if (created) {
+        setState((prev: any) => {
+          const currentList = Array.isArray(prev.characters) ? prev.characters : [prev.character];
+          const updated = [...currentList.filter((c: any) => c.id !== created.id), created];
+          return { ...prev, characters: updated };
+        });
+        return created;
+      }
+    } catch (err) {
+      console.warn("[SparkContext] addSupportCharacter notice:", err);
+    }
+    return null;
+  };
+
+  const deleteSupportCharacter = async (characterId: string): Promise<boolean> => {
+    if (!characterId) return false;
+    try {
+      const { persistCharacterDelete } = await import("../backend/workspaceSync");
+      const ok = await persistCharacterDelete(characterId);
+      setState((prev: any) => ({
+        ...prev,
+        characters: (prev.characters || []).filter((c: any) => c.id !== characterId),
+      }));
+      return ok;
+    } catch (err) {
+      console.warn("[SparkContext] deleteSupportCharacter notice:", err);
+      return false;
+    }
   };
 
   const initializeBrandGenesis = async (data: any) => {
@@ -1192,6 +1251,34 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
     };
 
+    // Upload & persist optional support characters (max 2) for story/anime formats
+    const initialSupportCharacters: Character[] = [];
+    if (Array.isArray(data.supportCharacters) && brandId && isUuid(brandId)) {
+      try {
+        const { uploadCharacterSheetToStorage, persistCharacterCreate } = await import("../backend/workspaceSync");
+        for (let scIdx = 0; scIdx < Math.min(2, data.supportCharacters.length); scIdx++) {
+          const sc = data.supportCharacters[scIdx];
+          if (!sc) continue;
+          const scId = sc.id || crypto.randomUUID();
+          let scSheet = sc.characterSheetUrl || sc.imageUrl || null;
+          if (scSheet && (scSheet.startsWith("data:") || scSheet.startsWith("blob:"))) {
+            scSheet = await uploadCharacterSheetToStorage(brandId, scSheet, scId);
+          }
+          const createdSupport = await persistCharacterCreate(brandId, {
+            ...sc,
+            id: scId,
+            role: "support",
+            characterSheetUrl: scSheet,
+            imageUrl: scSheet,
+            avatarUrl: scSheet,
+          });
+          if (createdSupport) initialSupportCharacters.push(createdSupport);
+        }
+      } catch (err) {
+        console.warn("[SparkContext] Support characters genesis notice:", err);
+      }
+    }
+
     if (isAdditionalWorkspace) {
       // FIX 1 & 2: Clean isolated state for additional workspace (do NOT merge with previous brand)
       setState({
@@ -1223,6 +1310,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
           voice: voiceProfileObj,
         },
+        characters: [
+          {
+            name: creatorName,
+            role: "Lead Host",
+            style: `${visualStyle} — ${creatorName} representing ${brandName}`,
+            avatarUrl: durableSheetUrl,
+            imageUrl: durableSheetUrl,
+            characterSheetUrl: durableSheetUrl,
+            traits: [data.personality || "Visionary", data.tone || "Authoritative", "Expert"].filter(Boolean),
+            voice: voiceProfileObj,
+          },
+          ...initialSupportCharacters,
+        ],
         executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
         accounts: Array.from(byPlatform.values()),
         automationMode: automationMode,
@@ -1274,6 +1374,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           characterSheetUrl: durableSheetUrl || prev.character?.characterSheetUrl || null,
           voice: voiceProfileObj,
         },
+        characters: [
+          {
+            ...prev.character,
+            name: creatorName,
+            role: "Lead Host",
+            style: `${visualStyle} — ${creatorName} representing ${brandName}`,
+            avatarUrl: durableSheetUrl || prev.character?.avatarUrl || null,
+            imageUrl: durableSheetUrl || prev.character?.imageUrl || null,
+            characterSheetUrl: durableSheetUrl || prev.character?.characterSheetUrl || null,
+            voice: voiceProfileObj,
+          },
+          ...initialSupportCharacters,
+        ],
         accounts: Array.from(byPlatform.values()),
         automationMode: automationMode,
         productionMode: productionMode,
@@ -1720,6 +1833,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 production: stableEnrichedProd,
                 brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
                 character: effectiveCharacter,
+                characters: state.characters || [],
                 memoryItems: state.memoryItems || [],
                 creditSettings: effectiveCredit,
                 signal: controller.signal,
@@ -2105,6 +2219,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
         brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
         character: effectiveCharacter,
+        characters: state.characters || [],
         memoryItems: state.memoryItems || [],
         creditSettings: effectiveCredit,
         forceRegenerate,
@@ -3228,8 +3343,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeSessionId,
         sessions,
         executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
+        characters: state.characters || (state.character ? [state.character] : []),
         updateBrand,
         updateCharacter,
+        addSupportCharacter,
+        deleteSupportCharacter,
         resetWorkspace,
         initializeBrandGenesis,
         updateAutomationMode,

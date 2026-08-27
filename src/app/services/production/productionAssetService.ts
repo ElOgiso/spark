@@ -282,6 +282,7 @@ export async function withTimeout<T>(
  */
 export function buildVisualLockRefs(params: {
   character?: Character;
+  supportCharacter?: Character;
   storyboardGridUrl?: string;
   sceneKeyframeUrl?: string;
   previousLastFrameUrl?: string;
@@ -290,6 +291,7 @@ export function buildVisualLockRefs(params: {
 }): VisualLockRefsResult {
   const {
     character,
+    supportCharacter,
     storyboardGridUrl,
     sceneKeyframeUrl,
     previousLastFrameUrl,
@@ -297,12 +299,18 @@ export function buildVisualLockRefs(params: {
     subjectType = "main",
   } = params;
 
+  const isSupport = subjectType === "support";
+  // If subject is support, use supportCharacter sheet if valid; otherwise fallback to main character (no random faces!)
+  const targetChar = isSupport && (supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl)
+    ? supportCharacter
+    : character;
+
   const charSheetUrls: string[] = [];
-  if (character) {
-    const directSheet = character.characterSheetUrl;
+  if (targetChar) {
+    const directSheet = targetChar.characterSheetUrl;
     if (directSheet && isValidMediaData(directSheet)) charSheetUrls.push(directSheet);
 
-    const sheetList = (character as any).sheet_image_urls;
+    const sheetList = (targetChar as any).sheet_image_urls;
     if (Array.isArray(sheetList)) {
       for (const url of sheetList) {
         if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) {
@@ -311,7 +319,7 @@ export function buildVisualLockRefs(params: {
       }
     }
 
-    const imgUrl = character.imageUrl || character.avatarUrl;
+    const imgUrl = targetChar.imageUrl || targetChar.avatarUrl;
     if (imgUrl && isValidMediaData(imgUrl) && !charSheetUrls.includes(imgUrl)) {
       charSheetUrls.push(imgUrl);
     }
@@ -340,9 +348,13 @@ export function buildVisualLockRefs(params: {
     }
   } else {
     // stills with subject main/support → refs [sheet, scene intent]; plate may be extra ref AFTER sheet, never replace the face
+    const charLabel = isSupport
+      ? `Supporting Character Reference Sheet (${targetChar?.name || "Support Character"})`
+      : `Character Reference Sheet (${targetChar?.name || "Host"})`;
+
     for (const sheetUrl of charSheetUrls) {
       orderedRefs.push(sheetUrl);
-      labelLines.push(`INPUT REF [${refCounter}]: Character Reference Sheet (${character?.name || "Host"})`);
+      labelLines.push(`INPUT REF [${refCounter}]: ${charLabel}`);
       refCounter++;
     }
 
@@ -617,13 +629,14 @@ export class ProductionAssetService {
     brief: ProductionBrief;
     brand: Brand;
     character?: Character;
+    characters?: Character[];
     memoryItems?: import("../../domain/types").MemoryItem[];
     creditSettings?: import("../../domain/types").GenerationCreditSettings;
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
-    const { production, brief, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
+    const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     const activeFormatSettings = getEffectiveFormatSettings({
       formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
       brand,
@@ -1230,6 +1243,11 @@ Return valid JSON with this exact structure:
             desc.includes("establishing shot of the studio") ||
             desc.includes("wide shot of the set");
 
+          const isSupportShot =
+            rawSubject === "support" ||
+            rawSubject === "supporting" ||
+            rawSubject.includes("support");
+
           const isInsertShot =
             rawSubject === "insert" ||
             rawSubject === "product" ||
@@ -1238,11 +1256,16 @@ Return valid JSON with this exact structure:
             desc.includes("close-up of the screen") ||
             desc.includes("product display");
 
-          const subjectType = isSetShot ? "set" : isInsertShot ? "insert" : (rawSubject || "main");
+          const subjectType = isSetShot ? "set" : isSupportShot ? "support" : isInsertShot ? "insert" : (rawSubject || "main");
           const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+
+          // Find support character from cast
+          const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
+          const activeChar = isSupportShot && (supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character;
 
           const stillVisualLock = buildVisualLockRefs({
             character,
+            supportCharacter: supportChar,
             previousLastFrameUrl: sIdx > 0 ? sceneImages[sIdx - 1] : undefined,
             locationPlateUrl: plateUrl,
             subjectType,
@@ -1250,6 +1273,8 @@ Return valid JSON with this exact structure:
 
           const stillSubjectLine = isSetShot
             ? "SUBJECT & IDENTITY: None (Empty establishing set / environment shot). Room geometry, lighting, textures, and architecture strictly match reference IMAGE 1."
+            : isSupportShot
+            ? `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.`
             : `SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1.`;
 
           const stillPrompt = `
@@ -1590,6 +1615,12 @@ CRITICAL PRODUCTION LAWS:
               const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
 
               // Build reference array: [0] = sceneFirstFrame (First Frame), [1] = characterSheetUrl (Identity Law)
+              const rawSubject = ((s as any).subject || (s as any).subjectType || "").toLowerCase();
+              const isSupportShot = rawSubject === "support" || rawSubject === "supporting";
+              const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
+              const activeChar = isSupportShot && (supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character;
+              const sceneCharSheetUrl = activeChar?.characterSheetUrl || activeChar?.imageUrl || activeChar?.avatarUrl;
+
               const orderedSceneRefs: string[] = [sceneFirstFrame];
               const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl === sceneFirstFrame;
               const refLabels: string[] = [
@@ -1598,9 +1629,9 @@ CRITICAL PRODUCTION LAWS:
                   : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
               ];
 
-              if (charSheetUrl && isValidMediaData(charSheetUrl) && charSheetUrl !== sceneFirstFrame) {
-                orderedSceneRefs.push(charSheetUrl);
-                refLabels.push(`INPUT REF [2]: Character Model Sheet (${character?.name || "Host"})`);
+              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
+                orderedSceneRefs.push(sceneCharSheetUrl);
+                refLabels.push(`INPUT REF [2]: ${isSupportShot ? "Supporting Character" : "Character"} Model Sheet (${activeChar?.name || "Host"})`);
               }
 
               const refHeader = `${refLabels.join("\n")}\nVISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. IMAGE 2 is character identity law.\n`;
@@ -1617,8 +1648,8 @@ CRITICAL PRODUCTION LAWS:
                 onScreenText: s.onScreenText,
                 audio: s.audio,
                 endPose: s.endState,
-                characterName: character?.name || "Host",
-                characterStyle: character?.style || "Executive Presenter",
+                characterName: activeChar?.name || "Host",
+                characterStyle: activeChar?.style || "Executive Presenter",
                 environment: identityPack.environmentString,
               })}`;
 

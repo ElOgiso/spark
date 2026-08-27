@@ -71,6 +71,7 @@ import { ExecutiveContext, createEmptyExecutiveContext } from "../state/Executiv
 export type WorkspaceSnapshot = {
   brand?: Brand;
   character?: Character;
+  characters?: Character[];
   creditSettings?: GenerationCreditSettings;
   formatSettings?: ProductionFormatSettings;
   accounts: Account[];
@@ -234,9 +235,7 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
   ]);
 
   const brand = brandRes?.data ? brandRowToDomain(brandRes.data) : undefined;
-  const firstCharacter = characters.data?.[0]
-    ? characterRowToDomain(characters.data[0])
-    : undefined;
+  const rawCharacters = (characters.data ?? []).map(characterRowToDomain);
 
   const rawMediaAssets: MediaAssetRow[] = (mediaAssetsRes?.data as MediaAssetRow[] | null) || [];
   const rawProductions = (productions.data ?? []).map(productionRowToDomain);
@@ -260,17 +259,19 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     }
   }
 
-  // Resign / refresh character media URLs
-  let refreshedCharacter = firstCharacter;
-  if (firstCharacter) {
-    const { character: charRefreshed, didResign } = await refreshCharacterMediaAssets(firstCharacter, rawMediaAssets);
-    refreshedCharacter = charRefreshed;
+  // Resign / refresh all character media URLs
+  const refreshedCharacters: Character[] = [];
+  for (const char of rawCharacters) {
+    const { character: charRefreshed, didResign } = await refreshCharacterMediaAssets(char, rawMediaAssets);
+    refreshedCharacters.push(charRefreshed);
     if (didResign && isUuid(brandId)) {
       void persistCharacterUpdate(brandId, charRefreshed).catch((err) =>
         console.warn("[workspaceSync] Character signed URL update notice:", err)
       );
     }
   }
+
+  const mainCharacter = refreshedCharacters.find((c) => c.role !== "support") || refreshedCharacters[0];
 
   const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
   const cloudFormatSettings = (brandRes?.data?.settings as any)?.format_settings;
@@ -303,7 +304,8 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
 
   return {
     brand,
-    character: refreshedCharacter,
+    character: mainCharacter,
+    characters: refreshedCharacters,
     creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
     formatSettings: resolvedFormat,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
@@ -904,7 +906,7 @@ export async function uploadLocationPlateToStorage(brandId: string, imageUri: st
   }
 }
 
-export async function uploadCharacterSheetToStorage(brandId: string, imageUri: string): Promise<string> {
+export async function uploadCharacterSheetToStorage(brandId: string, imageUri: string, charId?: string): Promise<string> {
   if (!isSupabaseConfigured() || !brandId || !imageUri) return imageUri;
   // If already hosted in our Supabase Storage bucket, skip re-upload
   if (imageUri.includes(".supabase.co/storage/v1/object/")) {
@@ -942,7 +944,9 @@ export async function uploadCharacterSheetToStorage(brandId: string, imageUri: s
     if (!uploadBlob) return imageUri;
 
     const ext = mimeType.includes("webp") ? "webp" : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
-    const storagePath = `brands/${brandId}/character/sheet.${ext}`;
+    const storagePath = charId
+      ? `brands/${brandId}/character/sheet_${charId}.${ext}`
+      : `brands/${brandId}/character/sheet.${ext}`;
 
     const { error: uploadError } = await supabase.storage.from("Spark").upload(storagePath, uploadBlob, {
       contentType: mimeType,
@@ -1167,14 +1171,28 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
       previewUrl: character.voice?.previewUrl || null,
     };
 
+    const now = new Date().toISOString();
+
+    if (character.id && isUuid(character.id)) {
+      await (supabase.from("characters") as any)
+        .update({
+          name: character.name || "Character",
+          role: character.role || "host",
+          appearance: appearancePayload,
+          personality: personalityPayload,
+          voice: voicePayload,
+          updated_at: now,
+        })
+        .eq("id", character.id);
+      return;
+    }
+
     const { data: existing } = await (supabase.from("characters") as any)
       .select("id")
       .eq("brand_id", brandId)
       .order("updated_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(1);
-
-    const now = new Date().toISOString();
 
     if (existing && existing.length > 0) {
       await (supabase.from("characters") as any)
@@ -1189,6 +1207,7 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
         .eq("id", existing[0].id);
     } else {
       await (supabase.from("characters") as any).insert({
+        id: crypto.randomUUID(),
         brand_id: brandId,
         name: character.name || "Primary Host",
         role: character.role || "Primary Host",
@@ -1202,6 +1221,77 @@ export async function persistCharacterUpdate(brandId: string, character: Charact
     }
   } catch (err) {
     console.warn("[workspaceSync] Character persist notice:", err);
+  }
+}
+
+export async function persistCharacterCreate(brandId: string, character: Partial<Character>): Promise<Character | null> {
+  if (!isSupabaseConfigured() || !isUuid(brandId)) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const charId = character.id && isUuid(character.id) ? character.id : crypto.randomUUID();
+    const appearancePayload = {
+      style: character.style || "",
+      imageUrl: character.imageUrl || character.characterSheetUrl || character.avatarUrl || null,
+      avatarUrl: character.avatarUrl || character.characterSheetUrl || character.imageUrl || null,
+      characterSheetUrl: character.characterSheetUrl || character.imageUrl || character.avatarUrl || null,
+    };
+    const personalityPayload = {
+      traits: character.traits || [],
+    };
+    const voicePayload = {
+      name: character.voice?.name || "Default",
+      language: character.voice?.language || "English",
+      tone: character.voice?.tone || "Neutral",
+      locked: character.voice?.locked ?? true,
+      voiceId: character.voice?.voiceId || null,
+      description: character.voice?.description || null,
+      gender: character.voice?.gender || null,
+      previewUrl: character.voice?.previewUrl || null,
+    };
+
+    const row = {
+      id: charId,
+      brand_id: brandId,
+      name: character.name || (character.role === "support" ? "Supporting Character" : "Primary Host"),
+      role: character.role || "support",
+      appearance: appearancePayload,
+      personality: personalityPayload,
+      voice: voicePayload,
+      consistency_rules: {},
+      generation_rules: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await (supabase.from("characters") as any).insert(row).select().single();
+    if (error) {
+      console.warn("[workspaceSync] persistCharacterCreate notice:", error);
+      return characterRowToDomain(row as any);
+    }
+    return characterRowToDomain(data);
+  } catch (err) {
+    console.warn("[workspaceSync] persistCharacterCreate error:", err);
+    return null;
+  }
+}
+
+export async function persistCharacterDelete(characterId: string): Promise<boolean> {
+  if (!isSupabaseConfigured() || !isUuid(characterId)) return false;
+  const supabase = getSupabaseClient();
+  if (!supabase) return false;
+
+  try {
+    const { error } = await (supabase.from("characters") as any).delete().eq("id", characterId);
+    if (error) {
+      console.warn("[workspaceSync] Character delete notice:", error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[workspaceSync] Character delete error:", err);
+    return false;
   }
 }
 

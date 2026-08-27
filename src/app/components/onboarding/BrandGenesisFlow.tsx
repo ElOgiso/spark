@@ -54,6 +54,7 @@ export interface BrandGenesisData {
   characterSheetUrl?: string | null;
   characterImageUrl?: string | null;
   locationPlateUrl?: string | null;
+  supportCharacters?: any[];
   genre?: string;
   skinTone?: string;
   hairStyle?: string;
@@ -781,6 +782,7 @@ interface GenesisInternalState {
   characterDescription: string;
   characterSheetUrl: string | null;
   locationPlateUrl: string | null;
+  supportCharacters: any[];
   characterGenerated: boolean;
   selectedVoice: string;
   selectedVoiceId: string;
@@ -807,6 +809,7 @@ const DEFAULT_STATE: GenesisInternalState = {
   characterDescription: "",
   characterSheetUrl: null,
   locationPlateUrl: null,
+  supportCharacters: [],
   characterGenerated: false,
   selectedVoice: "nova",
   selectedVoiceId: "21m00Tcm4TlvDq8ikWAM",
@@ -1058,7 +1061,9 @@ function FrameCharacter({
   const [viewer, setViewer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plateFileInputRef = useRef<HTMLInputElement>(null);
+  const supportFileInputRef = useRef<HTMLInputElement>(null);
   const [isGeneratingPlate, setIsGeneratingPlate] = useState(false);
+  const [isGeneratingSupport, setIsGeneratingSupport] = useState(false);
 
   const isStoryOrAnime =
     data.characterGenre?.toLowerCase().includes("anime") ||
@@ -1101,6 +1106,68 @@ function FrameCharacter({
     reader.onload = (ev) => {
       const uri = ev.target?.result as string;
       if (uri) onChange({ locationPlateUrl: uri });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleGenerateSupport = async () => {
+    setIsGeneratingSupport(true);
+    try {
+      const { buildProductionCharacterSheetPrompt } = await import("../../services/production/characterSheetPrompt");
+      const currentSupportCount = (data.supportCharacters || []).length;
+      const prompt = buildProductionCharacterSheetPrompt({
+        creatorName: `Supporting Character ${currentSupportCount + 1}`,
+        role: "support",
+        brandName: data.brandName,
+        genre: data.characterGenre,
+        personality: "Contrasting silhouette and palette, dynamic companion role",
+      });
+
+      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        prompt,
+        aspectRatio: "16:9",
+        capability: "Image Generation",
+      });
+
+      if (imgUrl && typeof imgUrl === "string") {
+        const newSupport = {
+          id: crypto.randomUUID(),
+          name: `Supporting Character ${currentSupportCount + 1}`,
+          role: "support",
+          characterSheetUrl: imgUrl,
+          imageUrl: imgUrl,
+          personality: "Companion / Co-star",
+        };
+        const updatedList = [...(data.supportCharacters || []), newSupport].slice(0, 2);
+        onChange({ supportCharacters: updatedList });
+      }
+    } catch (err) {
+      console.warn("[FrameCharacter] Support character generation notice:", err);
+    } finally {
+      setIsGeneratingSupport(false);
+    }
+  };
+
+  const handleSupportUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const uri = ev.target?.result as string;
+      if (uri) {
+        const currentSupportCount = (data.supportCharacters || []).length;
+        const newSupport = {
+          id: crypto.randomUUID(),
+          name: `Supporting Character ${currentSupportCount + 1}`,
+          role: "support",
+          characterSheetUrl: uri,
+          imageUrl: uri,
+          personality: "Companion / Co-star",
+        };
+        const updatedList = [...(data.supportCharacters || []), newSupport].slice(0, 2);
+        onChange({ supportCharacters: updatedList });
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -1317,6 +1384,81 @@ function FrameCharacter({
             )}
             <p className="text-[10px] text-white/35 leading-tight">
               Reused across scenes to keep background architectural layout identical.
+            </p>
+          </div>
+        )}
+
+        {/* Optional Supporting Cast for Story / Anime (Max 2) */}
+        {isStoryOrAnime && (data.characterSheetUrl || data.characterGenerated) && (
+          <div className="pt-4 border-t border-white/10 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] text-white/50 uppercase tracking-widest font-semibold">
+                  Supporting Cast (Optional, Max 2)
+                </label>
+                <span className="text-[9px] font-mono text-indigo-300 bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
+                  {(data.supportCharacters || []).length}/2
+                </span>
+              </div>
+            </div>
+
+            <input
+              ref={supportFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleSupportUpload}
+            />
+
+            {(data.supportCharacters || []).length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {(data.supportCharacters || []).map((sc: any, idx: number) => (
+                  <div key={sc.id || idx} className="relative rounded-xl border border-indigo-500/30 bg-black/40 overflow-hidden p-2 flex items-center gap-2">
+                    <img src={sc.characterSheetUrl || sc.imageUrl} alt={sc.name} className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{sc.name}</p>
+                      <p className="text-[10px] text-indigo-300">Support</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (data.supportCharacters || []).filter((_: any, i: number) => i !== idx);
+                        onChange({ supportCharacters: next });
+                      }}
+                      className="p-1 text-white/40 hover:text-red-400 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(data.supportCharacters || []).length < 2 && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateSupport}
+                  disabled={isGeneratingSupport}
+                  className="py-2.5 px-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  {isGeneratingSupport ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating…</>
+                  ) : (
+                    <><Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Add Support Cast</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => supportFileInputRef.current?.click()}
+                  className="py-2.5 px-3 rounded-xl border border-white/10 hover:bg-white/5 text-white/60 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload Sheet
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-white/35 leading-tight">
+              Distinct turnaround sheet locks identity for scenes with secondary characters.
             </p>
           </div>
         )}
@@ -2326,6 +2468,7 @@ export function BrandGenesisFlow({
       characterSheetUrl: data.characterSheetUrl,
       characterImageUrl: data.characterSheetUrl,
       locationPlateUrl: data.locationPlateUrl,
+      supportCharacters: data.supportCharacters || [],
       genre: data.characterGenre,
       skinTone: data.characterSkin,
       hairStyle: data.characterHair,
