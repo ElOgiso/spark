@@ -182,15 +182,30 @@ export function DesktopProductionAssetsGallery({
     }
   };
 
-  const handleApproveMerge = () => {
+  const [isMerging, setIsMerging] = useState(false);
+
+  const handleApproveMerge = async () => {
+    if (isMerging) return;
+    setIsMerging(true);
     setScenes((prev) => prev.map((s) => ({ ...s, status: "Approved" })));
-    setApprovedMaster(true);
-    showToast("Merging scenes into master video...");
+    showToast("Merging approved scene clips into master MP4...");
 
     if (activeProd?.id && mergeProductionScenes) {
-      void mergeProductionScenes(activeProd.id).then((masterUrl: string | null) => {
-        showToast(isOneTake ? "Master video approved!" : "Scenes concatenated into single master video!");
-      });
+      try {
+        const masterUrl = await mergeProductionScenes(activeProd.id);
+        if (masterUrl) {
+          setApprovedMaster(true);
+          showToast(isOneTake ? "Master video approved and verified!" : "Scenes concatenated into single master video!");
+        } else {
+          showToast("Merge failed: could not create durable Spark master.");
+        }
+      } catch (err: any) {
+        showToast(`Merge error: ${err?.message || "Storage upload failed"}`);
+      } finally {
+        setIsMerging(false);
+      }
+    } else {
+      setIsMerging(false);
     }
   };
 
@@ -550,19 +565,31 @@ export function DesktopProductionAssetsGallery({
           </p>
           <button
             onClick={handleApproveMerge}
-            disabled={approvedMaster}
+            disabled={approvedMaster || isMerging}
             className={`px-6 py-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer ${
               approvedMaster
                 ? "bg-emerald-600 text-white shadow-emerald-600/30"
+                : isMerging
+                ? "bg-purple-700/80 text-white/80 cursor-wait"
                 : "bg-[#a855f7] hover:bg-[#9333ea] text-white shadow-purple-600/30 active:scale-[0.99]"
             }`}
           >
-            <CheckCircle2 className="w-4 h-4 text-white" />
-            {approvedMaster
-              ? "Master Approved"
-              : isOneTake
-              ? "Approve master"
-              : "Approve & merge"}
+            {isMerging ? (
+              <>
+                <Loader2 className="w-4 h-4 text-white animate-spin" />
+                <span>Merging master...</span>
+              </>
+            ) : approvedMaster ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-white" />
+                <span>Master Approved</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-white" />
+                <span>{isOneTake ? "Approve master" : "Approve & merge"}</span>
+              </>
+            )}
           </button>
         </div>
       </footer>

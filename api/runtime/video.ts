@@ -159,14 +159,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        const { data: publicData } = supabase.storage.from(SPARK_BUCKET).getPublicUrl(storagePath);
-        let publicUrl = publicData?.publicUrl || '';
+        const { data: signData } = await supabase.storage
+          .from(SPARK_BUCKET)
+          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
 
+        let publicUrl = signData?.signedUrl;
         if (!publicUrl) {
-          const { data: signData } = await supabase.storage
-            .from(SPARK_BUCKET)
-            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-          publicUrl = signData?.signedUrl || '';
+          const { data: publicData } = supabase.storage.from(SPARK_BUCKET).getPublicUrl(storagePath);
+          publicUrl = publicData?.publicUrl || '';
         }
 
         return res.status(200).json({

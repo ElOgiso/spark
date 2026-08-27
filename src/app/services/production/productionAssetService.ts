@@ -2382,10 +2382,48 @@ Apply revision while maintaining 100% subject identity and set continuity.
           status: sb.videoUrl ? "ready" : "pending",
         })) as any[];
 
-    const readyClips = scenes
-      .filter((s) => s.videoUrl && isPlayableVideoUrl(s.videoUrl))
-      .sort((a, b) => (a.index || a.scene) - (b.index || b.scene))
-      .map((s) => s.videoUrl!);
+    const mode = String(production.productionMode || production.mode || brief.productionMode || "").toLowerCase();
+    const isNarrator = mode === "express" || mode === "narrator";
+
+    // Narrator: if production.videoUrl is already a durable compile master, no-op success
+    if (isNarrator && isDurableMasterVideoReady(production.videoUrl)) {
+      console.log(`[ProductionAssetService] Narrator mode with durable master already present -> no-op success: ${production.videoUrl}`);
+      return production.videoUrl || null;
+    }
+
+    // Ensure all scene clips are uploaded to durable Spark storage before merging
+    const durableReadyClips: string[] = [];
+    const orderedScenes = [...scenes].sort((a, b) => (a.index || a.scene) - (b.index || b.scene));
+
+    for (const s of orderedScenes) {
+      if (s.videoUrl && isPlayableVideoUrl(s.videoUrl)) {
+        let clipUrl = s.videoUrl;
+        if (!isStorageVerifiedVideoUrl(clipUrl)) {
+          try {
+            const sceneIdx = s.scene || s.index || 1;
+            const stored = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any)?.id,
+              assetType: "video",
+              storagePath: `brands/${(brand as any)?.id || "default-brand"}/${productionId}/video/scene-${sceneIdx}.mp4`,
+              dataUrlOrBlob: clipUrl,
+              mimeType: "video/mp4",
+              prompt: `Scene ${sceneIdx} durable video clip`,
+              provider: "SceneClipStoragePersist",
+            });
+            if (stored?.publicUrl) {
+              clipUrl = stored.publicUrl;
+              s.videoUrl = clipUrl;
+            }
+          } catch (e) {
+            console.warn("[ProductionAssetService] Ephemeral clip storage upload notice:", e);
+          }
+        }
+        durableReadyClips.push(clipUrl);
+      }
+    }
+
+    const readyClips = durableReadyClips;
 
     const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
     const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
@@ -2435,6 +2473,12 @@ Apply revision while maintaining 100% subject identity and set continuity.
               production.videoUrl = stored.publicUrl;
               brief.videoUrl = stored.publicUrl;
               production.status = "Ready for Review";
+              production.generationProgress = {
+                stage: "Complete",
+                percent: 100,
+                message: "Master film compiled and saved to Spark storage",
+                stages: production.generationProgress?.stages || [],
+              };
               return stored.publicUrl;
             }
           }
@@ -2442,7 +2486,19 @@ Apply revision while maintaining 100% subject identity and set continuity.
           console.warn("[ProductionAssetService] Narrator merge fallback notice:", narrErr);
         }
       }
-      return (isDurableMasterVideoReady(production.videoUrl) ? production.videoUrl : null) || null;
+      
+      if (isDurableMasterVideoReady(production.videoUrl)) {
+        return production.videoUrl || null;
+      }
+      production.status = "Failed";
+      production.lastError = "Merge did not produce a Spark master";
+      production.generationProgress = {
+        stage: "Failed",
+        percent: 0,
+        message: "Merge did not produce a Spark master",
+        stages: production.generationProgress?.stages || [],
+      };
+      return null;
     }
 
     if (readyClips.length === 1 && scenes.length > 1) {
@@ -2483,6 +2539,12 @@ Apply revision while maintaining 100% subject identity and set continuity.
               if (!brief.generatedAssets) brief.generatedAssets = {};
               brief.generatedAssets.generatedVideos = [masterUrl];
               production.status = "Ready for Review";
+              production.generationProgress = {
+                stage: "Complete",
+                percent: 100,
+                message: "Master film compiled and saved to Spark storage",
+                stages: production.generationProgress?.stages || [],
+              };
               return masterUrl;
             }
           }
@@ -2490,6 +2552,16 @@ Apply revision while maintaining 100% subject identity and set continuity.
           console.warn("[ProductionAssetService] Hybrid merge notice:", hybridErr);
         }
       }
+
+      production.status = "Failed";
+      production.lastError = "Merge did not produce a Spark master";
+      production.generationProgress = {
+        stage: "Failed",
+        percent: 0,
+        message: "Merge did not produce a Spark master",
+        stages: production.generationProgress?.stages || [],
+      };
+      return null;
     }
 
     if (readyClips.length === 1 && scenes.length <= 1) {
@@ -2498,6 +2570,13 @@ Apply revision while maintaining 100% subject identity and set continuity.
         brief.videoUrl = readyClips[0];
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [readyClips[0]];
+        production.status = "Ready for Review";
+        production.generationProgress = {
+          stage: "Complete",
+          percent: 100,
+          message: "Master film compiled and saved to Spark storage",
+          stages: production.generationProgress?.stages || [],
+        };
         return readyClips[0];
       }
     }
@@ -2515,6 +2594,14 @@ Apply revision while maintaining 100% subject identity and set continuity.
 
       if (!mergeResult) {
         console.warn("[ProductionAssetService] Merge produced empty result.");
+        production.status = "Failed";
+        production.lastError = "Merge did not produce a Spark master";
+        production.generationProgress = {
+          stage: "Failed",
+          percent: 0,
+          message: "Merge did not produce a Spark master",
+          stages: production.generationProgress?.stages || [],
+        };
         return null;
       }
 
@@ -2526,6 +2613,12 @@ Apply revision while maintaining 100% subject identity and set continuity.
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [masterUrl];
         production.status = "Ready for Review";
+        production.generationProgress = {
+          stage: "Complete",
+          percent: 100,
+          message: "Master film compiled and saved to Spark storage",
+          stages: production.generationProgress?.stages || [],
+        };
         return masterUrl;
       }
 
@@ -2549,13 +2642,35 @@ Apply revision while maintaining 100% subject identity and set continuity.
           if (!brief.generatedAssets) brief.generatedAssets = {};
           brief.generatedAssets.generatedVideos = [masterUrl];
           production.status = "Ready for Review";
+          production.generationProgress = {
+            stage: "Complete",
+            percent: 100,
+            message: "Master film compiled and saved to Spark storage",
+            stages: production.generationProgress?.stages || [],
+          };
           return masterUrl;
         }
       }
 
+      production.status = "Failed";
+      production.lastError = "Merge did not produce a Spark master";
+      production.generationProgress = {
+        stage: "Failed",
+        percent: 0,
+        message: "Merge did not produce a Spark master",
+        stages: production.generationProgress?.stages || [],
+      };
       return null;
     } catch (err) {
       console.error("[ProductionAssetService] Merge execution notice:", err);
+      production.status = "Failed";
+      production.lastError = "Merge did not produce a Spark master";
+      production.generationProgress = {
+        stage: "Failed",
+        percent: 0,
+        message: "Merge did not produce a Spark master",
+        stages: production.generationProgress?.stages || [],
+      };
       return null;
     }
   }
