@@ -1650,18 +1650,24 @@ CRITICAL PRODUCTION LAWS:
                 const { mergeSceneVideos } = await import("./sceneVideoMerger");
                 const mergeResult = await withTimeout(
                   mergeSceneVideos({
+                    productionId: production.id,
+                    brandId: (brand as any)?.id,
                     videoUrls: sceneClips,
                     audioUrl: mergeAudioUrl,
                     onScreenTexts: targetMergeTexts,
                     width: aspectRatio === "16:9" ? 1920 : 1080,
                     height: aspectRatio === "16:9" ? 1080 : 1920,
+                    timeoutMs: 120000,
                   }),
-                  60000,
-                  "Automatic scene video merge timed out after 60s",
+                  120000,
+                  "Automatic scene video merge timed out after 120s",
                   signal
                 );
 
-                if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
+                if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
+                  realVideoUrl = mergeResult.publicUrl;
+                  console.log(`[SPARK Pipeline] Autonomous Serverless Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
+                } else if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
                   const ext = mergeResult.extension || "mp4";
                   const storedMergedVid = await this.uploadAssetToStorage({
                     productionId: production.id,
@@ -1671,7 +1677,7 @@ CRITICAL PRODUCTION LAWS:
                     dataUrlOrBlob: mergeResult.blob,
                     mimeType: mergeResult.mimeType || `video/${ext}`,
                     prompt: `Merged ${mode} master video from ${sceneClips.length} scenes`,
-                    provider: "SceneVideoMerger",
+                    provider: mergeResult.provider || "SceneVideoMerger",
                   });
                   if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
                     realVideoUrl = storedMergedVid.publicUrl;
@@ -2503,35 +2509,52 @@ Apply revision while maintaining 100% subject identity and set continuity.
     try {
       const { mergeSceneVideos } = await import("./sceneVideoMerger");
       const mergeResult = await mergeSceneVideos({
+        productionId,
+        brandId: (brand as any)?.id,
         videoUrls: readyClips,
         audioUrl: mergeAudioUrl,
         onScreenTexts: targetMergeTexts,
+        timeoutMs: 120000,
       });
 
-      if (!mergeResult || !mergeResult.blob || mergeResult.blob.size === 0) {
+      if (!mergeResult) {
         console.warn("[ProductionAssetService] Merge produced empty result.");
         return null;
       }
 
-      const storedMaster = await ProductionAssetService.uploadAssetToStorage({
-        productionId,
-        brandId: (brand as any).id,
-        assetType: "video",
-        storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.mp4`,
-        dataUrlOrBlob: mergeResult.blob,
-        mimeType: mergeResult.mimeType,
-        prompt: "Merged Master Video from Approved Scene Sequence",
-        provider: "SceneVideoMerger",
-      });
-
-      if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
-        const masterUrl = storedMaster.publicUrl;
+      // If serverless FFmpeg mux already uploaded directly to Storage and returned publicUrl
+      if (mergeResult.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
+        const masterUrl = mergeResult.publicUrl;
         production.videoUrl = masterUrl;
         brief.videoUrl = masterUrl;
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [masterUrl];
         production.status = "Ready for Review";
         return masterUrl;
+      }
+
+      // If client Canvas fallback produced a Blob
+      if (mergeResult.blob && mergeResult.blob.size > 0) {
+        const storedMaster = await ProductionAssetService.uploadAssetToStorage({
+          productionId,
+          brandId: (brand as any).id,
+          assetType: "video",
+          storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.mp4`,
+          dataUrlOrBlob: mergeResult.blob,
+          mimeType: mergeResult.mimeType,
+          prompt: "Merged Master Video from Approved Scene Sequence",
+          provider: mergeResult.provider || "SceneVideoMerger",
+        });
+
+        if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
+          const masterUrl = storedMaster.publicUrl;
+          production.videoUrl = masterUrl;
+          brief.videoUrl = masterUrl;
+          if (!brief.generatedAssets) brief.generatedAssets = {};
+          brief.generatedAssets.generatedVideos = [masterUrl];
+          production.status = "Ready for Review";
+          return masterUrl;
+        }
       }
 
       return null;

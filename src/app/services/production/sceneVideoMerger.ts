@@ -8,15 +8,20 @@ export interface MergeSceneVideosOptions {
   videoUrls: string[];
   audioUrl?: string;
   onScreenTexts?: string[];
+  productionId?: string;
+  brandId?: string;
   width?: number;
   height?: number;
+  timeoutMs?: number;
 }
 
 export interface SceneMergeResult {
-  blob: Blob;
+  blob?: Blob;
+  publicUrl?: string;
   mimeType: string;
   extension: "webm" | "mp4";
   durationSec: number;
+  provider?: string;
 }
 
 async function fetchVideoAsObjectUrl(url: string): Promise<{ video: HTMLVideoElement; objectUrl?: string } | null> {
@@ -42,7 +47,7 @@ async function fetchVideoAsObjectUrl(url: string): Promise<{ video: HTMLVideoEle
     video.muted = true;
 
     const loaded = await new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 12000);
+      const timeout = setTimeout(() => resolve(false), 15000);
       video.onloadeddata = () => {
         clearTimeout(timeout);
         resolve(video.videoWidth > 0 && video.videoHeight > 0);
@@ -70,7 +75,7 @@ async function fetchVideoAsObjectUrl(url: string): Promise<{ video: HTMLVideoEle
 export async function mergeSceneVideos(
   options: MergeSceneVideosOptions
 ): Promise<SceneMergeResult | null> {
-  const { videoUrls, audioUrl, onScreenTexts, width = 1080, height = 1920 } = options;
+  const { videoUrls, audioUrl, onScreenTexts, productionId, brandId, width = 1080, height = 1920, timeoutMs = 120000 } = options;
 
   const validUrls = videoUrls.filter((u) => typeof u === "string" && u.trim().length > 5);
   if (validUrls.length === 0) return null;
@@ -83,13 +88,60 @@ export async function mergeSceneVideos(
         const blob = await resp.blob();
         return {
           blob,
+          publicUrl: validUrls[0],
           mimeType: blob.type || "video/mp4",
           extension: blob.type?.includes("webm") ? "webm" : "mp4",
           durationSec: 10,
+          provider: "DirectClipPassThrough",
         };
       }
     } catch {}
   }
+
+  // 1. Attempt Serverless FFmpeg Concat Mux if productionId is provided
+  if (productionId) {
+    try {
+      console.log(`[SceneVideoMerger] Calling serverless FFmpeg mux for ${validUrls.length} clips (production: ${productionId})...`);
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      const serverResp = await fetch("/api/runtime/mux", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productionId,
+          brandId: brandId || "default-brand",
+          videoUrls: validUrls,
+          audioUrl,
+          onScreenTexts,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(fetchTimeout);
+
+      if (serverResp.ok) {
+        const serverData = await serverResp.json();
+        if (serverData.success && serverData.publicUrl) {
+          console.log(`[SceneVideoMerger] Serverless FFmpeg mux completed successfully -> ${serverData.publicUrl}`);
+          return {
+            publicUrl: serverData.publicUrl,
+            mimeType: "video/mp4",
+            extension: "mp4",
+            durationSec: serverData.durationSec || 15,
+            provider: "ServerlessFFmpeg",
+          };
+        } else if (serverData.fallbackToClient) {
+          console.log(`[SceneVideoMerger] Serverless mux signaled client fallback: ${serverData.error || serverData.message}`);
+        }
+      }
+    } catch (serverErr) {
+      console.warn("[SceneVideoMerger] Serverless mux notice, falling back to Canvas:", serverErr);
+    }
+  }
+
+  // 2. Client Canvas & MediaRecorder Fallback (Timeout >= 120s, fail-loud)
+  console.log(`[SceneVideoMerger] Executing Canvas mux fallback for ${validUrls.length} clips...`);
 
   // Load all scene videos
   const loadedVideos: { video: HTMLVideoElement; objectUrl?: string }[] = [];
@@ -98,14 +150,16 @@ export async function mergeSceneVideos(
     if (loaded) loadedVideos.push(loaded);
   }
 
-  if (loadedVideos.length === 0) return null;
+  if (loadedVideos.length === 0) {
+    throw new Error(`[SceneVideoMerger] Failed to load any of the ${validUrls.length} scene video clips for merging.`);
+  }
 
   try {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
+    if (!ctx) throw new Error("[SceneVideoMerger] Failed to create 2D canvas context for video merge.");
 
     const stream = canvas.captureStream(30);
     const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=h264")
