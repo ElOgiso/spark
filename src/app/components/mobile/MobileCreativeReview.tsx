@@ -337,7 +337,6 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             id={item?.id || activeProd?.id || "p1"} 
             title={proposal.title} 
             scenes={proposal.storyboard} 
-            durationText="3:20"
             videoUrl={
               isDurableMasterVideoReady(activeProd?.videoUrl)
                 ? activeProd?.videoUrl
@@ -352,6 +351,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
                 ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])
                 : undefined
             }
+            reviewRequired={activeProd?.review_required !== false}
             onApprove={() => {
               if (item?.id) {
                 approveReviewItem(item.id);

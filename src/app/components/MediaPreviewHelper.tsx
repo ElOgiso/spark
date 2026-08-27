@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
-import { extractSparkStoragePath, ProductionAssetService, isDurableMasterVideoReady } from "../services/production/productionAssetService";
+import { extractSparkStoragePath, ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "../services/production/productionAssetService";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -276,13 +276,15 @@ export interface InteractiveVideoPlayerProps {
   hostName?: string;
   hostAvatar?: string;
   onApprove?: () => void;
+  reviewRequired?: boolean;
+  onOpenAssets?: () => void;
 }
 
 export function InteractiveVideoPlayer({
   id,
   title,
   scenes = [],
-  durationText = "3:20",
+  durationText,
   videoUrl,
   audioUrl,
   hostName = "Lead Host",
@@ -292,72 +294,83 @@ export function InteractiveVideoPlayer({
   const theme = getMediaTheme(id);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(60);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [isMuted, setIsMuted] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("English");
+  const [isVoiceSoloPlaying, setIsVoiceSoloPlaying] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const totalSeconds = duration || 60;
-  const progressPercent = totalSeconds > 0 ? (currentTime / totalSeconds) * 100 : 0;
-
-  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number | null>(null);
+  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
 
   const isMasterMerged = Boolean(videoUrl && isDurableMasterVideoReady(videoUrl));
 
-  const activeSceneIndex = !isMasterMerged && selectedSceneIndex !== null
-    ? selectedSceneIndex
-    : Math.min(
-        Math.floor((currentTime / Math.max(totalSeconds, 1)) * (scenes.length || 1)),
+  // If master is merged: active scene tracks timeline progress across full film
+  // If not merged: active scene is strictly the selected shot
+  const activeSceneIndex = isMasterMerged
+    ? Math.min(
+        Math.floor((currentTime / Math.max(duration || 1, 1)) * (scenes.length || 1)),
         (scenes.length || 1) - 1
-      );
+      )
+    : Math.max(0, Math.min(selectedSceneIndex, (scenes.length || 1) - 1));
 
   const activeScene = scenes[activeSceneIndex] || {
     scene: 1,
     description: title || "Intro Hook: Dynamic visual pattern interrupt",
-    duration: "0–10s"
+    duration: "—"
   };
 
-  // Review player rule:
-  // Before merge: play the SELECTED scene clip (or still).
-  // After merge: play production.videoUrl master.
-  const activeVideoUrl = isMasterMerged ? videoUrl : (activeScene.videoUrl || undefined);
-  const activeImageUrl = isMasterMerged ? undefined : (activeScene.image || scenes.find((s) => Boolean(s.image))?.image || scenes[0]?.image);
+  // Master Mode vs Single Shot Mode:
+  const activeVideoUrl = isMasterMerged
+    ? videoUrl
+    : (activeScene.videoUrl && isPlayableVideoUrl(activeScene.videoUrl) ? activeScene.videoUrl : undefined);
+
+  const activeImageUrl = isMasterMerged
+    ? undefined
+    : (activeScene.image || scenes.find((s) => Boolean(s.image))?.image || scenes[0]?.image);
+
+  // Reset playback state when target video or selected shot changes
+  useEffect(() => {
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setIsVoiceSoloPlaying(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  }, [activeVideoUrl, selectedSceneIndex, isMasterMerged]);
 
   const togglePlay = () => {
-    setIsPlaying(prev => !prev);
+    if (activeVideoUrl) {
+      if (videoRef.current) {
+        if (isPlaying) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+        }
+      }
+    } else if (audioUrl) {
+      toggleVoiceSolo();
+    }
   };
 
-  useEffect(() => {
-    if (isPlaying) {
-      if (videoRef.current) {
-        videoRef.current.play().catch(() => {});
-      }
-      if (audioRef.current && !activeVideoUrl) {
-        audioRef.current.play().catch(() => {});
-      }
-      timerRef.current = setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= totalSeconds) {
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
+  const toggleVoiceSolo = () => {
+    if (!audioRef.current) return;
+    if (isVoiceSoloPlaying) {
+      audioRef.current.pause();
+      setIsVoiceSoloPlaying(false);
     } else {
-      if (videoRef.current) videoRef.current.pause();
-      if (audioRef.current) audioRef.current.pause();
-      if (timerRef.current) clearInterval(timerRef.current);
+      audioRef.current.play().then(() => setIsVoiceSoloPlaying(true)).catch(() => {});
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isPlaying, totalSeconds, activeVideoUrl]);
+  };
 
   useEffect(() => {
     const effectiveVolume = isMuted ? 0 : volume / 100;
@@ -367,8 +380,9 @@ export function InteractiveVideoPlayer({
 
   const handleSeek = (newSecs: number) => {
     setCurrentTime(newSecs);
-    if (videoRef.current) videoRef.current.currentTime = newSecs;
-    if (audioRef.current && !activeVideoUrl) audioRef.current.currentTime = newSecs;
+    if (videoRef.current) {
+      videoRef.current.currentTime = newSecs;
+    }
   };
 
   const handleFullscreen = () => {
@@ -381,10 +395,18 @@ export function InteractiveVideoPlayer({
   };
 
   const formatTime = (secs: number) => {
+    if (!secs || isNaN(secs) || secs <= 0) return "0:00";
     const minutes = Math.floor(secs / 60);
     const seconds = Math.floor(secs % 60);
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
+
+  const totalSeconds = duration || (activeVideoUrl ? 10 : 0);
+  const progressPercent = totalSeconds > 0 ? (currentTime / totalSeconds) * 100 : 0;
+
+  const displayDurationText = isMasterMerged
+    ? (duration > 0 ? formatTime(duration) : durationText || "—")
+    : (activeVideoUrl ? (duration > 0 ? formatTime(duration) : (activeScene.duration || "—")) : (activeScene.duration || "—"));
 
   const handleDownloadMedia = (mediaUrl: string | undefined, filename: string) => {
     if (!mediaUrl) return;
@@ -397,27 +419,47 @@ export function InteractiveVideoPlayer({
   };
 
   return (
-    <div ref={containerRef} className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[430px] shadow-2xl">
-      {audioUrl && !activeVideoUrl && (
+    <div ref={containerRef} className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[450px] shadow-2xl">
+      {/* Voiceover audio preview element (ONLY played when user explicitly taps 'Listen to Voiceover', never auto-played beside master or over stills) */}
+      {audioUrl && !isMasterMerged && (
         <audio
           ref={audioRef}
           src={audioUrl}
-          onLoadedMetadata={(e) => {
-            const dur = (e.target as HTMLAudioElement).duration;
-            if (dur && !isNaN(dur)) setDuration(Math.round(dur));
-          }}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={() => setIsVoiceSoloPlaying(false)}
         />
       )}
 
       <div className="flex-1 relative aspect-video md:aspect-auto bg-neutral-950 flex flex-col justify-between overflow-hidden group select-none">
+        {/* Banner: "Not merged — Approve & merge to get one file" when not in master mode */}
+        {!isMasterMerged && (
+          <div className="bg-amber-500/20 border-b border-amber-500/30 px-3.5 py-1.5 flex items-center justify-between text-xs text-amber-200 z-30">
+            <span className="font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              Not merged — Approve & merge to get one file
+            </span>
+            <span className="text-[11px] text-amber-300/90 font-mono">
+              Shot {activeScene.scene} of {scenes.length || 1} {activeVideoUrl ? "(Clip)" : "(Still)"}
+            </span>
+          </div>
+        )}
+
+        {/* Video / Still / Backdrop */}
         {activeVideoUrl ? (
           <video
             ref={videoRef}
             src={activeVideoUrl}
-            loop
+            loop={!isMasterMerged}
             muted={isMuted}
             playsInline
+            onTimeUpdate={(e) => {
+              const cur = (e.target as HTMLVideoElement).currentTime;
+              setCurrentTime(Math.floor(cur));
+            }}
+            onLoadedMetadata={(e) => {
+              const dur = (e.target as HTMLVideoElement).duration;
+              if (dur && !isNaN(dur) && dur > 0) setDuration(Math.round(dur));
+            }}
+            onEnded={() => setIsPlaying(false)}
             onError={async (e) => {
               const currentSrc = (e.target as HTMLVideoElement).src;
               const storagePath = extractSparkStoragePath(currentSrc);
@@ -429,55 +471,34 @@ export function InteractiveVideoPlayer({
                 }
               }
             }}
-            onLoadedMetadata={(e) => {
-              const dur = (e.target as HTMLVideoElement).duration;
-              if (dur && !isNaN(dur)) setDuration(Math.round(dur));
-            }}
             className="absolute inset-0 w-full h-full object-cover"
           />
         ) : activeImageUrl ? (
           <img
             src={activeImageUrl}
             alt={activeScene.description}
-            className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${isPlaying ? "scale-105" : "scale-100"}`}
+            className="absolute inset-0 w-full h-full object-cover"
           />
         ) : (
-          <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to} transition-all duration-1000 ${
-            isPlaying ? "animate-pulse saturate-150 scale-105" : "saturate-75"
-          }`} />
+          <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to}`} />
         )}
         
         <div className="absolute inset-0 bg-black/40 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-black/20 to-black/60 pointer-events-none" />
 
-        {isPlaying && (
-          <div className="absolute right-6 top-6 flex items-end gap-[3px] h-6 z-20 pointer-events-none">
-            {[1, 2, 3, 4, 5, 4, 3, 2, 5, 2, 4].map((h, i) => (
-              <span
-                key={i}
-                className="w-[2px] bg-accent rounded-full animate-bounce"
-                style={{
-                  height: `${h * 20}%`,
-                  animationDuration: `${0.4 + i * 0.1}s`,
-                  animationDelay: `${i * 0.05}s`
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="absolute top-4 left-4 flex items-center gap-2 z-20">
+        {/* Top Badges & Actions */}
+        <div className="absolute top-12 left-4 flex items-center gap-2 z-20">
           <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white border border-white/10">
             <Film className="w-3 h-3 text-red-500 fill-current" />
             <span className="font-semibold uppercase tracking-wider text-[9px]">
-              {theme.tag} Spark preview
+              {isMasterMerged ? "Master Film" : `Shot ${activeScene.scene} Preview`}
             </span>
           </div>
 
           {activeVideoUrl && (
             <button
               onClick={() => handleDownloadMedia(activeVideoUrl, `${title || "spark-video"}.mp4`)}
-              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
+              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors cursor-pointer"
               title="Download MP4 Video"
             >
               <Download className="w-2.5 h-2.5 text-accent" />
@@ -485,31 +506,37 @@ export function InteractiveVideoPlayer({
             </button>
           )}
 
-          {audioUrl && (
-            <button
-              onClick={() => handleDownloadMedia(audioUrl, `${title || "voiceover"}.mp3`)}
-              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
-              title="Download Voiceover Audio"
-            >
-              <Mic className="w-2.5 h-2.5 text-success" />
-              <span>Voice</span>
-            </button>
-          )}
-
           {activeImageUrl && (
             <button
               onClick={() => handleDownloadMedia(activeImageUrl, `scene-${activeScene.scene}.png`)}
-              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors"
+              className="flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2 py-1 rounded-full text-[10px] text-white/90 border border-white/10 hover:border-white/30 transition-colors cursor-pointer"
               title="Download Frame Still"
             >
               <ImageIcon className="w-2.5 h-2.5 text-warning" />
               <span>Frame</span>
             </button>
           )}
+
+          {/* Explicit Voiceover Audition Button when viewing a still (never auto-played) */}
+          {audioUrl && !activeVideoUrl && !isMasterMerged && (
+            <button
+              onClick={toggleVoiceSolo}
+              className={`flex items-center gap-1.5 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] border transition-all cursor-pointer ${
+                isVoiceSoloPlaying
+                  ? "bg-emerald-500/30 border-emerald-400 text-emerald-200"
+                  : "bg-black/60 hover:bg-black/80 text-white/90 border-white/10"
+              }`}
+              title="Listen to Voiceover Narration"
+            >
+              <Mic className={`w-3 h-3 ${isVoiceSoloPlaying ? "text-emerald-300 animate-pulse" : "text-emerald-400"}`} />
+              <span>{isVoiceSoloPlaying ? "Pause VO" : "Audition VO"}</span>
+            </button>
+          )}
         </div>
 
+        {/* Center Play Button Overlay */}
         <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
-          {!isPlaying && (
+          {!isPlaying && activeVideoUrl && (
             <button
               onClick={togglePlay}
               className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 active:scale-95 transition-transform duration-200 shadow-xl cursor-pointer z-20 mb-4"
@@ -520,23 +547,9 @@ export function InteractiveVideoPlayer({
           )}
 
           {!activeVideoUrl && (
-            <div className={`w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-md flex items-center justify-center transition-all duration-500 overflow-hidden shadow-xl mb-3 ${
-              isPlaying ? "scale-105 ring-2 ring-accent" : "scale-95 opacity-80"
-            }`}>
-              {hostAvatar ? (
-                <img src={hostAvatar} alt={hostName} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-3xl font-bold text-white">
-                  {hostName.charAt(0)}
-                </span>
-              )}
-            </div>
-          )}
-
-          {!activeVideoUrl && (
             <div className="max-w-md bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl text-center shadow-2xl">
               <span className="text-[10px] font-bold text-accent tracking-widest uppercase block mb-0.5">
-                {hostName} • Scene {activeScene.scene}
+                Scene {activeScene.scene} • Keyframe Still
               </span>
               <p className="text-xs font-medium text-white leading-relaxed line-clamp-2">
                 {activeScene.description}
@@ -545,14 +558,16 @@ export function InteractiveVideoPlayer({
           )}
         </div>
 
+        {/* Bottom Timeline Controls */}
         <div className="p-3 bg-gradient-to-t from-black via-black/80 to-transparent pt-8 relative z-20">
           <div className="flex items-center gap-3 group/timeline mb-2">
             <span className="text-[10px] font-mono text-white/85">
-              {formatTime(currentTime)}
+              {activeVideoUrl ? formatTime(currentTime) : "0:00"}
             </span>
             <div 
               className="flex-1 h-1.5 rounded-full bg-white/20 relative cursor-pointer overflow-hidden"
               onClick={(e) => {
+                if (!activeVideoUrl) return;
                 const rect = e.currentTarget.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
                 const newPercent = Math.max(0, Math.min(1, clickX / rect.width));
@@ -564,40 +579,46 @@ export function InteractiveVideoPlayer({
                 style={{ width: `${progressPercent}%` }} 
               />
             </div>
-            <span className="text-[10px] font-mono text-white/50">
-              {formatTime(totalSeconds)}
+            <span className="text-[10px] font-mono text-white/70">
+              {displayDurationText}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <button 
-                onClick={togglePlay}
-                className="text-white hover:text-accent transition-colors"
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-              </button>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="text-white hover:text-accent transition-colors"
+              {activeVideoUrl ? (
+                <button 
+                  onClick={togglePlay}
+                  className="text-white hover:text-accent transition-colors cursor-pointer"
+                  aria-label={isPlaying ? "Pause" : "Play"}
                 >
-                  {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
                 </button>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={isMuted ? 0 : volume} 
-                  onChange={(e) => {
-                    setVolume(Number(e.target.value));
-                    if (isMuted) setIsMuted(false);
-                  }}
-                  className="w-12 h-1 accent-accent bg-white/20 rounded-full cursor-pointer"
-                />
-              </div>
+              ) : (
+                <span className="text-xs text-muted-foreground font-mono">Still Preview</span>
+              )}
+              
+              {activeVideoUrl && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="text-white hover:text-accent transition-colors cursor-pointer"
+                  >
+                    {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={isMuted ? 0 : volume} 
+                    onChange={(e) => {
+                      setVolume(Number(e.target.value));
+                      if (isMuted) setIsMuted(false);
+                    }}
+                    className="w-12 h-1 accent-accent bg-white/20 rounded-full cursor-pointer"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -626,6 +647,7 @@ export function InteractiveVideoPlayer({
         </div>
       </div>
 
+      {/* Storyboard Scenes Sidebar */}
       <div className="w-full md:w-80 bg-neutral-900 border-l border-border/40 flex flex-col justify-between overflow-hidden">
         <div className="p-4 border-b border-border/30 bg-neutral-950/60 flex items-center justify-between">
           <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center justify-between w-full">
@@ -636,21 +658,31 @@ export function InteractiveVideoPlayer({
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5 scrollbar-none">
           {scenes.map((scene, index) => {
-            const isActive = index === activeSceneIndex;
+            const isActive = isMasterMerged
+              ? activeSceneIndex === index
+              : selectedSceneIndex === index;
+
+            const hasClip = Boolean(scene.videoUrl && isPlayableVideoUrl(scene.videoUrl));
+
             return (
               <button
-                key={scene.scene}
+                key={scene.scene || index}
                 onClick={() => {
                   setSelectedSceneIndex(index);
                   if (isMasterMerged) {
-                    const chunk = totalSeconds / (scenes.length || 1);
+                    const chunk = (duration || 60) / (scenes.length || 1);
                     handleSeek(Math.floor(index * chunk + 0.5));
+                    if (videoRef.current) videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
                   } else {
-                    handleSeek(0);
+                    setCurrentTime(0);
+                    if (hasClip) {
+                      setTimeout(() => {
+                        if (videoRef.current) videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+                      }, 50);
+                    }
                   }
-                  setIsPlaying(true);
                 }}
-                className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                className={`w-full text-left p-2.5 rounded-lg border transition-all cursor-pointer ${
                   isActive 
                     ? "bg-accent/15 border-accent text-white shadow-md shadow-accent/5" 
                     : "bg-neutral-950/40 border-neutral-800/80 text-muted-foreground hover:bg-neutral-800/40 hover:text-foreground"
@@ -660,8 +692,10 @@ export function InteractiveVideoPlayer({
                   <span className={`text-[10px] font-bold tracking-wider ${isActive ? "text-accent" : "text-muted-foreground/60"}`}>
                     SCENE {scene.scene}
                   </span>
-                  <span className="text-[9px] font-mono bg-black/40 px-1 py-[1px] rounded">
-                    {scene.duration || `${index * 5}–${(index + 1) * 5}s`}
+                  <span className={`text-[9px] font-mono px-1.5 py-[1px] rounded ${
+                    hasClip ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-black/40 text-muted-foreground"
+                  }`}>
+                    {hasClip ? "Clip" : "Still"} • {scene.duration || `${index * 5}–${(index + 1) * 5}s`}
                   </span>
                 </div>
                 <p className="text-xs leading-relaxed line-clamp-2">
@@ -676,7 +710,7 @@ export function InteractiveVideoPlayer({
           <div className="p-3 bg-neutral-950 border-t border-border/20">
             <button
               onClick={onApprove}
-              className="w-full py-2.5 bg-success hover:bg-success/90 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-transform"
+              className="w-full py-2.5 bg-success hover:bg-success/90 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-transform cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               Approve Storyboard

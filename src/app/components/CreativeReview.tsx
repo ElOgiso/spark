@@ -409,15 +409,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                     brief?.generatedAssets?.generatedVideos?.[0],
                   ].find((u) => isPlayableVideoUrl(u));
 
-                  const storyboardImage =
-                    p.brief?.storyboardGridUrl ||
-                    p.brief?.generatedAssets?.storyboardGridUrl ||
-                    p.brief?.takeGrids?.[0] ||
-                    p.brief?.generatedAssets?.takeGrids?.[0] ||
+                  const sceneStill =
+                    p.scenes?.[0]?.image ||
+                    p.productionScenes?.[0]?.image ||
+                    brief?.storyboard?.[0]?.image ||
                     p.scenes?.find((s: any) => s.image)?.image ||
                     brief?.storyboard?.find((s: any) => s.image)?.image ||
-                    p.scenes?.[0]?.image ||
-                    brief?.storyboard?.[0]?.image ||
                     brief?.generatedAssets?.generatedFrames?.[0];
 
                   const thumbImage =
@@ -428,7 +425,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
                   const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || undefined;
 
-                  const realMediaUrl = storyboardImage || thumbImage || fallbackImage;
+                  const realMediaUrl = sceneStill || thumbImage || fallbackImage;
 
                   const isGenerating =
                     Boolean(p.isGeneratingAssets) &&
@@ -519,32 +516,28 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           {activeProd?.isGeneratingAssets &&
            activeProd.generationProgress?.stage !== "Complete" &&
            activeProd.generationProgress?.stage !== "Cancelled" &&
-           activeProd.generationProgress?.stage !== "Failed" &&
-           (activeProd.generationProgress?.percent === undefined || activeProd.generationProgress?.percent < 100) && (
-            <div className="p-5 rounded-2xl bg-card border border-accent/40 shadow-sm space-y-3.5">
+           activeProd.generationProgress?.stage !== "Failed" && (
+            <div className="p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <RotateCw className="w-4 h-4 text-accent animate-spin" />
                   <span className="text-sm font-semibold text-foreground">
-                    {activeProd.generationProgress?.stage ? `Stage: ${activeProd.generationProgress.stage}` : "Synthesizing Media Assets"}
+                    {activeProd.generationProgress?.stage
+                      ? `Synthesizing Production Assets — Stage: ${activeProd.generationProgress.stage}`
+                      : "Synthesizing Production Assets"}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-bold text-accent bg-accent/20 px-2.5 py-0.5 rounded-full">
-                    {typeof activeProd.generationProgress?.percent === "number" && activeProd.generationProgress.percent >= 0
-                      ? `${activeProd.generationProgress.percent}%`
-                      : "Starting..."}
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold uppercase text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
-                    Pipeline Active
-                  </span>
-                </div>
+                <span className="text-xs font-mono font-bold text-accent bg-accent/20 px-2.5 py-1 rounded-full">
+                  {typeof activeProd.generationProgress?.percent === "number" && activeProd.generationProgress.percent >= 0
+                    ? `${activeProd.generationProgress.percent}%`
+                    : "Initializing..."}
+                </span>
               </div>
 
-              {/* Thin Progress Bar */}
-              <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
+              {/* Progress Bar */}
+              <div className="w-full h-2 bg-accent/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-accent via-purple-400 to-emerald-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-accent via-emerald-500 to-emerald-400 rounded-full transition-all duration-300"
                   style={{
                     width: `${typeof activeProd.generationProgress?.percent === "number" && activeProd.generationProgress.percent > 0
                       ? Math.max(activeProd.generationProgress.percent, 3)
@@ -592,7 +585,6 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 id={activeReview?.id || "p1"} 
                 title={proposal.title} 
                 scenes={proposal.storyboard} 
-                durationText="3:20"
                 videoUrl={
                   [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].find((u) => isDurableMasterVideoReady(u))
                 }
@@ -602,6 +594,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                     : undefined
                 }
                 onApprove={handleApprove}
+                reviewRequired={activeProd?.review_required !== false}
               />
             </div>
             

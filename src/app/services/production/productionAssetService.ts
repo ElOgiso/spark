@@ -1273,11 +1273,6 @@ CRITICAL PRODUCTION LAWS:
       if (canReuseExistingVideo && existingVideoCandidate) {
         realVideoUrl = existingVideoCandidate;
         console.log(`[SPARK Pipeline] Reusing existing verified durable master video (${currentDuration}s ${currentMode}) -> ${realVideoUrl}`);
-        if (currentStoryboard.length > 0) {
-          currentStoryboard.forEach((s) => {
-            if (!s.videoUrl) s.videoUrl = realVideoUrl;
-          });
-        }
       } else if (canReuseExistingVideo) {
         console.log("[SPARK Pipeline] No verified durable video in memory/brief. Attempting Storage refetch before AI video generation...");
         const refetched = await ProductionAssetService.refetchVideoFromStorage({
@@ -1290,9 +1285,9 @@ CRITICAL PRODUCTION LAWS:
             sceneClips.push(...refetched.sceneClips);
           }
           console.log(`[SPARK Pipeline] Refetched existing verified durable video from Storage -> ${realVideoUrl}`);
-          if (currentStoryboard.length > 0) {
+          if (currentStoryboard.length > 0 && refetched.sceneClips?.length) {
             currentStoryboard.forEach((s, idx) => {
-              s.videoUrl = refetched.sceneClips?.[idx] || realVideoUrl;
+              s.videoUrl = refetched.sceneClips?.[idx] || undefined;
             });
           }
         }
@@ -1363,8 +1358,9 @@ CRITICAL PRODUCTION LAWS:
                 if (storedCompiledVid?.publicUrl && isDurableMasterVideoReady(storedCompiledVid.publicUrl)) {
                   realVideoUrl = storedCompiledVid.publicUrl;
                   sceneClips.length = 0;
+                  // In Narrator mode: production.videoUrl = master, scenes stay still-only (scene.videoUrl undefined)
                   currentStoryboard.forEach((s) => {
-                    s.videoUrl = realVideoUrl;
+                    s.videoUrl = undefined;
                   });
                   console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
                 } else {
