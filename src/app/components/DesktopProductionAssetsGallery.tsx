@@ -546,7 +546,7 @@ export function DesktopProductionAssetsGallery({
             </div>
 
             <p className="text-xs text-white/60">
-              Describe what should change in Scene {fixTargetScene.index}. SPARK will update the keyframe prompt and regenerate the clip.
+              Describe what should change in Scene {fixTargetScene.index}. SPARK will regenerate that scene still (and clip if cinematic).
             </p>
 
             <textarea
@@ -582,6 +582,19 @@ export function DesktopProductionAssetsGallery({
           title={fullscreenVideo.title}
           onClose={() => setFullscreenVideo(null)}
         />
+      )}
+      {fullscreenImage && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col" onClick={() => setFullscreenImage(null)}>
+          <div className="flex items-center justify-between px-4 py-3 text-white">
+            <p className="text-sm font-medium">{fullscreenImage.title}</p>
+            <button type="button" className="p-2 rounded-lg bg-white/10" onClick={() => setFullscreenImage(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <img src={fullscreenImage.url} alt={fullscreenImage.title} className="max-h-full max-w-full object-contain" />
+          </div>
+        </div>
       )}
 
       {/* Solid Sticky Bottom Bar */}

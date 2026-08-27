@@ -38,9 +38,24 @@ export function MobileProductionAssetsGallery({
   production,
   item,
 }: MobileProductionAssetsGalleryProps) {
+  const { fixProductionScene, mergeProductionScenes, character } = useSpark() as any;
   const activeProd = production || item?.production;
   const brief = activeProd?.brief || item?.brief;
   const title = brief?.title || activeProd?.title || item?.title || "Production Assets";
+  const generatedImages: { id: string; label: string; url: string }[] = [];
+  const pushImg = (id: string, label: string, url?: string) => {
+    if (!url || typeof url !== "string" || url.length < 8) return;
+    if (generatedImages.some((g) => g.url === url)) return;
+    generatedImages.push({ id, label, url });
+  };
+  pushImg("sheet", "Character sheet", character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl);
+  (brief?.generatedAssets?.generatedFrames || []).forEach((url: string, idx: number) => pushImg(`still-${idx + 1}`, `Scene ${idx + 1} still`, url));
+  (brief?.storyboard || []).forEach((s: any, idx: number) => {
+    pushImg(`scene-still-${idx + 1}`, `Scene ${s.scene || idx + 1} still`, s.image || s.keyframeImageUrl);
+  });
+  (brief?.generatedAssets?.thumbnails || []).forEach((t: any, idx: number) => {
+    pushImg(`thumb-${t.variant || idx + 1}`, `Thumbnail ${t.variant || idx + 1}`, t.image || t.url);
+  });
 
   // Map real storyboard scenes if available, else local fallback
   const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
@@ -89,6 +104,7 @@ export function MobileProductionAssetsGallery({
 
   const [scenes, setScenes] = useState<ProductionSceneItem[]>(initialScenes);
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<{ url: string; title: string } | null>(null);
   const [fixTargetScene, setFixTargetScene] = useState<ProductionSceneItem | null>(null);
   const [fixNotes, setFixNotes] = useState("");
   const [approvedMaster, setApprovedMaster] = useState(false);
@@ -104,7 +120,7 @@ export function MobileProductionAssetsGallery({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const { fixProductionScene, mergeProductionScenes } = useSpark() as any;
+
 
   const handleFixSubmit = () => {
     if (!fixTargetScene) return;
@@ -224,7 +240,25 @@ export function MobileProductionAssetsGallery({
       )}
 
       {/* 2-Column Scenes Grid Body */}
-      <main className="flex-1 overflow-y-auto p-4 pb-36">
+      <main className="flex-1 overflow-y-auto p-4 pb-36 space-y-4">
+        {generatedImages.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono text-white/50">Generated images ({generatedImages.length})</p>
+            <div className="flex gap-2 overflow-x-auto scrollbar-none">
+              {generatedImages.map((img) => (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => setFullscreenImage({ url: img.url, title: img.label })}
+                  className="shrink-0 w-20 rounded-xl overflow-hidden border border-white/10"
+                >
+                  <img src={img.url} alt={img.label} className="w-full aspect-[9/16] object-cover" />
+                  <p className="text-[8px] text-white/70 px-1 py-0.5 truncate">{img.label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {scenes.map((scene) => {
             const isGenerating = scene.status === "Generating";
@@ -402,6 +436,19 @@ export function MobileProductionAssetsGallery({
           title={activeVideo.title}
           onClose={() => setActiveVideo(null)}
         />
+      )}
+      {fullscreenImage && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col" onClick={() => setFullscreenImage(null)}>
+          <div className="flex items-center justify-between px-4 py-3 text-white">
+            <p className="text-sm font-medium">{fullscreenImage.title}</p>
+            <button type="button" className="p-2" onClick={() => setFullscreenImage(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <img src={fullscreenImage.url} alt={fullscreenImage.title} className="max-h-full max-w-full object-contain" />
+          </div>
+        </div>
       )}
 
       {/* Sticky Footer */}
