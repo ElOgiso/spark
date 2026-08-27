@@ -1,9 +1,99 @@
-import type { ViralSpark, Brand, Character, MemoryItem, ProductionBrief, ProductionBriefBeat, ProductionScene, Offer, StructuredResearchContext } from "../../domain/types";
+import type {
+  ViralSpark,
+  Brand,
+  Character,
+  MemoryItem,
+  ProductionBrief,
+  ProductionBriefBeat,
+  ProductionScene,
+  Offer,
+  StructuredResearchContext,
+  BeatSubject,
+} from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { loadPersistedState } from "../../state/persistence";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
+import { getEffectiveContentFormat } from "./characterSheetGate";
+
+/**
+ * Resolves the shot subject for a beat based on contentFormat and available sheets.
+ * Default mapping:
+ * - contentFormat host | anime-as-host fallback -> all "main"
+ * - faceless -> "insert" except hook/CTA may stay "main" if a sheet exists, else "insert"
+ * - story | anime -> mix: hook main, at least one insert or set on longer runtimes, support only if a support character exists
+ */
+export function resolveBeatSubject(params: {
+  contentFormat?: "faceless" | "host" | "story" | "anime" | string;
+  beatIndex: number;
+  totalBeats: number;
+  valueJob?: string;
+  hasMainSheet?: boolean;
+  hasSupportSheet?: boolean;
+  candidateSubject?: string;
+}): BeatSubject {
+  const {
+    contentFormat = "host",
+    beatIndex,
+    totalBeats,
+    valueJob = "",
+    hasMainSheet = false,
+    hasSupportSheet = false,
+    candidateSubject,
+  } = params;
+
+  const cleanJob = valueJob.toLowerCase().trim();
+  const isHook = beatIndex === 0 || cleanJob === "hook";
+  const isCta = beatIndex === totalBeats - 1 || cleanJob === "cta";
+
+  // Validate candidate subject if supplied by LLM or caller
+  if (candidateSubject) {
+    const s = candidateSubject.toLowerCase().trim();
+    if (s === "support") {
+      // Support only if support character sheet actually exists
+      return hasSupportSheet ? "support" : "main";
+    }
+    if (s === "set") return "set";
+    if (s === "insert") return "insert";
+    if (s === "main") {
+      if (contentFormat === "faceless") {
+        return (isHook || isCta) && hasMainSheet ? "main" : "insert";
+      }
+      return "main";
+    }
+  }
+
+  // Format default branches:
+  if (contentFormat === "faceless") {
+    // faceless -> "insert" except hook/CTA may stay "main" if a sheet exists, else "insert"
+    if ((isHook || isCta) && hasMainSheet) {
+      return "main";
+    }
+    return "insert";
+  }
+
+  if (contentFormat === "story" || contentFormat === "anime") {
+    // story | anime -> mix: hook main, at least one insert or set on longer runtimes, support only if a support character exists
+    if (isHook) return "main";
+    if (isCta) return "main";
+
+    // Intermediate beats:
+    if (hasSupportSheet && (cleanJob === "example" || cleanJob === "context" || beatIndex === 2)) {
+      return "support";
+    }
+    if (cleanJob === "problem" || cleanJob === "context" || beatIndex === 1) {
+      return totalBeats >= 4 ? "set" : "insert";
+    }
+    if (cleanJob === "proof" || cleanJob === "payoff" || cleanJob === "myth_bust") {
+      return "insert";
+    }
+    return "main";
+  }
+
+  // host | anime-as-host fallback -> all "main"
+  return "main";
+}
 
 /**
  * Deterministically resolves the best available research structure for a spark.
@@ -336,13 +426,14 @@ export function compileDeterministicBrief(params: {
   spark: ViralSpark;
   brand: Brand;
   character?: Character;
+  characters?: Character[];
   defaultOffer?: Offer;
   productionMode?: string;
   niche?: string;
   researchContext?: StructuredResearchContext;
   targetDurationSec?: number;
 }): ProductionBrief {
-  const { spark, brand, character, defaultOffer, productionMode = "standard", niche, researchContext = spark.researchContext } = params;
+  const { spark, brand, character, characters, defaultOffer, productionMode = "standard", niche, researchContext = spark.researchContext } = params;
   const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
 
   const hostTitle = character?.name || brand.name;
@@ -648,10 +739,39 @@ export function compileDeterministicBrief(params: {
     beats[i].startState = beats[i - 1].endState;
   }
 
+  // Stamp shot subject on every beat based on contentFormat & character sheets
+  const contentFormat = getEffectiveContentFormat({ brand, formatSettings: brand.formatSettings });
+  const hasMainSheet = Boolean(
+    character?.characterSheetUrl ||
+    character?.imageUrl ||
+    (brand as any).characterSheetUrl ||
+    (brand as any).settings?.characterSheetUrl
+  );
+  const hasSupportSheet = Boolean(
+    characters?.some(
+      (c) => (c.role === "support" || c.id !== character?.id) && (c.characterSheetUrl || c.imageUrl)
+    )
+  );
+
+  for (let i = 0; i < beats.length; i++) {
+    const b = beats[i];
+    const subj = resolveBeatSubject({
+      contentFormat,
+      beatIndex: i,
+      totalBeats: beats.length,
+      valueJob: b.valueJob,
+      hasMainSheet,
+      hasSupportSheet,
+      candidateSubject: b.subject || b.subjectType,
+    });
+    b.subject = subj;
+    b.subjectType = subj;
+  }
+
   const scriptOutline = beats
     .map(
       (b) =>
-        `${b.timecode} [${b.valueJob.toUpperCase()}] "${b.spokenLines}" | ONSCREEN: ${b.onScreenText} | CAMERA: ${b.cameraDirection || "Standard"}`
+        `${b.timecode} [${b.valueJob.toUpperCase()}] [${(b.subject || "main").toUpperCase()}] "${b.spokenLines}" | ONSCREEN: ${b.onScreenText} | CAMERA: ${b.cameraDirection || "Standard"}`
     )
     .join("\n");
 
@@ -678,7 +798,7 @@ export function compileDeterministicBrief(params: {
   const storyboardScenes: ProductionScene[] = beats.map((b, idx) => ({
     scene: idx + 1,
     duration: `${Math.max(3, Math.round(durationSec / beats.length))}s`,
-    shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
+    shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
     cameraDirection: b.cameraDirection || "Presenter centered",
     transitions: "Continuous flow",
     onScreenText: b.onScreenText,
@@ -687,7 +807,9 @@ export function compileDeterministicBrief(params: {
     spokenLines: b.spokenLines,
     audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
     valueJob: b.valueJob,
-    visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+    subject: b.subject,
+    subjectType: b.subject,
+    visualDescription: `[${b.valueJob.toUpperCase()}] [${(b.subject || "main").toUpperCase()}] ${b.spokenLines}`,
     startState: b.startState,
     endState: b.endState,
     primaryChange: b.spokenLines,
@@ -722,13 +844,14 @@ export class ProductionBriefService {
     spark: ViralSpark;
     brand: Brand;
     character?: Character;
+    characters?: Character[];
     niche?: string;
     memoryItems?: MemoryItem[];
     productionMode?: string;
     researchContext?: StructuredResearchContext;
     targetDurationSec?: number;
   }): Promise<ProductionBrief> {
-    const { spark: rawSpark, brand, character, niche, memoryItems = [], productionMode = "standard", researchContext = rawSpark.researchContext, targetDurationSec } = params;
+    const { spark: rawSpark, brand, character, characters, niche, memoryItems = [], productionMode = "standard", researchContext = rawSpark.researchContext, targetDurationSec } = params;
 
     // Quality gate & self-healing spark rewrite
     const sparkEvaluation = evaluateAndStrengthenSpark(rawSpark, brand);
@@ -759,7 +882,7 @@ export class ProductionBriefService {
 
     if (!ProductionGenerationGuard.isEnabled()) {
       console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
-      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode: modeKey, niche, researchContext: resolvedResearch || undefined, targetDurationSec: effectiveDurationSec });
+      const fallback = compileDeterministicBrief({ spark, brand, character, characters, defaultOffer, productionMode: modeKey, niche, researchContext: resolvedResearch || undefined, targetDurationSec: effectiveDurationSec });
       return {
         ...fallback,
         scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
@@ -807,6 +930,19 @@ Incorporate this offer as the spoken CTA and in the platform caption.
 `
       : "";
 
+    const contentFormat = getEffectiveContentFormat({ brand, formatSettings: brand.formatSettings });
+    const hasMainSheet = Boolean(
+      character?.characterSheetUrl ||
+      character?.imageUrl ||
+      (brand as any).characterSheetUrl ||
+      (brand as any).settings?.characterSheetUrl
+    );
+    const hasSupportSheet = Boolean(
+      characters?.some(
+        (c) => (c.role === "support" || c.id !== character?.id) && (c.characterSheetUrl || c.imageUrl)
+      )
+    );
+
     const systemInstruction = `You are SPARK's Chief Creative Officer & Production Compiler.
 Your task is to compile a Viral Spark into a HIGH-SUBSTANCE, DURATION-SIZED PRODUCTION BRIEF for "${brand.name}".
 
@@ -819,6 +955,10 @@ WORD LAW & ANTI-SLOP COMPILER LAWS (MANDATORY):
    - Every beat MUST contain:
      * timecode: [mm:ss-mm:ss]
      * valueJob: "hook" | "problem" | "context" | "myth_bust" | "proof" | "example" | "payoff" | "cta"
+     * subject: "main" | "support" | "insert" | "set"
+       - host / anime-as-host fallback: "main" for all presenter shots.
+       - faceless: "insert" for all B-roll/graphics/data shots.
+       - story / anime: "main" for hook/payoff, "insert" or "set" for environment/product details, and "support" only if a supporting character is present.
      * spokenLines: 2-4 complete substantive ready-to-speak sentences that thoroughly execute that beat's valueJob. NO fluff.
      * onScreenText: <= 6 words in uppercase.
      * cameraDirection: Specific camera framing / movement.
@@ -837,6 +977,7 @@ COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
 TARGET RUNTIME: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} MODE)
 REQUIRED BEATS: ${budget.count} beats (Minimum spoken word floor: ${budget.wordFloor} words, target ≈ ${budget.targetWords} words at 2.4 words/sec)
+SHOW FORMAT: ${contentFormat}
 
 SOURCE SPARK DATA:
 - Title: "${spark.title}"
@@ -869,11 +1010,12 @@ Return a valid JSON object matching this exact structure with NO markdown format
   "productionMode": "${modeKey}",
   "targetDurationSec": ${effectiveDurationSec},
   "hook": "Exact ready-to-speak opening line adapted for ${brand.name}",
-  "scriptOutline": "[00:00-00:10] [HOOK] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
+  "scriptOutline": "[00:00-00:10] [HOOK] [MAIN] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
   "beats": [
     {
       "timecode": "[00:00-00:10]",
       "valueJob": "hook",
+      "subject": "main",
       "spokenLines": "Exact multi-sentence substantive spoken lines for host/VO",
       "onScreenText": "TEXT OVERLAY (MAX 6 WORDS)",
       "cameraDirection": "Slow push-in zoom on host",
@@ -897,6 +1039,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
       spark,
       brand,
       character,
+      characters,
       defaultOffer,
       productionMode: modeKey,
       niche,
@@ -929,9 +1072,22 @@ Return a valid JSON object matching this exact structure with NO markdown format
           ? b.audio
           : (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : (cleanJob === "hook" || cleanJob === "payoff" || cleanJob === "cta" || idx === 0 ? "talent" : "vo"));
 
+        const rawSubject = b.subject || b.subjectType || fallbackBeat?.subject;
+        const cleanSubject = resolveBeatSubject({
+          contentFormat,
+          beatIndex: idx,
+          totalBeats: budget.count,
+          valueJob: cleanJob,
+          hasMainSheet,
+          hasSupportSheet,
+          candidateSubject: rawSubject,
+        });
+
         return {
           timecode: String(b.timecode || fallbackBeat?.timecode || `[${idx * 5}-${(idx + 1) * 5}]`),
           valueJob: cleanJob,
+          subject: cleanSubject,
+          subjectType: cleanSubject,
           spokenLines: rawSpoken,
           onScreenText: cleanOnScreen,
           cameraDirection: rawCamera,
@@ -1057,7 +1213,7 @@ ${prompt}`;
     const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => ({
       scene: idx + 1,
       duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
-      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
+      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
       cameraDirection: b.cameraDirection || "Presenter centered",
       transitions: "Continuous flow",
       onScreenText: b.onScreenText,
@@ -1066,7 +1222,9 @@ ${prompt}`;
       spokenLines: b.spokenLines,
       audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
       valueJob: b.valueJob,
-      visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+      subject: b.subject,
+      subjectType: b.subject,
+      visualDescription: `[${b.valueJob.toUpperCase()}] [${(b.subject || "main").toUpperCase()}] ${b.spokenLines}`,
       startState: b.startState,
       endState: b.endState,
       primaryChange: b.spokenLines,

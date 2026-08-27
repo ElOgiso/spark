@@ -66,6 +66,7 @@ export class ProductionService implements IProductionService {
     spark: ViralSpark;
     brand: Brand;
     character?: Character;
+    characters?: Character[];
     niche?: string;
     memoryItems?: MemoryItem[];
     productionMode?: string;

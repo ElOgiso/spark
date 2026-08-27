@@ -1718,6 +1718,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           spark,
           brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
           character: effectiveCharacter,
+          characters: state.characters || [],
           niche: state.brand.niche,
           memoryItems: state.memoryItems || [],
           productionMode: effectiveMode,

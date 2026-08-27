@@ -186,6 +186,8 @@ export interface Offer {
   updatedAt?: string;
 }
 
+export type BeatSubject = "main" | "support" | "insert" | "set";
+
 export interface ProductionBriefBeat {
   timecode: string;
   valueJob: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
@@ -195,8 +197,8 @@ export interface ProductionBriefBeat {
   startState?: string;
   endState?: string;
   audio?: "vo" | "talent";
-  subject?: "main" | "support" | "set" | "insert" | string;
-  subjectType?: "main" | "support" | "set" | "insert" | string;
+  subject?: BeatSubject | string;
+  subjectType?: BeatSubject | string;
 }
 
 export interface ProductionBrief {

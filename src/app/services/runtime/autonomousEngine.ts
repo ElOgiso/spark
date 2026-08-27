@@ -117,6 +117,7 @@ export class AutonomousEngine {
           spark: sparkToDraft,
           brand,
           character,
+          characters: state.characters || [],
           memoryItems: state.memoryItems || [],
           productionMode: "standard",
           targetDurationSec: 45,
