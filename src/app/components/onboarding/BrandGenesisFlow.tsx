@@ -28,6 +28,7 @@ import {
 } from "../../services/onboarding/onboardDirectorVoiceService";
 import {
   VIDEO_LENGTH_OPTIONS,
+  type ContentFormat,
   type ProductionMode,
   type AutomationMode,
   type AIProviderId,
@@ -65,6 +66,7 @@ export interface BrandGenesisData {
   audioEnergy?: string;
   researchSources?: string[];
   connectedAccounts?: Array<{ platform: string; username: string; connected: boolean }>;
+  contentFormat?: ContentFormat;
   aspectMode?: "portrait" | "landscape" | "dynamic";
   targetDurationSec?: number;
   preferredVideoProvider?: AIProviderId | "auto";
@@ -789,6 +791,7 @@ interface GenesisInternalState {
   researchSources: string[];
   productionMode: string;
   automationMode: string;
+  contentFormat: ContentFormat;
   aspectMode: "portrait" | "landscape" | "dynamic";
   targetDurationSec: number;
   preferredVideoProvider?: AIProviderId | "auto";
@@ -816,6 +819,7 @@ const DEFAULT_STATE: GenesisInternalState = {
   researchSources: [],
   productionMode: "Hybrid",
   automationMode: "Balanced",
+  contentFormat: "host",
   aspectMode: "portrait",
   targetDurationSec: 60,
   preferredVideoProvider: "auto",
@@ -1672,6 +1676,25 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
         </div>
       </div>
       <div className="space-y-3">
+        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Show Format</label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { id: "faceless" as const, label: "Faceless", desc: "Voice + pictures, no host required" },
+            { id: "host" as const, label: "Host", desc: "One character on camera (default selected)" },
+            { id: "story" as const, label: "Story", desc: "Multi-scene narrative" },
+            { id: "anime" as const, label: "Anime", desc: "Story in locked anime/3D style" },
+          ].map((m) => (
+            <ModeCard
+              key={m.id}
+              label={m.label}
+              desc={m.desc}
+              selected={(data.contentFormat || "host") === m.id}
+              onSelect={() => onChange({ contentFormat: m.id })}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Automation</label>
         <div className="space-y-2">
           {[
@@ -1836,6 +1859,7 @@ function FrameReady({ data, onPreviewSheet }: { data: GenesisInternalState; onPr
         { label: "Voice",      value: data.selectedVoice || "—" },
         { label: "Sources",    value: data.researchSources.length > 0 ? `${data.researchSources.length} channel${data.researchSources.length !== 1 ? "s" : ""}` : "None" },
         { label: "Production", value: data.productionMode },
+        { label: "Show Format", value: ((data.contentFormat || "host").charAt(0).toUpperCase() + (data.contentFormat || "host").slice(1)) },
         { label: "Automation", value: data.automationMode },
         { label: "Format",     value: `${(data.aspectMode || "portrait").toUpperCase()} · ${(data.targetDurationSec || 60) >= 60 ? `${Math.round((data.targetDurationSec || 60) / 60)}m` : `${data.targetDurationSec || 60}s`}` },
         { label: "Clip Engine", value: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? (PROVIDER_VIDEO_CAPABILITIES as any)[data.preferredVideoProvider]?.displayName || data.preferredVideoProvider.toUpperCase() : "Auto (Best Available)" },
@@ -2478,6 +2502,7 @@ export function BrandGenesisFlow({
       voiceId: data.selectedVoiceId,
       researchSources: data.researchSources,
       connectedAccounts,
+      contentFormat: data.contentFormat || "host",
       aspectMode: data.aspectMode || "portrait",
       targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
@@ -2492,6 +2517,7 @@ export function BrandGenesisFlow({
         await persistFormatSettings(brandId, {
           aspectMode: data.aspectMode || "portrait",
           targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
+          contentFormat: data.contentFormat || "host",
           preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
         });
       }

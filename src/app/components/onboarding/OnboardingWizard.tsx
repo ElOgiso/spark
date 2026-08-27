@@ -65,6 +65,7 @@ export interface BrandGenesisData {
   visualStyle: "Realistic / Live-Action" | "Cinematic 3D" | "Anime / Stylized Studio";
   productionMode: "narrator" | "hybrid" | "cinematic";
   automationMode: "manual" | "balanced" | "autonomous";
+  contentFormat?: "faceless" | "host" | "story" | "anime";
   reviewRequired: boolean;
   characterChoice?: "self" | "upload" | "describe" | "skip";
   characterDescription?: string;

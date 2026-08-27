@@ -55,7 +55,12 @@ import {
   BRAND_STYLE_OPTIONS,
   seedDefaultAudience,
 } from "../domain/brandOptions";
-import { VIDEO_LENGTH_OPTIONS, getEffectiveFormatSettings } from "../domain/types";
+import {
+  VIDEO_LENGTH_OPTIONS,
+  CONTENT_FORMAT_OPTIONS,
+  type ContentFormat,
+  getEffectiveFormatSettings,
+} from "../domain/types";
 
 interface MySparkProps {
   onNavigate: (path: string) => void;
@@ -1220,6 +1225,46 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   <span className="text-[11px] font-mono text-purple-300 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20 self-start sm:self-auto">
                     Unified Scene Physics
                   </span>
+                </div>
+
+                {/* Sub-row 0: Show Format */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Show Format
+                    </p>
+                    <span className="text-xs font-medium text-foreground capitalize">
+                      {formatSettings?.contentFormat || brand.contentFormat || (brand as any)?.settings?.contentFormat || "host"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                    {CONTENT_FORMAT_OPTIONS.map((fmt) => {
+                      const currentFmt = formatSettings?.contentFormat || brand.contentFormat || (brand as any)?.settings?.contentFormat || "host";
+                      const active = currentFmt === fmt.id;
+                      return (
+                        <button
+                          key={fmt.id}
+                          type="button"
+                          onClick={() => updateFormatSettings && updateFormatSettings({ contentFormat: fmt.id })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            active
+                              ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
+                              : "bg-background border-border hover:border-accent/40 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-xs font-semibold ${active ? "text-purple-200" : "text-foreground"}`}>
+                              {fmt.label}
+                            </span>
+                            {active && <Check className="w-3.5 h-3.5 text-purple-400" />}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-snug">
+                            {fmt.desc}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Sub-row 1: Target Video Length */}

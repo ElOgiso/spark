@@ -135,9 +135,10 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   const [seededSources, setSeededSources] = useState<string[]>([]);
   const [sourceSyncStatuses, setSourceSyncStatuses] = useState<Record<string, "syncing" | "ready" | "failed">>({});
 
-  // Production & Automation modes
+  // Production & Automation modes & Show Format
   const [productionMode, setProductionMode] = useState<"narrator" | "hybrid" | "cinematic">("hybrid");
   const [automationMode, setAutomationMode] = useState<"manual" | "balanced" | "autonomous">("balanced");
+  const [contentFormat, setContentFormat] = useState<"faceless" | "host" | "story" | "anime">("host");
 
   // Connected accounts
   const [connectedAccounts, setConnectedAccounts] = useState<Record<string, { handle: string; connected: boolean }>>({});
@@ -477,6 +478,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       visualStyle: "Realistic / Live-Action",
       productionMode,
       automationMode,
+      contentFormat,
       reviewRequired: automationMode !== "autonomous",
       characterChoice: characterSheetUrl ? "describe" : "skip",
       characterDescription,
@@ -1228,6 +1230,30 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               </div>
 
               <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-foreground">Show Format</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { id: "faceless" as const, title: "Faceless", desc: "Voice + pictures" },
+                    { id: "host" as const, title: "Host", desc: "One character on camera" },
+                    { id: "story" as const, title: "Story", desc: "Multi-scene narrative" },
+                    { id: "anime" as const, title: "Anime", desc: "Locked anime/3D style" },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setContentFormat(m.id)}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        contentFormat === m.id ? "bg-purple-600/30 border-purple-400 text-purple-200" : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      <p className="text-xs font-bold text-foreground">{m.title}</p>
+                      <p className="text-[10px] opacity-70 mt-0.5">{m.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
                 <label className="text-xs font-semibold text-foreground">Autonomy Governance</label>
                 <div className="space-y-1.5">
                   {[
@@ -1298,8 +1324,8 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
               <div className="bg-card border border-border p-2.5 rounded-xl flex items-center gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <div className="min-w-0">
-                  <span className="text-foreground font-semibold block truncate">Pipeline & Autonomy</span>
-                  <span className="text-[11px] text-muted-foreground block truncate capitalize">{productionMode} · {automationMode}</span>
+                  <span className="text-foreground font-semibold block truncate">Show Format & Pipeline</span>
+                  <span className="text-[11px] text-muted-foreground block truncate capitalize">{contentFormat} · {productionMode} · {automationMode}</span>
                 </div>
               </div>
 

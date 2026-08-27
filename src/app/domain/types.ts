@@ -1,3 +1,5 @@
+export type ContentFormat = "faceless" | "host" | "story" | "anime";
+
 export interface Brand {
   id?: string;
   name: string;
@@ -7,6 +9,7 @@ export interface Brand {
   country?: string;
   language?: string;
   website?: string;
+  contentFormat?: ContentFormat;
   contentPillars: { label: string; active: boolean }[];
   audience: {
     primary: string;
@@ -20,6 +23,7 @@ export interface Brand {
   productionMode?: string;
   locationPlateUrl?: string | null;
   formatSettings?: ProductionFormatSettings;
+  settings?: Record<string, any>;
   creditSettings?: GenerationCreditSettings;
   review_required?: boolean;
   publish_requires_approval?: boolean;
@@ -687,6 +691,7 @@ export type AspectMode = "landscape" | "portrait" | "dynamic";
 export interface ProductionFormatSettings {
   aspectMode: AspectMode;
   targetDurationSec: number; // 15, 30, 60 (1m), 180 (3m), 300 (5m), 600 (10m), 900 (15m), 1200 (20m), 1800 (30m), 2700 (45m), 3600 (60m)
+  contentFormat?: ContentFormat;
   preferredVideoProvider?: AIProviderId;
   preferredVideoModel?: string;
 }
@@ -694,8 +699,22 @@ export interface ProductionFormatSettings {
 export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
   aspectMode: "portrait",
   targetDurationSec: 60,
+  contentFormat: "host",
   preferredVideoProvider: "auto",
 };
+
+export interface ContentFormatOption {
+  id: ContentFormat;
+  label: string;
+  desc: string;
+}
+
+export const CONTENT_FORMAT_OPTIONS: ContentFormatOption[] = [
+  { id: "faceless", label: "Faceless", desc: "Voice + pictures, no host required" },
+  { id: "host", label: "Host", desc: "One character on camera (default)" },
+  { id: "story", label: "Story", desc: "Multi-scene narrative" },
+  { id: "anime", label: "Anime", desc: "Story in locked anime / 3D style" },
+];
 
 export interface VideoLengthOption {
   sec: number;
@@ -745,6 +764,19 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     localCacheSettings?.aspectMode ||
     DEFAULT_FORMAT_SETTINGS.aspectMode;
 
+  const rawContentFormat =
+    direct?.contentFormat ||
+    brandSettings?.contentFormat ||
+    source?.brand?.settings?.contentFormat ||
+    source?.brand?.settings?.content_format ||
+    source?.brand?.contentFormat ||
+    source?.settings?.contentFormat ||
+    source?.settings?.content_format ||
+    source?.contentFormat ||
+    localCacheSettings?.contentFormat ||
+    DEFAULT_FORMAT_SETTINGS.contentFormat ||
+    "host";
+
   const rawPreferredProvider =
     direct?.preferredVideoProvider ||
     brandSettings?.preferredVideoProvider ||
@@ -757,6 +789,7 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     ...(direct || {}),
     aspectMode: rawAspect,
     targetDurationSec: rawTargetDuration,
+    contentFormat: (rawContentFormat as ContentFormat) || "host",
     preferredVideoProvider: rawPreferredProvider,
   };
 }

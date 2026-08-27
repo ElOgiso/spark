@@ -56,7 +56,7 @@ import {
   seedDefaultAudience,
 } from "../../domain/brandOptions";
 import { normalizeHandle } from "../../domain/accountUtils";
-import { VIDEO_LENGTH_OPTIONS } from "../../domain/types";
+import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, type ContentFormat } from "../../domain/types";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -948,6 +948,44 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
           <p className="text-[11px] text-muted-foreground">
             Total target episode runtime and provider clip generation physics.
           </p>
+
+          {/* Sub-row 0: Show Format */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Show Format</span>
+              <span className="font-semibold text-foreground capitalize">
+                {formatSettings?.contentFormat || brand.contentFormat || (brand as any)?.settings?.contentFormat || "host"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {CONTENT_FORMAT_OPTIONS.map((fmt) => {
+                const currentFmt = formatSettings?.contentFormat || brand.contentFormat || (brand as any)?.settings?.contentFormat || "host";
+                const active = currentFmt === fmt.id;
+                return (
+                  <button
+                    key={fmt.id}
+                    type="button"
+                    onClick={() => updateFormatSettings && updateFormatSettings({ contentFormat: fmt.id })}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                      active
+                        ? "bg-purple-600/20 border-purple-500/60 shadow-sm ring-1 ring-purple-500/40"
+                        : "bg-background border-border text-muted-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-semibold ${active ? "text-purple-200" : "text-foreground"}`}>
+                        {fmt.label}
+                      </span>
+                      {active && <Check className="w-3 h-3 text-purple-400" />}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {fmt.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Sub-row 1: Target Video Length */}
           <div className="space-y-1.5">

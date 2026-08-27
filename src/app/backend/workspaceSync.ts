@@ -50,6 +50,7 @@ import type {
   ResearchPattern,
   GenerationCreditSettings,
   ProductionFormatSettings,
+  ContentFormat,
 } from "../domain/types";
 import { DEFAULT_CREDIT_SETTINGS, DEFAULT_FORMAT_SETTINGS } from "../domain/types";
 import {
@@ -102,14 +103,24 @@ function brandRowToDomain(row: BrandRow): Brand {
     : {};
 
   const rawFormatSettings = settingsObj.format_settings;
-  const formatSettings: ProductionFormatSettings | undefined = rawFormatSettings
+  const rawContentFormat: ContentFormat =
+    settingsObj.contentFormat ||
+    settingsObj.content_format ||
+    rawFormatSettings?.contentFormat ||
+    "host";
+
+  const formatSettings: ProductionFormatSettings = rawFormatSettings
     ? {
         aspectMode: rawFormatSettings.aspectMode || "portrait",
         targetDurationSec: typeof rawFormatSettings.targetDurationSec === "number" ? rawFormatSettings.targetDurationSec : 60,
+        contentFormat: rawContentFormat,
         preferredVideoProvider: rawFormatSettings.preferredVideoProvider || "auto",
         preferredVideoModel: rawFormatSettings.preferredVideoModel,
       }
-    : undefined;
+    : {
+        ...DEFAULT_FORMAT_SETTINGS,
+        contentFormat: rawContentFormat,
+      };
 
   const creditSettings = settingsObj.credit_settings || audienceObj.credit_settings;
 
@@ -122,8 +133,10 @@ function brandRowToDomain(row: BrandRow): Brand {
     website: audienceObj.website || "",
     country: audienceObj.country || "United States",
     language: audienceObj.language || "English (US)",
+    contentFormat: rawContentFormat,
     locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
     formatSettings,
+    settings: settingsObj,
     creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
@@ -750,6 +763,10 @@ export async function persistFormatSettings(
         : {};
 
     existingSettings.format_settings = { ...cleanSettings };
+    if (cleanSettings.contentFormat) {
+      existingSettings.contentFormat = cleanSettings.contentFormat;
+      existingSettings.content_format = cleanSettings.contentFormat;
+    }
 
     await (supabase.from("brands") as any)
       .update({ settings: existingSettings, updated_at: new Date().toISOString() })
@@ -828,6 +845,13 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
     }
     if (patch.formatSettings !== undefined) {
       newSettings.format_settings = patch.formatSettings;
+    }
+    if (patch.contentFormat !== undefined) {
+      newSettings.contentFormat = patch.contentFormat;
+      newSettings.content_format = patch.contentFormat;
+      if (newSettings.format_settings) {
+        newSettings.format_settings.contentFormat = patch.contentFormat;
+      }
     }
     if (patch.creditSettings !== undefined) {
       newSettings.credit_settings = patch.creditSettings;

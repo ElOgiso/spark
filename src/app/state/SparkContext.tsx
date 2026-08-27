@@ -23,6 +23,7 @@ import {
   DEFAULT_CREDIT_SETTINGS,
   ProductionFormatSettings,
   DEFAULT_FORMAT_SETTINGS,
+  ContentFormat,
   getEffectiveCreditSettings,
   getEffectiveFormatSettings,
   ThinkingState,
@@ -386,7 +387,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState((prev: any) => ({
       ...prev,
       formatSettings: updated,
-      brand: prev.brand ? { ...prev.brand, formatSettings: updated } : prev.brand,
+      brand: prev.brand
+        ? {
+            ...prev.brand,
+            contentFormat: updated.contentFormat || prev.brand.contentFormat,
+            formatSettings: updated,
+          }
+        : prev.brand,
     }));
 
     const brandId = getBrandWorkspaceId();
@@ -963,9 +970,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const automationMode = data.automationMode || "balanced";
     const reviewRequired = data.reviewRequired !== false;
 
+    const resolvedContentFormat: ContentFormat = data.contentFormat || "host";
     const resolvedFormatSettings: ProductionFormatSettings = {
       aspectMode: data.aspectMode || "portrait",
       targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
+      contentFormat: resolvedContentFormat,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
     };
 
@@ -1287,6 +1296,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          contentFormat: resolvedContentFormat,
           locationPlateUrl: durablePlateUrl,
           automation_mode: automationMode,
           review_required: reviewRequired,
@@ -1353,6 +1363,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          contentFormat: resolvedContentFormat,
           locationPlateUrl: durablePlateUrl || prev.brand?.locationPlateUrl || null,
           automation_mode: automationMode,
           review_required: reviewRequired,
@@ -1416,6 +1427,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: brandName,
           niche: niche,
           purpose: vision,
+          contentFormat: resolvedContentFormat,
           locationPlateUrl: durablePlateUrl,
           audience: {
             primary: audience,
