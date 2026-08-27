@@ -1309,7 +1309,7 @@ export async function deleteUserAccount(userId: string): Promise<{ success: bool
     const token = sessionRes?.data?.session?.access_token;
 
     if (token) {
-      const resp = await fetch("/api/auth/delete-account", {
+      const resp = await fetch("/api/auth/config", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
