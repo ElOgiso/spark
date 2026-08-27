@@ -3,6 +3,7 @@ import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
+import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 
 const defaultProductions: Production[] = [];
@@ -162,6 +163,28 @@ export class ProductionService implements IProductionService {
     const { production, brand, character, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
+    }
+
+    const gate = canStartAssetGeneration({
+      production,
+      brief: production.brief,
+      brand,
+      character,
+      formatSettings: (production as any)?.formatSettings || production.brief?.formatSettings,
+    });
+
+    if (!gate.allowed) {
+      console.warn(`[ProductionService] Asset generation gated (${gate.contentFormat}): ${gate.reason}`);
+      const updatedProd: Production = {
+        ...production,
+        isGeneratingAssets: false,
+        lastError: gate.reason,
+      };
+      const updatedBrief: ProductionBrief = {
+        ...production.brief,
+        lastError: gate.reason,
+      };
+      return { production: updatedProd, brief: updatedBrief };
     }
 
     const handleProgress = (prog: import("../domain/types").GenerationProgress) => {

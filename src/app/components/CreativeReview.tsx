@@ -581,6 +581,21 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           )}
 
+          {/* Character Sheet Required Alert / Last Error */}
+          {(activeProd?.lastError || brief?.lastError) && !activeProd?.isGeneratingAssets && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-200">
+                  {activeProd?.lastError || brief?.lastError}
+                </p>
+                <p className="text-xs text-amber-200/70 mt-0.5">
+                  A locked character reference sheet is required for host / story / anime formats before asset rendering can begin.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Interactive Media Preview Section */}
           <div className="space-y-6">
             <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">

@@ -6,6 +6,7 @@ import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
+import { canStartAssetGeneration } from "./characterSheetGate";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -596,6 +597,35 @@ export class ProductionAssetService {
     });
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
+
+    const gate = canStartAssetGeneration({
+      production,
+      brief,
+      brand,
+      character,
+      formatSettings: activeFormatSettings,
+    });
+
+    if (!gate.allowed) {
+      console.warn(`[ProductionAssetService] Asset generation gated (${gate.contentFormat}): ${gate.reason}`);
+      const gatedScenes = (brief.storyboard || production.scenes || []).map((s: any, idx: number) => ({
+        scene: s.scene || idx + 1,
+        description: s.description || s.visualDescription || `Scene ${s.scene || idx + 1}`,
+        duration: s.duration || "0-10s",
+        image: s.image,
+        videoUrl: s.videoUrl,
+      }));
+      return {
+        brief: {
+          ...brief,
+          lastError: gate.reason,
+        },
+        scenes: gatedScenes,
+        productionScenes: brief.storyboard || (production.productionScenes as any) || [],
+        audioUrl: brief.audioUrl,
+        videoUrl: brief.videoUrl,
+      };
+    }
 
     const checkAborted = () => {
       if (signal?.aborted) {

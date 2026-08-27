@@ -58,6 +58,7 @@ import { ProductionGenerationGuard } from "../services/production/ProductionGene
 import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
+import { canStartAssetGeneration } from "../services/production/characterSheetGate";
 import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
@@ -1663,14 +1664,44 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           // Chain asset generation automatically when Production Generation is ON
           if (ProductionGenerationGuard.isEnabled()) {
-            if (activeGenerationControllers.current.has(effectiveProdId)) {
-              activeGenerationControllers.current.get(effectiveProdId)?.abort();
-            }
-            const controller = new AbortController();
-            activeGenerationControllers.current.set(effectiveProdId, controller);
+            const gate = canStartAssetGeneration({
+              production: stableEnrichedProd,
+              brief: enrichedBrief,
+              brand: state.brand,
+              character: effectiveCharacter,
+              formatSettings: effectiveFormat,
+            });
 
-            try {
-              const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
+            if (!gate.allowed) {
+              console.warn(`[SparkContext] Auto asset generation gated for prodId ${effectiveProdId} (${gate.contentFormat}): ${gate.reason}`);
+              setState((prev: any) => ({
+                ...prev,
+                productions: prev.productions.map((p: any) =>
+                  p.id === effectiveProdId ? { ...p, isGeneratingAssets: false, lastError: gate.reason } : p
+                ),
+                reviewItems: prev.reviewItems.map((r: any) =>
+                  r.productionId === effectiveProdId || r.id === effectiveReviewId
+                    ? { ...r, lastError: gate.reason }
+                    : r
+                ),
+              }));
+
+              const bId = getBrandWorkspaceId();
+              if (isSupabaseConfigured() && bId) {
+                void persistProductionUpdate(effectiveProdId, {
+                  isGeneratingAssets: false,
+                  lastError: gate.reason,
+                });
+              }
+            } else {
+              if (activeGenerationControllers.current.has(effectiveProdId)) {
+                activeGenerationControllers.current.get(effectiveProdId)?.abort();
+              }
+              const controller = new AbortController();
+              activeGenerationControllers.current.set(effectiveProdId, controller);
+
+              try {
+                const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
                 production: stableEnrichedProd,
                 brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
                 character: effectiveCharacter,
@@ -1834,6 +1865,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
             }
           }
+        }
         })
         .catch((err: any) => {
           console.warn("[SparkContext] Production brief generation notice:", err);
@@ -2018,6 +2050,36 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
+
+      const gate = canStartAssetGeneration({
+        production: prod,
+        brief: prod.brief,
+        brand: state.brand,
+        character: effectiveCharacter,
+        formatSettings: effectiveFormat,
+      });
+
+      if (!gate.allowed) {
+        console.warn(`[SparkContext] Manual asset generation gated for prodId ${productionId} (${gate.contentFormat}): ${gate.reason}`);
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) =>
+            p.id === productionId ? { ...p, isGeneratingAssets: false, lastError: gate.reason } : p
+          ),
+          reviewItems: prev.reviewItems.map((r: any) =>
+            r.productionId === productionId ? { ...r, lastError: gate.reason } : r
+          ),
+        }));
+
+        const bId = getBrandWorkspaceId();
+        if (isSupabaseConfigured() && bId) {
+          void persistProductionUpdate(productionId, {
+            isGeneratingAssets: false,
+            lastError: gate.reason,
+          });
+        }
+        return;
+      }
 
       const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
         production: {

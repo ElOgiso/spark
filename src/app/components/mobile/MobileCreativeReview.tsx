@@ -333,6 +333,21 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </div>
       )}
 
+      {/* Character Sheet Required Alert / Last Error */}
+      {(activeProd?.lastError || item?.lastError || brief?.lastError) && !isGenerating && (
+        <div className="mx-4 mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-amber-200">
+              {activeProd?.lastError || item?.lastError || brief?.lastError}
+            </p>
+            <p className="text-[10px] text-amber-200/70 mt-0.5">
+              Locked character sheet required for host / story / anime formats.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 space-y-6">
         {/* Playable Storyboard Draft Player */}
         <div className="p-0.5 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border overflow-hidden">
