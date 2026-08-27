@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { AuthPanel } from "./auth/AuthPanel";
+import { DeleteAccountModal } from "./ui/DeleteAccountModal";
 import { useAuth } from "../state/AuthContext";
 import { useSpark } from "../state/SparkContext";
 import { listLiveConnectedAccounts } from "../services/socialIntegrationService";
@@ -53,6 +54,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   const [editName, setEditName] = useState(profile.name);
   const [editEmail, setEditEmail] = useState(profile.email);
@@ -446,6 +448,25 @@ export function MorePage({ onNavigate }: MorePageProps) {
               </div>
             </div>
           ))}
+
+          {/* Delete Account */}
+          <div className="pt-2 border-t border-border/40">
+            <div className="rounded-xl border border-destructive/20 bg-destructive/[0.03] p-5 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-destructive">Delete account</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Removes this login and all SPARK data for it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccount(true)}
+                className="px-5 py-2 rounded-full text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 border border-destructive/30 hover:border-destructive/50 transition-all cursor-pointer"
+              >
+                Delete account
+              </button>
+            </div>
+          </div>
         </div>
       </main>
 
@@ -539,6 +560,12 @@ export function MorePage({ onNavigate }: MorePageProps) {
           </div>
         </div>
       )}
+
+      {/* Delete Account Confirmation Modal */}
+      <DeleteAccountModal
+        isOpen={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
+      />
     </>
   );
 }

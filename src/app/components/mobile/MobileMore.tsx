@@ -20,6 +20,7 @@ import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/workspaceSync";
 import { AuthPanel } from "../auth/AuthPanel";
 import { DeleteWorkspaceModal } from "../ui/DeleteWorkspaceModal";
+import { DeleteAccountModal } from "../ui/DeleteAccountModal";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../../theme";
 import {
   Zap,
@@ -97,6 +98,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showSignOut, setShowSignOut] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   // Production: no seed API keys / assets
   const [apiKeyList, setApiKeyList] = useState<{ id: string; name: string; key: string; created: string }[]>([]);
@@ -1236,6 +1238,25 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             Sign In
           </Button>
         )}
+        {/* Delete Account */}
+        <div className="w-full px-1">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/[0.03] p-4 space-y-3">
+            <div>
+              <h4 className="text-xs font-semibold text-destructive">Delete account</h4>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                Removes this login and all SPARK data for it.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDeleteAccount(true)}
+              className="w-full py-2.5 rounded-full text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 border border-destructive/30 hover:border-destructive/50 transition-all cursor-pointer text-center"
+            >
+              Delete account
+            </button>
+          </div>
+        </div>
+
         <div className="text-center text-[10px] text-muted-foreground pb-4 uppercase tracking-wider font-mono">
           Spark · Media Operating System · v4.12
         </div>
@@ -1303,6 +1324,12 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         onConfirm={async (id) => {
           await auth.deleteWorkspace(id);
         }}
+      />
+
+      {/* Delete Account Confirmation Modal */}
+      <DeleteAccountModal
+        isOpen={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
       />
     </div>
   );
