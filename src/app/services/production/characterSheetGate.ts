@@ -23,6 +23,8 @@ export function getEffectiveContentFormat(params: {
     (production as any)?.formatSettings?.contentFormat ||
     (brief as any)?.formatSettings?.contentFormat ||
     (brand as any)?.formatSettings?.contentFormat ||
+    (brand as any)?.settings?.contentFormat ||
+    (brand as any)?.contentFormat ||
     formatSettings?.contentFormat ||
     (production as any)?.contentFormat ||
     (brief as any)?.contentFormat

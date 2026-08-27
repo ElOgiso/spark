@@ -6,7 +6,7 @@ import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
-import { canStartAssetGeneration } from "./characterSheetGate";
+import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -1614,27 +1614,90 @@ CRITICAL PRODUCTION LAWS:
               const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
               const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
 
-              // Build reference array: [0] = sceneFirstFrame (First Frame), [1] = characterSheetUrl (Identity Law)
+              // 1. Resolve content format & subject rules
+              const effectiveContentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings });
+              const isFaceless = effectiveContentFormat === "faceless";
+
               const rawSubject = ((s as any).subject || (s as any).subjectType || "").toLowerCase();
-              const isSupportShot = rawSubject === "support" || rawSubject === "supporting";
-              const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
-              const activeChar = isSupportShot && (supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character;
+              const cam = (s.cameraDirection || "").toLowerCase();
+              const desc = (s.visualDescription || (s as any).description || "").toLowerCase();
+
+              const isSetSubject =
+                rawSubject === "set" ||
+                rawSubject === "environment" ||
+                cam.includes("establishing shot") ||
+                desc.includes("empty set") ||
+                desc.includes("empty room");
+
+              const isInsertSubject =
+                rawSubject === "insert" ||
+                rawSubject === "product" ||
+                cam.includes("insert shot") ||
+                desc.includes("product display");
+
+              const isSupportSubject =
+                !isFaceless &&
+                (rawSubject === "support" || rawSubject === "supporting" || rawSubject.includes("support"));
+
+              const isInsertOrSet = isFaceless || isSetSubject || isInsertSubject;
+
+              // 2. Resolve character sheet reference (never used for faceless or insert/set)
+              const supportChar = !isInsertOrSet && isSupportSubject
+                ? (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1]
+                : undefined;
+              const activeChar = isSupportSubject
+                ? ((supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character)
+                : (!isInsertOrSet ? character : undefined);
               const sceneCharSheetUrl = activeChar?.characterSheetUrl || activeChar?.imageUrl || activeChar?.avatarUrl;
 
-              const orderedSceneRefs: string[] = [sceneFirstFrame];
-              const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl === sceneFirstFrame;
-              const refLabels: string[] = [
-                isChainingLastFrame
-                  ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame Continuity Resolution)`
-                  : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
-              ];
+              // 3. Location Plate Reference
+              const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+              const validPlate = plateUrl && isValidMediaData(plateUrl) ? plateUrl : undefined;
 
-              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
-                orderedSceneRefs.push(sceneCharSheetUrl);
-                refLabels.push(`INPUT REF [2]: ${isSupportShot ? "Supporting Character" : "Character"} Model Sheet (${activeChar?.name || "Host"})`);
+              // 4. Construct Reference List for Prompt and ModelRouter:
+              // - primaryRef for i2v = THAT scene's still / continuity keyframe (sceneFirstFrame)
+              // - If insert/set or faceless: refs = [sceneFirstFrame] (+ locationPlate if available). Do NOT force host sheet as image 1 or in refs!
+              // - If main: refs = [characterSheet, scene.image] sheet first for identity, still is the frame (primaryRef for i2v = scene.image).
+              const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl);
+              const orderedSceneRefs: string[] = [];
+              const refLabels: string[] = [];
+
+              if (isInsertOrSet) {
+                // INSERT / SET / FACELESS: Still is the only primary composition frame
+                orderedSceneRefs.push(sceneFirstFrame);
+                refLabels.push(
+                  isChainingLastFrame
+                    ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame Continuity Resolution)`
+                    : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
+                );
+
+                if (validPlate && validPlate !== sceneFirstFrame) {
+                  orderedSceneRefs.push(validPlate);
+                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Locked Set / Location Plate Reference`);
+                }
+              } else {
+                // MAIN / SUPPORT (Host / Story / Anime): Sheet first for identity, still is the frame (primaryRef = sceneFirstFrame)
+                if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl)) {
+                  orderedSceneRefs.push(sceneCharSheetUrl);
+                  refLabels.push(
+                    `INPUT REF [1]: ${isSupportSubject ? "Supporting Character" : "Character"} Model Sheet (${activeChar?.name || "Host"})`
+                  );
+                }
+
+                orderedSceneRefs.push(sceneFirstFrame);
+                refLabels.push(
+                  `INPUT REF [${orderedSceneRefs.length}]: First Frame Keyframe (${isChainingLastFrame ? "Scene " + sIdx + " Last Frame Continuity" : "Scene " + globalSceneNum + " Single Still"})`
+                );
+
+                if (validPlate && !orderedSceneRefs.includes(validPlate)) {
+                  orderedSceneRefs.push(validPlate);
+                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Locked Set / Studio Location Plate`);
+                }
               }
 
-              const refHeader = `${refLabels.join("\n")}\nVISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. IMAGE 2 is character identity law.\n`;
+              const refHeader = isInsertOrSet
+                ? `${refLabels.join("\n")}\nVISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. Text describes physical action and camera motion only.\n`
+                : `${refLabels.join("\n")}\nVISUAL LOCK LAW: Character identity strictly lives in the model sheet reference. Scene still is the mandatory first frame composition.\n`;
 
               const sceneMotionPrompt = `${refHeader}\n${buildSceneMotionPrompt({
                 mode,
@@ -1648,8 +1711,8 @@ CRITICAL PRODUCTION LAWS:
                 onScreenText: s.onScreenText,
                 audio: s.audio,
                 endPose: s.endState,
-                characterName: activeChar?.name || "Host",
-                characterStyle: activeChar?.style || "Executive Presenter",
+                characterName: isInsertOrSet ? undefined : (activeChar?.name || "Host"),
+                characterStyle: isInsertOrSet ? "B-Roll / Cinematic Visual" : (activeChar?.style || "Executive Presenter"),
                 environment: identityPack.environmentString,
               })}`;
 
@@ -1731,7 +1794,10 @@ CRITICAL PRODUCTION LAWS:
               }
 
               const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
-              emitProgress(currentPct, "Video", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} video clip...`);
+              emitProgress(currentPct, "Video", `Rendered Scene ${globalSceneNum} of ${currentStoryboard.length} video clip...`, {
+                storyboard: currentStoryboard,
+                videoUrl: sIdx === 0 ? s.videoUrl : undefined,
+              });
               void persistCurrentStage(`Scene-Video-${globalSceneNum}`);
             }
 
