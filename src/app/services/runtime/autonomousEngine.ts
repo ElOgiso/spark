@@ -108,8 +108,9 @@ export class AutonomousEngine {
       const pendingReview = (reviewItems || []).filter((r: ReviewItem) => r.status === "Pending Review");
       if (pendingReview.length === 0 && currentSparks.length > 0) {
         const sparkToDraft = currentSparks[0];
-        const prodId = `p-auto-${Date.now()}`;
-        const reviewId = `r-auto-${Date.now()}`;
+        const { generateUuid } = await import("../../backend/mappers/workspaceMappers");
+        const prodId = generateUuid();
+        const reviewId = generateUuid();
 
         const { ProductionBriefService } = await import("../production/productionBriefService");
         const brief = await ProductionBriefService.generateBrief({
@@ -163,6 +164,13 @@ export class AutonomousEngine {
           productions: [newProduction, ...(prev.productions || [])],
           reviewItems: [newReviewItem, ...(prev.reviewItems || [])],
         }));
+
+        if (brand?.id) {
+          void import("../../backend/workspaceSync").then(({ persistProductionCreate, persistReviewCreate }) => {
+            void persistProductionCreate(brand.id, newProduction);
+            void persistReviewCreate(brand.id, newReviewItem);
+          });
+        }
 
         eventBus.emit("SCRIPT_READY", { title: newProduction.title }, brand.name);
         eventBus.emit("STORYBOARD_READY", { title: newProduction.title }, brand.name);

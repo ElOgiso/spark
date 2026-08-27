@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { InteractiveVideoPlayer, ThumbnailVariantCard } from "../MediaPreviewHelper";
 import {
@@ -84,6 +84,11 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
 
+  useEffect(() => {
+    const st = String(item?.status || activeProd?.status || "");
+    if (st === "Needs Edit") setShowAssetsGallery(true);
+  }, [item?.status, activeProd?.status]);
+
   if (showAssetsGallery) {
     return (
       <MobileProductionAssetsGallery
@@ -135,11 +140,9 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     if (reviewId) {
       rejectOrRequestEditReviewItem(reviewId);
     }
-    setFeedback("Draft marked for edit/revision.");
-    setTimeout(() => {
-      setFeedback(null);
-      onBack?.();
-    }, 1500);
+    setFeedback("Needs Edit — opening Production Assets.");
+    setShowAssetsGallery(true);
+    setTimeout(() => setFeedback(null), 2000);
   };
 
   const handleDelete = () => {

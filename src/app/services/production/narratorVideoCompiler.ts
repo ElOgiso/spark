@@ -7,6 +7,7 @@
 export interface CompileNarratorVideoOptions {
   imageUrls: string[];
   audioUrl?: string;
+  sfxUrl?: string;
   onScreenTexts?: string[];
   totalDurationSec?: number;
   width?: number;
@@ -161,6 +162,7 @@ export async function compileNarratorSlideshowVideo(
   const {
     imageUrls,
     audioUrl,
+    sfxUrl,
     onScreenTexts,
     totalDurationSec: fallbackDuration = 12,
     width = 1080,
@@ -205,6 +207,11 @@ export async function compileNarratorSlideshowVideo(
     throw new Error("Narrator voice audio failed to load (CORS or invalid audio URL).");
   }
 
+  let sfxData: { audioElement: HTMLAudioElement; duration: number; objectUrl?: string } | null = null;
+  if (sfxUrl) {
+    sfxData = await loadCorsSafeAudio(sfxUrl);
+  }
+
   const durationSec = audioData.duration && audioData.duration > 0 ? audioData.duration : fallbackDuration;
 
   return new Promise((resolve, reject) => {
@@ -233,13 +240,34 @@ export async function compileNarratorSlideshowVideo(
       const videoTrack = canvasStream.getVideoTracks()[0];
 
       const tracks: MediaStreamTrack[] = [videoTrack];
-      let audioTrack: MediaStreamTrack | null = null;
+      let mixedAudioTrack: MediaStreamTrack | null = null;
 
-      if (audioData) {
-        audioTrack = extractAudioTrack(audioData.audioElement);
-        if (audioTrack) {
-          tracks.push(audioTrack);
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx && audioData) {
+          const audioCtx = new AudioCtx();
+          const dest = audioCtx.createMediaStreamDestination();
+          const voSource = audioCtx.createMediaElementSource(audioData.audioElement);
+          voSource.connect(dest);
+          if (sfxData?.audioElement) {
+            const sfxSource = audioCtx.createMediaElementSource(sfxData.audioElement);
+            const sfxGain = audioCtx.createGain();
+            sfxGain.gain.value = 0.35;
+            sfxSource.connect(sfxGain);
+            sfxGain.connect(dest);
+          }
+          const mixed = dest.stream.getAudioTracks()[0];
+          if (mixed) mixedAudioTrack = mixed;
         }
+      } catch (mixErr) {
+        console.warn("[NarratorVideoCompiler] SFX mix notice:", mixErr);
+      }
+
+      if (!mixedAudioTrack && audioData) {
+        mixedAudioTrack = extractAudioTrack(audioData.audioElement);
+      }
+      if (mixedAudioTrack) {
+        tracks.push(mixedAudioTrack);
       }
 
       const combinedStream = new MediaStream(tracks);
@@ -302,12 +330,17 @@ export async function compileNarratorSlideshowVideo(
           console.warn("[NarratorVideoCompiler] Audio playback warning:", pErr);
         });
       }
+      if (sfxData?.audioElement) {
+        sfxData.audioElement.currentTime = 0;
+        sfxData.audioElement.play().catch(() => {});
+      }
 
       // 6. Draw Frames Loop over durationSec
       const totalFrames = Math.max(1, Math.round(durationSec * fps));
       const validImages = validImageItems.map((item) => item.img);
       const framesPerImage = Math.max(1, Math.floor(totalFrames / validImages.length));
       let currentFrame = 0;
+      let lastSfxImageIdx = -1;
 
       const drawNextFrame = () => {
         if (currentFrame >= totalFrames) {
@@ -324,6 +357,13 @@ export async function compileNarratorSlideshowVideo(
           Math.floor(currentFrame / framesPerImage),
           validImages.length - 1
         );
+        if (sfxData?.audioElement && imageIdx !== lastSfxImageIdx) {
+          lastSfxImageIdx = imageIdx;
+          try {
+            sfxData.audioElement.currentTime = 0;
+            void sfxData.audioElement.play();
+          } catch {}
+        }
         const img = validImages[imageIdx];
 
         ctx.fillStyle = "#0B0F17";

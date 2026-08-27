@@ -339,6 +339,53 @@ export async function createDesignedElevenLabsVoice(params: {
   }
 }
 
+export async function generateElevenLabsSoundEffect(
+  text: string,
+  durationSeconds = 1.5,
+  signal?: AbortSignal,
+  customKey?: string
+): Promise<string | null> {
+  const apiKey = customKey || resolveProviderKey("elevenlabs");
+  if (!apiKey || !text?.trim()) return null;
+  if (signal?.aborted) {
+    const err = new Error("Generation cancelled by executive");
+    err.name = "AbortError";
+    throw err;
+  }
+  try {
+    const res = await fetch("https://api.elevenlabs.io/v1/sound-generation", {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: text.trim().slice(0, 200),
+        duration_seconds: Math.min(5, Math.max(0.5, durationSeconds)),
+      }),
+    });
+    if (!res.ok) {
+      console.warn("[ElevenLabs SFX] API error:", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    const buf = await res.arrayBuffer();
+    if (!buf || buf.byteLength < 32) return null;
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any);
+    }
+    return `data:audio/mpeg;base64,${btoa(binary)}`;
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    console.warn("[ElevenLabs SFX] Provider notice:", err);
+    return null;
+  }
+}
+
 /**
  * Synthesizes speech with ElevenLabs TTS, respecting optional AbortSignal
  */

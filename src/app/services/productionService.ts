@@ -1,8 +1,9 @@
 import { IProductionService } from "../domain/contracts";
-import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief } from "../domain/types";
+import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief, getEffectiveFormatSettings } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
+import { generateUuid } from "../backend/mappers/workspaceMappers";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -49,7 +50,7 @@ export class ProductionService implements IProductionService {
     const productions = await this.getProductions();
     const newProduction: Production = {
       ...productionData,
-      id: `p-${Date.now()}`,
+      id: generateUuid(),
       dateCreated: new Date().toISOString().split("T")[0]
     };
     const updated = [newProduction, ...productions];
@@ -74,23 +75,23 @@ export class ProductionService implements IProductionService {
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
     const brief = await ProductionBriefService.generateBrief(params);
 
-    const prodId = params.productionId || `p-${Date.now()}`;
-    const reviewId = params.reviewId || `r-${Date.now()}`;
+    const prodId = params.productionId || generateUuid();
+    const reviewId = params.reviewId || generateUuid();
     const dateStr = new Date().toISOString().split("T")[0];
 
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
     const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
 
-    const effectiveFormat = (params.brand as any)?.formatSettings || {
-      aspectMode: "portrait",
-      targetDurationSec: typeof params.targetDurationSec === "number" ? params.targetDurationSec : 60,
-      preferredVideoProvider: "auto",
-    };
+    const effectiveFormat = getEffectiveFormatSettings({
+      formatSettings: (params.brand as any)?.formatSettings,
+      brand: params.brand,
+    });
     const targetDurationSec = typeof params.targetDurationSec === "number"
       ? params.targetDurationSec
       : (typeof brief.targetDurationSec === "number" ? brief.targetDurationSec : effectiveFormat.targetDurationSec || 60);
 
     const resolvedMode = (params.productionMode as any) || "standard";
+    const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
 
     brief.formatSettings = { ...effectiveFormat, targetDurationSec };
     brief.targetDurationSec = targetDurationSec;
@@ -106,7 +107,7 @@ export class ProductionService implements IProductionService {
       targetDurationSec,
       formatSettings: { ...effectiveFormat, targetDurationSec },
       dateCreated: dateStr,
-      aspectRatio: platformRec.includes("16:9") ? "16:9" : "9:16",
+      aspectRatio,
       formats,
       brief,
       scenes: [

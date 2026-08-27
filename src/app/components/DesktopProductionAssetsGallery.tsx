@@ -42,9 +42,30 @@ export function DesktopProductionAssetsGallery({
   production,
   item,
 }: DesktopProductionAssetsGalleryProps) {
+  const { fixProductionScene, mergeProductionScenes, character } = useSpark() as any;
   const activeProd = production || item?.production;
   const brief = activeProd?.brief || item?.brief;
   const title = brief?.title || activeProd?.title || item?.title || "Production Assets";
+  const isLandscape =
+    activeProd?.aspectRatio === "16:9" || brief?.formatSettings?.aspectMode === "landscape";
+  const cardAspectClass = isLandscape ? "aspect-video" : "aspect-[9/16]";
+
+  const generatedImages: { id: string; label: string; url: string }[] = [];
+  const pushImg = (id: string, label: string, url?: string) => {
+    if (!url || typeof url !== "string" || url.length < 8) return;
+    if (generatedImages.some((g) => g.url === url)) return;
+    generatedImages.push({ id, label, url });
+  };
+  pushImg("sheet", "Character sheet", character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl);
+  const stills = brief?.generatedAssets?.generatedFrames || brief?.storyboard?.map((s: any) => s.image || s.keyframeImageUrl) || [];
+  stills.forEach((url: string, idx: number) => pushImg(`still-${idx + 1}`, `Scene ${idx + 1} still`, url));
+  (brief?.storyboard || []).forEach((s: any, idx: number) => {
+    pushImg(`scene-still-${idx + 1}`, `Scene ${s.scene || idx + 1} still`, s.image || s.keyframeImageUrl);
+    pushImg(`last-${idx + 1}`, `Scene ${s.scene || idx + 1} last frame`, s.lastFrameUrl);
+  });
+  (brief?.generatedAssets?.thumbnails || []).forEach((t: any, idx: number) => {
+    pushImg(`thumb-${t.variant || idx + 1}`, `Thumbnail ${t.variant || idx + 1}`, t.image || t.url);
+  });
 
   const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
   const rawClips = brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
@@ -94,6 +115,7 @@ export function DesktopProductionAssetsGallery({
   const [selectedSceneId, setSelectedSceneId] = useState<string>(initialScenes[0]?.id || "scene-1");
   const [isPlayingFocus, setIsPlayingFocus] = useState(false);
   const [fullscreenVideo, setFullscreenVideo] = useState<{ url: string; title: string } | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<{ url: string; title: string } | null>(null);
   const [fixTargetScene, setFixTargetScene] = useState<DesktopSceneItem | null>(null);
   const [fixNotes, setFixNotes] = useState("");
   const [approvedMaster, setApprovedMaster] = useState(false);
@@ -146,7 +168,7 @@ export function DesktopProductionAssetsGallery({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [scenes, selectedSceneId, fixTargetScene, fullscreenVideo, isPlayingFocus, selectedScene]);
 
-  const { fixProductionScene, mergeProductionScenes } = useSpark() as any;
+
 
   const handleFixSubmit = () => {
     if (!fixTargetScene) return;
@@ -251,7 +273,30 @@ export function DesktopProductionAssetsGallery({
             <span>Use ← / → keys to navigate</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {generatedImages.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-mono text-white/50">Generated images ({generatedImages.length}) — click to inspect, Fix scene to correct</p>
+                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
+                  {generatedImages.map((img) => (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => {
+                        const match = scenes.find((s) => s.thumbUrl === img.url);
+                        if (match) setSelectedSceneId(match.id);
+                        setFullscreenImage({ url: img.url, title: img.label });
+                      }}
+                      className="shrink-0 w-24 rounded-xl overflow-hidden border border-white/10 hover:border-purple-400/60 bg-black/40"
+                      title={img.label}
+                    >
+                      <img src={img.url} alt={img.label} className={`w-full ${cardAspectClass} object-cover`} />
+                      <p className="text-[9px] text-white/70 px-1.5 py-1 truncate">{img.label}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               {scenes.map((scene) => {
                 const isSelected = scene.id === selectedSceneId;
@@ -271,7 +316,7 @@ export function DesktopProductionAssetsGallery({
                     }`}
                   >
                     {/* Media Container */}
-                    <div className="relative aspect-[9/16] bg-black/60 flex items-center justify-center overflow-hidden group">
+                    <div className={`relative ${cardAspectClass} bg-black/60 flex items-center justify-center overflow-hidden group`}>
                       {scene.thumbUrl ? (
                         <img
                           src={scene.thumbUrl}
@@ -377,7 +422,7 @@ export function DesktopProductionAssetsGallery({
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {/* Stage Viewer Container */}
-            <div className="relative aspect-[9/16] max-h-[460px] mx-auto rounded-2xl bg-black border border-white/10 overflow-hidden shadow-2xl flex items-center justify-center group">
+            <div className={`relative ${cardAspectClass} max-h-[460px] mx-auto rounded-2xl bg-black border border-white/10 overflow-hidden shadow-2xl flex items-center justify-center group`}>
               {selectedScene.videoUrl ? (
                 <video
                   ref={focusVideoRef}

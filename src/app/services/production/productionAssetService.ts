@@ -108,25 +108,20 @@ export function buildLockedIdentityPack(params: {
       ? "express"
       : "standard";
 
-  const formatSettings = (params as any).formatSettings || (brand as any)?.formatSettings;
+  const formatSettings = getEffectiveFormatSettings({
+    formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings || (params as any).formatSettings,
+    brand,
+  });
   const aspectMode = formatSettings?.aspectMode || "portrait";
 
-  let aspectRatio = "9:16";
-  if (aspectMode === "landscape") {
-    aspectRatio = "16:9";
-  } else if (aspectMode === "portrait") {
-    aspectRatio = "9:16";
-  } else if (aspectMode === "dynamic") {
+  let aspectRatio = aspectMode === "landscape" ? "16:9" : "9:16";
+  if (aspectMode === "dynamic") {
     const briefAny = brief as any;
-    if (briefAny.aspectRatio === "16:9" || briefAny.aspectRatio === "9:16") {
+    const productionAspect = (production as any)?.aspectRatio;
+    if (productionAspect === "16:9" || productionAspect === "9:16") {
+      aspectRatio = productionAspect;
+    } else if (briefAny.aspectRatio === "16:9" || briefAny.aspectRatio === "9:16") {
       aspectRatio = briefAny.aspectRatio;
-    } else if (mode === "deep") {
-      aspectRatio = "16:9";
-    } else if (mode === "express") {
-      aspectRatio = "9:16";
-    } else {
-      const platform = (briefAny.platformRecommendation || briefAny.platform || "").toLowerCase();
-      aspectRatio = platform.includes("youtube long") || platform.includes("16:9") ? "16:9" : "9:16";
     }
   }
 
@@ -614,6 +609,10 @@ export class ProductionAssetService {
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     const { mode, aspectRatio } = identityPack;
+    (production as any).aspectRatio = aspectRatio;
+    brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
+    const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
+    const compileHeight = aspectRatio === "16:9" ? 1080 : 1920;
     const promptPack = getProductionPromptPack({
       brand,
       character,
@@ -627,17 +626,24 @@ export class ProductionAssetService {
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
       { id: "voice", label: "Voiceover synthesis", status: "pending" },
-      { id: "keyframes", label: "Sequential Take Grids", status: "pending" },
+      { id: "keyframes", label: "Scene stills", status: "pending" },
+      { id: "sfx", label: "Sound FX", status: "pending" },
       { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
+      { id: "captions", label: "Captions", status: "pending" },
       { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
+    const markStage = (id: string, status: import("../../domain/types").GenerationProgressStage["status"]) => {
+      const stage = stages.find((s) => s.id === id);
+      if (stage) stage.status = status;
+    };
 
     let currentStoryboard: ProductionScene[] = [];
     let currentThumbnails: { id: string; variant: string; concept: string; image?: string; url?: string }[] = [];
     let realGridUrl: string | undefined = brief.storyboardGridUrl || brief.generatedAssets?.storyboardGridUrl;
     let realVoiceUrl: string | undefined = undefined;
     let realVideoUrl: string | undefined = undefined;
+    let realSfxUrl: string | undefined = undefined;
     let lastError: string | undefined = undefined;
 
     const bId = (brand as any)?.id || "default-brand";
@@ -1015,8 +1021,8 @@ Return valid JSON with this exact structure:
       );
     };
 
-      stages[0].status = "done";
-      stages[1].status = "active";
+      markStage("storyboard", "done");
+      markStage("voice", "active");
 
       const isExpressMode = mode === "express";
       const scenesNeedVo = (sb: typeof currentStoryboard) => {
@@ -1031,11 +1037,11 @@ Return valid JSON with this exact structure:
       if (!shouldSynthesizeExternalVoice) {
         console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic per-scene dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
-        stages[1].status = "done";
+        markStage("voice", "done");
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         realVoiceUrl = production.audioUrl || brief.audioUrl;
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
-        stages[1].status = "done";
+        markStage("voice", "done");
       } else {
         emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
         void persistCurrentStage("Voice");
@@ -1105,11 +1111,11 @@ Return valid JSON with this exact structure:
           console.warn("[ProductionAssetService] Real voice synthesis notice:", voiceErr);
           if (!lastError) lastError = `Voice: ${voiceErr?.message || String(voiceErr)}`;
         }
-        stages[1].status = realVoiceUrl ? "done" : "failed";
+        markStage("voice", realVoiceUrl ? "done" : "failed");
       }
 
       await persistCurrentStage("Voice");
-      stages[2].status = "active";
+      markStage("keyframes", "active");
       emitProgress(20, "Keyframes", `Rendering ${aspectRatio} scene keyframes (Target Hero Frames)...`);
       void persistCurrentStage("Keyframes");
       startHeartbeat("Keyframes");
@@ -1141,8 +1147,7 @@ Return valid JSON with this exact structure:
           }
 
           const shotFraming = s.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-          const spoken = s.spokenLines || s.scriptSnippet ? `SPOKEN: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
-          const onScreen = s.onScreenText ? formatBurnedOnScreenText(s.onScreenText) : "";
+          const spoken = s.spokenLines || s.scriptSnippet ? `ACTION BEAT: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
           const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
 
           const stillVisualLock = buildVisualLockRefs({
@@ -1159,11 +1164,11 @@ SUBJECT & IDENTITY: Primary subject "${character?.name || "Host"}" (${character?
 SET & ENVIRONMENT: ${identityPack.environmentString}.
 ACTION: ${action}.
 ${spoken}
-${onScreen ? `ON-SCREEN GRAPHIC/TEXT: "${onScreen}" (≤6 words).` : ""}
 
 CRITICAL PRODUCTION LAWS:
 - THIS IS A SINGLE FULL-BLEED STILL IMAGE, NOT A STORYBOARD GRID.
 - NO multiple panels. NO split screen. NO collage. NO contact sheet. NO numbered boxes. NO borders.
+- NO TEXT, NO LETTERS, NO CAPTIONS, NO SUBTITLES, NO WATERMARKS, NO TYPOGRAPHY on this image. Clean photographic frame only.
 - Professional high-production cinematography, crisp lighting, depth of field.
 `.trim();
 
@@ -1227,7 +1232,7 @@ CRITICAL PRODUCTION LAWS:
         if (!lastError) lastError = `Visuals Stage: ${imgErr?.message || String(imgErr)}`;
       }
 
-      stages[2].status = sceneImages.length > 0 ? "done" : "failed";
+      markStage("keyframes", sceneImages.length > 0 ? "done" : "failed");
       await persistCurrentStage("Keyframes");
 
       if (sceneImages.length > 0) {
@@ -1237,7 +1242,47 @@ CRITICAL PRODUCTION LAWS:
         brief.generatedAssets.generatedFrames = sceneImages;
       }
 
-      stages[3].status = "active";
+      markStage("sfx", "active");
+      emitProgress(55, "Sound FX", "Generating transition sound effects...");
+      void persistCurrentStage("Sound FX");
+      startHeartbeat("Sound FX");
+      try {
+        if (mode === "express" || mode === "standard") {
+          const { generateElevenLabsSoundEffect } = await import("../runtime/providers/elevenLabsTTS");
+          const sfxResult = await withTimeout(
+            generateElevenLabsSoundEffect("short cinematic whoosh transition hit for slide change, clean studio, no music, no voice", 1.5, signal),
+            30000,
+            "Sound FX generation timed out after 30s",
+            signal
+          );
+          if (isValidMediaData(sfxResult)) {
+            try {
+              const storedSfx = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "audio",
+                storagePath: `${production.id}/audio/sfx.mp3`,
+                dataUrlOrBlob: sfxResult,
+                mimeType: "audio/mpeg",
+                prompt: "Narrator slide transition whoosh",
+                provider: "ElevenLabs",
+              });
+              realSfxUrl = storedSfx?.publicUrl || sfxResult;
+            } catch {
+              realSfxUrl = sfxResult;
+            }
+            console.log(`[SPARK Pipeline] Sound FX ready -> ${realSfxUrl}`);
+          }
+        }
+        markStage("sfx", realSfxUrl ? "done" : "done");
+      } catch (sfxErr: any) {
+        if (sfxErr?.name === "AbortError" || signal?.aborted) throw sfxErr;
+        console.warn("[SPARK Pipeline] Sound FX notice:", sfxErr);
+        markStage("sfx", "done");
+      }
+      await persistCurrentStage("Sound FX");
+
+      markStage("video", "active");
       emitProgress(60, "Video", `Synthesizing ${mode.toUpperCase()} motion conditioned on single-scene keyframes...`);
       void persistCurrentStage("Video");
       startHeartbeat("Video");
@@ -1344,8 +1389,10 @@ CRITICAL PRODUCTION LAWS:
                 compileNarratorSlideshowVideo({
                   imageUrls: targetImages,
                   audioUrl: realVoiceUrl,
-                  onScreenTexts: targetTexts,
+                  sfxUrl: realSfxUrl,
                   totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+                  width: compileWidth,
+                  height: compileHeight,
                 }),
                 60000,
                 "Narrator slideshow compilation timed out after 60s",
@@ -1717,11 +1764,77 @@ CRITICAL PRODUCTION LAWS:
           : "Scene video synthesis completed but did not produce verified scene clips in Storage.";
       }
 
-      stages[3].status = isVideoSuccess ? "done" : "failed";
+      markStage("video", isVideoSuccess ? "done" : "failed");
       await persistCurrentStage("Video");
 
+      markStage("captions", "active");
+      emitProgress(84, "Captions", "Applying captions overlay on compiled video...");
+      void persistCurrentStage("Captions");
+      startHeartbeat("Captions");
+      const captionLines = currentStoryboard.map((s, idx) => {
+        const primaryOnScreen = s.onScreenText;
+        if (primaryOnScreen) {
+          const formatted = formatBurnedOnScreenText(primaryOnScreen);
+          if (formatted) return formatted;
+        }
+        const beatOnScreen = brief.beats?.[idx]?.onScreenText;
+        if (beatOnScreen) {
+          const formatted = formatBurnedOnScreenText(beatOnScreen);
+          if (formatted) return formatted;
+        }
+        return "";
+      });
+      const hasCaptions = captionLines.some((t) => t && t.trim().length > 0);
+      if (mode === "express" && isVideoSuccess && hasCaptions && realVoiceUrl) {
+        try {
+          const captionImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
+          const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+          const captioned = await withTimeout(
+            compileNarratorSlideshowVideo({
+              imageUrls: captionImages,
+              audioUrl: realVoiceUrl,
+              sfxUrl: realSfxUrl,
+              onScreenTexts: captionLines,
+              totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+              width: compileWidth,
+              height: compileHeight,
+            }),
+            60000,
+            "Caption overlay compile timed out after 60s",
+            signal
+          );
+          if (captioned?.blob && captioned.blob.size > 0) {
+            const ext = captioned.extension || "mp4";
+            const storedCaptioned = await this.uploadAssetToStorage({
+              productionId: production.id,
+              brandId: (brand as any).id,
+              assetType: "video",
+              storagePath: getStoragePath(`video/master.${ext}`),
+              dataUrlOrBlob: captioned.blob,
+              mimeType: captioned.mimeType || `video/${ext}`,
+              prompt: "Narrator master with caption overlay",
+              provider: "NarratorSlideshowCompiler",
+            });
+            if (storedCaptioned?.publicUrl && isDurableMasterVideoReady(storedCaptioned.publicUrl)) {
+              realVideoUrl = storedCaptioned.publicUrl;
+            }
+          }
+          markStage("captions", "done");
+        } catch (capErr: any) {
+          if (capErr?.name === "AbortError" || signal?.aborted) throw capErr;
+          console.warn("[SPARK Pipeline] Caption overlay notice:", capErr);
+          markStage("captions", "done");
+        }
+      } else {
+        markStage("captions", "done");
+      }
+      if (!brief.generatedAssets) brief.generatedAssets = {};
+      (brief.generatedAssets as any).captionLines = captionLines;
+      (brief.generatedAssets as any).sfxUrl = realSfxUrl;
+      await persistCurrentStage("Captions");
+
       // Stage 4 — Proposed Thumbnail Variants (Runs AFTER Master Video / Slideshow Compile)
-      stages[4].status = "active";
+      markStage("thumbnails", "active");
       emitProgress(88, "Thumbnails", "Generating Proposed Thumbnail Variants with Locked Identity...");
       void persistCurrentStage("Thumbnails");
       startHeartbeat("Thumbnails");
@@ -1731,7 +1844,7 @@ CRITICAL PRODUCTION LAWS:
 
       if (targetThumbCount === 0) {
         console.log("[SPARK Pipeline] Thumbnail count is 0 in credit controls. Skipping thumbnail generation loop.");
-        stages[4].status = "done";
+        markStage("thumbnails", "done");
         await persistCurrentStage("Thumbnails");
       } else {
         try {
@@ -1866,12 +1979,12 @@ Brand: ${brand.name}
           if (!lastError) lastError = `Thumbnail Stage: ${tLoopErr?.message || String(tLoopErr)}`;
         }
 
-        stages[4].status = enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed";
+        markStage("thumbnails", enrichedThumbnails.some((t) => isValidMediaData(t.image)) ? "done" : "failed");
         await persistCurrentStage("Thumbnails");
       }
 
       // Stage 5 — Finalizing Media Package
-      stages[5].status = "active";
+      markStage("saving", "active");
       emitProgress(98, "Saving", "Finalizing verified media assets package...");
       void persistCurrentStage("Saving");
 
@@ -1880,7 +1993,10 @@ Brand: ${brand.name}
       if (!brief.generatedAssets) brief.generatedAssets = {};
       brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
       brief.generatedAssets.voiceoverUrl = realVoiceUrl;
+      brief.generatedAssets.generatedFrames = sceneImages.length > 0 ? sceneImages : brief.generatedAssets.generatedFrames;
+      brief.generatedAssets.generatedAudio = [realVoiceUrl, realSfxUrl].filter(Boolean) as string[];
       brief.generatedAssets.thumbnails = enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails;
+      (brief.generatedAssets as any).sfxUrl = realSfxUrl;
 
       const isExpressNarrator = mode === "express";
       const isAutonomous = (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false;
@@ -1923,7 +2039,7 @@ Brand: ${brand.name}
             : `${mode.toUpperCase()} ${sceneClips.length} scene clips synthesized. Ready for shot review and executive merge.`)
         : lastError;
 
-      stages[5].status = isOverallSuccess ? "done" : "failed";
+      markStage("saving", isOverallSuccess ? "done" : "failed");
       await persistCurrentStage(isOverallSuccess ? "Complete" : "Failed");
 
       const renderCompletedAt = new Date().toISOString();
@@ -2296,7 +2412,45 @@ FIX REVISION FOR SCENE ${sceneIndex}:
 Original Beat Action: ${sceneToFix.action || sceneToFix.scriptBeat || sceneToFix.visualDescription}
 EXECUTIVE REVISION REASON: "${editNotes}"
 Apply revision while maintaining 100% subject identity and set continuity.
+NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography.
 `.trim();
+
+      if (identityPack.mode === "express") {
+        const generatedStill = await withTimeout(
+          ModelRouter.executeCategoryRequest("storyboardImages", {
+            prompt: beatPrompt,
+            referenceImageUrl: fixVisualLock.primaryRefUrl,
+            referenceImageUrls: fixVisualLock.imageUrls,
+            aspectRatio: identityPack.aspectRatio,
+          }),
+          60000,
+          `Scene ${sceneIndex} still regeneration timed out after 60s`
+        );
+        if (isValidMediaData(generatedStill)) {
+          let finalStill = generatedStill;
+          try {
+            const storedStill = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any).id,
+              assetType: "image",
+              storagePath: `${productionId}/scenes/scene-0${sceneIndex}.png`,
+              dataUrlOrBlob: generatedStill,
+              mimeType: "image/png",
+              prompt: beatPrompt,
+              provider: "ModelRouter",
+            });
+            if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+          } catch {}
+          sceneToFix.image = finalStill;
+          sceneToFix.keyframeImageUrl = finalStill;
+          sceneToFix.status = "ready";
+          sceneToFix.updatedAt = new Date().toISOString();
+          return sceneToFix;
+        }
+        sceneToFix.status = "needs_edit";
+        sceneToFix.lastError = "Still regeneration returned no image.";
+        return sceneToFix;
+      }
 
       const activeVideo = resolveActiveVideoProvider();
       const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;

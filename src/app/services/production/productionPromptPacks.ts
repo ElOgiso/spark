@@ -12,7 +12,7 @@ ANTI-SLOP & CONTINUITY LAWS:
 1. SUBJECT LOCK: The primary character must be identical in face, hair, and wardrobe to the provided character reference sheet across every single frame/clip. Absolutely no character drift or face morphing.
 2. SET CONTINUITY: Same set, backdrop, architectural details, and lighting atmosphere across all beats. No random environment resets mid-production.
 3. SINGLE ACTION FOCUS: Render exactly ONE primary physical action per beat/scene. No multi-action confusion or random subject movement.
-4. ON-SCREEN TYPOGRAPHY: On-screen text overlays must be bold, short (<=6-8 words), high-contrast, placed in safe margins (lower-third), with zero gibberish text or deformed characters.
+4. NO TEXT ON GENERATED STILLS: Never render letters, words, captions, subtitles, watermarks, or UI type on scene stills. Captions are applied later at the caption stage. Thumbnails are the only generated images allowed to contain headline text.
 5. OPTICAL DISCIPLINE: 8K UHD photorealistic render, prime cinema lens, natural depth of field, coherent color grade, zero AI distortion or extra limbs.
 `.trim();
 
@@ -137,9 +137,9 @@ ${globalLockBlock}
 EXPRESS NARRATOR KEYFRAME (Panel ${sIdx + 1} of ${totalScenes}):
 Visual Action: ${actionDesc}
 Camera Framing: ${framing}
-ON-SCREEN TEXT OVERLAY LAW: Render bold, readable, high-contrast typography overlay on the image: "${sceneText}" (bold typography, safe margins, high contrast, <=6-8 words).
+NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
 Hook Context: "${brief.hook}".
-Clear sequential storytelling. Crisp lower-third text backdrop.
+Clear sequential storytelling.
 `.trim(),
       videoPromptTemplate: () => "",
     };
@@ -156,10 +156,9 @@ ${globalLockBlock}
 
 CINEMATIC MASTER KEYFRAME (Scene ${sIdx + 1} of ${totalScenes}):
 INPUT REF [1]: Character Reference Sheet (${charName})
-INPUT REF [2]: Master Storyboard Grid Reference
 ACTION: ${actionDesc}
 CAMERA: ${framing}, anamorphic prime optics, dynamic tracking.
-ON-SCREEN TYPOGRAPHY LAW: Render high-contrast crisp text overlay: "${sceneText}" (bold typography, safe bottom margins).
+NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
 Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic render.
 `.trim(),
       videoPromptTemplate: (durationSec, sceneDescriptions) => `
@@ -192,10 +191,9 @@ ${globalLockBlock}
 
 HYBRID STORYBOARD PANEL (Panel ${sIdx + 1} of ${totalScenes}):
 INPUT REF [1]: Character Reference Sheet (${charName})
-INPUT REF [2]: Master Storyboard Grid Reference
 ACTION: ${actionDesc}
 CAMERA: ${framing}
-ON-SCREEN TEXT OVERLAY LAW: Render bold typography overlay: "${sceneText}" (high contrast, safe lower-third margin).
+NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
 Clear host-on-camera perspective with high-impact visual engagement.
 `.trim(),
     videoPromptTemplate: (durationSec, sceneDescriptions) => `
@@ -281,7 +279,7 @@ DEEP / CINEMATIC DIRECTIVES:
     : `
 STANDARD / HYBRID DIRECTIVES:
 ${panels.some((p) => p.audio === "vo") ? "- B-ROLL / EXTERNAL VO: No on-character speech lipsync; leave acoustic room for external voiceover bed; minimal subtle diegetic audio." : "- TALENT SPEECH: Direct on-camera speech synchronized with presenter performance; diegetic sound design."}
-- No random subtitles unless short on-screen graphic text (<=6 words).
+- No burned text, no subtitles, no captions on frame. Captions are a later overlay stage.
 - Aspect: ${cellAspect}.
 `.trim();
 
@@ -373,6 +371,7 @@ ANIMATION INSTRUCTION:
 CRITICAL PRODUCTION LAWS:
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
+- NO burned-in text, letters, captions, or subtitles on the frame.
 - Professional cinematic motion, natural motion blur, realistic physics.
 `.trim();
 }

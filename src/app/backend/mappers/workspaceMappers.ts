@@ -285,6 +285,17 @@ export function isUuid(value?: string | null): boolean {
   return Boolean(value && UUID_RE.test(value));
 }
 
+export function generateUuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export function domainProductionToInsert(
   brandId: string,
   production: Production,
@@ -312,7 +323,7 @@ export function domainProductionToInsert(
       }
     : undefined;
 
-  return {
+  const row: Partial<ProductionRow> = {
     brand_id: brandId,
     viral_spark_id: isUuid(production.sparkId) ? production.sparkId! : null,
     title: production.title,
@@ -329,9 +340,20 @@ export function domainProductionToInsert(
       generationProgress: genProg,
       briefObject,
     } as Json,
-    assets: [],
+    assets: {
+      video_url: videoUrl || null,
+      audio_url: audioUrl || null,
+      storyboard_grid_url: storyboardGridUrl || null,
+      ...((production.brief?.generatedAssets as any) || {}),
+    } as any,
     reasoning: (production.reasoning || {}) as Json,
   };
+
+  if (isUuid(production.id)) {
+    (row as any).id = production.id;
+  }
+
+  return row;
 }
 
 export function reviewRowToDomain(row: ReviewItemRow): ReviewItem {
@@ -381,7 +403,7 @@ export function domainReviewToInsert(
     Approved: "approved",
     "Needs Edit": "needs_edit",
   };
-  return {
+  const row: Partial<ReviewItemRow> = {
     brand_id: brandId,
     production_id: item.productionId,
     status: statusMap[item.status] || "pending",
@@ -400,6 +422,12 @@ export function domainReviewToInsert(
       audioUrl: item.audioUrl,
     } as Json,
   };
+
+  if (isUuid(item.id)) {
+    (row as any).id = item.id;
+  }
+
+  return row;
 }
 
 export function publishJobRowToDomain(row: PublishJobRow): PublishJob {

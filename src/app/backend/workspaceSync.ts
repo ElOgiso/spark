@@ -428,16 +428,19 @@ export async function persistProductionCreate(brandId: string, production: Produ
 }
 
 export async function persistProductionUpdate(id: string, production: Partial<Production>) {
-  if (!isSupabaseConfigured() || !/^[0-9a-f-]{36}$/i.test(id)) return;
+  if (!isSupabaseConfigured() || !isUuid(id)) return;
   const supabase = getSupabaseClient();
   if (!supabase) return;
 
-  const { data: existing } = await (supabase.from("productions") as any).select("brief").eq("id", id).single();
+  const { data: existing } = await (supabase.from("productions") as any).select("brief, assets").eq("id", id).single();
   const existingBrief = (existing?.brief && typeof existing.brief === "object" && !Array.isArray(existing.brief))
     ? existing.brief
     : {};
   const existingBriefObj = (existingBrief.briefObject && typeof existingBrief.briefObject === "object" && !Array.isArray(existingBrief.briefObject))
     ? existingBrief.briefObject
+    : {};
+  const existingAssets = (existing?.assets && typeof existing.assets === "object" && !Array.isArray(existing.assets))
+    ? existing.assets
     : {};
 
   const patch: Record<string, unknown> = {};
@@ -479,13 +482,21 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     ...existingBrief,
     aspectRatio: production.aspectRatio || existingBrief.aspectRatio,
     formats: production.formats || existingBrief.formats,
-    scenes: production.scenes || existingBrief.scenes,
+    scenes: production.scenes || (production as any).productionScenes || existingBrief.scenes,
     sparkId: production.sparkId || existingBrief.sparkId,
     audioUrl,
     videoUrl,
     storyboardGridUrl,
     generationProgress: genProg,
     briefObject,
+  };
+
+  patch.assets = {
+    ...existingAssets,
+    video_url: videoUrl || null,
+    audio_url: audioUrl || null,
+    storyboard_grid_url: storyboardGridUrl || null,
+    ...(((production as any).brief?.generatedAssets as any) || {}),
   };
 
   if ((production as any).reasoning) {
@@ -539,8 +550,8 @@ function isUuid(id?: string | null) {
 
 export async function persistReviewCreate(brandId: string, item: ReviewItem) {
   if (!isSupabaseConfigured()) return null;
-  if (!isUuid(item.productionId)) return null;
-  const result = await createReviewItem(domainReviewToInsert(brandId, item));
+  const insert = domainReviewToInsert(brandId, item);
+  const result = await createReviewItem(insert);
   return result.data ? reviewRowToDomain(result.data) : null;
 }
 
@@ -550,6 +561,31 @@ export async function persistReviewApprove(id: string) {
     status: "approved",
     approved_at: new Date().toISOString(),
   } as any);
+}
+
+export async function deleteProductionCascade(brandId: string, productionId: string, title?: string) {
+  if (!isSupabaseConfigured()) return;
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  try {
+    if (isUuid(productionId)) {
+      // 1. Delete review items where production_id = id OR id = id
+      await (supabase.from("review_items") as any).delete().or(`production_id.eq.${productionId},id.eq.${productionId}`);
+      // 2. Delete production assets
+      await (supabase.from("production_assets") as any).delete().eq("production_id", productionId).catch(() => {});
+      // 3. Delete production row
+      await (supabase.from("productions") as any).delete().eq("id", productionId);
+    }
+    
+    // If legacy non-UUID id or cleanup by title + brand
+    if (brandId && isUuid(brandId) && title) {
+      await (supabase.from("review_items") as any).delete().eq("brand_id", brandId).eq("reasoning->>title", title);
+      await (supabase.from("productions") as any).delete().eq("brand_id", brandId).eq("title", title);
+    }
+  } catch (err) {
+    console.warn("[workspaceSync] deleteProductionCascade error:", err);
+  }
 }
 
 export async function persistAccountToken(brandId: string, account: any) {

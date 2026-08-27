@@ -450,14 +450,15 @@ export class AIProviderOrchestrator {
                     for (const p of inlineParts) {
                       sdkParts.push({ inlineData: { data: p.data, mimeType: p.mimeType } });
                     }
-                    sdkParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
+                    const targetImageAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
+                    sdkParts.push({ text: `Generate a ${targetImageAspect} high-contrast production image:\n${options.prompt}` });
 
                     const response = await (ai.models as any).generateContent({
                       model: modelId,
                       contents: [{ role: "user", parts: sdkParts }],
                       config: {
                         responseModalities: ["IMAGE"],
-                        imageConfig: { aspectRatio: "9:16" },
+                        imageConfig: { aspectRatio: targetImageAspect },
                       },
                     });
 
@@ -520,7 +521,8 @@ export class AIProviderOrchestrator {
                 for (const p of restInlineParts) {
                   restParts.push({ inline_data: { data: p.data, mime_type: p.mimeType } });
                 }
-                restParts.push({ text: `Generate a 9:16 vertical high-contrast production image:\n${options.prompt}` });
+                const targetImageAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
+                restParts.push({ text: `Generate a ${targetImageAspect} high-contrast production image:\n${options.prompt}` });
 
                 const restRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
                   method: "POST",
@@ -529,7 +531,7 @@ export class AIProviderOrchestrator {
                     contents: [{ parts: restParts }],
                     generationConfig: {
                       responseModalities: ["IMAGE"],
-                      imageConfig: { aspectRatio: "9:16" },
+                      imageConfig: { aspectRatio: targetImageAspect },
                     },
                   }),
                 });
@@ -566,10 +568,10 @@ export class AIProviderOrchestrator {
                   provider: "google",
                   endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
                   payload: {
-                    contents: [{ parts: [{ text: `Generate a 9:16 vertical high-contrast production image: ${options.prompt}` }] }],
+                    contents: [{ parts: [{ text: `Generate a ${options.aspectRatio === "16:9" ? "16:9" : "9:16"} high-contrast production image: ${options.prompt}` }] }],
                     generationConfig: {
                       responseModalities: ["IMAGE"],
-                      imageConfig: { aspectRatio: "9:16" },
+                      imageConfig: { aspectRatio: options.aspectRatio === "16:9" ? "16:9" : "9:16" },
                     },
                   },
                 }),
@@ -605,7 +607,7 @@ export class AIProviderOrchestrator {
 
           const imagenPayload = {
             instances: [{ prompt: options.prompt }],
-            parameters: { sampleCount: 1, aspectRatio: "9:16", outputMimeType: "image/png" },
+            parameters: { sampleCount: 1, aspectRatio: options.aspectRatio === "16:9" ? "16:9" : "9:16", outputMimeType: "image/png" },
           };
 
           if (apiKey) {
@@ -735,27 +737,30 @@ export class AIProviderOrchestrator {
             "dall-e-3",
           ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-          const buildPayload = (model: string, size = "1024x1536") => {
+          const isLandscape = options.aspectRatio === "16:9";
+          const buildPayload = (model: string, size = isLandscape ? "1536x1024" : "1024x1536") => {
             const isGptImage = model.startsWith("gpt-image");
             if (isGptImage) {
               return {
                 model,
                 prompt: options.prompt,
                 n: 1,
-                size, // portrait 9:16 for GPT Image (no response_format!)
+                size,
               };
             }
             return {
               model: "dall-e-3",
               prompt: options.prompt,
               n: 1,
-              size: "1024x1792",
+              size: isLandscape ? "1792x1024" : "1024x1792",
               response_format: "b64_json",
             };
           };
 
           for (const modelToTry of candidateModels) {
-            const sizesToTry = modelToTry.startsWith("gpt-image") ? ["1024x1536", "1024x1024", "auto"] : ["1024x1792"];
+            const sizesToTry = modelToTry.startsWith("gpt-image")
+              ? (isLandscape ? ["1536x1024", "1024x1024", "auto"] : ["1024x1536", "1024x1024", "auto"])
+              : [isLandscape ? "1792x1024" : "1024x1792"];
 
             for (const sizeChoice of sizesToTry) {
               const openAiImagePayload = buildPayload(modelToTry, sizeChoice);
@@ -1074,6 +1079,7 @@ export class AIProviderOrchestrator {
             prompt: options.prompt,
             n: 1,
             response_format: "b64_json",
+            aspect_ratio: options.aspectRatio === "16:9" ? "16:9" : "9:16",
           };
           if (options.referenceImageUrl || options.referenceImageUrls?.length) {
             grokImagePayload.image_url = options.referenceImageUrl || options.referenceImageUrls?.[0];

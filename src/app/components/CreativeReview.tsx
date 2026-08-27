@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { NotificationService } from "../notifications/notificationService";
@@ -127,6 +127,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
 
+  useEffect(() => {
+    const st = String(activeReview?.status || activeProd?.status || "");
+    if (st === "Needs Edit") setShowAssetsGallery(true);
+  }, [activeReview?.status, activeProd?.status]);
+
   if (showAssetsGallery) {
     return (
       <DesktopProductionAssetsGallery
@@ -184,15 +189,13 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     setActionSuccess("Needs Edit");
     NotificationService.addNotification({
       title: "Revision Requested",
-      description: `"${proposal.title}" moved back to drafting with requested revisions.`,
+      description: `"${proposal.title}" opened in Production Assets for image and scene corrections.`,
       type: "brand_rule_conflict",
       priority: "high",
-      actionLabel: "View Review Center",
+      actionLabel: "Open Production Assets",
       relatedRoute: "/review"
     });
-    setTimeout(() => {
-      onBack?.();
-    }, 1500);
+    setShowAssetsGallery(true);
   };
 
   const handleRegenerate = async () => {

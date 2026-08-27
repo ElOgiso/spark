@@ -42,15 +42,18 @@ import {
   persistMemoryCreate,
   persistProductionCreate,
   persistProductionUpdate,
+  persistReviewCreate,
+  persistReviewUpdate,
   persistReviewApprove,
   persistReviewNeedsEdit,
   persistViralSparkCreate,
   persistPublishJobCreate,
   persistAISettings,
   persistCreditSettings,
+  deleteProductionCascade,
 } from "../backend/workspaceSync";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
-import { isUuid } from "../backend/mappers/workspaceMappers";
+import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
@@ -1492,8 +1495,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
-    const prodId = `p-${Date.now()}`;
-    const reviewId = `r-${Date.now()}`;
+    const prodId = generateUuid();
+    const reviewId = generateUuid();
 
     const effectiveFormat = getEffectiveFormatSettings(state);
     const effectiveCredit = getEffectiveCreditSettings(state);
@@ -1583,7 +1586,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           targetDurationSec: effectiveDuration,
         })
         .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
-          const stableEnrichedProd: Production = {
+          let effectiveProdId = prodId;
+          let effectiveReviewId = reviewId;
+
+          let stableEnrichedProd: Production = {
             ...enrichedProd,
             id: prodId,
             sparkId: spark.id,
@@ -1594,32 +1600,74 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
           };
 
+          let stableEnrichedReview: ReviewItem = {
+            ...enrichedReview,
+            id: reviewId,
+            productionId: prodId,
+          };
+
+          const brandId = getBrandWorkspaceId();
+          if (isSupabaseConfigured() && brandId) {
+            try {
+              const [dbProd, dbReview] = await Promise.all([
+                persistProductionCreate(brandId, stableEnrichedProd),
+                persistReviewCreate(brandId, stableEnrichedReview),
+              ]);
+
+              if (dbProd?.id && dbProd.id !== prodId) {
+                const oldProdId = prodId;
+                effectiveProdId = dbProd.id;
+                stableEnrichedProd = { ...stableEnrichedProd, ...dbProd, id: dbProd.id, sparkId: spark.id };
+                stableEnrichedReview = { ...stableEnrichedReview, productionId: dbProd.id };
+
+                setState((prev: any) => ({
+                  ...prev,
+                  productions: prev.productions.map((p: any) =>
+                    p.id === oldProdId ? { ...p, ...stableEnrichedProd, id: dbProd.id, sparkId: spark.id } : p
+                  ),
+                  reviewItems: prev.reviewItems.map((r: any) =>
+                    r.productionId === oldProdId ? { ...r, ...stableEnrichedReview, productionId: dbProd.id } : r
+                  ),
+                }));
+              }
+
+              if (dbReview?.id && dbReview.id !== reviewId) {
+                const oldReviewId = reviewId;
+                effectiveReviewId = dbReview.id;
+                stableEnrichedReview = { ...stableEnrichedReview, ...dbReview, id: dbReview.id };
+                setState((prev: any) => ({
+                  ...prev,
+                  reviewItems: prev.reviewItems.map((r: any) =>
+                    r.id === oldReviewId ? { ...r, ...stableEnrichedReview, id: dbReview.id } : r
+                  ),
+                }));
+              }
+            } catch (dbCreateErr) {
+              console.warn("[SparkContext] Persist production/review create notice:", dbCreateErr);
+            }
+          }
+
           setState((prev: any) => ({
             ...prev,
             productions: prev.productions.map((p: any) =>
-              p.id === prodId ? { ...p, ...stableEnrichedProd, id: prodId, sparkId: spark.id } : p
+              p.id === effectiveProdId ? { ...p, ...stableEnrichedProd, id: effectiveProdId, sparkId: spark.id } : p
             ),
             reviewItems: prev.reviewItems.map((r: any) =>
-              r.id === reviewId || r.productionId === prodId
-                ? { ...r, ...enrichedReview, id: reviewId, productionId: prodId }
+              r.id === effectiveReviewId || r.productionId === effectiveProdId
+                ? { ...r, ...stableEnrichedReview, id: effectiveReviewId, productionId: effectiveProdId }
                 : r
             ),
           }));
 
-          eventBus.emit("SCRIPT_READY", { prodId, title: enrichedProd.title }, state.brand.name);
-
-          const brandId = getBrandWorkspaceId();
-          if (isSupabaseConfigured() && brandId) {
-            void persistProductionCreate(brandId, stableEnrichedProd);
-          }
+          eventBus.emit("SCRIPT_READY", { prodId: effectiveProdId, title: enrichedProd.title }, state.brand.name);
 
           // Chain asset generation automatically when Production Generation is ON
           if (ProductionGenerationGuard.isEnabled()) {
-            if (activeGenerationControllers.current.has(prodId)) {
-              activeGenerationControllers.current.get(prodId)?.abort();
+            if (activeGenerationControllers.current.has(effectiveProdId)) {
+              activeGenerationControllers.current.get(effectiveProdId)?.abort();
             }
             const controller = new AbortController();
-            activeGenerationControllers.current.set(prodId, controller);
+            activeGenerationControllers.current.set(effectiveProdId, controller);
 
             try {
               const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
@@ -1634,7 +1682,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   setState((prev: any) => ({
                     ...prev,
                     productions: prev.productions.map((p: any) => {
-                      if (p.id !== prodId) return p;
+                      if (p.id !== effectiveProdId) return p;
                       const partial = progress.partialAssets;
                       const updatedScenes = partial?.storyboard?.length
                         ? partial.storyboard.map((s: any, idx: number) => ({
@@ -1673,7 +1721,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                       };
                     }),
                     reviewItems: prev.reviewItems.map((r: any) => {
-                      if (r.productionId !== prodId && r.id !== reviewId) return r;
+                      if (r.productionId !== effectiveProdId && r.id !== effectiveReviewId) return r;
                       const partial = progress.partialAssets;
                       const currentBrief = r.brief || enrichedBrief;
                       const mergedBrief = currentBrief
@@ -1704,14 +1752,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
                   const bId = getBrandWorkspaceId();
                   if (isSupabaseConfigured() && bId) {
-                    void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
-                      setState((currState: any) => {
-                        const pUpdate = currState.productions?.find((p: any) => p.id === prodId);
-                        const rUpdate = currState.reviewItems?.find((r: any) => r.productionId === prodId || r.id === reviewId);
-                        if (pUpdate?.id) void persistProductionUpdate(pUpdate.id, pUpdate);
-                        if (rUpdate?.id) void persistReviewUpdate(rUpdate.id, rUpdate);
-                        return currState;
-                      });
+                    setState((currState: any) => {
+                      const pUpdate = currState.productions?.find((p: any) => p.id === effectiveProdId);
+                      const rUpdate = currState.reviewItems?.find((r: any) => r.productionId === effectiveProdId || r.id === effectiveReviewId);
+                      if (pUpdate?.id) void persistProductionUpdate(pUpdate.id, pUpdate);
+                      if (rUpdate?.id) void persistReviewUpdate(rUpdate.id, rUpdate);
+                      return currState;
                     });
                   }
                 },
@@ -1722,11 +1768,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               setState((prev: any) => ({
                 ...prev,
                 productions: prev.productions.map((p: any) =>
-                  p.id === prodId
+                  p.id === effectiveProdId
                     ? {
                         ...p,
                         ...updatedProd,
-                        id: prodId,
+                        id: effectiveProdId,
                         sparkId: spark.id,
                         videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || p.videoUrl,
                         audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || p.audioUrl,
@@ -1738,7 +1784,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     : p
                 ),
                 reviewItems: prev.reviewItems.map((r: any) =>
-                  r.productionId === prodId || r.id === reviewId
+                  r.productionId === effectiveProdId || r.id === effectiveReviewId
                     ? {
                         ...r,
                         brief: updatedBrief,
@@ -1752,41 +1798,39 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
               const bId = getBrandWorkspaceId();
               if (isSupabaseConfigured() && bId) {
-                void import("../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
-                  void persistProductionUpdate(prodId, {
-                    ...updatedProd,
+                void persistProductionUpdate(effectiveProdId, {
+                  ...updatedProd,
+                  videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
+                  audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
+                  brief: updatedBrief,
+                });
+                if (effectiveReviewId) {
+                  void persistReviewUpdate(effectiveReviewId, {
                     videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
                     audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
                     brief: updatedBrief,
                   });
-                  if (reviewId) {
-                    void persistReviewUpdate(reviewId, {
-                      videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
-                      audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
-                      brief: updatedBrief,
-                    });
-                  }
-                });
+                }
               }
 
-              eventBus.emit("STORYBOARD_READY", { prodId, title: updatedProd.title }, state.brand.name);
+              eventBus.emit("STORYBOARD_READY", { prodId: effectiveProdId, title: updatedProd.title }, state.brand.name);
             } catch (assetErr: any) {
               if (controller.signal.aborted || assetErr?.name === "AbortError") {
-                console.log(`[SparkContext] Auto generation aborted for prodId ${prodId}`);
+                console.log(`[SparkContext] Auto generation aborted for prodId ${effectiveProdId}`);
                 return;
               }
               console.warn("[SparkContext] Auto asset generation notice:", assetErr);
               setState((prev: any) => ({
                 ...prev,
                 productions: prev.productions.map((p: any) =>
-                  p.id === prodId
+                  p.id === effectiveProdId
                     ? { ...p, isGeneratingAssets: false, lastError: assetErr?.message || String(assetErr) }
                     : p
                 ),
               }));
             } finally {
-              if (activeGenerationControllers.current.get(prodId) === controller) {
-                activeGenerationControllers.current.delete(prodId);
+              if (activeGenerationControllers.current.get(effectiveProdId) === controller) {
+                activeGenerationControllers.current.delete(effectiveProdId);
               }
             }
           }
@@ -1873,14 +1917,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const bId = getBrandWorkspaceId();
         if (isSupabaseConfigured() && bId) {
-          void import("../backend/workspaceSync").then(({ persistProductionUpdate }) => {
-            void persistProductionUpdate(bId, updatedProd as any);
-          });
+          void persistProductionUpdate(productionId, updatedProd as any);
+          const rMatch = state.reviewItems?.find((r: any) => r.productionId === productionId);
+          if (rMatch?.id) {
+            void persistReviewUpdate(rMatch.id, {
+              videoUrl: masterUrl,
+              brief: updatedProd.brief,
+            });
+          }
         }
       }
       return masterUrl;
     },
-    [state.productions, state.brand]
+    [state.productions, state.brand, state.reviewItems]
   );
 
   const strengthenSpark = useCallback(
@@ -2094,6 +2143,28 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ),
       }));
 
+      const bId = getBrandWorkspaceId();
+      if (isSupabaseConfigured() && bId) {
+        void persistProductionUpdate(productionId, {
+          brief: updatedBrief,
+          audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
+          videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
+          status: updatedProd.status,
+          scenes: updatedProd.scenes,
+          generationProgress: updatedProd.generationProgress,
+          isGeneratingAssets: false,
+        });
+        const revItem = state.reviewItems?.find((r: any) => r.productionId === productionId);
+        if (revItem?.id) {
+          void persistReviewUpdate(revItem.id, {
+            brief: updatedBrief,
+            audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
+            videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
+            openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || revItem.openingMoment,
+          });
+        }
+      }
+
       eventBus.emit("STORYBOARD_READY", { prodId: productionId, title: updatedProd.title }, state.brand.name);
     } catch (err: any) {
       if (controller.signal.aborted || err?.name === "AbortError") {
@@ -2297,10 +2368,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch {}
     }
 
+    const targetProd = (state.productions || []).find((p: any) => p.id === productionId);
+    const targetTitle = targetProd?.title;
+
     setState((prev: any) => {
-      const updatedProductions = (prev.productions || []).filter((p: any) => p.id !== productionId);
+      const updatedProductions = (prev.productions || []).filter(
+        (p: any) => p.id !== productionId && (!targetTitle || p.title !== targetTitle || isUuid(p.id))
+      );
       const updatedReviewItems = (prev.reviewItems || []).filter(
-        (r: any) => r.productionId !== productionId && r.id !== productionId && r.id !== `rev-${productionId}`
+        (r: any) =>
+          r.productionId !== productionId &&
+          r.id !== productionId &&
+          r.id !== `rev-${productionId}` &&
+          (!targetTitle || r.title !== targetTitle || isUuid(r.id))
       );
       return {
         ...prev,
@@ -2309,14 +2389,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    if (isSupabaseConfigured()) {
-      void import("../backend/repositories/productionRepository").then(({ deleteProduction: dbDeleteProd }) => {
-        dbDeleteProd(productionId).catch((err) => console.warn("[SparkContext] Delete production DB notice:", err));
-      });
-      void import("../backend/repositories/reviewRepository").then(({ deleteReviewItem: dbDeleteReview }) => {
-        dbDeleteReview(productionId).catch(() => {});
-        dbDeleteReview(`rev-${productionId}`).catch(() => {});
-      });
+    const bId = getBrandWorkspaceId();
+    if (isSupabaseConfigured() && bId) {
+      void deleteProductionCascade(bId, productionId, targetTitle);
     }
   };
 
