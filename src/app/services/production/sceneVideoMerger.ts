@@ -105,10 +105,11 @@ export async function mergeSceneVideos(
       const controller = new AbortController();
       const fetchTimeout = setTimeout(() => controller.abort(), timeoutMs);
 
-      const serverResp = await fetch("/api/runtime/mux", {
+      const serverResp = await fetch("/api/runtime/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          provider: "mux",
           productionId,
           brandId: brandId || "default-brand",
           videoUrls: validUrls,
