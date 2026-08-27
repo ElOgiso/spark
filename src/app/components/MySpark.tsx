@@ -80,6 +80,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
     removeResearchSource,
     syncResearchSource,
     createProductionFromSpark,
+    viralSparks = [],
     updateMemoryItem,
     toggleContentPillar,
     toggleTone,
@@ -1955,9 +1956,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                 <button
                                   onClick={() => {
                                     if (createProductionFromSpark) {
-                                      const sparkId = `spk-${Date.now()}`;
-                                      createProductionFromSpark(sparkId);
-                                      onNavigate("/production");
+                                      const targetSpark = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                      if (targetSpark) {
+                                        createProductionFromSpark(targetSpark);
+                                        onNavigate("/production");
+                                      }
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium hover:bg-foreground/95 transition-colors flex items-center gap-1.5"
@@ -1968,9 +1971,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                 <button
                                   onClick={() => {
                                     if (createProductionFromSpark) {
-                                      const sparkId = `spk-${Date.now()}`;
-                                      createProductionFromSpark(sparkId);
-                                      onNavigate("/production");
+                                      const targetSpark = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                      if (targetSpark) {
+                                        createProductionFromSpark(targetSpark);
+                                        onNavigate("/production");
+                                      }
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent-foreground text-xs font-medium transition-colors flex items-center gap-1.5"
@@ -1981,9 +1986,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                 <button
                                   onClick={() => {
                                     if (createProductionFromSpark) {
-                                      const sparkId = `spk-${Date.now()}`;
-                                      createProductionFromSpark(sparkId);
-                                      onNavigate("/production");
+                                      const targetSpark = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                      if (targetSpark) {
+                                        createProductionFromSpark(targetSpark);
+                                        onNavigate("/production");
+                                      }
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-background border border-border hover:bg-accent/10 text-foreground text-xs font-medium transition-colors flex items-center gap-1.5"
@@ -1994,9 +2001,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                 <button
                                   onClick={() => {
                                     if (createProductionFromSpark) {
-                                      const sparkId = `spk-${Date.now()}`;
-                                      createProductionFromSpark(sparkId);
-                                      onNavigate("/production");
+                                      const targetSpark = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                      if (targetSpark) {
+                                        createProductionFromSpark(targetSpark);
+                                        onNavigate("/production");
+                                      }
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-background border border-border hover:bg-accent/10 text-foreground text-xs font-medium transition-colors flex items-center gap-1.5"

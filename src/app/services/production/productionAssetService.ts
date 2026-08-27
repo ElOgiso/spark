@@ -1360,22 +1360,6 @@ CRITICAL PRODUCTION LAWS:
 
             try {
               const targetImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
-              const targetTexts = currentStoryboard.map((s, idx) => {
-                const primaryOnScreen = s.onScreenText;
-                if (primaryOnScreen) {
-                  const formatted = formatBurnedOnScreenText(primaryOnScreen);
-                  if (formatted) return formatted;
-                }
-                const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-                if (beatOnScreen) {
-                  const formatted = formatBurnedOnScreenText(beatOnScreen);
-                  if (formatted) return formatted;
-                }
-                if (idx === 0 && brief.hook) {
-                  return formatBurnedOnScreenText(brief.hook);
-                }
-                return "";
-              });
 
               if (targetImages.length === 0) {
                 throw new Error("Narrator compilation requires generated keyframe still images (0 stills available).");

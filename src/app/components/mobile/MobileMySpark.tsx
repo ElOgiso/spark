@@ -80,6 +80,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     removeResearchSource,
     syncResearchSource,
     createProductionFromSpark,
+    viralSparks = [],
     updateMemoryItem,
     toggleContentPillar,
     toggleTone,
@@ -1386,8 +1387,11 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                           <button
                             onClick={() => {
                               if (createProductionFromSpark) {
-                                createProductionFromSpark(`spk-${Date.now()}`);
-                                onNavigate?.("/review");
+                                const target = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                if (target) {
+                                  createProductionFromSpark(target);
+                                  onNavigate?.("/review");
+                                }
                               }
                             }}
                             className="w-full py-2 px-3 rounded-lg bg-foreground text-background text-xs font-semibold flex items-center justify-center gap-1.5"
@@ -1397,8 +1401,11 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                           <button
                             onClick={() => {
                               if (createProductionFromSpark) {
-                                createProductionFromSpark(`spk-${Date.now()}`);
-                                onNavigate?.("/review");
+                                const target = viralSparks.find((s: any) => s.title === source.displayName) || viralSparks[0];
+                                if (target) {
+                                  createProductionFromSpark(target);
+                                  onNavigate?.("/review");
+                                }
                               }
                             }}
                             className="w-full py-2 px-3 rounded-lg bg-accent/20 text-accent-foreground text-xs font-semibold flex items-center justify-center gap-1.5"
