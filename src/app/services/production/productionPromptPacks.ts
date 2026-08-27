@@ -41,46 +41,53 @@ export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationS
       .replace(/\s+/g, " ")
       .trim();
 
-  // If structured beats exist, assemble the voice script directly from beat spoken lines
-  if (brief.beats && brief.beats.length > 0) {
-    const beatLines = brief.beats
-      .map((b) => clean(b.spokenLines))
-      .filter((line) => line.length > 0);
-
-    if (beatLines.length > 0) {
-      const fullScript = beatLines.join(" ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
-      // Allow ~15-20 characters per second of target duration (e.g. 300s -> ~5000 chars, 60s -> ~1000 chars)
-      const maxCharBudget = Math.max(800, targetDurationSec * 18);
-      return fullScript.slice(0, maxCharBudget);
-    }
-  }
-
-  const hook = typeof brief.hook === "string" ? brief.hook.trim() : "";
-  const outline = typeof brief.scriptOutline === "string" ? brief.scriptOutline.trim() : "";
-
-  let cta = "";
-  if (typeof brief.caption === "string" && brief.caption.trim()) {
-    const firstSentence = brief.caption.split(/[.!?\n]/)[0]?.trim();
+  const hook = typeof brief.hook === "string" ? clean(brief.hook) : "";
+  const beats = brief.beats || [];
+  let cta = typeof brief.spokenCta === "string" ? clean(brief.spokenCta) : "";
+  if (!cta && typeof brief.caption === "string" && brief.caption.trim()) {
+    const firstSentence = clean(brief.caption.split(/[.!?\n]/)[0] || "");
     if (firstSentence && firstSentence.length > 5 && firstSentence.length < 120) {
       cta = firstSentence;
     }
   }
   if (!cta && brief.storyboard && brief.storyboard.length > 0) {
     const lastScene = brief.storyboard[brief.storyboard.length - 1];
-    cta = lastScene?.onScreenText || lastScene?.scriptSnippet || "";
+    cta = clean(lastScene?.spokenLines || lastScene?.scriptSnippet || lastScene?.onScreenText || "");
   }
   if (!cta) {
     cta = "Follow for more strategies.";
   }
 
-  const cleanHook = clean(hook);
-  const cleanOutline = clean(outline);
-  const cleanCta = clean(cta);
+  const lines: string[] = [];
+  if (beats.length > 0) {
+    const firstBeatSpoken = clean(beats[0].spokenLines || "");
+    const hookAlreadyInFirstBeat = hook && firstBeatSpoken.toLowerCase().includes(hook.toLowerCase().slice(0, 20));
 
-  const parts = [cleanHook, cleanOutline, cleanCta].filter(Boolean);
-  const fullScript = parts.join(". ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ");
+    if (hook && !hookAlreadyInFirstBeat && beats[0].valueJob !== "hook") {
+      lines.push(hook);
+    }
 
-  const maxCharBudget = Math.max(800, targetDurationSec * 18);
+    for (let i = 0; i < beats.length; i++) {
+      const beatSpoken = clean(beats[i].spokenLines || "");
+      if (beatSpoken) {
+        lines.push(beatSpoken);
+      }
+    }
+
+    const lastBeatSpoken = clean(beats[beats.length - 1].spokenLines || "");
+    const ctaAlreadyInLastBeat = cta && lastBeatSpoken.toLowerCase().includes(cta.toLowerCase().slice(0, 20));
+
+    if (cta && !ctaAlreadyInLastBeat && beats[beats.length - 1].valueJob !== "cta") {
+      lines.push(cta);
+    }
+  } else {
+    if (hook) lines.push(hook);
+    if (brief.scriptOutline) lines.push(clean(brief.scriptOutline));
+    if (cta) lines.push(cta);
+  }
+
+  const fullScript = lines.join(" ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ").trim();
+  const maxCharBudget = Math.max(1000, targetDurationSec * 25);
   return fullScript.slice(0, maxCharBudget);
 }
 

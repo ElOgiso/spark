@@ -136,6 +136,15 @@ function rankAndFormatMemory(memoryItems: MemoryItem[] = []): string {
  * Resolves deterministic beat budget, spoken word floor, and time slicing
  * based on formatSettings.targetDurationSec.
  */
+export function countScriptWords(text?: string | null): number {
+  if (!text || typeof text !== "string") return 0;
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .length;
+}
+
 export function resolveBeatBudget(durationSec: number): {
   count: number;
   wordFloor: number;
@@ -155,15 +164,15 @@ export function resolveBeatBudget(durationSec: number): {
     count = Math.max(8, Math.ceil(sec / 20));
   }
 
-  // Duration of script must match target (word count ≈ 2.5 words/sec)
-  const targetWords = Math.round(sec * 2.5);
-  const wordFloor = Math.max(25, Math.round(targetWords * 0.75));
+  // WORD LAW: targetWords = round(targetDurationSec * 2.4), minWords = round(targetDurationSec * 2.0)
+  const targetWords = Math.round(sec * 2.4);
+  const wordFloor = Math.round(sec * 2.0);
 
   return {
     count,
     wordFloor,
     targetWords,
-    label: `${count} beats (~${targetWords} words)`,
+    label: `${count} beats (~${targetWords} words, min ${wordFloor} words)`,
   };
 }
 
@@ -272,6 +281,53 @@ export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boo
 }
 
 /**
+ * Builds the complete canonical voice script from hook, beat spokenLines, and CTA.
+ */
+export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationSec: number = 60): string {
+  const clean = (str: string) =>
+    str
+      .replace(/[*_#`~\[\]()]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const hook = typeof brief.hook === "string" ? clean(brief.hook) : "";
+  const beats = brief.beats || [];
+  const cta = typeof brief.spokenCta === "string" ? clean(brief.spokenCta) : "";
+  const lines: string[] = [];
+
+  if (beats.length > 0) {
+    const firstBeatSpoken = clean(beats[0].spokenLines || "");
+    const hookAlreadyInFirstBeat = hook && firstBeatSpoken.toLowerCase().includes(hook.toLowerCase().slice(0, 20));
+
+    if (hook && !hookAlreadyInFirstBeat && beats[0].valueJob !== "hook") {
+      lines.push(hook);
+    }
+
+    for (let i = 0; i < beats.length; i++) {
+      const beatSpoken = clean(beats[i].spokenLines || "");
+      if (beatSpoken) {
+        lines.push(beatSpoken);
+      }
+    }
+
+    const lastBeatSpoken = clean(beats[beats.length - 1].spokenLines || "");
+    const ctaAlreadyInLastBeat = cta && lastBeatSpoken.toLowerCase().includes(cta.toLowerCase().slice(0, 20));
+
+    if (cta && !ctaAlreadyInLastBeat && beats[beats.length - 1].valueJob !== "cta") {
+      lines.push(cta);
+    }
+  } else {
+    if (hook) lines.push(hook);
+    if (brief.scriptOutline) lines.push(clean(brief.scriptOutline));
+    if (cta) lines.push(cta);
+  }
+
+  const fullScript = lines.join(" ").replace(/\.\s*\./g, ".").replace(/\s+/g, " ").trim();
+  const maxCharBudget = Math.max(1000, targetDurationSec * 25);
+  return fullScript.slice(0, maxCharBudget);
+}
+
+/**
  * Deterministic Brief Compiler Fallback
  * Guarantees a non-empty, directive Production Pack Brief scaled exactly to targetDurationSec.
  * Injects brand content pillars, audience constraints, continuity chaining, and memory rules.
@@ -312,8 +368,8 @@ export function compileDeterministicBrief(params: {
   const sparkTitle = spark.title ? spark.title.replace(/["\r\n]+/g, " ").trim() : "";
 
   const spokenCta = defaultOffer
-    ? `Claim your access to ${defaultOffer.title} now — link in bio or comment below.`
-    : `Follow ${brand.name} for daily strategic breakdowns.`;
+    ? `Claim your access to ${defaultOffer.title} right now — click the link in bio or drop a comment below.`
+    : `Follow ${brand.name} for daily high-conviction executive breakdowns and operational blueprints.`;
 
   const onScreenCta = defaultOffer
     ? `GET ${defaultOffer.title.toUpperCase().slice(0, 20)}`
@@ -373,22 +429,23 @@ export function compileDeterministicBrief(params: {
   }
 
   if (totalBeats === 3) {
-    // 15s: 3 Beats (Hook, One Value/Proof, CTA)
+    // 15s: 3 Beats (Hook, One Value/Proof, CTA) -> Target ~36-45 words
     const t0 = timeIntervals[0];
     const t1 = timeIntervals[1];
     const t2 = timeIntervals[2];
 
+    const hookLine = `${cleanHook} Here is the exact shift leading operators are deploying right now.`;
     const valueLine = sparkAngle
-      ? `The core unlock: ${sparkAngle}. When you focus on high-signal execution, you eliminate friction.`
+      ? `The core mechanism is clear: ${sparkAngle}. When you eliminate manual friction${pillarLabel}, execution speed and delivery velocity compound immediately.`
       : sparkWhyNow
-      ? `Here is the reason: ${sparkWhyNow}. At ${brand.name}${pillarLabel}, we eliminate manual drag.`
-      : `Most teams struggle with ${audiencePain || "outdated workflows"}. Here is the shift: focus on high-conviction strategic output.`;
+      ? `Here is the catalyst: ${sparkWhyNow}. At ${brand.name}${pillarLabel}, we eliminate process drag to unlock maximum market leverage.`
+      : `Most teams waste bandwidth on ${audiencePain || "outdated workflows"}. The real leverage comes from building around systematic, high-conviction delivery.`;
 
     beats.push(
       {
         timecode: `[${formatTime(t0.start)}-${formatTime(t0.end)}]`,
         valueJob: "hook",
-        spokenLines: cleanHook,
+        spokenLines: hookLine,
         onScreenText: activePillar ? `${activePillar.toUpperCase().slice(0, 20)}` : `THE NON-OBVIOUS SHIFT`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
         startState: states[0].start,
@@ -417,20 +474,21 @@ export function compileDeterministicBrief(params: {
       }
     );
   } else if (totalBeats === 4) {
-    // 30s: 4 Beats (Hook, Problem, Proof, CTA)
+    // 30s: 4 Beats (Hook, Problem, Proof, CTA) -> Target ~72-90 words
+    const hookLine = `${cleanHook} In this breakdown, we reveal the core operational unlock that separates leading operators from the rest of the market.`;
     const problemLine = audiencePain
-      ? `Here is the core bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, standard workflows fail.` : ""}`
-      : `Most operators in ${niche || brand.niche || "this space"} waste time solving new problems with broken playbooks.`;
+      ? `Here is the systemic bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, legacy playbooks cannot keep pace.` : "When execution relies on manual effort instead of leverage, delivery velocity and margins decay rapidly."}`
+      : `Most operators in ${niche || brand.niche || "this space"} waste time solving modern challenges with broken, fragmented tools that compound process debt.`;
 
     const proofLine = sparkAngle
-      ? `To solve this${pillarLabel}, ${brand.name} executes a focused strategy: ${sparkAngle}. This produces ${audienceDesire || "high market leverage"}.`
-      : `When you build around systematic execution${pillarLabel}, you eliminate manual drag to achieve ${audienceDesire || "high-conviction results"}.`;
+      ? `To solve this${pillarLabel}, ${brand.name} deploys a streamlined framework: ${sparkAngle}. This consistently generates ${audienceDesire || "high market leverage and compounding efficiency"}.`
+      : `When you build around systematic execution${pillarLabel}, you eliminate manual drag to achieve ${audienceDesire || "predictable pipeline velocity and market authority"}.`;
 
     beats.push(
       {
         timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
         valueJob: "hook",
-        spokenLines: cleanHook,
+        spokenLines: hookLine,
         onScreenText: `WHY MOST GET THIS WRONG`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
         startState: states[0].start,
@@ -469,18 +527,20 @@ export function compileDeterministicBrief(params: {
       }
     );
   } else if (totalBeats <= 6) {
-    // 45s - 60s: 5–6 Beats (Hook, Problem, Context/Myth, Proof, Payoff, CTA)
-    const problemLine = audiencePain
-      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, traditional workflows cannot keep pace.` : ""}`
-      : `Every day in ${niche || brand.niche || "this space"}, teams waste critical resources fighting avoidable operational friction.`;
+    // 45s - 60s: 5–6 Beats (Hook, Problem, Context/Myth, Proof, Payoff, CTA) -> Target ~144-170 words
+    const hookLine = `${cleanHook} Most operators attempt to solve modern challenges with broken, outdated playbooks. In this strategic breakdown, we deconstruct the exact execution model ${brand.name} uses to establish market authority.`;
 
-    const contextLine = `At ${brand.name}, our core methodology decouples input effort from high-conviction strategic output${pillarLabel}.`;
+    const problemLine = audiencePain
+      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, legacy systems collapse under load.` : "When you scale without systematic leverage, process debt compounds into permanent drag across your entire organization."}`
+      : `Every single day in ${niche || brand.niche || "this space"}, teams waste critical executive bandwidth fighting avoidable operational friction instead of executing high-signal strategy.`;
+
+    const contextLine = `The prevailing misconception is that hiring more people or buying more tools solves process debt. At ${brand.name}, our core methodology decouples input hours from strategic output${pillarLabel}.`;
 
     const proofLine = sparkAngle
-      ? `To achieve genuine compounding, we deploy a streamlined framework: ${sparkAngle}.`
-      : `When you align execution with clear market positioning, conversion and delivery velocity improve immediately.`;
+      ? `To achieve genuine compounding, we deploy a streamlined framework: ${sparkAngle}. By automating repeatable delivery, conversion and execution velocity improve immediately.`
+      : `When you align execution with clear market positioning and modular pipelines, your team delivers ten times the output with zero manual overhead.`;
 
-    const payoffLine = `This unlocks ${audienceDesire || "total operational freedom and an unassailable competitive advantage"}.`;
+    const payoffLine = `This unlocks ${audienceDesire || "total operational freedom, predictable growth, and an unassailable competitive moat that competitors cannot replicate"}.`;
 
     const intermediateJobs = totalBeats === 5
       ? [
@@ -490,15 +550,16 @@ export function compileDeterministicBrief(params: {
         ]
       : [
           { job: "problem", text: problemLine, screen: "THE ROOT BOTTLENECK", cam: "Medium tracking shot" },
-          { job: "myth_bust", text: `Common wisdom says work harder. In reality, process debt is what erodes margins.`, screen: "MYTH: EFFORT = SCALE", cam: "Close-up direct angle" },
+          { job: "myth_bust", text: `Common wisdom says work harder to scale. In reality, working harder on broken systems only accelerates burnout and margin compression.`, screen: "MYTH: EFFORT = SCALE", cam: "Close-up direct angle" },
           { job: "context", text: contextLine, screen: pillarBadge, cam: "Split composition" },
           { job: "proof", text: proofLine, screen: "SYSTEMATIC LEVERAGE", cam: "Authority close-up" },
+          { job: "payoff", text: payoffLine, screen: "COMPOUNDING LEVERAGE", cam: "Cinematic push-in" },
         ];
 
     beats.push({
       timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
       valueJob: "hook",
-      spokenLines: cleanHook,
+      spokenLines: hookLine,
       onScreenText: `THE NON-OBVIOUS SHIFT`,
       cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
       startState: states[0].start,
@@ -533,19 +594,19 @@ export function compileDeterministicBrief(params: {
   } else {
     // 3–5 min+ (8 to N Beats): Full Chaptered Value Chain
     const jobPalette = [
-      { job: "problem", text: audiencePain ? `Here is the systemic friction: ${audiencePain}. When teams scale without modernizing workflows, drag compounds.` : `Here is the systemic breakdown in ${niche || brand.niche || "this space"}: traditional execution is decaying.`, screen: "SYSTEMIC FRICTION AUDIT", cam: "Slow tracking pan over set" },
-      { job: "myth_bust", text: `The biggest misconception is that adding more personnel or software solves process debt. It does the opposite—it multiplies complexity.`, screen: "MYTH: SOFTWARE FIXES PROCESS", cam: "Close-up direct-to-lens" },
-      { job: "context", text: `At ${brand.name}, we build directly around${pillarLabel}. We decouple input effort from high-conviction output.`, screen: pillarBadge, cam: "Dynamic angle with schematic visual" },
-      { job: "proof", text: sparkWhyNow ? `Let us examine the evidence: ${sparkWhyNow}. Aligning with this dynamic improves conversion immediately.` : `Let us break down the exact mechanism: optimizing the core conversion loop yields compounding efficiency gains.`, screen: "DATA PROOF & EVIDENCE", cam: "Presenter explaining breakdown" },
-      { job: "example", text: `Step one is auditing your delivery pipeline. Eliminate every manual touchpoint that stalls progress.`, screen: "STEP 1: PIPELINE AUDIT", cam: "Medium tracking walk-and-talk" },
-      { job: "example", text: `Step two is deploying modular automated execution loops so your core bandwidth stays locked on high-conviction priorities.`, screen: "STEP 2: MODULAR AUTOMATION", cam: "Close-up with UI graphics" },
-      { job: "payoff", text: `When these systems lock into place, you unlock ${audienceDesire || "total operational freedom, predictable pipeline velocity, and market authority"}.`, screen: "THE COMPOUNDING ADVANTAGE", cam: "Cinematic low-angle authority shot" },
+      { job: "problem", text: audiencePain ? `Here is the systemic friction: ${audiencePain}. When teams scale without modernizing workflows, operational drag compounds into permanent margin compression.` : `Here is the systemic breakdown in ${niche || brand.niche || "this space"}: traditional execution models are decaying under modern market speed.`, screen: "SYSTEMIC FRICTION AUDIT", cam: "Slow tracking pan over set" },
+      { job: "myth_bust", text: `The biggest misconception is that adding more personnel or software solves process debt. It does the exact opposite—it multiplies communication overhead and fragments ownership.`, screen: "MYTH: SOFTWARE FIXES PROCESS", cam: "Close-up direct-to-lens" },
+      { job: "context", text: `At ${brand.name}, we build directly around${pillarLabel}. We decouple input effort from high-conviction output so every asset produces lasting enterprise leverage.`, screen: pillarBadge, cam: "Dynamic angle with schematic visual" },
+      { job: "proof", text: sparkWhyNow ? `Let us examine the concrete evidence: ${sparkWhyNow}. Aligning your core delivery with this dynamic improves conversion velocity immediately.` : `Let us break down the exact operational mechanism: optimizing the core conversion loop yields compounding efficiency gains across all channels.`, screen: "DATA PROOF & EVIDENCE", cam: "Presenter explaining breakdown" },
+      { job: "example", text: `Step one is auditing your delivery pipeline. Eliminate every manual touchpoint, handoff delay, and duplicate review cycle that stalls forward momentum.`, screen: "STEP 1: PIPELINE AUDIT", cam: "Medium tracking walk-and-talk" },
+      { job: "example", text: `Step two is deploying modular automated execution loops so your core leadership bandwidth stays locked on high-conviction strategic priorities.`, screen: "STEP 2: MODULAR AUTOMATION", cam: "Close-up with UI graphics" },
+      { job: "payoff", text: `When these integrated systems lock into place, you unlock ${audienceDesire || "total operational freedom, predictable pipeline velocity, and commanding market authority"}.`, screen: "THE COMPOUNDING ADVANTAGE", cam: "Cinematic low-angle authority shot" },
     ];
 
     beats.push({
       timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
       valueJob: "hook",
-      spokenLines: `${cleanHook} In this complete breakdown, we will deconstruct ${sparkTitle || "the market shift"} and install the architecture ${brand.name} uses${pillarLabel}.`,
+      spokenLines: `${cleanHook} In this complete masterclass breakdown, we will deconstruct ${sparkTitle || "the market shift"} and install the exact execution architecture ${brand.name} uses${pillarLabel}.`,
       onScreenText: `EXECUTIVE BRIEFING`,
       cameraDirection: "Cinematic establishing push-in",
       startState: states[0].start,
@@ -580,6 +641,11 @@ export function compileDeterministicBrief(params: {
       endState: states[totalBeats - 1].end,
       audio: resolveBeatAudio(totalBeats - 1, "cta"),
     });
+  }
+
+  // Strictly enforce continuity chaining: beat[n].startState === beat[n-1].endState
+  for (let i = 1; i < beats.length; i++) {
+    beats[i].startState = beats[i - 1].endState;
   }
 
   const scriptOutline = beats
@@ -744,15 +810,16 @@ Incorporate this offer as the spoken CTA and in the platform caption.
     const systemInstruction = `You are SPARK's Chief Creative Officer & Production Compiler.
 Your task is to compile a Viral Spark into a HIGH-SUBSTANCE, DURATION-SIZED PRODUCTION BRIEF for "${brand.name}".
 
-ANTI-SLOP COMPILER LAWS (MANDATORY):
+WORD LAW & ANTI-SLOP COMPILER LAWS (MANDATORY):
 1. HOOK LAW: Output an exact READY-TO-SPEAK line(s) for the brand host. NEVER output meta phrases like "curiosity opener", "pattern interrupt", "hook formula", "in this video we will discuss".
-2. BEAT BUDGET & CONTINUITY LAW:
+2. WORD LAW & BEAT BUDGET:
    - Target runtime: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} mode).
+   - Word Law Floor: Total spoken words across all beats MUST be >= ${budget.wordFloor} words (target ≈ ${budget.targetWords} words at ~2.4 words/sec).
    - You MUST generate EXACTLY ${budget.count} beats in the "beats" array.
    - Every beat MUST contain:
      * timecode: [mm:ss-mm:ss]
      * valueJob: "hook" | "problem" | "context" | "myth_bust" | "proof" | "example" | "payoff" | "cta"
-     * spokenLines: Complete substantive ready-to-speak sentences (word rate ≈ 2.5 words/sec). Total spoken words across all beats combined MUST be >= ${budget.wordFloor} words.
+     * spokenLines: 2-4 complete substantive ready-to-speak sentences that thoroughly execute that beat's valueJob. NO fluff.
      * onScreenText: <= 6 words in uppercase.
      * cameraDirection: Specific camera framing / movement.
      * startState & endState: Beat N's startState MUST open EXACTLY on Beat N-1's endState.
@@ -769,7 +836,7 @@ ANTI-SLOP COMPILER LAWS (MANDATORY):
 COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
 TARGET RUNTIME: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} MODE)
-REQUIRED BEATS: ${budget.count} beats (Minimum spoken word floor: ${budget.wordFloor} words, rate ≈ 2.5 words/sec)
+REQUIRED BEATS: ${budget.count} beats (Minimum spoken word floor: ${budget.wordFloor} words, target ≈ ${budget.targetWords} words at 2.4 words/sec)
 
 SOURCE SPARK DATA:
 - Title: "${spark.title}"
@@ -802,27 +869,17 @@ Return a valid JSON object matching this exact structure with NO markdown format
   "productionMode": "${modeKey}",
   "targetDurationSec": ${effectiveDurationSec},
   "hook": "Exact ready-to-speak opening line adapted for ${brand.name}",
-  "scriptOutline": "[00:00-00:05] [HOOK] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n[00:05-00:15] [PROBLEM] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
+  "scriptOutline": "[00:00-00:10] [HOOK] \"Exact spoken line\" | ONSCREEN: TEXT | CAMERA: Action\\n...",
   "beats": [
     {
-      "timecode": "[00:00-00:05]",
+      "timecode": "[00:00-00:10]",
       "valueJob": "hook",
-      "spokenLines": "Exact substantive spoken line for host/VO",
+      "spokenLines": "Exact multi-sentence substantive spoken lines for host/VO",
       "onScreenText": "TEXT OVERLAY (MAX 6 WORDS)",
       "cameraDirection": "Slow push-in zoom on host",
       "startState": "Host established in framing with initial posture",
       "endState": "Host gestures outward emphasizing hook discovery",
       "audio": "talent"
-    },
-    {
-      "timecode": "[00:05-00:15]",
-      "valueJob": "problem",
-      "spokenLines": "Exact substantive spoken line solving audience bottleneck",
-      "onScreenText": "THE CORE BOTTLENECK",
-      "cameraDirection": "Medium tracking pan across studio set",
-      "startState": "Host gestures outward emphasizing hook discovery",
-      "endState": "Host shifts weight and references analytical graphic",
-      "audio": "vo"
     }
   ],
   "spokenCta": "Exact ready-to-speak closing line for host/VO",
@@ -836,6 +893,68 @@ Return a valid JSON object matching this exact structure with NO markdown format
 }
 `;
 
+    const fallback = compileDeterministicBrief({
+      spark,
+      brand,
+      character,
+      defaultOffer,
+      productionMode: modeKey,
+      niche,
+      targetDurationSec: effectiveDurationSec,
+    });
+
+    const mapParsedBeats = (candidateBeats: any[]): { beats: ProductionBriefBeat[]; words: number } => {
+      if (!Array.isArray(candidateBeats) || candidateBeats.length === 0) {
+        return { beats: [], words: 0 };
+      }
+      const rawList = candidateBeats.slice(0, budget.count);
+      let prevEnd = "";
+      const mapped: ProductionBriefBeat[] = rawList.map((b: any, idx: number) => {
+        const fallbackBeat = fallback.beats?.[idx];
+        const rawJob = String(b.valueJob || fallbackBeat?.valueJob || (idx === 0 ? "hook" : idx === budget.count - 1 ? "cta" : "context")).toLowerCase();
+        const cleanJob = rawJob.replace(/[^\w]/g, "") || "context";
+        const rawSpoken = String(b.spokenLines || b.spoken || fallbackBeat?.spokenLines || "").trim();
+        const rawOnScreen = String(b.onScreenText || b.text || fallbackBeat?.onScreenText || `BEAT ${idx + 1}`).trim();
+        const onScreenWords = rawOnScreen.split(/\s+/).filter(Boolean);
+        const cleanOnScreen = (onScreenWords.length <= 6 ? rawOnScreen : onScreenWords.slice(0, 6).join(" ")).toUpperCase();
+
+        const rawCamera = String(b.cameraDirection || fallbackBeat?.cameraDirection || "Presenter centered").trim();
+        const rawStart = idx === 0
+          ? String(b.startState || fallbackBeat?.startState || "Host established in framing")
+          : (prevEnd || String(b.startState || fallbackBeat?.startState || "Host in delivery position"));
+        const rawEnd = String(b.endState || fallbackBeat?.endState || (idx === budget.count - 1 ? "Host delivers resolution" : `Host transitions to beat ${idx + 2}`));
+        prevEnd = rawEnd;
+
+        const rawAudio: "vo" | "talent" = b.audio === "vo" || b.audio === "talent"
+          ? b.audio
+          : (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : (cleanJob === "hook" || cleanJob === "payoff" || cleanJob === "cta" || idx === 0 ? "talent" : "vo"));
+
+        return {
+          timecode: String(b.timecode || fallbackBeat?.timecode || `[${idx * 5}-${(idx + 1) * 5}]`),
+          valueJob: cleanJob,
+          spokenLines: rawSpoken,
+          onScreenText: cleanOnScreen,
+          cameraDirection: rawCamera,
+          startState: rawStart,
+          endState: rawEnd,
+          audio: rawAudio,
+        };
+      });
+
+      // Strict continuity enforcement: beat[n].startState === beat[n-1].endState
+      for (let i = 1; i < mapped.length; i++) {
+        mapped[i].startState = mapped[i - 1].endState;
+      }
+
+      const totalWords = mapped.reduce(
+        (acc, b) => acc + countScriptWords(b.spokenLines),
+        0
+      );
+
+      return { beats: mapped, words: totalWords };
+    };
+
+    let parsedJson: any = null;
     try {
       const rawResponse = await ModelRouter.executeCategoryRequest("production", {
         prompt,
@@ -847,114 +966,129 @@ Return a valid JSON object matching this exact structure with NO markdown format
         .replace(/```/g, "")
         .trim();
 
-      const parsed = JSON.parse(cleanJson);
-      const fallback = compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode: modeKey, niche, targetDurationSec: effectiveDurationSec });
+      parsedJson = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.warn("[ProductionBriefService] Initial LLM generation notice:", parseErr);
+    }
 
-      let parsedHook = asText(parsed.hook, fallback.hook);
-      if (
-        parsedHook.toLowerCase().startsWith("hook:") ||
-        parsedHook.toLowerCase().includes("curiosity opener") ||
-        parsedHook.toLowerCase().includes("pattern interrupt") ||
-        parsedHook.length < 5
-      ) {
-        parsedHook = fallback.hook;
-      }
+    let evaluated = mapParsedBeats(parsedJson?.beats);
 
-      let parsedOutline = asText(parsed.scriptOutline, fallback.scriptOutline);
-      if (!parsedOutline.includes("00:") && !parsedOutline.includes("1.") && !parsedOutline.includes("Beat")) {
-        parsedOutline = fallback.scriptOutline;
-      }
+    // If initial LLM output is below word floor or missing required beats: execute 1 rewrite pass
+    if (evaluated.beats.length < budget.count || evaluated.words < budget.wordFloor) {
+      console.log(
+        `[ProductionBriefService] Initial LLM brief too thin (${evaluated.words} words, ${evaluated.beats.length} beats < floor ${budget.wordFloor} words, ${budget.count} beats for ${effectiveDurationSec}s). Executing WORD LAW rewrite pass...`
+      );
 
-      // Continuity & beat budget validation
-      let validBeats: ProductionBriefBeat[] = [];
-      if (Array.isArray(parsed.beats) && parsed.beats.length >= budget.count) {
-        let prevEnd = "";
-        validBeats = parsed.beats.slice(0, budget.count).map((b: any, idx: number) => {
-          const fallbackBeat = fallback.beats?.[idx];
-          const rawJob = String(b.valueJob || fallbackBeat?.valueJob || (idx === 0 ? "hook" : idx === budget.count - 1 ? "cta" : "context")).toLowerCase();
-          const cleanJob = rawJob.replace(/[^\w]/g, "") || "context";
-          const rawSpoken = String(b.spokenLines || b.spoken || fallbackBeat?.spokenLines || "").trim();
-          const rawOnScreen = String(b.onScreenText || b.text || fallbackBeat?.onScreenText || `BEAT ${idx + 1}`).trim();
-          const onScreenWords = rawOnScreen.split(/\s+/).filter(Boolean);
-          const cleanOnScreen = (onScreenWords.length <= 6 ? rawOnScreen : onScreenWords.slice(0, 6).join(" ")).toUpperCase();
+      try {
+        const rewriteInstruction = `${systemInstruction}\n\nCRITICAL WORD LAW REWRITE:\nThe previous output was too thin (${evaluated.words} words). For ${effectiveDurationSec} seconds, you MUST generate at least ${budget.wordFloor} total words (~${budget.targetWords} words at 2.4 words/sec) across all ${budget.count} beats. Add concrete proof, detailed examples, or actionable steps for every beat's valueJob. NO fluff.`;
 
-          const rawCamera = String(b.cameraDirection || fallbackBeat?.cameraDirection || "Presenter centered").trim();
-          const rawStart = idx === 0
-            ? String(b.startState || fallbackBeat?.startState || "Host established in framing")
-            : (prevEnd || String(b.startState || fallbackBeat?.startState || "Host in delivery position"));
-          const rawEnd = String(b.endState || fallbackBeat?.endState || (idx === budget.count - 1 ? "Host delivers resolution" : `Host transitions to beat ${idx + 2}`));
-          prevEnd = rawEnd;
+        const rewritePrompt = `REWRITE SCRIPT TO FILL FULL ${effectiveDurationSec}s TARGET:
+Target Duration: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} mode).
+Required Beats: EXACTLY ${budget.count} beats.
+Word Floor: >= ${budget.wordFloor} spoken words.
 
-          const rawAudio: "vo" | "talent" = b.audio === "vo" || b.audio === "talent"
-            ? b.audio
-            : (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : (cleanJob === "hook" || cleanJob === "payoff" || cleanJob === "cta" || idx === 0 ? "talent" : "vo"));
+Expand each beat's "spokenLines" into 2-4 complete, substantive sentences that thoroughly execute that beat's valueJob with concrete domain mechanics and proof.
 
-          return {
-            timecode: String(b.timecode || fallbackBeat?.timecode || `[${idx * 5}-${(idx + 1) * 5}]`),
-            valueJob: cleanJob,
-            spokenLines: rawSpoken || fallbackBeat?.spokenLines || "",
-            onScreenText: cleanOnScreen,
-            cameraDirection: rawCamera,
-            startState: rawStart,
-            endState: rawEnd,
-            audio: rawAudio,
-          };
+${prompt}`;
+
+        const rewriteResponse = await ModelRouter.executeCategoryRequest("production", {
+          prompt: rewritePrompt,
+          systemInstruction: rewriteInstruction,
         });
-      }
 
-      // Spoken-word floor & beat count verification
-      const totalSpokenWords = validBeats.reduce(
-        (acc, b) => acc + (b.spokenLines ? b.spokenLines.trim().split(/\s+/).filter(Boolean).length : 0),
+        const cleanRewriteJson = rewriteResponse
+          .replace(/```json/gi, "")
+          .replace(/```/g, "")
+          .trim();
+
+        const rewrittenParsed = JSON.parse(cleanRewriteJson);
+        const rewrittenEvaluated = mapParsedBeats(rewrittenParsed?.beats);
+
+        if (rewrittenEvaluated.beats.length >= budget.count && rewrittenEvaluated.words >= budget.wordFloor) {
+          parsedJson = rewrittenParsed;
+          evaluated = rewrittenEvaluated;
+          console.log(
+            `[ProductionBriefService] Rewrite pass succeeded: ${evaluated.words} words across ${evaluated.beats.length} beats.`
+          );
+        }
+      } catch (rewriteErr) {
+        console.warn("[ProductionBriefService] Rewrite pass error:", rewriteErr);
+      }
+    }
+
+    // Final validation: if LLM output still fails floor, use verified deterministic fallback
+    let validBeats: ProductionBriefBeat[] = evaluated.beats;
+    let totalWords = evaluated.words;
+
+    if (validBeats.length < budget.count || totalWords < budget.wordFloor) {
+      const fallbackWords = (fallback.beats || []).reduce(
+        (acc, b) => acc + countScriptWords(b.spokenLines),
         0
       );
 
-      if (validBeats.length < budget.count || totalSpokenWords < budget.wordFloor) {
+      if (fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
         console.log(
-          `[ProductionBriefService] Parsed beats (${validBeats.length} beats, ${totalSpokenWords} words) below floor for ${effectiveDurationSec}s (requires ${budget.count} beats, >=${budget.wordFloor} words). Using duration-scaled fallback beats.`
+          `[ProductionBriefService] Using duration-scaled deterministic fallback (${fallbackWords} words >= ${budget.wordFloor} floor for ${effectiveDurationSec}s).`
         );
-        validBeats = fallback.beats || validBeats;
-        parsedOutline = fallback.scriptOutline || parsedOutline;
+        validBeats = fallback.beats || [];
+        totalWords = fallbackWords;
+      } else {
+        const errMsg = `Brief too thin for ${effectiveDurationSec}s (${totalWords} words < ${budget.wordFloor} minimum words)`;
+        console.error(`[ProductionBriefService] ${errMsg}`);
+        throw new Error(errMsg);
       }
-
-      const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => ({
-        scene: idx + 1,
-        duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
-        shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
-        cameraDirection: b.cameraDirection || "Presenter centered",
-        transitions: "Continuous flow",
-        onScreenText: b.onScreenText,
-        pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
-        scriptSnippet: b.spokenLines,
-        spokenLines: b.spokenLines,
-        audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
-        valueJob: b.valueJob,
-        visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
-        startState: b.startState,
-        endState: b.endState,
-        primaryChange: b.spokenLines,
-      }));
-
-      return {
-        title: asText(parsed.title, spark.title),
-        productionMode: modeKey,
-        targetDurationSec: effectiveDurationSec,
-        hook: parsedHook,
-        scriptOutline: parsedOutline,
-        beats: validBeats,
-        storyboard: storyboardScenes,
-        spokenCta: asText(parsed.spokenCta, fallback.spokenCta),
-        onScreenCta: asText(parsed.onScreenCta, fallback.onScreenCta),
-        visualDirection: asText(parsed.visualDirection, fallback.visualDirection),
-        caption: asText(parsed.caption, fallback.caption),
-        platformRecommendation: asText(parsed.platformRecommendation, fallback.platformRecommendation),
-        whyThisWorks: asText(parsed.whyThisWorks, fallback.whyThisWorks),
-        brandFitScore: typeof parsed.brandFitScore === "number" ? parsed.brandFitScore : sparkScore,
-        suggestedDuration: asText(parsed.suggestedDuration, fallback.suggestedDuration),
-        offerCta: fallback.offerCta,
-      };
-    } catch (err) {
-      console.warn("[ProductionBriefService] AI generation fallback triggered:", err);
-      return compileDeterministicBrief({ spark, brand, character, defaultOffer, productionMode: modeKey, niche, targetDurationSec: effectiveDurationSec });
     }
+
+    let parsedHook = asText(parsedJson?.hook, fallback.hook);
+    if (
+      parsedHook.toLowerCase().startsWith("hook:") ||
+      parsedHook.toLowerCase().includes("curiosity opener") ||
+      parsedHook.toLowerCase().includes("pattern interrupt") ||
+      parsedHook.length < 5
+    ) {
+      parsedHook = fallback.hook;
+    }
+
+    let parsedOutline = asText(parsedJson?.scriptOutline, fallback.scriptOutline);
+    if (!parsedOutline.includes("00:") && !parsedOutline.includes("1.") && !parsedOutline.includes("Beat")) {
+      parsedOutline = fallback.scriptOutline;
+    }
+
+    const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => ({
+      scene: idx + 1,
+      duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
+      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob})`,
+      cameraDirection: b.cameraDirection || "Presenter centered",
+      transitions: "Continuous flow",
+      onScreenText: b.onScreenText,
+      pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
+      scriptSnippet: b.spokenLines,
+      spokenLines: b.spokenLines,
+      audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
+      valueJob: b.valueJob,
+      visualDescription: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
+      startState: b.startState,
+      endState: b.endState,
+      primaryChange: b.spokenLines,
+    }));
+
+    return {
+      title: asText(parsedJson?.title, spark.title),
+      productionMode: modeKey,
+      targetDurationSec: effectiveDurationSec,
+      hook: parsedHook,
+      scriptOutline: parsedOutline,
+      beats: validBeats,
+      storyboard: storyboardScenes,
+      spokenCta: asText(parsedJson?.spokenCta, fallback.spokenCta),
+      onScreenCta: asText(parsedJson?.onScreenCta, fallback.onScreenCta),
+      visualDirection: asText(parsedJson?.visualDirection, fallback.visualDirection),
+      caption: asText(parsedJson?.caption, fallback.caption),
+      platformRecommendation: asText(parsedJson?.platformRecommendation, fallback.platformRecommendation),
+      whyThisWorks: asText(parsedJson?.whyThisWorks, fallback.whyThisWorks),
+      brandFitScore: typeof parsedJson?.brandFitScore === "number" ? parsedJson.brandFitScore : sparkScore,
+      suggestedDuration: asText(parsedJson?.suggestedDuration, fallback.suggestedDuration),
+      offerCta: fallback.offerCta,
+    };
   }
 }
