@@ -30,7 +30,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 export const config = {
-  maxDuration: 800,
+  maxDuration: 300,
 };
 
 let klingJwtCache: { token: string; issuedAt: number } | null = null;
