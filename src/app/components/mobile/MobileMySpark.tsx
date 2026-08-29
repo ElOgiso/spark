@@ -1049,6 +1049,12 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                     maxSec: PROVIDER_VIDEO_CAPABILITIES.kling.maxNativeSec,
                   },
                   {
+                    id: "seedance",
+                    name: PROVIDER_VIDEO_CAPABILITIES.seedance.displayName,
+                    lengths: "4–15s",
+                    maxSec: PROVIDER_VIDEO_CAPABILITIES.seedance.maxNativeSec,
+                  },
+                  {
                     id: "runway",
                     name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
                     lengths: "5s / 10s",

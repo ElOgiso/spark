@@ -641,6 +641,7 @@ export type AIProviderId =
   | "elevenlabs"
   | "higgsfield"
   | "kling"
+  | "seedance"
   | "luma"
   | "runway";
 

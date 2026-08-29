@@ -47,8 +47,8 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     maxNativeSec: 15,
     supportsImageRefs: true,
-    supportsNativeAudio: false,
-    notes: "xAI Grok Imagine Video (1–15s motion preview)",
+    supportsNativeAudio: true,
+    notes: "xAI Grok Imagine Video (1–15s I2V, audio on, start-frame + up to 7 reference faces)",
   },
   kling: {
     providerId: "kling",
@@ -58,7 +58,17 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 10,
     supportsImageRefs: true,
     supportsNativeAudio: true,
-    notes: "Kling 1.5 high-coherence motion (5s or 10s)",
+    notes: "Kling image2video JWT (5s or 10s, image_tail last-frame in pro/turbo/v2.6)",
+  },
+  seedance: {
+    providerId: "seedance",
+    displayName: "Seedance",
+    logoName: "seedance",
+    allowedDurationsSec: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    maxNativeSec: 15,
+    supportsImageRefs: true,
+    supportsNativeAudio: true,
+    notes: "ByteDance Seedance Ark I2V (first_frame + last_frame continuation, 4–15s, 720p/1080p)",
   },
   runway: {
     providerId: "runway",
@@ -144,8 +154,8 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     maxVideoDurationSec: 15,
     allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     supportsImageRefs: true,
-    supportsNativeAudio: false,
-    notes: "xAI Grok Imagine Video (up to ~15s motion preview, ephemeral URLs persisted to Supabase Storage)",
+    supportsNativeAudio: true,
+    notes: "xAI Grok Imagine Video (up to 15s I2V, start-frame data URI + reference faces, audio on)",
   },
   openai: {
     providerId: "openai",
@@ -179,7 +189,17 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [5, 10],
     supportsImageRefs: true,
     supportsNativeAudio: true,
-    notes: "Kling 1.5 high-coherence motion & portrait keyframe conditioning (~10s max)",
+    notes: "Kling image2video with JWT, first-frame + image_tail continuity (~10s max)",
+  },
+  seedance: {
+    providerId: "seedance",
+    displayName: "Seedance",
+    capabilities: ["Video Generation"],
+    maxVideoDurationSec: 15,
+    allowedDurationsSec: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    supportsImageRefs: true,
+    supportsNativeAudio: true,
+    notes: "ByteDance Seedance Ark I2V with first_frame / last_frame / reference_image roles (~15s max)",
   },
   runway: {
     providerId: "runway",
@@ -282,7 +302,7 @@ export function resolveActiveVideoProvider(params?: {
   }
 
   // 2. Best Available: Priority order of video-capable providers with available keys
-  const videoCandidates: ConcreteAIProviderId[] = ["gemini", "grok", "kling", "runway", "luma", "higgsfield"];
+  const videoCandidates: ConcreteAIProviderId[] = ["gemini", "grok", "kling", "seedance", "runway", "luma", "higgsfield"];
   for (const candidateId of videoCandidates) {
     const profile = PROVIDER_CAPABILITY_MAP[candidateId];
     if (profile && profile.capabilities.includes("Video Generation")) {

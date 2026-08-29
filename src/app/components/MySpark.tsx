@@ -1340,6 +1340,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
                           tag: "Portrait Coherence",
                         },
                         {
+                          id: "seedance",
+                          name: PROVIDER_VIDEO_CAPABILITIES.seedance.displayName,
+                          lengths: "4–15s",
+                          maxSec: PROVIDER_VIDEO_CAPABILITIES.seedance.maxNativeSec,
+                          tag: "First/Last Frame I2V",
+                        },
+                        {
                           id: "runway",
                           name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName,
                           lengths: "5s / 10s",

@@ -17,6 +17,7 @@ export interface AIExecutionOptions {
   aspectRatio?: string;
   durationSec?: number;
   lastFrameUrl?: string;
+  endFrameUrl?: string;
 }
 
 export interface AIProviderPlugin {
@@ -65,6 +66,10 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
       openai: [p.OPENAI_API_KEY, p.OPEN_AI_KEY, p.VITE_OPENAI_API_KEY],
       claude: [p.ANTHROPIC_API_KEY, p.CLAUDE_API_KEY, p.VITE_ANTHROPIC_API_KEY, p.VITE_CLAUDE_API_KEY],
       grok: [p.XAI_API_KEY, p.GROK_API_KEY, p.VITE_XAI_API_KEY, p.VITE_GROK_API_KEY],
+      kling: [p.KLING_ACCESS_KEY, p.KLING_API_KEY, p.VITE_KLING_API_KEY, p.VITE_KLING_ACCESS_KEY],
+      seedance: [p.ARK_API_KEY, p.SEEDANCE_API_KEY, p.VITE_ARK_API_KEY, p.VITE_SEEDANCE_API_KEY],
+      runway: [p.RUNWAY_API_KEY, p.VITE_RUNWAY_API_KEY],
+      luma: [p.LUMA_API_KEY, p.VITE_LUMA_API_KEY],
       elevenlabs: [
         p.elevenlabs_API_Key,
         p.ELEVENLABS_API_KEY,
@@ -88,6 +93,10 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
       openai: [m.VITE_OPENAI_API_KEY, m.OPENAI_API_KEY, m.OPEN_AI_KEY],
       claude: [m.VITE_ANTHROPIC_API_KEY, m.ANTHROPIC_API_KEY, m.VITE_CLAUDE_API_KEY, m.CLAUDE_API_KEY],
       grok: [m.VITE_XAI_API_KEY, m.XAI_API_KEY, m.VITE_GROK_API_KEY, m.GROK_API_KEY],
+      kling: [m.VITE_KLING_ACCESS_KEY, m.VITE_KLING_API_KEY, m.KLING_ACCESS_KEY, m.KLING_API_KEY],
+      seedance: [m.VITE_ARK_API_KEY, m.VITE_SEEDANCE_API_KEY, m.ARK_API_KEY, m.SEEDANCE_API_KEY],
+      runway: [m.VITE_RUNWAY_API_KEY, m.RUNWAY_API_KEY],
+      luma: [m.VITE_LUMA_API_KEY, m.LUMA_API_KEY],
       elevenlabs: [
         m.VITE_ELEVENLABS_API_KEY,
         m.VITE_elevenlabs_API_Key,
@@ -1160,20 +1169,42 @@ export class AIProviderOrchestrator {
           throw new Error("Grok image generation failed and no fallback available.");
         }
 
-        // 4B. Grok Video Generation (grok-imagine-video-1.5 / grok-imagine-video 9:16 vertical)
+        // 4B. Grok Video Generation — grok-imagine-video via production adapter (image_url + reference faces)
         if (options.capability === "Video Generation") {
+          const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
+          const identityRefs = (options.referenceImageUrls || []).filter(
+            (u) => u && u !== options.referenceImageUrl
+          );
+          try {
+            const clip = await requestProductionVideoClip({
+              provider: "grok",
+              prompt: options.prompt,
+              firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
+              endFrameUrl: options.endFrameUrl,
+              referenceImageUrls: identityRefs,
+              aspectRatio: options.aspectRatio,
+              durationSec: options.durationSec,
+              model: options.model || "grok-imagine-video",
+            });
+            if (clip.videoUrl) {
+              if (options.onChunk) options.onChunk(clip.videoUrl);
+              return clip.videoUrl;
+            }
+          } catch (apiErr) {
+            console.warn("[Grok Provider] Production video adapter notice, trying direct SDK payload:", apiErr);
+          }
+
           const candidateVideoModels = [
             options.model,
-            "grok-imagine-video-1.5",
             "grok-imagine-video",
+            "grok-imagine-video-1.5",
           ].filter(Boolean) as string[];
-
-          let requestId = "";
-          let finalVideoUrl = "";
 
           const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
           const rawGrokDuration = options.durationSec || 5;
           const snappedGrokDuration = Math.min(15, Math.max(1, Math.round(rawGrokDuration)));
+          const firstFrame = options.referenceImageUrl || options.referenceImageUrls?.[0];
+          const faceRefs = identityRefs.slice(0, 7);
 
           for (const videoModel of candidateVideoModels) {
             const grokVideoPayload: any = {
@@ -1181,10 +1212,14 @@ export class AIProviderOrchestrator {
               prompt: options.prompt,
               aspect_ratio: targetAspect,
               duration: snappedGrokDuration,
+              resolution: "720p",
             };
-            if (options.referenceImageUrl || options.referenceImageUrls?.length) {
-              grokVideoPayload.image_url = options.referenceImageUrl || options.referenceImageUrls?.[0];
-              console.log(`[Grok Provider] Conditioning Grok video generation on scene still reference (duration: ${snappedGrokDuration}s)`);
+            if (firstFrame) {
+              grokVideoPayload.image_url = firstFrame;
+              console.log(`[Grok Provider] Conditioning Grok video on start frame + ${faceRefs.length} reference face(s) (duration: ${snappedGrokDuration}s)`);
+            }
+            if (faceRefs.length > 0) {
+              grokVideoPayload.reference_image_urls = faceRefs;
             }
 
             if (apiKey) {
@@ -1200,101 +1235,19 @@ export class AIProviderOrchestrator {
 
                 if (vRes.ok) {
                   const vData = await vRes.json();
-                  requestId = vData.id || vData.request_id || "";
-                  finalVideoUrl = extractGrokVideoUrl(vData);
-                  if (requestId || finalVideoUrl) break;
+                  const immediate = extractGrokVideoUrl(vData);
+                  if (immediate) {
+                    if (options.onChunk) options.onChunk(immediate);
+                    return immediate;
+                  }
                 } else {
                   const errTxt = await vRes.text().catch(() => "");
-                  console.warn(`[Grok Provider] Direct video generation start failed (${videoModel} - ${vRes.status}):`, errTxt.slice(0, 300));
+                  console.warn(`[Grok Provider] Direct video.generate failed (${videoModel} - ${vRes.status}):`, errTxt.slice(0, 300));
                 }
               } catch (vErr) {
-                console.warn(`[Grok Provider] Direct video generation start notice (${videoModel}):`, vErr);
+                console.warn(`[Grok Provider] Direct video.generate notice (${videoModel}):`, vErr);
               }
             }
-
-            if (!requestId && !finalVideoUrl) {
-              try {
-                const proxyRes = await fetch("/api/runtime/execute", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    provider: "grok",
-                    endpoint: "https://api.x.ai/v1/videos/generations",
-                    payload: grokVideoPayload,
-                  }),
-                });
-
-                if (proxyRes.ok) {
-                  const data = await proxyRes.json();
-                  requestId = data.id || data.request_id || "";
-                  finalVideoUrl = extractGrokVideoUrl(data);
-                  if (requestId || finalVideoUrl) break;
-                } else {
-                  const errTxt = await proxyRes.text().catch(() => "");
-                  console.warn(`[Grok Provider] Proxy video generation start failed (${videoModel} - ${proxyRes.status}):`, errTxt.slice(0, 300));
-                }
-              } catch (pErr) {
-                console.warn(`[Grok Provider] Video generation proxy start notice (${videoModel}):`, pErr);
-              }
-            }
-
-            if (requestId || finalVideoUrl) break;
-          }
-
-          // Poll video status if asynchronous request_id returned
-          if (!finalVideoUrl && requestId) {
-            console.log(`[Grok Provider] Polling video generation status for ${requestId} (up to 6 min budget)...`);
-            for (let attempt = 0; attempt < 36; attempt++) {
-              await new Promise((r) => setTimeout(r, 10000));
-              try {
-                let pollData: any = null;
-                if (apiKey) {
-                  const pollRes = await fetch(`https://api.x.ai/v1/videos/${requestId}`, {
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                  });
-                  if (pollRes.ok) pollData = await pollRes.json();
-                }
-
-                if (!pollData) {
-                  const proxyPoll = await fetch("/api/runtime/execute", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      provider: "grok",
-                      endpoint: `https://api.x.ai/v1/videos/${requestId}`,
-                      method: "GET",
-                    }),
-                  });
-                  if (proxyPoll.ok) pollData = await proxyPoll.json();
-                }
-
-                const isFinished =
-                  pollData?.status === "done" ||
-                  pollData?.status === "completed" ||
-                  pollData?.status === "ready" ||
-                  pollData?.progress === 100 ||
-                  Boolean(extractGrokVideoUrl(pollData));
-
-                if (isFinished) {
-                  finalVideoUrl = extractGrokVideoUrl(pollData);
-                  if (finalVideoUrl) {
-                    console.log(`[Grok Provider] Grok video generation SUCCESS -> ${finalVideoUrl}`);
-                    break;
-                  } else {
-                    console.warn(`[Grok Provider] Poll indicates complete but extractGrokVideoUrl returned empty. Keys: ${Object.keys(pollData || {}).join(", ")}`);
-                  }
-                } else if (pollData?.status === "failed") {
-                  throw new Error(`Grok video generation failed: ${pollData.error || "unknown"}`);
-                }
-              } catch (pollErr) {
-                console.warn(`[Grok Provider] Video poll attempt ${attempt + 1} notice:`, pollErr);
-              }
-            }
-          }
-
-          if (finalVideoUrl) {
-            if (options.onChunk) options.onChunk(finalVideoUrl);
-            return finalVideoUrl;
           }
 
           throw new Error("Grok Video Generation timed out or returned no video URL.");
@@ -1500,7 +1453,65 @@ export class AIProviderOrchestrator {
       },
     });
 
-    // 6. Higgsfield Provider Plugin
+    // 6. Kling AI — JWT image2video via production adapter (first frame + image_tail)
+    this.registerPlugin({
+      id: "kling",
+      name: "Kling AI (Image2Video)",
+      capabilities: ["Video Generation", "Image Generation"],
+      isAvailable: (customKeys) => Boolean(resolveProviderKey("kling", customKeys)),
+      execute: async (options) => {
+        if (options.capability !== "Video Generation") {
+          throw new Error("Kling plugin currently supports Video Generation only.");
+        }
+        const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
+        const identityRefs = (options.referenceImageUrls || []).filter(
+          (u) => u && u !== options.referenceImageUrl && u !== options.endFrameUrl
+        );
+        const clip = await requestProductionVideoClip({
+          provider: "kling",
+          prompt: options.prompt,
+          firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
+          endFrameUrl: options.endFrameUrl,
+          referenceImageUrls: identityRefs,
+          aspectRatio: options.aspectRatio,
+          durationSec: options.durationSec,
+          model: options.model,
+        });
+        if (options.onChunk) options.onChunk(clip.videoUrl);
+        return clip.videoUrl;
+      },
+    });
+
+    // 7. Seedance / Ark — first_frame + last_frame continuation via production adapter
+    this.registerPlugin({
+      id: "seedance",
+      name: "Seedance (Ark I2V)",
+      capabilities: ["Video Generation"],
+      isAvailable: (customKeys) => Boolean(resolveProviderKey("seedance", customKeys)),
+      execute: async (options) => {
+        if (options.capability !== "Video Generation") {
+          throw new Error("Seedance plugin currently supports Video Generation only.");
+        }
+        const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
+        const identityRefs = (options.referenceImageUrls || []).filter(
+          (u) => u && u !== options.referenceImageUrl && u !== options.endFrameUrl
+        );
+        const clip = await requestProductionVideoClip({
+          provider: "seedance",
+          prompt: options.prompt,
+          firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
+          endFrameUrl: options.endFrameUrl,
+          referenceImageUrls: identityRefs,
+          aspectRatio: options.aspectRatio,
+          durationSec: options.durationSec,
+          model: options.model,
+        });
+        if (options.onChunk) options.onChunk(clip.videoUrl);
+        return clip.videoUrl;
+      },
+    });
+
+    // 8. Higgsfield Provider Plugin
     this.registerPlugin({
       id: "higgsfield",
       name: "Higgsfield AI (Video Generation)",
@@ -1572,7 +1583,7 @@ export class AIProviderOrchestrator {
     // Chat / Reasoning / Production: OpenAI -> Gemini -> Claude -> Grok
     let categoryPriority: AIProviderId[];
     if (capability === "Video Generation") {
-      categoryPriority = ["gemini", "grok", "kling", "runway", "luma", "higgsfield"];
+      categoryPriority = ["gemini", "grok", "kling", "seedance", "runway", "luma", "higgsfield"];
     } else if (capability === "Image Generation") {
       categoryPriority = ["openai", "gemini", "grok", "kling"];
     } else if (capability === "Text To Speech") {

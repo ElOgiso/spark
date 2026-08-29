@@ -322,7 +322,7 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
 
         // 3. For Video Generation, also include specialized video engines from PROVIDER_VIDEO_CAPABILITIES
         if (capability === "Video Generation") {
-          const videoEngines: AIProviderId[] = ["kling", "runway", "luma", "higgsfield"];
+          const videoEngines: AIProviderId[] = ["kling", "seedance", "runway", "luma", "higgsfield"];
           videoEngines.forEach((engId) => {
             if (!providerOptions.some((o) => o.id === engId) && (PROVIDER_VIDEO_CAPABILITIES as any)[engId]) {
               const spec = (PROVIDER_VIDEO_CAPABILITIES as any)[engId];

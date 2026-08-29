@@ -7,6 +7,8 @@ import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt 
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
+import { evaluateVisualContinuity } from "./visualContinuityGate";
+import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -1574,22 +1576,15 @@ CRITICAL PRODUCTION LAWS:
               const globalSceneNum = s.scene || sIdx + 1;
               const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
 
-              // HYBRID (standard) MODE LAW:
-              // Shot 1 = i2v of scene 1 still.
-              // Remaining shots (2..N) = narrator stills + VO (no videoGeneration call).
-              if (mode === "standard" && sIdx > 0) {
-                console.log(`[SPARK Pipeline] Mode is "standard" (Hybrid). Scene ${globalSceneNum} is narrator-led stills + VO (skipping videoGeneration).`);
-                s.audio = "vo";
-                currentStoryboard[sIdx] = { ...s, audio: "vo", videoUrl: undefined };
-                const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
-                emitProgress(currentPct, "Video", `Prepared Scene ${globalSceneNum} of ${currentStoryboard.length} (Narrator still + VO)...`);
-                continue;
-              }
-
-              // Scene N+1 continuity: First frame / referenceImageUrl = scene[N].lastFrameUrl || scene[N+1].image
+              // Scene N+1 continuity: first_frame = previous clip's extracted last frame, else this scene still.
+              // Independent T2V is the slop path — Hybrid and Deep both emit I2V-continuous clips, then mux.
               const sceneFirstFrame = (sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl))
                 ? prevScene.lastFrameUrl
                 : (s.image || sceneImages[sIdx]);
+              const nextSceneStill = currentStoryboard[sIdx + 1]?.image || sceneImages[sIdx + 1];
+              const sceneEndFrame = nextSceneStill && isValidMediaData(nextSceneStill) && nextSceneStill !== sceneFirstFrame
+                ? nextSceneStill
+                : undefined;
 
               // Check if existing durable clip exists for this scene
               if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
@@ -1738,37 +1733,77 @@ CRITICAL PRODUCTION LAWS:
                 environment: identityPack.environmentString,
               })}`;
 
-              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} motion video (${mode.toUpperCase()}) via ModelRouter ("videoGeneration") [FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "Scene " + sIdx + " Last Frame" : "Scene Still"}), Duration: ${sceneTargetDuration}s, Poll Budget: 360s]...`);
+              const identityRefs = orderedSceneRefs.filter(
+                (u) => u && u !== sceneFirstFrame && u !== sceneEndFrame
+              );
+              const continuity = evaluateVisualContinuity({
+                sceneIndex: sIdx,
+                firstFrameUrl: sceneFirstFrame,
+                previousLastFrameUrl: prevScene?.lastFrameUrl,
+                identityRefUrls: identityRefs,
+              });
+              const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
+              console.log(
+                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "prev last-frame" : "scene still"}), EndFrame: ${Boolean(sceneEndFrame)}, IdentityRefs: ${identityRefs.length}, Chained: ${continuity.chained}, Duration: ${sceneTargetDuration}s]...`
+              );
+              if (!continuity.ok) {
+                console.warn(`[SPARK Pipeline] Visual continuity notice Scene ${globalSceneNum}:`, continuity.reasons.join("; "));
+              }
 
               try {
                 checkAborted();
-                const generatedClip = await withTimeout(
-                  ModelRouter.executeCategoryRequest("videoGeneration", {
+                const generateClip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
+                  if (isI2vApiProvider(activeVideo.providerId)) {
+                    const apiClip = await requestProductionVideoClip({
+                      provider: activeVideo.providerId,
+                      prompt: sceneMotionPrompt,
+                      firstFrameUrl: sceneFirstFrame,
+                      endFrameUrl: sceneEndFrame,
+                      referenceImageUrls: identityRefs,
+                      aspectRatio: identityPack.aspectRatio,
+                      durationSec: sceneTargetDuration,
+                      productionId: production.id,
+                      brandId: (brand as any).id,
+                    });
+                    return {
+                      url: apiClip.videoUrl,
+                      lastFrameDataUrl: apiClip.lastFrameDataUrl,
+                      provider: apiClip.provider,
+                    };
+                  }
+                  const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: sceneMotionPrompt,
                     referenceImageUrl: sceneFirstFrame,
                     referenceImageUrls: orderedSceneRefs,
                     aspectRatio: identityPack.aspectRatio,
                     durationSec: sceneTargetDuration,
                     lastFrameUrl: prevScene?.lastFrameUrl,
-                  }),
-                  360000,
-                  `Scene ${globalSceneNum} video generation timed out after 360s`,
+                    endFrameUrl: sceneEndFrame,
+                    preferredProvider: activeVideo.providerId,
+                  });
+                  return { url: routed, provider: activeVideo.providerId };
+                };
+
+                const generated = await withTimeout(
+                  generateClip(),
+                  videoTimeoutMs,
+                  `Scene ${globalSceneNum} video generation timed out after ${Math.round(videoTimeoutMs / 1000)}s`,
                   signal
                 );
                 checkAborted();
 
-                if (isValidMediaData(generatedClip)) {
-                  let finalClip = generatedClip;
+                if (isValidMediaData(generated.url)) {
+                  let finalClip = generated.url;
                   try {
                     const storedClip = await this.uploadAssetToStorage({
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
                       storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.mp4`,
-                      dataUrlOrBlob: generatedClip,
+                      dataUrlOrBlob: generated.url,
                       mimeType: "video/mp4",
                       prompt: sceneMotionPrompt,
-                      provider: "ModelRouter",
+                      provider: generated.provider || "ModelRouter",
                     });
                     if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
                     console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Video -> ${finalClip}`);
@@ -1776,16 +1811,22 @@ CRITICAL PRODUCTION LAWS:
                     console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video upload notice:`, storageErr);
                   }
 
-                  // 1) Extract last frame of this scene clip for clip N+1 continuity
+                  // Extract last frame of this clip and persist it so clip N+1 can send it as first_frame.
                   try {
-                    const lastFrameExtract = await extractVideoLastFrame(finalClip);
-                    if (lastFrameExtract?.blob) {
+                    let lastFrameBlob: Blob | string | undefined;
+                    const browserExtract = await extractVideoLastFrame(finalClip);
+                    if (browserExtract?.blob) {
+                      lastFrameBlob = browserExtract.blob;
+                    } else if (generated.lastFrameDataUrl && isValidMediaData(generated.lastFrameDataUrl)) {
+                      lastFrameBlob = generated.lastFrameDataUrl;
+                    }
+                    if (lastFrameBlob) {
                       const storedLastFrame = await this.uploadAssetToStorage({
                         productionId: production.id,
                         brandId: (brand as any).id,
                         assetType: "image",
                         storagePath: `${production.id}/scenes/scene-0${globalSceneNum}-last.jpg`,
-                        dataUrlOrBlob: lastFrameExtract.blob,
+                        dataUrlOrBlob: lastFrameBlob,
                         mimeType: "image/jpeg",
                         prompt: `Last frame of Scene ${globalSceneNum}`,
                         provider: "VideoFrameExtractor",
@@ -1806,7 +1847,7 @@ CRITICAL PRODUCTION LAWS:
                     realVideoUrl = finalClip;
                   }
                 } else {
-                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generatedClip || "").slice(0, 100));
+                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));
                   if (!lastError) lastError = `Scene ${globalSceneNum} Video: Provider returned empty data`;
                 }
               } catch (sceneVidErr: any) {
@@ -2666,18 +2707,51 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
       const rawFixDur = sceneToFix.durationSec || parseInt(sceneToFix.duration) || 8;
       const fixTargetDuration = snapToAllowedDuration(Math.min(rawFixDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawFixDur, 8);
 
-      const generatedClip = await withTimeout(
-        ModelRouter.executeCategoryRequest("videoGeneration", {
-          prompt: beatPrompt,
-          referenceImageUrl: fixVisualLock.primaryRefUrl,
-          referenceImageUrls: fixVisualLock.imageUrls,
-          aspectRatio: identityPack.aspectRatio,
-          durationSec: fixTargetDuration,
-          lastFrameUrl: prevFrameCandidate,
-        }),
-        360000,
-        `Scene ${sceneIndex} video regeneration timed out after 360s`
+      const nextFixStill = existingScenes[targetSceneIdx + 1]?.image || existingScenes[targetSceneIdx + 1]?.keyframeImageUrl;
+      const fixEndFrame = nextFixStill && isImgUrl(nextFixStill) && nextFixStill !== fixVisualLock.primaryRefUrl
+        ? nextFixStill
+        : undefined;
+      const fixIdentityRefs = (fixVisualLock.imageUrls || []).filter(
+        (u) => u && u !== fixVisualLock.primaryRefUrl && u !== fixEndFrame
       );
+      const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
+
+      let generatedClip = "";
+      let generatedLastFrameDataUrl: string | undefined;
+      if (isI2vApiProvider(activeVideo.providerId) && fixVisualLock.primaryRefUrl) {
+        const apiClip = await withTimeout(
+          requestProductionVideoClip({
+            provider: activeVideo.providerId,
+            prompt: beatPrompt,
+            firstFrameUrl: fixVisualLock.primaryRefUrl,
+            endFrameUrl: fixEndFrame,
+            referenceImageUrls: fixIdentityRefs,
+            aspectRatio: identityPack.aspectRatio,
+            durationSec: fixTargetDuration,
+            productionId,
+            brandId: (brand as any).id,
+          }),
+          fixTimeoutMs,
+          `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
+        );
+        generatedClip = apiClip.videoUrl;
+        generatedLastFrameDataUrl = apiClip.lastFrameDataUrl;
+      } else {
+        generatedClip = await withTimeout(
+          ModelRouter.executeCategoryRequest("videoGeneration", {
+            prompt: beatPrompt,
+            referenceImageUrl: fixVisualLock.primaryRefUrl,
+            referenceImageUrls: fixVisualLock.imageUrls,
+            aspectRatio: identityPack.aspectRatio,
+            durationSec: fixTargetDuration,
+            lastFrameUrl: prevFrameCandidate,
+            endFrameUrl: fixEndFrame,
+            preferredProvider: activeVideo.providerId,
+          }),
+          fixTimeoutMs,
+          `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
+        );
+      }
 
       let finalClipUrl = generatedClip;
       if (isPlayableVideoUrl(generatedClip)) {
@@ -2697,13 +2771,14 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
 
         try {
           const lastExtract = await extractVideoLastFrame(finalClipUrl);
-          if (lastExtract?.blob) {
+          const lastPayload = lastExtract?.blob || generatedLastFrameDataUrl;
+          if (lastPayload) {
             const storedRevLast = await ProductionAssetService.uploadAssetToStorage({
               productionId,
               brandId: (brand as any).id,
               assetType: "image",
               storagePath: `${productionId}/scenes/scene-0${sceneIndex}-last.jpg`,
-              dataUrlOrBlob: lastExtract.blob,
+              dataUrlOrBlob: lastPayload,
               mimeType: "image/jpeg",
               prompt: `Revised last frame of Scene ${sceneIndex}`,
               provider: "VideoFrameExtractor",

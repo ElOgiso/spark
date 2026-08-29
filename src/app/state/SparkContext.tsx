@@ -2971,7 +2971,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const isMemoryReq = /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
 
     const isFormatCommand =
-      /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*s\b|\d+\s*sec|\d+\s*seconds|\d+\s*min|\d+\s*minute|\d+\s*m\b|veo|gemini|grok|kling|runway|luma|higgsfield|clip engine|video model|video engine)\b/i.test(lower) &&
+      /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*s\b|\d+\s*sec|\d+\s*seconds|\d+\s*min|\d+\s*minute|\d+\s*m\b|veo|gemini|grok|kling|seedance|runway|luma|higgsfield|clip engine|video model|video engine)\b/i.test(lower) &&
       /\b(format|aspect|duration|length|set|mode|video|style|target|engine|clip|provider|model|switch|use)\b/i.test(lower);
 
     if (isFormatCommand) {
@@ -3000,6 +3000,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (/\b(veo|gemini)\b/i.test(lower)) preferredVideoProvider = "gemini";
       else if (/\b(grok|xai)\b/i.test(lower)) preferredVideoProvider = "grok";
       else if (/\b(kling)\b/i.test(lower)) preferredVideoProvider = "kling";
+      else if (/\b(seedance|ark|doubao)\b/i.test(lower)) preferredVideoProvider = "seedance";
       else if (/\b(runway)\b/i.test(lower)) preferredVideoProvider = "runway";
       else if (/\b(luma)\b/i.test(lower)) preferredVideoProvider = "luma";
       else if (/\b(higgsfield)\b/i.test(lower)) preferredVideoProvider = "higgsfield";

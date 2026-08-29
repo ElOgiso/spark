@@ -1,0 +1,149 @@
+/**
+ * Contract tests for SPARK production I2V payloads.
+ * Run: node --experimental-strip-types --test api/runtime/videoContract.test.ts
+ */
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  snapKlingDuration,
+  snapSeedanceDuration,
+  snapGrokDuration,
+  buildSeedanceTaskBody,
+  buildKlingImage2VideoBody,
+  buildGrokVideoGenerateBody,
+  resolveClipFrames,
+  grokMotionPrompt,
+  isSeedance20,
+  klingSupportsImageTail,
+  SEEDANCE_MODEL_20,
+  SEEDANCE_MODEL_15_PRO,
+} from "./videoContract.ts";
+
+test("Kling duration is a number-string, never 5s", () => {
+  assert.equal(snapKlingDuration(5), "5");
+  assert.equal(snapKlingDuration(8), "10");
+  assert.equal(snapKlingDuration(4), "5");
+  const body = buildKlingImage2VideoBody({
+    prompt: "camera dollies in",
+    firstFrameDataUri: "data:image/jpeg;base64,AAA",
+    lastFrameDataUri: "data:image/jpeg;base64,BBB",
+    durationSec: 5,
+    model: "kling-v2-6",
+    klingMode: "pro",
+  });
+  assert.equal(body.duration, "5");
+  assert.notEqual(body.duration, "5s");
+  assert.equal(body.image, "AAA");
+  assert.equal(body.image_tail, "BBB");
+  assert.equal(body.sound, "on");
+  assert.equal(body.mode, "pro");
+});
+
+test("Kling image_tail is omitted in std mode", () => {
+  const body = buildKlingImage2VideoBody({
+    prompt: "motion",
+    firstFrameDataUri: "data:image/jpeg;base64,AAA",
+    lastFrameDataUri: "data:image/jpeg;base64,BBB",
+    durationSec: 5,
+    model: "kling-v1-6",
+    klingMode: "std",
+  });
+  assert.equal(body.image_tail, undefined);
+  assert.equal(klingSupportsImageTail("kling-v2-6", "pro"), true);
+  assert.equal(klingSupportsImageTail("kling-v2-6", "std"), false);
+});
+
+test("Kling v3-omni identity is image_list max 4", () => {
+  const refs = ["data:image/jpeg;base64,R1", "data:image/jpeg;base64,R2", "data:image/jpeg;base64,R3", "data:image/jpeg;base64,R4", "data:image/jpeg;base64,R5"];
+  const body = buildKlingImage2VideoBody({
+    prompt: "motion",
+    firstFrameDataUri: "data:image/jpeg;base64,FF",
+    referenceDataUris: refs,
+    model: "kling-v3-omni",
+    durationSec: 5,
+  });
+  assert.ok(Array.isArray(body.image_list));
+  assert.equal((body.image_list as string[]).length, 4);
+});
+
+test("Seedance uses first_frame + last_frame roles and int duration", () => {
+  const body = buildSeedanceTaskBody({
+    prompt: "slow push in",
+    firstFrameDataUri: "data:image/jpeg;base64,FF",
+    lastFrameDataUri: "data:image/jpeg;base64,LF",
+    referenceDataUris: ["data:image/jpeg;base64,FACE"],
+    durationSec: 8,
+    aspectRatio: "9:16",
+    resolution: "1080p",
+    model: SEEDANCE_MODEL_15_PRO,
+  });
+  assert.equal(body.duration, 8);
+  assert.equal(typeof body.duration, "number");
+  assert.equal(body.watermark, false);
+  assert.equal(body.resolution, "1080p");
+  const content = body.content as any[];
+  assert.equal(content[0].type, "text");
+  assert.equal(content[1].role, "first_frame");
+  assert.equal(content[2].role, "last_frame");
+  assert.equal(content[3].role, "reference_image");
+  assert.equal(snapSeedanceDuration(3), 4);
+  assert.equal(snapSeedanceDuration(20), 15);
+});
+
+test("Seedance 2.0 cannot mix first/last frame with reference media", () => {
+  assert.equal(isSeedance20(SEEDANCE_MODEL_20), true);
+  const body = buildSeedanceTaskBody({
+    prompt: "motion",
+    firstFrameDataUri: "data:image/jpeg;base64,FF",
+    lastFrameDataUri: "data:image/jpeg;base64,LF",
+    referenceDataUris: ["data:image/jpeg;base64,FACE"],
+    model: SEEDANCE_MODEL_20,
+    durationSec: 6,
+  });
+  const roles = (body.content as any[]).map((p) => p.role).filter(Boolean);
+  assert.deepEqual(roles, ["first_frame", "last_frame"]);
+});
+
+test("Grok sends image_url dataUri plus up to 7 reference faces", () => {
+  const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
+  const body = buildGrokVideoGenerateBody({
+    prompt: "camera pans left",
+    firstFrameDataUri: "data:image/jpeg;base64,START",
+    referenceDataUris: refs,
+    durationSec: 7,
+    aspectRatio: "9:16",
+  });
+  assert.equal(body.image_url, "data:image/jpeg;base64,START");
+  assert.equal((body.reference_image_urls as string[]).length, 7);
+  assert.equal(body.duration, 7);
+  assert.match(String(body.prompt), /do not restyle/i);
+  assert.equal(snapGrokDuration(0), 1);
+  assert.equal(snapGrokDuration(99), 15);
+});
+
+test("Grok motion prompt does not restyle the start frame", () => {
+  const p = grokMotionPrompt("slow dolly in, host raises hand");
+  assert.match(p, /motion and camera only/i);
+  assert.match(p, /slow dolly in/i);
+});
+
+test("resolveClipFrames treats lastFrameUrl as continuity first-frame, not image_tail", () => {
+  const frames = resolveClipFrames({
+    imageUrl: "https://cdn/prev-last.jpg",
+    lastFrameUrl: "https://cdn/prev-last.jpg",
+    endFrameUrl: "https://cdn/next-still.jpg",
+    referenceImageUrls: ["https://cdn/face.png", "https://cdn/prev-last.jpg"],
+  });
+  assert.equal(frames.firstFrameUrl, "https://cdn/prev-last.jpg");
+  assert.equal(frames.endFrameUrl, "https://cdn/next-still.jpg");
+  assert.deepEqual(frames.referenceImageUrls, ["https://cdn/face.png"]);
+});
+
+test("resolveClipFrames uses lastFrameUrl as first frame when imageUrl is omitted", () => {
+  const frames = resolveClipFrames({
+    lastFrameUrl: "https://cdn/extracted-last.jpg",
+    endFrameUrl: "https://cdn/next-still.jpg",
+  });
+  assert.equal(frames.firstFrameUrl, "https://cdn/extracted-last.jpg");
+  assert.equal(frames.endFrameUrl, "https://cdn/next-still.jpg");
+});

@@ -62,6 +62,18 @@ export function GrokLogo({ size = 28, className = "" }: LogoProps) {
   );
 }
 
+export function SeedanceLogo({ size = 28, className = "" }: LogoProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <rect width="24" height="24" rx="6" fill="#165DFF" />
+      <path
+        d="M7 16.5L12 7.5L17 16.5H14.4L12 12.2L9.6 16.5H7Z"
+        fill="#FFFFFF"
+      />
+    </svg>
+  );
+}
+
 export function ElevenLabsLogo({ size = 28, className = "" }: LogoProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
@@ -149,6 +161,8 @@ export function getProviderLogo(providerId?: string, size = 28, className = ""):
       return <ElevenLabsLogo size={size} className={className} />;
     case "kling":
       return <KlingLogo size={size} className={className} />;
+    case "seedance":
+      return <SeedanceLogo size={size} className={className} />;
     case "runway":
       return <RunwayLogo size={size} className={className} />;
     case "luma":

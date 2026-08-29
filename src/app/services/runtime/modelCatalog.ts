@@ -273,6 +273,50 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
     ],
   },
   {
+    provider: "kling",
+    displayName: "Kling AI",
+    models: [
+      {
+        id: "kling-v1-6",
+        label: "Kling 1.6 Image2Video",
+        capabilities: ["Video Generation"],
+        recommended: true,
+        status: "stable",
+      },
+      {
+        id: "kling-v2-6",
+        label: "Kling 2.6 Pro (image_tail)",
+        capabilities: ["Video Generation"],
+        status: "stable",
+      },
+      {
+        id: "kling-v3-omni",
+        label: "Kling v3 Omni (R2V identity, max 4)",
+        capabilities: ["Video Generation"],
+        status: "preview",
+      },
+    ],
+  },
+  {
+    provider: "seedance",
+    displayName: "Seedance",
+    models: [
+      {
+        id: "doubao-seedance-1-5-pro-251215",
+        label: "Seedance 1.5 Pro (first/last/reference frames)",
+        capabilities: ["Video Generation"],
+        recommended: true,
+        status: "stable",
+      },
+      {
+        id: "doubao-seedance-2-0-260128",
+        label: "Seedance 2.0 (first/last frame, no mixed refs)",
+        capabilities: ["Video Generation"],
+        status: "preview",
+      },
+    ],
+  },
+  {
     provider: "elevenlabs",
     displayName: "ElevenLabs",
     models: [
