@@ -20,7 +20,7 @@ import {
   SEEDANCE_MODEL_20,
   SEEDANCE_MODEL_15_PRO,
   KLING_DEFAULT_MODEL,
-} from "./videoContract.ts";
+} from "./_videoContract";
 
 test("Kling duration is a number-string, never 5s", () => {
   assert.equal(snapKlingDuration(5), "5");
