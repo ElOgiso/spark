@@ -228,13 +228,13 @@ async function extractLastFrameJpeg(videoBuffer: Buffer): Promise<string | undef
 }
 
 function createSupabase() {
-  const supabaseUrl =
-    process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "https://jaqzjhabmtvqtvinoafq.supabase.co";
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    "sb_publishable_vMsNKA4Icb2BD9SzgBTz4A_DTmSnwWb";
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_URL / VITE_SUPABASE_SERVICE_ROLE_KEY)."
+    );
+  }
   return createClient(supabaseUrl, supabaseKey);
 }
 

@@ -15,8 +15,11 @@ import {
   grokMotionPrompt,
   isSeedance20,
   klingSupportsImageTail,
+  resolveKlingModel,
+  klingModeForRequest,
   SEEDANCE_MODEL_20,
   SEEDANCE_MODEL_15_PRO,
+  KLING_DEFAULT_MODEL,
 } from "./videoContract.ts";
 
 test("Kling duration is a number-string, never 5s", () => {
@@ -39,7 +42,35 @@ test("Kling duration is a number-string, never 5s", () => {
   assert.equal(body.mode, "pro");
 });
 
-test("Kling image_tail is omitted in std mode", () => {
+test("Kling defaults to v2-6 pro and sends image_tail when a last-frame is present", () => {
+  assert.equal(KLING_DEFAULT_MODEL, "kling-v2-6");
+  const body = buildKlingImage2VideoBody({
+    prompt: "motion",
+    firstFrameDataUri: "data:image/jpeg;base64,AAA",
+    lastFrameDataUri: "data:image/jpeg;base64,BBB",
+    durationSec: 5,
+  });
+  assert.equal(body.model_name, "kling-v2-6");
+  assert.equal(body.mode, "pro");
+  assert.equal(body.image_tail, "BBB");
+  assert.equal(klingSupportsImageTail("kling-v2-6", "pro"), true);
+  assert.equal(klingSupportsImageTail("kling-v2-6", "std"), false);
+  assert.equal(klingModeForRequest("kling-v2-6", "std", true), "pro");
+  assert.equal(klingModeForRequest("kling-v2-6", undefined, false), "std");
+});
+
+test("Kling keeps std and omits image_tail when no last-frame is present", () => {
+  const body = buildKlingImage2VideoBody({
+    prompt: "motion",
+    firstFrameDataUri: "data:image/jpeg;base64,AAA",
+    durationSec: 5,
+  });
+  assert.equal(body.mode, "std");
+  assert.equal(body.image_tail, undefined);
+});
+
+test("Kling upgrades v1-6 to v2-6 pro when a last-frame is present", () => {
+  assert.equal(resolveKlingModel("kling-v1-6", true), "kling-v2-6");
   const body = buildKlingImage2VideoBody({
     prompt: "motion",
     firstFrameDataUri: "data:image/jpeg;base64,AAA",
@@ -48,9 +79,9 @@ test("Kling image_tail is omitted in std mode", () => {
     model: "kling-v1-6",
     klingMode: "std",
   });
-  assert.equal(body.image_tail, undefined);
-  assert.equal(klingSupportsImageTail("kling-v2-6", "pro"), true);
-  assert.equal(klingSupportsImageTail("kling-v2-6", "std"), false);
+  assert.equal(body.model_name, "kling-v2-6");
+  assert.equal(body.mode, "pro");
+  assert.equal(body.image_tail, "BBB");
 });
 
 test("Kling v3-omni identity is image_list max 4", () => {

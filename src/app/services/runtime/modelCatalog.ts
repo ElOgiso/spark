@@ -280,13 +280,13 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
         id: "kling-v1-6",
         label: "Kling 1.6 Image2Video",
         capabilities: ["Video Generation"],
-        recommended: true,
         status: "stable",
       },
       {
         id: "kling-v2-6",
         label: "Kling 2.6 Pro (image_tail)",
         capabilities: ["Video Generation"],
+        recommended: true,
         status: "stable",
       },
       {
