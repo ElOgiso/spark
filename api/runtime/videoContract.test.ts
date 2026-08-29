@@ -69,19 +69,20 @@ test("Kling keeps std and omits image_tail when no last-frame is present", () =>
   assert.equal(body.image_tail, undefined);
 });
 
-test("Kling upgrades v1-6 to v2-6 pro when a last-frame is present", () => {
-  assert.equal(resolveKlingModel("kling-v1-6", true), "kling-v2-6");
+test("Kling v1-6 + forced pro omits image_tail", () => {
+  assert.equal(klingSupportsImageTail("kling-v1-6", "pro"), false);
+  assert.equal(resolveKlingModel("kling-v1-6"), "kling-v1-6");
   const body = buildKlingImage2VideoBody({
     prompt: "motion",
     firstFrameDataUri: "data:image/jpeg;base64,AAA",
     lastFrameDataUri: "data:image/jpeg;base64,BBB",
     durationSec: 5,
     model: "kling-v1-6",
-    klingMode: "std",
+    klingMode: "pro",
   });
-  assert.equal(body.model_name, "kling-v2-6");
+  assert.equal(body.model_name, "kling-v1-6");
   assert.equal(body.mode, "pro");
-  assert.equal(body.image_tail, "BBB");
+  assert.equal(body.image_tail, undefined);
 });
 
 test("Kling v3-omni identity is image_list max 4", () => {

@@ -87,16 +87,12 @@ export function klingModelSupportsImageTail(model?: string): boolean {
   return /turbo|v2\.?6|v2-6|v2_6/i.test(model || "");
 }
 
-export function resolveKlingModel(model?: string, hasTail?: boolean): string {
-  const chosen = model || KLING_DEFAULT_MODEL;
-  if (hasTail && !klingModelSupportsImageTail(chosen)) {
-    return KLING_DEFAULT_MODEL;
-  }
-  return chosen;
+export function resolveKlingModel(model?: string): string {
+  return model || KLING_DEFAULT_MODEL;
 }
 
-/** Hybrid continuity: last-frame/end pose always runs pro so image_tail is sent. No-tail clips stay std. */
-export function klingModeForRequest(model?: string, requested?: "std" | "pro", hasTail?: boolean): "std" | "pro" {
+/** Last-frame/end pose forces pro. image_tail is still gated by klingSupportsImageTail (turbo/v2.6 + pro only). */
+export function klingModeForRequest(_model?: string, requested?: "std" | "pro", hasTail?: boolean): "std" | "pro" {
   if (hasTail) return "pro";
   if (requested === "pro") return "pro";
   return "std";
@@ -175,7 +171,7 @@ export function extractSeedanceVideoUrl(data: any): string {
 
 export function buildKlingImage2VideoBody(req: VideoClipRequest): Record<string, unknown> {
   const hasTail = Boolean(req.lastFrameDataUri);
-  const model = resolveKlingModel(req.model, hasTail);
+  const model = resolveKlingModel(req.model);
   const mode = klingModeForRequest(model, req.klingMode, hasTail);
   const body: Record<string, unknown> = {
     model_name: model,
