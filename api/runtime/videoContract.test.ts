@@ -13,6 +13,9 @@ import {
   buildGrokVideoGenerateBody,
   resolveClipFrames,
   grokMotionPrompt,
+  i2vMotionLock,
+  I2V_MOTION_LOCK,
+  I2V_NEGATIVE_PROMPT,
   isSeedance20,
   klingSupportsImageTail,
   resolveKlingModel,
@@ -40,6 +43,44 @@ test("Kling duration is a number-string, never 5s", () => {
   assert.equal(body.image_tail, "BBB");
   assert.equal(body.sound, "on");
   assert.equal(body.mode, "pro");
+});
+
+test("Kling carries the director prompt with identity lock + anti-slop negative prompt", () => {
+  const body = buildKlingImage2VideoBody({
+    prompt: "slow dolly-in as the host raises one hand",
+    firstFrameDataUri: "data:image/jpeg;base64,AAA",
+    durationSec: 5,
+  });
+  // Previously Kling received NO prompt at all — the scene brief was silently dropped.
+  assert.equal(typeof body.prompt, "string");
+  assert.match(String(body.prompt), /do not restyle/i);
+  assert.match(String(body.prompt), /slow dolly-in as the host raises one hand/);
+  assert.equal(body.negative_prompt, I2V_NEGATIVE_PROMPT);
+  assert.match(String(body.negative_prompt), /face morphing/i);
+});
+
+test("Seedance text content carries the shared identity/motion lock", () => {
+  const body = buildSeedanceTaskBody({
+    prompt: "camera pushes in on the product reveal",
+    firstFrameDataUri: "data:image/jpeg;base64,FF",
+    durationSec: 6,
+  });
+  const content = body.content as any[];
+  assert.equal(content[0].type, "text");
+  assert.match(String(content[0].text), /do not restyle/i);
+  assert.match(String(content[0].text), /camera pushes in on the product reveal/);
+});
+
+test("i2vMotionLock is idempotent and shared by grokMotionPrompt", () => {
+  const once = i2vMotionLock("camera pans left");
+  assert.match(once, /do not restyle/i);
+  assert.match(once, /camera pans left/);
+  // Applying the lock twice must not stack duplicate lock headers.
+  assert.equal(i2vMotionLock(once), once);
+  // Empty prompt still yields the bare lock.
+  assert.equal(i2vMotionLock(""), I2V_MOTION_LOCK);
+  // grokMotionPrompt now delegates to the shared lock (behavior preserved).
+  assert.equal(grokMotionPrompt("camera pans left"), once);
 });
 
 test("Kling defaults to v2-6 pro and sends image_tail when a last-frame is present", () => {

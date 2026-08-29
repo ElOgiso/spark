@@ -106,7 +106,7 @@ export function dataUriToRawBase64(dataUri: string): string {
 }
 
 export function buildSeedanceContent(req: VideoClipRequest): SeedanceContentPart[] {
-  const content: SeedanceContentPart[] = [{ type: "text", text: req.prompt || "" }];
+  const content: SeedanceContentPart[] = [{ type: "text", text: i2vMotionLock(req.prompt) }];
   if (req.firstFrameDataUri) {
     content.push({
       type: "image_url",
@@ -179,6 +179,10 @@ export function buildKlingImage2VideoBody(req: VideoClipRequest): Record<string,
     duration: snapKlingDuration(req.durationSec),
     aspect_ratio: normalizeAspectRatio(req.aspectRatio),
     sound: req.klingSound === "off" ? "off" : "on",
+    // Kling image2video accepts prompt/negative_prompt. Previously omitted, so the director's
+    // scene action/camera/identity brief was silently dropped on the DEFAULT provider path.
+    prompt: i2vMotionLock(req.prompt),
+    negative_prompt: I2V_NEGATIVE_PROMPT,
   };
 
   if (req.firstFrameDataUri) {
@@ -228,13 +232,34 @@ export function klingTaskStatus(data: any): string {
   return String(status).toLowerCase();
 }
 
-export function grokMotionPrompt(prompt: string): string {
+/**
+ * Shared image-to-video identity + motion lock applied to EVERY provider (Grok, Kling, Seedance).
+ * Keeps the generated clip faithful to the approved keyframe: motion/camera only, never a restyle
+ * or identity/wardrobe/set change. This is the primary defense against character drift and
+ * "off-concept" clips that ignore the director's scene brief.
+ */
+export const I2V_MOTION_LOCK =
+  "Animate the provided start frame. Do not restyle, recompose, or change identity, wardrobe, or set. Prompt describes motion and camera only.";
+
+/**
+ * Shared anti-slop negative prompt for providers that accept one (e.g. Kling `negative_prompt`).
+ * Targets the failure modes that read as "AI slop": drifting faces, warped anatomy, duplicated
+ * subjects, hard cuts, and burned-in text/watermarks.
+ */
+export const I2V_NEGATIVE_PROMPT =
+  "face morphing, identity drift, different person, wardrobe change, set change, background reset, extra limbs, extra fingers, deformed hands, warped face, duplicated subject, cloned character, jump cut, hard cut, scene reset, burned-in text, caption, subtitle, watermark, logo, glitch, artifacts, low quality, blurry, distorted";
+
+/** Prefix any I2V prompt with the shared identity/motion lock (idempotent). */
+export function i2vMotionLock(prompt: string): string {
   const trimmed = (prompt || "").trim();
-  const lock =
-    "Animate the provided start frame. Do not restyle, recompose, or change identity, wardrobe, or set. Prompt describes motion and camera only.";
-  if (!trimmed) return lock;
+  if (!trimmed) return I2V_MOTION_LOCK;
   if (/do not restyle/i.test(trimmed)) return trimmed;
-  return `${lock}\n\n${trimmed}`;
+  return `${I2V_MOTION_LOCK}\n\n${trimmed}`;
+}
+
+/** @deprecated Prefer {@link i2vMotionLock}. Retained for the Grok body and existing callers/tests. */
+export function grokMotionPrompt(prompt: string): string {
+  return i2vMotionLock(prompt);
 }
 
 export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string, unknown> {
