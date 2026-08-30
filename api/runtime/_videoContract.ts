@@ -194,11 +194,13 @@ export function buildKlingImage2VideoBody(req: VideoClipRequest): Record<string,
   }
 
   if (isKlingV3Omni(model)) {
+    // Kling multi-image2video expects image_list as an array of { image } objects
+    // (ref: ArcReel lib/video_backends/kling.py `_build_payload`), not raw base64 strings.
     const list = (req.referenceDataUris || [])
       .filter(Boolean)
       .filter((u) => u !== req.firstFrameDataUri && u !== req.lastFrameDataUri)
       .slice(0, 4)
-      .map(dataUriToRawBase64);
+      .map((u) => ({ image: dataUriToRawBase64(u) }));
     if (list.length > 0) body.image_list = list;
   }
 

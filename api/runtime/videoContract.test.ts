@@ -135,8 +135,12 @@ test("Kling v3-omni identity is image_list max 4", () => {
     model: "kling-v3-omni",
     durationSec: 5,
   });
-  assert.ok(Array.isArray(body.image_list));
-  assert.equal((body.image_list as string[]).length, 4);
+  const imageList = body.image_list as Array<{ image: string }>;
+  assert.ok(Array.isArray(imageList));
+  assert.equal(imageList.length, 4);
+  // Kling multi-image2video wire format: array of { image } objects (raw base64), not strings.
+  assert.equal(typeof imageList[0].image, "string");
+  assert.equal(imageList[0].image, "R1");
 });
 
 test("Seedance uses first_frame + last_frame roles and int duration", () => {
