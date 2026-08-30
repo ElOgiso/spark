@@ -523,17 +523,18 @@ export class ProductionAssetService {
           uploadSuccess = true;
           console.log(`[ProductionAssetService] Uploaded binary to bucket "${SPARK_STORAGE_BUCKET}": ${storagePath} (${uploadBlob.size} bytes)`);
 
-          // Bucket 'Spark' is private: create signed URL with 7 days TTL (604800s)
-          const { data: signedData, error: signedError } = await supabase.storage
-            .from(SPARK_STORAGE_BUCKET)
-            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-
-          if (!signedError && signedData?.signedUrl) {
-            finalPublicUrl = signedData.signedUrl;
+          // Bucket "Spark" is PUBLIC — prefer a permanent public URL so generated media never
+          // expires. (Previously this stored 7-day signed URLs, so media vanished after a week
+          // and had to be re-signed on login.) Signed URL remains a fallback.
+          const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
+          if (pubData?.publicUrl) {
+            finalPublicUrl = pubData.publicUrl;
           } else {
-            const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              finalPublicUrl = pubData.publicUrl;
+            const { data: signedData, error: signedError } = await supabase.storage
+              .from(SPARK_STORAGE_BUCKET)
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+            if (!signedError && signedData?.signedUrl) {
+              finalPublicUrl = signedData.signedUrl;
             }
           }
         } else if (error) {
