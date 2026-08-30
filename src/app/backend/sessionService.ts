@@ -62,13 +62,13 @@ export async function signIn(email: string, password: string): Promise<{ user: U
   return { user: result.data, error: result.error };
 }
 
-export async function signUp(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
+export async function signUp(email: string, password: string): Promise<{ user: User | null; error: string | null; needsEmailConfirmation?: boolean }> {
   if (!isAuthBackendReady()) {
     return { user: null, error: null };
   }
 
   const result = await signUpWithEmail(email, password);
-  return { user: result.data, error: result.error };
+  return { user: result.data, error: result.error, needsEmailConfirmation: result.needsEmailConfirmation };
 }
 
 export async function signInWithOAuth(provider: "google" | "apple"): Promise<{ error: string | null }> {

@@ -42,9 +42,13 @@ export function MobileCreateAccountView({
       return;
     }
 
-    await auth.signUp(email, password);
-    if (!auth.error) {
+    try {
+      await auth.signUp(email, password);
+      // signUp throws on failure or when email confirmation is required, so we only advance on a
+      // real authenticated signup and otherwise show the message instead of silently resetting.
       onAccountCreated();
+    } catch (err: any) {
+      setLocalError(err?.message || auth.error || "Sign up failed. Please try again.");
     }
   };
 

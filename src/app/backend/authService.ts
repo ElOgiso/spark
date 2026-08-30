@@ -44,12 +44,21 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return { data: data.user, error: error ? sanitizeAuthError(error) : null };
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<AuthResult<User>> {
+export async function signUpWithEmail(
+  email: string,
+  password: string
+): Promise<AuthResult<User> & { needsEmailConfirmation?: boolean }> {
   const supabase = getSupabaseClient();
   if (!supabase) return unavailable<User>();
 
   const { data, error } = await supabase.auth.signUp({ email, password });
-  return { data: data.user, error: error ? sanitizeAuthError(error) : null };
+  // When "Confirm email" is enabled, Supabase returns a user but NO session. The caller must NOT
+  // treat this as a completed login (otherwise the app routes forward then snaps back silently).
+  return {
+    data: data.user,
+    error: error ? sanitizeAuthError(error) : null,
+    needsEmailConfirmation: !!data?.user && !data?.session,
+  };
 }
 
 export function getEnvironmentAwareRedirectUrl(): string {

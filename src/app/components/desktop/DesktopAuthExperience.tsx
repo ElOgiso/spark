@@ -47,13 +47,15 @@ export function DesktopAuthExperience({ onComplete }: DesktopAuthExperienceProps
   const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
-    await auth.signIn(email, password);
-    if (!auth.error) {
+    try {
+      await auth.signIn(email, password);
       if (!auth.isOnboardingComplete) {
         setViewState("onboarding");
       } else {
         onComplete();
       }
+    } catch (err: any) {
+      setLocalError(err?.message || auth.error || "Sign in failed. Please check your credentials.");
     }
   };
 
@@ -66,9 +68,13 @@ export function DesktopAuthExperience({ onComplete }: DesktopAuthExperienceProps
       return;
     }
 
-    await auth.signUp(email, password);
-    if (!auth.error) {
+    try {
+      await auth.signUp(email, password);
+      // Only advance on a real, authenticated signup. signUp throws when email confirmation is
+      // required or on failure, so we stay on the auth screen and surface the message.
       setViewState("onboarding");
+    } catch (err: any) {
+      setLocalError(err?.message || auth.error || "Sign up failed. Please try again.");
     }
   };
 

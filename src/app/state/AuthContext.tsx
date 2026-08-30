@@ -342,6 +342,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setError(result.error);
         throw new Error(result.error);
       }
+      // Email confirmation required: Supabase created the user but issued no session. Do NOT pretend
+      // the user is logged in (that caused the silent "form resets with no error" bug). Surface a
+      // clear, actionable message and stop here so callers don't route into onboarding.
+      if (result.needsEmailConfirmation) {
+        const msg = "Account created. Please check your email to confirm your address, then sign in.";
+        setError(msg);
+        throw new Error(msg);
+      }
       if (result.user) {
         const restoreRes = await restoreSession();
         if (restoreRes.session) {
@@ -565,7 +573,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
-    const targetAccessStatus = userRole === "admin" ? "active" : "pending_approval";
+    // Access gating is configurable: by default new non-admin users require admin approval
+    // (closed beta). Set VITE_REQUIRE_ADMIN_APPROVAL="false" for open self-serve signup so new
+    // users are activated immediately instead of hitting the AccessGateFreeze after onboarding.
+    const requireAdminApproval = import.meta.env.VITE_REQUIRE_ADMIN_APPROVAL !== "false";
+    const targetAccessStatus = userRole === "admin" || !requireAdminApproval ? "active" : "pending_approval";
 
     if (targetUserId && isConfigured) {
       try {
