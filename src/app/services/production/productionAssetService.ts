@@ -3,7 +3,7 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
-import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
+import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
@@ -688,6 +688,9 @@ export class ProductionAssetService {
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     const { mode, aspectRatio } = identityPack;
+    // On-concept directive from the researched viral spark — injected into still + motion prompts
+    // so generated visuals reflect the researched format/retention/niche, not generic templates.
+    const viralConcept = buildViralConceptDirective(brief);
     (production as any).aspectRatio = aspectRatio;
     brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
     const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
@@ -1298,7 +1301,7 @@ Return valid JSON with this exact structure:
           }
 
           const stillPrompt = `
-${stillVisualLock.refPromptHeader}
+${stillVisualLock.refPromptHeader}${viralConcept ? `${viralConcept}\n` : ""}
 [SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
 ASPECT RATIO: ${aspectRatio} full-bleed single frame.
 COMPOSITION: ${shotFraming}. Single camera perspective.
@@ -1729,6 +1732,7 @@ CRITICAL PRODUCTION LAWS:
                 characterName: isInsertOrSet ? undefined : (activeChar?.name || "Host"),
                 characterStyle: isInsertOrSet ? "B-Roll / Cinematic Visual" : (activeChar?.style || "Executive Presenter"),
                 environment: identityPack.environmentString,
+                viralConcept,
               })}`;
 
               const identityRefs = orderedSceneRefs.filter(

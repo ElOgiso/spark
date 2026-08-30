@@ -26,6 +26,36 @@ ANTI-SLOP & CONTINUITY LAWS:
 export const VIDEO_NEGATIVE_LAWS =
   "AVOID / NEGATIVE (reject all of these): face morphing, identity drift, a different person, wardrobe or set changes, background resets, extra limbs, extra fingers, deformed hands, warped faces, duplicated or cloned subjects, twins, jump cuts, burned-in text, captions, subtitles, watermarks, logos, glitches, warping, low quality, blur.";
 
+/**
+ * Compact, brand-safe rendering of the researched viral concept so the STILL and MOTION prompts
+ * generate ON-CONCEPT visuals (format, retention pattern, niche visual language) instead of
+ * generic templates. Adapts the STRUCTURE — it never copies the source creator's identity/set.
+ * Returns "" when there is no research signal, so callers can inject unconditionally.
+ */
+export function buildViralConceptDirective(
+  brief: Pick<ProductionBrief, "researchContext" | "visualDirection">
+): string {
+  const rc = brief.researchContext;
+  const lines: string[] = [];
+  const fmt = rc?.format?.trim();
+  if (fmt) lines.push(`- Format & edit style: ${fmt}`);
+  const retention = (rc?.provenStructure || rc?.hookPattern || "").trim();
+  if (retention) lines.push(`- Retention pattern to honor: ${retention}`);
+  if (rc?.retentionSignals && rc.retentionSignals.length) {
+    lines.push(`- Retention signals: ${rc.retentionSignals.slice(0, 4).join("; ")}`);
+  }
+  if (rc?.nicheLanguage && rc.nicheLanguage.length) {
+    lines.push(`- Niche visual language: ${rc.nicheLanguage.slice(0, 6).join(", ")}`);
+  }
+  if (rc?.viralReasons && rc.viralReasons.length) {
+    lines.push(`- Why this performs: ${rc.viralReasons.slice(0, 3).join("; ")}`);
+  }
+  const vd = brief.visualDirection?.trim();
+  if (vd) lines.push(`- Visual direction: ${vd}`);
+  if (lines.length === 0) return "";
+  return `REFERENCE FORMAT & RETENTION (adapt to THIS brand — do NOT copy the source creator's identity, wardrobe, or set):\n${lines.join("\n")}`;
+}
+
 export interface PromptPackOptions {
   brand: Brand;
   character?: Character;
@@ -329,6 +359,8 @@ export interface SceneMotionPromptParams {
   characterName?: string;
   characterStyle?: string;
   environment?: string;
+  /** Compact researched-format directive from buildViralConceptDirective(brief). */
+  viralConcept?: string;
 }
 
 export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string {
@@ -347,6 +379,7 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     characterName = "Host",
     characterStyle = "Executive Presenter",
     environment = "Modern High-Contrast Production Studio",
+    viralConcept,
   } = params;
 
   const isDeep = mode === "deep";
@@ -372,7 +405,7 @@ ANIMATION INSTRUCTION:
 - Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.
 - Resolving End Pose: Gracefully transition into "${endPose}".
 - Audio / Performance: ${audioDirectives}
-
+${viralConcept ? `\n${viralConcept}\n` : ""}
 CRITICAL PRODUCTION LAWS:
 - Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.

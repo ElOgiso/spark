@@ -6,7 +6,8 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSceneMotionPrompt, VIDEO_NEGATIVE_LAWS } from "./productionPromptPacks";
+import { buildSceneMotionPrompt, VIDEO_NEGATIVE_LAWS, buildViralConceptDirective } from "./productionPromptPacks";
+import type { ProductionBrief } from "../../domain/types";
 
 test("motion prompt carries identity lock + shared anti-slop negative laws (Veo has no negative_prompt field)", () => {
   const p = buildSceneMotionPrompt({
@@ -28,6 +29,40 @@ test("motion prompt carries identity lock + shared anti-slop negative laws (Veo 
   // Scene content is present.
   assert.match(p, /host gestures toward the chart/);
   assert.match(p, /This changes everything\./);
+});
+
+test("viral concept directive renders researched format and threads into the motion prompt", () => {
+  const brief = {
+    visualDirection: "fast punch-ins on a neon desk setup",
+    researchContext: {
+      format: "Vertical Short-Form (Shorts)",
+      hookPattern: "First-line curiosity opener",
+      retentionSignals: ["3s pattern interrupt", "text-free cold open"],
+      nicheLanguage: ["alpha", "leverage"],
+      viralReasons: ["High completion rate"],
+    },
+  } as unknown as ProductionBrief;
+
+  const directive = buildViralConceptDirective(brief);
+  assert.match(directive, /REFERENCE FORMAT & RETENTION/);
+  assert.match(directive, /Vertical Short-Form/);
+  assert.match(directive, /do NOT copy the source creator/i);
+  assert.match(directive, /fast punch-ins on a neon desk setup/);
+
+  // Empty research yields empty string (safe to inject unconditionally).
+  assert.equal(buildViralConceptDirective({ visualDirection: "" } as unknown as ProductionBrief), "");
+
+  // The directive actually appears in the motion prompt when passed.
+  const motion = buildSceneMotionPrompt({
+    mode: "standard",
+    aspectRatio: "9:16",
+    sceneIndex: 1,
+    totalScenes: 3,
+    durationSec: 5,
+    viralConcept: directive,
+  });
+  assert.match(motion, /REFERENCE FORMAT & RETENTION/);
+  assert.match(motion, /Vertical Short-Form/);
 });
 
 test("deep mode is diegetic-only (no external voiceover); standard vo leaves acoustic space", () => {
