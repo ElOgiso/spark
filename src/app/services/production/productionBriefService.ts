@@ -886,6 +886,7 @@ export class ProductionBriefService {
       const fallback = compileDeterministicBrief({ spark, brand, character, characters, defaultOffer, productionMode: modeKey, niche, researchContext: resolvedResearch || undefined, targetDurationSec: effectiveDurationSec });
       return {
         ...fallback,
+        contentSource: "template-fallback",
         scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
       };
     }
@@ -1130,14 +1131,19 @@ Return a valid JSON object matching this exact structure with NO markdown format
 
     let evaluated = mapParsedBeats(parsedJson?.beats);
 
-    // If initial LLM output is below word floor or missing required beats: execute 1 rewrite pass
-    if (evaluated.beats.length < budget.count || evaluated.words < budget.wordFloor) {
+    // If initial LLM output is below word floor or missing required beats, RETRY the real,
+    // configured production model (up to 2 rewrite passes) before ever considering the
+    // deterministic template. We fix thin output with the proven model — we never fake premium
+    // content. Keep the best result across passes.
+    const MAX_REWRITE_PASSES = 2;
+    for (let pass = 1; pass <= MAX_REWRITE_PASSES; pass++) {
+      if (evaluated.beats.length >= budget.count && evaluated.words >= budget.wordFloor) break;
       console.log(
-        `[ProductionBriefService] Initial LLM brief too thin (${evaluated.words} words, ${evaluated.beats.length} beats < floor ${budget.wordFloor} words, ${budget.count} beats for ${effectiveDurationSec}s). Executing WORD LAW rewrite pass...`
+        `[ProductionBriefService] LLM brief too thin (${evaluated.words} words, ${evaluated.beats.length}/${budget.count} beats < ${budget.wordFloor}-word floor for ${effectiveDurationSec}s). WORD LAW rewrite pass ${pass}/${MAX_REWRITE_PASSES}...`
       );
 
       try {
-        const rewriteInstruction = `${systemInstruction}\n\nCRITICAL WORD LAW REWRITE:\nThe previous output was too thin (${evaluated.words} words). For ${effectiveDurationSec} seconds, you MUST generate at least ${budget.wordFloor} total words (~${budget.targetWords} words at 2.4 words/sec) across all ${budget.count} beats. Add concrete proof, detailed examples, or actionable steps for every beat's valueJob. NO fluff.`;
+        const rewriteInstruction = `${systemInstruction}\n\nCRITICAL WORD LAW REWRITE (pass ${pass}):\nThe previous output was too thin (${evaluated.words} words). For ${effectiveDurationSec} seconds, you MUST generate at least ${budget.wordFloor} total words (~${budget.targetWords} words at 2.4 words/sec) across all ${budget.count} beats. Add concrete proof, detailed examples, or actionable steps for every beat's valueJob. NO fluff.`;
 
         const rewritePrompt = `REWRITE SCRIPT TO FILL FULL ${effectiveDurationSec}s TARGET:
 Target Duration: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} mode).
@@ -1161,21 +1167,32 @@ ${prompt}`;
         const rewrittenParsed = JSON.parse(cleanRewriteJson);
         const rewrittenEvaluated = mapParsedBeats(rewrittenParsed?.beats);
 
-        if (rewrittenEvaluated.beats.length >= budget.count && rewrittenEvaluated.words >= budget.wordFloor) {
+        // Keep the strongest result so far (more words / more beats is closer to the floor).
+        if (
+          rewrittenEvaluated.words > evaluated.words ||
+          rewrittenEvaluated.beats.length > evaluated.beats.length
+        ) {
           parsedJson = rewrittenParsed;
           evaluated = rewrittenEvaluated;
+        }
+
+        if (evaluated.beats.length >= budget.count && evaluated.words >= budget.wordFloor) {
           console.log(
-            `[ProductionBriefService] Rewrite pass succeeded: ${evaluated.words} words across ${evaluated.beats.length} beats.`
+            `[ProductionBriefService] Rewrite pass ${pass} succeeded: ${evaluated.words} words across ${evaluated.beats.length} beats.`
           );
+          break;
         }
       } catch (rewriteErr) {
-        console.warn("[ProductionBriefService] Rewrite pass error:", rewriteErr);
+        console.warn(`[ProductionBriefService] Rewrite pass ${pass} error:`, rewriteErr);
       }
     }
 
-    // Final validation: if LLM output still fails floor, use verified deterministic fallback
+    // Final validation: only if the real model still fails the floor after all retries do we fall
+    // back to the deterministic template — and we MARK it (contentSource) so it is never silently
+    // passed off as premium AI output.
     let validBeats: ProductionBriefBeat[] = evaluated.beats;
     let totalWords = evaluated.words;
+    let contentSource: "ai" | "template-fallback" = "ai";
 
     if (validBeats.length < budget.count || totalWords < budget.wordFloor) {
       const fallbackWords = (fallback.beats || []).reduce(
@@ -1184,11 +1201,12 @@ ${prompt}`;
       );
 
       if (fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
-        console.log(
-          `[ProductionBriefService] Using duration-scaled deterministic fallback (${fallbackWords} words >= ${budget.wordFloor} floor for ${effectiveDurationSec}s).`
+        console.warn(
+          `[ProductionBriefService] Real model under-delivered after ${MAX_REWRITE_PASSES} rewrite passes; using deterministic template fallback (${fallbackWords} words). Marking contentSource="template-fallback".`
         );
         validBeats = fallback.beats || [];
         totalWords = fallbackWords;
+        contentSource = "template-fallback";
       } else {
         const errMsg = `Brief too thin for ${effectiveDurationSec}s (${totalWords} words < ${budget.wordFloor} minimum words)`;
         console.error(`[ProductionBriefService] ${errMsg}`);
@@ -1246,6 +1264,7 @@ ${prompt}`;
       platformRecommendation: asText(parsedJson?.platformRecommendation, fallback.platformRecommendation),
       whyThisWorks: asText(parsedJson?.whyThisWorks, fallback.whyThisWorks),
       researchContext: resolvedResearch || undefined,
+      contentSource,
       brandFitScore: typeof parsedJson?.brandFitScore === "number" ? parsedJson.brandFitScore : sparkScore,
       suggestedDuration: asText(parsedJson?.suggestedDuration, fallback.suggestedDuration),
       offerCta: fallback.offerCta,

@@ -2780,7 +2780,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const result = await ResearchSourceService.registerAndExtract(url, brandId, state.researchSources || []);
     if (!result) return;
 
-    const { source, patterns } = result;
+    const { source, patterns, videoSparks = [] } = result;
 
     setState((prev: any) => {
       const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
@@ -2802,12 +2802,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return u ? { ...m, ...u } : m;
       });
 
+      // Surface REAL multimodal-analysis sparks (from VideoUnderstanding) into the UI, ahead of the
+      // templated pattern sparks, so users see genuine analysis rather than title-derived templates.
+      const patternAndExisting = [...newSparks, ...mergedSparks];
+      const realVideoSparks = (videoSparks || []).filter(
+        (vs: any) => !patternAndExisting.some((s: any) => s.id === vs.id || (vs.fingerprint && s.fingerprint === vs.fingerprint) || s.title === vs.title)
+      );
+
       return {
         ...prev,
         researchSources: [source, ...(prev.researchSources || []).filter((s: any) => s.id !== source.id)],
         researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== source.id)],
         memoryItems: [...newMemoryItems, ...mergedMemories],
-        viralSparks: [...newSparks, ...mergedSparks],
+        viralSparks: [...realVideoSparks, ...patternAndExisting],
       };
     });
   };

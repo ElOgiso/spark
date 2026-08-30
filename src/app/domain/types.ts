@@ -215,6 +215,8 @@ export interface ProductionBrief {
   whyThisWorks: string;
   /** Structured viral research carried onto the brief so still/motion prompts can generate on-concept visuals. */
   researchContext?: StructuredResearchContext;
+  /** Provenance of the script content: real model output vs. the deterministic template safety-net. */
+  contentSource?: "ai" | "template-fallback";
   brandFitScore: number;
   suggestedDuration: string;
   targetDurationSec?: number;
