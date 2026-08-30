@@ -6,6 +6,7 @@
 
 import type { Brand, Character, ProductionBrief, Production, MemoryItem } from "../../domain/types";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
+import { resolveProductionMode } from "./resolveProductionMode";
 
 export const ANTI_SLOP_RULES = `
 ANTI-SLOP & CONTINUITY LAWS:
@@ -15,6 +16,15 @@ ANTI-SLOP & CONTINUITY LAWS:
 4. NO TEXT ON GENERATED STILLS: Never render letters, words, captions, subtitles, watermarks, or UI type on scene stills. Captions are applied later at the caption stage. Thumbnails are the only generated images allowed to contain headline text.
 5. OPTICAL DISCIPLINE: 8K UHD photorealistic render, prime cinema lens, natural depth of field, coherent color grade, zero AI distortion or extra limbs.
 `.trim();
+
+/**
+ * Shared negative / anti-slop constraints appended as PLAIN TEXT to motion prompts.
+ * Providers without a dedicated negative_prompt field (notably Gemini Veo, which takes prompt
+ * text only) rely entirely on this tail to reject the failure modes that read as "AI slop".
+ * The server contract layer (_videoContract.ts I2V_NEGATIVE_PROMPT) mirrors this for Kling.
+ */
+export const VIDEO_NEGATIVE_LAWS =
+  "AVOID / NEGATIVE (reject all of these): face morphing, identity drift, a different person, wardrobe or set changes, background resets, extra limbs, extra fingers, deformed hands, warped faces, duplicated or cloned subjects, twins, jump cuts, burned-in text, captions, subtitles, watermarks, logos, glitches, warping, low quality, blur.";
 
 export interface PromptPackOptions {
   brand: Brand;
@@ -93,13 +103,8 @@ export function buildCompleteVoiceScript(brief: ProductionBrief, targetDurationS
 
 export function getProductionPromptPack(options: PromptPackOptions): ModePromptPack {
   const { brand, character, brief, production, aspectRatio, characterRefUrl, memoryItems = [] } = options;
-  const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
-  const mode: "express" | "standard" | "deep" =
-    rawMode === "deep" || rawMode === "cinematic"
-      ? "deep"
-      : rawMode === "express" || rawMode === "narrator"
-      ? "express"
-      : "standard";
+  // Single source of mode truth — honors production/brand/brief preference + legacy synonyms.
+  const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
 
   const charName = character?.name || "Host";
   const charStyle = character?.style || "Executive Presenter";
@@ -369,10 +374,13 @@ ANIMATION INSTRUCTION:
 - Audio / Performance: ${audioDirectives}
 
 CRITICAL PRODUCTION LAWS:
+- Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
 - NO burned-in text, letters, captions, or subtitles on the frame.
 - Professional cinematic motion, natural motion blur, realistic physics.
+
+${VIDEO_NEGATIVE_LAWS}
 `.trim();
 }
 

@@ -9,6 +9,7 @@ import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
+import { resolveProductionMode } from "./resolveProductionMode";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -103,13 +104,9 @@ export function buildLockedIdentityPack(params: {
   const characterReferenceImageUrl =
     character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || undefined;
 
-  const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
-  const mode: "express" | "standard" | "deep" =
-    rawMode === "deep" || rawMode === "cinematic"
-      ? "deep"
-      : rawMode === "express" || rawMode === "narrator"
-      ? "express"
-      : "standard";
+  // Single source of mode truth — honors the user's production/brand/brief preference and legacy
+  // synonyms (narrator→express, hybrid→standard, cinematic→deep) instead of only production.mode.
+  const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
 
   const formatSettings = getEffectiveFormatSettings({
     formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings || (params as any).formatSettings,
@@ -1314,6 +1311,7 @@ CRITICAL PRODUCTION LAWS:
 - THIS IS A SINGLE FULL-BLEED STILL IMAGE, NOT A STORYBOARD GRID.
 - NO multiple panels. NO split screen. NO collage. NO contact sheet. NO numbered boxes. NO borders.
 - NO TEXT, NO LETTERS, NO CAPTIONS, NO SUBTITLES, NO WATERMARKS, NO TYPOGRAPHY on this image. Clean photographic frame only.
+- NO face morphing, no extra limbs, no extra fingers, no deformed hands, no duplicated or cloned subjects, no warping. Anatomically correct, photorealistic.
 - Professional high-production cinematography, crisp lighting, depth of field.
 `.trim();
 
