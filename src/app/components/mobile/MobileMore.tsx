@@ -21,6 +21,7 @@ import { fetchBrandStorageAssets, uploadBrandAssetFile } from "../../backend/wor
 import { AuthPanel } from "../auth/AuthPanel";
 import { DeleteWorkspaceModal } from "../ui/DeleteWorkspaceModal";
 import { DeleteAccountModal } from "../ui/DeleteAccountModal";
+import { WipeWorkspaceDataModal } from "../ui/WipeWorkspaceDataModal";
 import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../../theme";
 import {
   Zap,
@@ -73,6 +74,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     aiSettings,
     updateAISettings,
     updateBrand,
+    wipeWorkspaceLearning,
     productionGenerationEnabled,
     toggleProductionGeneration,
   } = useSpark() as any;
@@ -98,6 +100,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showSignOut, setShowSignOut] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [showWipeData, setShowWipeData] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   // Production: no seed API keys / assets
@@ -1238,6 +1241,25 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             Sign In
           </Button>
         )}
+        {/* Wipe Workspace Data */}
+        <div className="w-full px-1">
+          <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
+            <div>
+              <h4 className="text-xs font-semibold text-foreground">Wipe workspace data</h4>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                Clears Viral Sparks, inspiration sources, and learned memory. Brand and productions stay.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowWipeData(true)}
+              className="w-full py-2.5 rounded-full text-xs font-semibold text-foreground/90 bg-muted hover:bg-muted/80 border border-border/80 hover:border-border transition-all cursor-pointer text-center"
+            >
+              Wipe data
+            </button>
+          </div>
+        </div>
+
         {/* Delete Account */}
         <div className="w-full px-1">
           <div className="rounded-xl border border-destructive/20 bg-destructive/[0.03] p-4 space-y-3">
@@ -1324,6 +1346,16 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         onConfirm={async (id) => {
           await auth.deleteWorkspace(id);
         }}
+      />
+
+      {/* Wipe Workspace Data Confirmation Modal */}
+      <WipeWorkspaceDataModal
+        isOpen={showWipeData}
+        onClose={() => setShowWipeData(false)}
+        onConfirm={async () => {
+          await wipeWorkspaceLearning?.();
+        }}
+        brandName={brand?.name}
       />
 
       {/* Delete Account Confirmation Modal */}

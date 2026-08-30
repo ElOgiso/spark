@@ -52,6 +52,7 @@ import {
   persistAISettings,
   persistCreditSettings,
   deleteProductionCascade,
+  wipeWorkspaceLearningData,
 } from "../backend/workspaceSync";
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
@@ -114,6 +115,7 @@ interface SparkContextType {
   addSupportCharacter?: (character: Partial<Character>) => Promise<Character | null>;
   deleteSupportCharacter?: (characterId: string) => Promise<boolean>;
   resetWorkspace: () => void;
+  wipeWorkspaceLearning?: () => Promise<boolean>;
   initializeBrandGenesis: (data: any) => Promise<void> | void;
   updateAutomationMode: (mode: AutomationMode) => void;
   updateProductionMode: (mode: ProductionMode) => void;
@@ -351,6 +353,29 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSessions([]);
     setActiveSessionId(null);
   }, []);
+
+  const wipeWorkspaceLearning = useCallback(async (): Promise<boolean> => {
+    const brandId = state.brand?.id;
+    if (!brandId) return false;
+    console.log(`[SparkContext] Wiping learned data for workspace brand: ${brandId}`);
+    try {
+      const res = await wipeWorkspaceLearningData(brandId);
+      if (res.ok) {
+        setState((prev: any) => ({
+          ...prev,
+          viralSparks: [],
+          researchSources: [],
+          researchPatterns: [],
+          memoryItems: [],
+        }));
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("[SparkContext] Failed to wipe workspace learning data:", err);
+      return false;
+    }
+  }, [state.brand?.id]);
 
   const updateAISettings = (newSettings: AISettings) => {
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
@@ -3370,6 +3395,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addSupportCharacter,
         deleteSupportCharacter,
         resetWorkspace,
+        wipeWorkspaceLearning,
         initializeBrandGenesis,
         updateAutomationMode,
         updateProductionMode,

@@ -1415,6 +1415,114 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
 }
 
 /**
+ * Clears learned research & memory data for the active workspace:
+ * - viral_sparks, research_sources, research_patterns, memory_items, brand_rules
+ * WHERE brand_id = brandId
+ * 
+ * Does NOT delete:
+ * - brands, characters, brand_voices, accounts, productions, review_items,
+ *   publish_jobs, profiles, format_settings, credit_settings, contentFormat,
+ *   AI prefs, Storage bucket files
+ */
+export async function wipeWorkspaceLearningData(
+  brandId: string
+): Promise<{ ok: boolean; deleted: Record<string, number>; error?: string }> {
+  if (!brandId) {
+    return { ok: false, deleted: {}, error: "Missing brand ID" };
+  }
+
+  const deletedCounts: Record<string, number> = {
+    viral_sparks: 0,
+    research_sources: 0,
+    research_patterns: 0,
+    memory_items: 0,
+    brand_rules: 0,
+  };
+
+  console.log(`[workspaceSync] Initiating learning data wipe for workspace brandId: ${brandId}`);
+
+  // 1. Cloud Deletion (if Supabase is configured and brandId is UUID)
+  if (isSupabaseConfigured() && isUuid(brandId)) {
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        // Require uuid brandId + signed-in user owns that brand
+        const { data: userData } = await supabase.auth.getUser();
+        const currentUser = userData?.user;
+        if (currentUser) {
+          const { data: brandRow, error: brandFetchErr } = await (supabase.from("brands") as any)
+            .select("id, owner_id")
+            .eq("id", brandId)
+            .maybeSingle();
+
+          if (brandFetchErr) {
+            console.warn("[workspaceSync] wipeWorkspaceLearningData brand lookup notice:", brandFetchErr);
+          } else if (brandRow && brandRow.owner_id && brandRow.owner_id !== currentUser.id) {
+            console.warn("[workspaceSync] Unauthorized wipe attempt on brandId:", brandId);
+            return { ok: false, deleted: deletedCounts, error: "Unauthorized: You do not own this workspace" };
+          }
+        }
+
+        const learningTables = [
+          "viral_sparks",
+          "research_sources",
+          "research_patterns",
+          "memory_items",
+          "brand_rules",
+        ];
+
+        for (const table of learningTables) {
+          try {
+            const { error: delErr, count } = await (supabase.from(table as any) as any)
+              .delete({ count: "exact" })
+              .eq("brand_id", brandId);
+
+            if (delErr) {
+              console.warn(`[workspaceSync] Notice wiping from ${table}:`, delErr);
+            } else {
+              deletedCounts[table] = count || 0;
+            }
+          } catch (tErr) {
+            console.warn(`[workspaceSync] Exception wiping from ${table}:`, tErr);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("[workspaceSync] Supabase learning wipe error:", err);
+      return { ok: false, deleted: deletedCounts, error: err?.message || "Failed to wipe cloud learning data" };
+    }
+  }
+
+  // 2. Local Storage Workspace Cache Update (clear learning arrays from cached workspace)
+  try {
+    if (typeof localStorage !== "undefined") {
+      const cacheKey = `spark_workspace_${brandId}`;
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        try {
+          const cached = JSON.parse(raw);
+          if (cached && typeof cached === "object") {
+            cached.viralSparks = [];
+            cached.researchSources = [];
+            cached.researchPatterns = [];
+            cached.memoryItems = [];
+            cached.brandRules = [];
+            localStorage.setItem(cacheKey, JSON.stringify(cached));
+          }
+        } catch {
+          // ignore cache parse error
+        }
+      }
+    }
+  } catch (lsErr) {
+    console.warn("[workspaceSync] Local storage learning cache cleanup notice:", lsErr);
+  }
+
+  console.log(`[workspaceSync] Successfully wiped learning data for brandId: ${brandId}`, deletedCounts);
+  return { ok: true, deleted: deletedCounts };
+}
+
+/**
  * Permanently deletes an entire workspace and all its child scoped records:
  * - review_items, publish_jobs, export_packages, analytics_insights
  * - productions, viral_sparks, research_sources, research_patterns

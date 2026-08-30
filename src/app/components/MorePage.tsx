@@ -3,6 +3,7 @@ import { TopBar } from "./TopBar";
 import { Button } from "./ds";
 import { AuthPanel } from "./auth/AuthPanel";
 import { DeleteAccountModal } from "./ui/DeleteAccountModal";
+import { WipeWorkspaceDataModal } from "./ui/WipeWorkspaceDataModal";
 import { useAuth } from "../state/AuthContext";
 import { useSpark } from "../state/SparkContext";
 import { listLiveConnectedAccounts } from "../services/socialIntegrationService";
@@ -54,6 +55,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [showWipeData, setShowWipeData] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   const [editName, setEditName] = useState(profile.name);
@@ -449,6 +451,25 @@ export function MorePage({ onNavigate }: MorePageProps) {
             </div>
           ))}
 
+          {/* Wipe Workspace Data */}
+          <div className="pt-2 border-t border-border/40">
+            <div className="rounded-xl border border-border/60 bg-card p-5 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Wipe workspace data</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Clears Viral Sparks, inspiration sources, and learned memory. Brand and productions stay.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWipeData(true)}
+                className="px-5 py-2 rounded-full text-xs font-semibold text-foreground/90 bg-muted hover:bg-muted/80 border border-border/80 hover:border-border transition-all cursor-pointer"
+              >
+                Wipe data
+              </button>
+            </div>
+          </div>
+
           {/* Delete Account */}
           <div className="pt-2 border-t border-border/40">
             <div className="rounded-xl border border-destructive/20 bg-destructive/[0.03] p-5 flex items-center justify-between">
@@ -560,6 +581,16 @@ export function MorePage({ onNavigate }: MorePageProps) {
           </div>
         </div>
       )}
+
+      {/* Wipe Workspace Data Confirmation Modal */}
+      <WipeWorkspaceDataModal
+        isOpen={showWipeData}
+        onClose={() => setShowWipeData(false)}
+        onConfirm={async () => {
+          await spark?.wipeWorkspaceLearning?.();
+        }}
+        brandName={spark?.brand?.name}
+      />
 
       {/* Delete Account Confirmation Modal */}
       <DeleteAccountModal
