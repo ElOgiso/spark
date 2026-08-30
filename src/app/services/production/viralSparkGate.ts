@@ -145,7 +145,9 @@ export function autoRepairViralSparkDeterministic(
     suggestedProductionMode: repairedMode,
     suggestedMode: repairedMode,
     audienceEmotion: repairedEmotion,
-    brandFitScore: Math.max(88, spark.brandFitScore || 88),
+    // Honest scoring: preserve the spark's real brand-fit score. Structural repair (hook/title/
+    // format/CTA) does NOT change true fit, so we no longer fake a >=88 floor. Unknown -> neutral 60.
+    brandFitScore: typeof spark.brandFitScore === "number" && spark.brandFitScore > 0 ? spark.brandFitScore : 60,
     whyNow: spark.whyNow || `High-retention strategic framework adapted for ${brandName}.`,
     researchContext: repairedResearchContext,
   };
@@ -231,7 +233,8 @@ Return a valid JSON object matching this schema with NO extra text:
       suggestedProductionMode: String(parsed.suggestedMode || spark.suggestedProductionMode || "standard"),
       suggestedMode: (parsed.suggestedMode || "standard") as any,
       audienceEmotion: String(parsed.audienceEmotion || spark.audienceEmotion || "High Curiosity & Retention"),
-      brandFitScore: Math.max(88, spark.brandFitScore || 88),
+      // Honest scoring: preserve the real brand-fit score (a text rewrite does not change true fit).
+      brandFitScore: typeof spark.brandFitScore === "number" && spark.brandFitScore > 0 ? spark.brandFitScore : 60,
       researchContext: {
         ...(spark.researchContext || {}),
         ctaStyle: String(parsed.ctaStyle || spark.researchContext?.ctaStyle || `Follow ${brand.name} for daily insights`),

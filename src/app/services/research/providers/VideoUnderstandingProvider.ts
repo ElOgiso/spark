@@ -250,8 +250,8 @@ Return strict JSON only (no markdown codeblock) with these exact keys:
   "viralReasons": ["array of 3 primary reasons this content performs well"],
   "strengths": ["array of 2 technical strengths"],
   "weaknesses": ["array of 2 potential improvement areas"],
-  "sparkScore": 88,
-  "confidence": 0.92
+  "sparkScore": <integer 0-100 scored STRICTLY from the actual evidence above — do NOT default to a fixed number>,
+  "confidence": <float 0-1 reflecting how much real signal (frames/transcript/metrics) was actually available>
 }`;
 
     const systemInstruction = frames.length > 0
@@ -319,8 +319,9 @@ Return strict JSON only (no markdown codeblock) with these exact keys:
       ],
       strengths: Array.isArray(aiResult?.strengths) ? aiResult.strengths : ["Punchy opening hook", "High visual retention"],
       weaknesses: Array.isArray(aiResult?.weaknesses) ? aiResult.weaknesses : ["CTA could be introduced earlier"],
-      sparkScore: aiResult?.sparkScore || 88,
-      confidence: aiResult?.confidence || 0.90,
+      // Honest defaults when the AI vision pass is unavailable: never fabricate a high score.
+      sparkScore: typeof aiResult?.sparkScore === "number" ? aiResult.sparkScore : 60,
+      confidence: typeof aiResult?.confidence === "number" ? aiResult.confidence : 0.5,
     };
 
     this.saveToCache(cleanUrl, videoResearch);
