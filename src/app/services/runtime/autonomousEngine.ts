@@ -51,12 +51,17 @@ export class AutonomousEngine {
     const state = getWorkspaceState();
     if (!state || !state.brand) return;
 
-    const { automationMode, viralSparks, productions, reviewItems, brand, character } = state;
+    const { automationMode, viralSparks, productions, reviewItems, brand, character, researchSources } = state;
     if (automationMode === "manual") return;
 
-    // Step 1: Autonomous Trend & Opportunity Discovery via Live Intelligence Service
+    // Step 1: Autonomous Trend & Opportunity Discovery.
+    // Prefer the CONFIGURED, PROVEN research path: if the brand has connected research sources, rely
+    // on real research-backed sparks and do NOT synthesize heuristic trend sparks (which are not
+    // verified against a live platform API). Only fall back to a heuristic suggestion when there is
+    // no real research source to draw from — and even then it is clearly labeled Unverified/TREND.
     const currentSparks = viralSparks || [];
-    if (currentSparks.length < 5) {
+    const hasConnectedResearchSources = Array.isArray(researchSources) && researchSources.length > 0;
+    if (currentSparks.length < 5 && !hasConnectedResearchSources) {
       const liveSignals = await liveIntelligenceService.fetchLiveTrendSignals(brand.niche || "AI & Technology");
       const signal = liveSignals[0];
 

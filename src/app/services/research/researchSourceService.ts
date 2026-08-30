@@ -1,4 +1,4 @@
-import type { ResearchSource, ResearchPattern, ResearchObservation } from "../../domain/types";
+import type { ResearchSource, ResearchPattern, ResearchObservation, ViralSpark, MemoryItem } from "../../domain/types";
 import { YouTubeResearchProvider, type ExtractedSourceResult } from "./providers/YouTubeResearchProvider";
 import { VideoUnderstandingProvider } from "./providers/VideoUnderstandingProvider";
 import { ResearchDepartmentService } from "./researchDepartmentService";
@@ -40,7 +40,7 @@ export class ResearchSourceService {
     url: string,
     brandId?: string,
     existingSources: ResearchSource[] = []
-  ): Promise<{ source: ResearchSource; patterns: ResearchPattern[]; isExisting?: boolean } | null> {
+  ): Promise<{ source: ResearchSource; patterns: ResearchPattern[]; isExisting?: boolean; videoSparks?: ViralSpark[]; videoMemories?: MemoryItem[] } | null> {
     const cleanUrl = url.trim();
     if (!cleanUrl) return null;
 
@@ -121,15 +121,19 @@ export class ResearchSourceService {
         updatedAt: now,
       };
 
-      // Process video research into Executive Memory & Viral Sparks
+      // Process video research into Executive Memory & Viral Sparks (REAL multimodal analysis).
+      let videoSparks: ViralSpark[] = [];
+      let videoMemories: MemoryItem[] = [];
       if (brandId) {
-        ResearchDepartmentService.processVideoResearch(brandId, source, vRes);
+        const vr = ResearchDepartmentService.processVideoResearch(brandId, source, vRes);
+        videoSparks = vr.viralSparks;
+        videoMemories = vr.memoryItems;
         persistResearchSourceCreate(brandId, source).catch((err) =>
           console.warn("[ResearchSourceService] Single video source persist notice:", err)
         );
       }
 
-      return { source, patterns: [], isExisting: false };
+      return { source, patterns: [], isExisting: false, videoSparks, videoMemories };
     }
 
     // Branch B: Channel / Profile Ingestion via Platform Provider
@@ -196,10 +200,15 @@ export class ResearchSourceService {
 
     const patterns = extracted.patterns;
 
-    // Process profile video research into Executive Memory & Viral Sparks
+    // Process profile video research into Executive Memory & Viral Sparks (REAL multimodal analysis
+    // of the creator's top video when the configured vision model + data are available).
+    let videoSparks: ViralSpark[] = [];
+    let videoMemories: MemoryItem[] = [];
     if (brandId) {
       if (videoResearch) {
-        ResearchDepartmentService.processVideoResearch(brandId, source, videoResearch);
+        const vr = ResearchDepartmentService.processVideoResearch(brandId, source, videoResearch);
+        videoSparks = vr.viralSparks;
+        videoMemories = vr.memoryItems;
       }
       persistResearchSourceCreate(brandId, source).catch((err) =>
         console.warn("[ResearchSourceService] Source persist notice:", err)
@@ -211,7 +220,7 @@ export class ResearchSourceService {
       }
     }
 
-    return { source, patterns, isExisting: false };
+    return { source, patterns, isExisting: false, videoSparks, videoMemories };
   }
 
   static async syncSource(
