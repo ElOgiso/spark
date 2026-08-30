@@ -22,44 +22,44 @@ import type {
   ViralSpark,
 } from "../../domain/types";
 
-const memoryCategoryToDb: Record<string, MemoryCategory> = {
-  Character: MemoryCategory.CHARACTER,
-  Voice: MemoryCategory.VOICE,
-  Brand: MemoryCategory.IDENTITY,
-  Niche: MemoryCategory.DECISIONS,
-  Audio: MemoryCategory.TOOLS,
-  "Winning hooks": MemoryCategory.CREATIVE_STYLE,
-  "Winning thumbnails": MemoryCategory.CREATIVE_STYLE,
-  "Audience preferences": MemoryCategory.PREFERENCES,
-  Failures: MemoryCategory.LEARNING,
-  "Publishing behavior": MemoryCategory.WORKFLOW,
+// The DB `memory_items.category` CHECK constraint allows ONLY these snake_case values. The app's
+// MemoryItem category labels map 1:1 to them. (The MemoryCategory enum is a separate/legacy
+// taxonomy whose values — IDENTITY, CREATIVE_STYLE, etc. — are NOT in the CHECK set, so writing
+// them silently rejected every memory insert and memory never persisted across logout/login.)
+const memoryCategoryToDb: Record<string, string> = {
+  Character: "character",
+  Voice: "voice",
+  Brand: "brand",
+  Niche: "niche",
+  Audio: "audio",
+  "Winning hooks": "winning_hooks",
+  "Winning thumbnails": "winning_thumbnails",
+  "Audience preferences": "audience_preferences",
+  Failures: "failures",
+  "Publishing behavior": "publishing_behavior",
 };
 
-const memoryCategoryFromDb: Record<MemoryCategory, NonNullable<MemoryItem["category"]>> = {
-  [MemoryCategory.CHARACTER]: "Character",
-  [MemoryCategory.VOICE]: "Voice",
-  [MemoryCategory.IDENTITY]: "Brand",
-  [MemoryCategory.DECISIONS]: "Niche",
-  [MemoryCategory.TOOLS]: "Audio",
-  [MemoryCategory.CREATIVE_STYLE]: "Winning hooks",
-  [MemoryCategory.PREFERENCES]: "Audience preferences",
-  [MemoryCategory.LEARNING]: "Failures",
-  [MemoryCategory.WORKFLOW]: "Publishing behavior",
-  [MemoryCategory.BUSINESS]: "Brand",
-  [MemoryCategory.GOALS]: "Brand",
-  [MemoryCategory.RELATIONSHIP]: "Brand",
-  [MemoryCategory.IMPORTANT_FACT]: "Brand",
-  [MemoryCategory.EXECUTIVE_NOTE]: "Brand",
+const memoryCategoryFromDb: Record<string, NonNullable<MemoryItem["category"]>> = {
+  character: "Character",
+  voice: "Voice",
+  brand: "Brand",
+  niche: "Niche",
+  audio: "Audio",
+  winning_hooks: "Winning hooks",
+  winning_thumbnails: "Winning thumbnails",
+  audience_preferences: "Audience preferences",
+  failures: "Failures",
+  publishing_behavior: "Publishing behavior",
 };
 
 export function memoryRowToDomain(row: MemoryItemRow): MemoryItem {
   const ev = (row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence) ? row.evidence : {}) as Record<string, any>;
   return {
     id: row.id,
-    type: row.source === "rule" || (row.category === MemoryCategory.IDENTITY && row.title.startsWith("Rule")) ? "rule" : "learned",
+    type: row.source === "rule" || (String(row.category) === "brand" && row.title.startsWith("Rule")) ? "rule" : "learned",
     text: row.description || row.title,
     dateAdded: (row.created_at || "").slice(0, 10),
-    category: memoryCategoryFromDb[row.category] ?? "Brand",
+    category: memoryCategoryFromDb[String(row.category)] ?? "Brand",
     pinned: Boolean(ev.pinned),
     archived: Boolean(row.archived),
   };
@@ -69,11 +69,11 @@ export function domainMemoryToInsert(
   brandId: string,
   item: MemoryItem,
 ): Partial<MemoryItemRow> {
-  const category: MemoryCategory =
-    (item.category && memoryCategoryToDb[item.category]) || MemoryCategory.IDENTITY;
+  // Map to a DB-allowed (CHECK-constrained) category; default to "brand" for unknown labels.
+  const category = (item.category && memoryCategoryToDb[item.category]) || "brand";
   return {
     brand_id: brandId,
-    category,
+    category: category as any,
     title: item.text.slice(0, 120) || "Memory",
     description: item.text,
     source: item.type,

@@ -84,8 +84,11 @@ export async function createResearchSource(values: Partial<ResearchSource> & { b
     researchConfidence: values.researchConfidence || 88,
   };
 
+  // research_sources.id is a uuid column — only pass id when it is a valid UUID, otherwise let the
+  // DB default (gen_random_uuid) generate one. A non-UUID string id causes the insert to be rejected.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const rowInsert: Partial<ResearchSourceRow> = {
-    id: values.id,
+    ...(values.id && UUID_RE.test(values.id) ? { id: values.id } : {}),
     brand_id: values.brand_id,
     platform: values.platform || "youtube",
     url: values.url,

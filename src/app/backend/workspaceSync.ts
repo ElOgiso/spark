@@ -614,14 +614,23 @@ export async function persistAccountToken(brandId: string, account: any) {
     const pKey = normalizePlatformKey(account.platform || "youtube");
     const rawHandle = account.handle || account.username;
     const cleanHandle = rawHandle ? normalizeHandle(rawHandle) : null;
-    const permissions =
-      account.permissions && typeof account.permissions === "object"
-        ? account.permissions
-        : {
-            scopes: account.permissionsGranted || account.scopes || [],
-            platform_user_id: account.channelId || account.platform_user_id || null,
-            avatar: account.avatar || null,
-          };
+    // Preserve OAuth tokens on the persisted row. The client connect path passes tokens as
+    // top-level fields (accessToken/refreshToken/expiresAt) with NO permissions object, so the old
+    // code stored the account WITHOUT tokens — on relogin it showed "connected" but was dead.
+    const basePermissions =
+      account.permissions && typeof account.permissions === "object" ? { ...account.permissions } : {};
+    const accessToken = account.accessToken || account.access_token || basePermissions.access_token;
+    const refreshToken = account.refreshToken || account.refresh_token || basePermissions.refresh_token;
+    const expiresAt = account.expiresAt || account.expires_at || basePermissions.expires_at;
+    const permissions: Record<string, any> = {
+      scopes: basePermissions.scopes || account.permissionsGranted || account.scopes || [],
+      platform_user_id: basePermissions.platform_user_id || account.channelId || account.platform_user_id || null,
+      avatar: basePermissions.avatar || account.avatar || null,
+      ...basePermissions,
+    };
+    if (accessToken) permissions.access_token = accessToken;
+    if (refreshToken) permissions.refresh_token = refreshToken;
+    if (expiresAt) permissions.expires_at = expiresAt;
     await (supabase.from("accounts") as any).upsert(
       {
         brand_id: brandId,

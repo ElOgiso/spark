@@ -9,6 +9,7 @@ import {
   persistResearchSourceUpdate,
   persistResearchPatternCreate,
 } from "../../backend/workspaceSync";
+import { generateUuid } from "../../backend/mappers/workspaceMappers";
 
 export class ResearchSourceService {
   static detectPlatform(url: string): "youtube" | "tiktok" | "instagram" | "x" | "facebook" | "linkedin" {
@@ -59,7 +60,9 @@ export class ResearchSourceService {
       return { ...synced, isExisting: true };
     }
 
-    const sourceId = `src-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    // Use a real UUID: research_sources.id is a uuid column, so a "src-..." string id was rejected
+    // by Postgres and the source never persisted across logout/login.
+    const sourceId = generateUuid();
     const now = new Date().toISOString();
 
     // Branch A: Single Video Asset Ingestion via VideoUnderstandingProvider
