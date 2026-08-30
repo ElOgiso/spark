@@ -213,6 +213,8 @@ export interface ProductionBrief {
   caption: string;
   platformRecommendation: string;
   whyThisWorks: string;
+  /** Structured viral research carried onto the brief so still/motion prompts can generate on-concept visuals. */
+  researchContext?: StructuredResearchContext;
   brandFitScore: number;
   suggestedDuration: string;
   targetDurationSec?: number;

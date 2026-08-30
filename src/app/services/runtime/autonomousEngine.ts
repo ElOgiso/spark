@@ -60,23 +60,30 @@ export class AutonomousEngine {
       const liveSignals = await liveIntelligenceService.fetchLiveTrendSignals(brand.niche || "AI & Technology");
       const signal = liveSignals[0];
 
+      // HONESTY LAW: these autonomous suggestions are heuristic trend ideas, NOT verified viral
+      // metrics from a live platform API. Never present fabricated view/velocity numbers as real.
+      // origin "TREND" tells the brief compiler there is no research context (so it won't fabricate
+      // source claims), and unverified metrics are labeled as such instead of fake "1.2M / +340%".
       const newSpark: ViralSpark = {
         id: `vs-auto-${Date.now()}`,
         title: signal ? signal.topic : `How ${brand.name} Can Leverage ${brand.niche || "AI"} Trends`,
         angle: signal ? signal.source : "Autonomous trend velocity breakdown",
-        brandFitScore: signal ? signal.velocityScore : Math.floor(88 + Math.random() * 10),
+        brandFitScore: signal ? signal.velocityScore : 70,
         platformFit: "YouTube Shorts + TikTok",
         timeWindow: "24h",
-        whyNow: signal ? `Search velocity ${signal.searchVolumeGrowth} from ${signal.source}` : "Search momentum increased 310%.",
+        whyNow: signal
+          ? `Heuristic trend suggestion (${signal.source}) — not yet verified against live platform data.`
+          : "Heuristic trend suggestion — connect a research source to verify against real viral data.",
         hook: signal ? signal.suggestedHook : `"Stop ignoring this ${brand.niche || "AI"} opportunity."`,
-        views: "1.2M",
-        velocity: "+340%",
+        views: "Unverified",
+        velocity: "Unverified",
         category: "hot",
         productionTime: "24h",
         audienceEmotion: "FOMO + Curiosity",
-        expectedRetention: "High retention due to rapid visual before/after comparison",
+        expectedRetention: "Unverified",
         difficulty: "Medium",
         riskLevel: "Low",
+        origin: "TREND",
         suggestedFormat: "Short-form (45–60 sec)",
         suggestedProductionMode: "Autonomous Draft",
       };

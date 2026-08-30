@@ -833,6 +833,7 @@ export function compileDeterministicBrief(params: {
       : spark.whyNow
       ? `Built on strategic opportunity: ${spark.whyNow}. Adapted directly to ${brand.name}'s niche authority.`
       : `High curiosity gap paired with ${brand.name}'s executive authority.`,
+    researchContext: researchContext,
     brandFitScore: spark.brandFitScore || 90,
     suggestedDuration: durationSec >= 300 ? "300-600s" : durationSec >= 120 ? "120-180s" : durationSec >= 60 ? "60-90s" : "30-45s",
     offerCta,
@@ -1244,6 +1245,7 @@ ${prompt}`;
       caption: asText(parsedJson?.caption, fallback.caption),
       platformRecommendation: asText(parsedJson?.platformRecommendation, fallback.platformRecommendation),
       whyThisWorks: asText(parsedJson?.whyThisWorks, fallback.whyThisWorks),
+      researchContext: resolvedResearch || undefined,
       brandFitScore: typeof parsedJson?.brandFitScore === "number" ? parsedJson.brandFitScore : sparkScore,
       suggestedDuration: asText(parsedJson?.suggestedDuration, fallback.suggestedDuration),
       offerCta: fallback.offerCta,

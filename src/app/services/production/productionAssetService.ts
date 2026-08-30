@@ -3,12 +3,13 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
-import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt } from "./productionPromptPacks";
+import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
+import { resolveProductionMode } from "./resolveProductionMode";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -103,13 +104,9 @@ export function buildLockedIdentityPack(params: {
   const characterReferenceImageUrl =
     character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || undefined;
 
-  const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
-  const mode: "express" | "standard" | "deep" =
-    rawMode === "deep" || rawMode === "cinematic"
-      ? "deep"
-      : rawMode === "express" || rawMode === "narrator"
-      ? "express"
-      : "standard";
+  // Single source of mode truth — honors the user's production/brand/brief preference and legacy
+  // synonyms (narrator→express, hybrid→standard, cinematic→deep) instead of only production.mode.
+  const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
 
   const formatSettings = getEffectiveFormatSettings({
     formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings || (params as any).formatSettings,
@@ -526,17 +523,18 @@ export class ProductionAssetService {
           uploadSuccess = true;
           console.log(`[ProductionAssetService] Uploaded binary to bucket "${SPARK_STORAGE_BUCKET}": ${storagePath} (${uploadBlob.size} bytes)`);
 
-          // Bucket 'Spark' is private: create signed URL with 7 days TTL (604800s)
-          const { data: signedData, error: signedError } = await supabase.storage
-            .from(SPARK_STORAGE_BUCKET)
-            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-
-          if (!signedError && signedData?.signedUrl) {
-            finalPublicUrl = signedData.signedUrl;
+          // Bucket "Spark" is PUBLIC — prefer a permanent public URL so generated media never
+          // expires. (Previously this stored 7-day signed URLs, so media vanished after a week
+          // and had to be re-signed on login.) Signed URL remains a fallback.
+          const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
+          if (pubData?.publicUrl) {
+            finalPublicUrl = pubData.publicUrl;
           } else {
-            const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              finalPublicUrl = pubData.publicUrl;
+            const { data: signedData, error: signedError } = await supabase.storage
+              .from(SPARK_STORAGE_BUCKET)
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+            if (!signedError && signedData?.signedUrl) {
+              finalPublicUrl = signedData.signedUrl;
             }
           }
         } else if (error) {
@@ -691,6 +689,9 @@ export class ProductionAssetService {
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     const { mode, aspectRatio } = identityPack;
+    // On-concept directive from the researched viral spark — injected into still + motion prompts
+    // so generated visuals reflect the researched format/retention/niche, not generic templates.
+    const viralConcept = buildViralConceptDirective(brief);
     (production as any).aspectRatio = aspectRatio;
     brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
     const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
@@ -1301,7 +1302,7 @@ Return valid JSON with this exact structure:
           }
 
           const stillPrompt = `
-${stillVisualLock.refPromptHeader}
+${stillVisualLock.refPromptHeader}${viralConcept ? `${viralConcept}\n` : ""}
 [SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
 ASPECT RATIO: ${aspectRatio} full-bleed single frame.
 COMPOSITION: ${shotFraming}. Single camera perspective.
@@ -1314,6 +1315,7 @@ CRITICAL PRODUCTION LAWS:
 - THIS IS A SINGLE FULL-BLEED STILL IMAGE, NOT A STORYBOARD GRID.
 - NO multiple panels. NO split screen. NO collage. NO contact sheet. NO numbered boxes. NO borders.
 - NO TEXT, NO LETTERS, NO CAPTIONS, NO SUBTITLES, NO WATERMARKS, NO TYPOGRAPHY on this image. Clean photographic frame only.
+- NO face morphing, no extra limbs, no extra fingers, no deformed hands, no duplicated or cloned subjects, no warping. Anatomically correct, photorealistic.
 - Professional high-production cinematography, crisp lighting, depth of field.
 `.trim();
 
@@ -1731,6 +1733,7 @@ CRITICAL PRODUCTION LAWS:
                 characterName: isInsertOrSet ? undefined : (activeChar?.name || "Host"),
                 characterStyle: isInsertOrSet ? "B-Roll / Cinematic Visual" : (activeChar?.style || "Executive Presenter"),
                 environment: identityPack.environmentString,
+                viralConcept,
               })}`;
 
               const identityRefs = orderedSceneRefs.filter(
