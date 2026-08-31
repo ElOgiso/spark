@@ -25,7 +25,7 @@ import {
   extractGrokVideoUrl,
   resolveClipFrames,
   type VideoClipRequest,
-} from "./_videoContract";
+} from "./_videoContract.js";
 
 const execFileAsync = promisify(execFile);
 
