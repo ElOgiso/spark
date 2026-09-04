@@ -1997,11 +1997,58 @@ CRITICAL PRODUCTION LAWS:
       }
 
       checkAborted();
-      const isVideoSuccess = mode === "express"
+      let isVideoSuccess = mode === "express"
         ? Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : mode === "standard"
         ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
+
+      // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
+      // Keeps motion error in lastError so executives can see the provider failure.
+      if (!isVideoSuccess && sceneImages.length > 0 && realVoiceUrl) {
+        try {
+          console.warn(
+            `[SPARK Pipeline] Motion synthesis produced no clips — falling back to narrator slideshow (${sceneImages.length} stills + voice). Original error: ${lastError || "unknown"}`
+          );
+          const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+          const fallback = await withTimeout(
+            compileNarratorSlideshowVideo({
+              imageUrls: sceneImages,
+              audioUrl: realVoiceUrl,
+              sfxUrl: realSfxUrl,
+              totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+              width: compileWidth,
+              height: compileHeight,
+            }),
+            90000,
+            "Motion-failure slideshow fallback timed out after 90s",
+            signal
+          );
+          if (fallback?.blob && fallback.blob.size > 0) {
+            const ext = fallback.extension || "mp4";
+            const storedFallback = await this.uploadAssetToStorage({
+              productionId: production.id,
+              brandId: (brand as any).id,
+              assetType: "video",
+              storagePath: getStoragePath(`video/master-fallback.${ext}`),
+              dataUrlOrBlob: fallback.blob,
+              mimeType: fallback.mimeType || `video/${ext}`,
+              prompt: "Slideshow fallback after I2V provider failure",
+              provider: "NarratorSlideshowCompiler",
+            });
+            if (storedFallback?.publicUrl && isDurableMasterVideoReady(storedFallback.publicUrl)) {
+              realVideoUrl = storedFallback.publicUrl;
+              isVideoSuccess = true;
+              lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
+              console.log(`[SPARK Pipeline] Slideshow fallback master ready -> ${realVideoUrl}`);
+            }
+          }
+        } catch (fallbackErr: any) {
+          if (fallbackErr?.name === "AbortError" || signal?.aborted) throw fallbackErr;
+          console.warn("[SPARK Pipeline] Slideshow fallback after motion failure also failed:", fallbackErr);
+        }
+      }
+
       if (!isVideoSuccess && !lastError) {
         lastError = mode === "express"
           ? "Narrator video synthesis completed but did not produce a verified durable video in Storage."
