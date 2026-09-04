@@ -199,7 +199,7 @@ export interface CreativeDiagnosis {
   userFacingMessage: string;
 }
 
-/** Interface for Phase 8+ performance feedback — not a full analytics system */
+/** Interface for performance feedback — implemented by Phase 8 performance module */
 export interface CreativePerformanceFeedbackPort {
   getHints?(brandId?: string): Promise<{
     strongHooks?: string[];
@@ -207,4 +207,14 @@ export interface CreativePerformanceFeedbackPort {
     strongStyles?: string[];
     notes?: string[];
   }>;
+}
+
+/** Sync hint bag consumed by strategy builder (from memory / learnings) */
+export interface CreativePerformanceHints {
+  strongHooks?: string[];
+  strongFormats?: string[];
+  strongStyles?: string[];
+  notes?: string[];
+  /** When true, explicit user intent must win over learnings */
+  explicitUserInstructions?: string[];
 }

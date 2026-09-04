@@ -72,6 +72,10 @@ export interface CreativeDirectorInput {
   character?: Character;
   creatorProfile?: CreatorProfile;
   memoryItems?: MemoryItem[];
+  /** Phase 8 structured creative learnings */
+  creativeLearnings?: import("./performance").CreativeLearning[];
+  performanceHints?: import("./strategy").CreativePerformanceHints;
+  accountId?: string;
   spark?: ViralSpark;
   researchContextPresent?: boolean;
   /** Explicit project overrides — always win */
@@ -183,6 +187,9 @@ export function directCreativeIntent(input: CreativeDirectorInput): CreativeDire
     creatorProfile: input.creatorProfile,
     spark: input.spark,
     memoryItems: input.memoryItems,
+    creativeLearnings: input.creativeLearnings,
+    performanceHints: input.performanceHints,
+    accountId: input.accountId,
     existingMasters: input.existingMasters,
     requiresCharacters:
       talkingHead ||

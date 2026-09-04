@@ -58,4 +58,8 @@ export type {
   FailurePatternSummary,
   DecisionExplanation,
   CreativePerformanceFeedbackPort,
+  CreativePerformanceHints,
 } from "./strategy";
+
+/** Phase 8 — Performance Learning & Adaptive Content Intelligence */
+export * from "./performance";

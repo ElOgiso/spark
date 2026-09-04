@@ -12,6 +12,7 @@ import type {
   CreativeStrategyAlternative,
   OptimizationProfile,
   CreativePreflightResult,
+  CreativePerformanceHints,
 } from "./types";
 import { understandIntent } from "./intentUnderstanding";
 import { buildAudienceProfile } from "./audienceModel";
@@ -26,6 +27,12 @@ import {
 } from "./brandIntelligence";
 import { recommendCreativeEconomics } from "./creativeEconomics";
 import { runCreativePreflight } from "./creativePreflight";
+import {
+  applyLearningsToStrategy,
+  buildAdaptiveAdvice,
+  parseLearningHintsFromMemory,
+  type CreativeLearning,
+} from "../performance";
 
 export interface BuildCreativeStrategyInput {
   idea: string;
@@ -44,6 +51,10 @@ export interface BuildCreativeStrategyInput {
   creatorProfile?: CreatorProfile;
   spark?: ViralSpark;
   memoryItems?: MemoryItem[];
+  /** Phase 8 structured creative learnings */
+  creativeLearnings?: CreativeLearning[];
+  performanceHints?: CreativePerformanceHints;
+  accountId?: string;
   existingMasters?: MasterAssetRef[];
   requiresCharacters?: boolean;
   requiresDialogue?: boolean;
@@ -163,7 +174,7 @@ export function buildCreativeStrategy(input: BuildCreativeStrategyInput): BuildC
     ? "End with a clear next step aligned to the objective"
     : undefined;
 
-  const strategy: CreativeStrategy = {
+  let strategy: CreativeStrategy = {
     id: newStrategyId(),
     objective: intent.objective,
     audience: audience.audience,
@@ -249,6 +260,88 @@ export function buildCreativeStrategy(input: BuildCreativeStrategyInput): BuildC
     // keep all
   } else {
     strategy.alternatives = strategy.alternatives.slice(0, 2);
+  }
+
+  // Phase 8 — adaptive influence from creative learning (never blind override of explicit intent)
+  const memoryHints = parseLearningHintsFromMemory(input.memoryItems || []);
+  const hintBag = input.performanceHints;
+  const learnings = input.creativeLearnings || [];
+  const explicitInstructions = [
+    ...(hintBag?.explicitUserInstructions || []),
+    input.explicitObjective ? `objective:${input.explicitObjective}` : "",
+    input.creativeControl === "director" && input.tone ? `tone:${input.tone}` : "",
+  ].filter(Boolean);
+
+  // Seed synthetic learnings from memory/hints when structured learnings absent
+  const effectiveLearnings = [...learnings];
+  if (!effectiveLearnings.length) {
+    for (const h of hintBag?.strongHooks || memoryHints.strongHooks) {
+      effectiveLearnings.push({
+        id: `hint_hook_${h}`,
+        kind: "hook_pattern",
+        scope: input.accountId ? "account" : "brand",
+        scopeKey: input.accountId || input.brand?.name,
+        claim: `Hook type "${h}" correlates with stronger audience response in this account scope`,
+        recommendation: `Prefer testing "${h}" openings when objectives align`,
+        confidence: {
+          score: 0.6,
+          evidenceCount: 5,
+          recency: 0.8,
+          consistency: 0.7,
+          scope: input.accountId ? "account" : "brand",
+        },
+        evidenceCount: 5,
+        supportingObservationIds: [],
+        supportingSnapshotIds: [],
+        provenance: {
+          evidenceType: "account_specific",
+          observationIds: [],
+          snapshotIds: [],
+          notes: ["from_memory_or_hints"],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    for (const f of hintBag?.strongFormats || memoryHints.strongFormats) {
+      effectiveLearnings.push({
+        id: `hint_fmt_${f}`,
+        kind: "format_pattern",
+        scope: input.accountId ? "account" : "brand",
+        scopeKey: input.accountId || input.brand?.name,
+        claim: `Format "${f}" correlates with stronger outcomes for this account`,
+        recommendation: `Weight "${f}" higher among credible formats`,
+        confidence: {
+          score: 0.58,
+          evidenceCount: 4,
+          recency: 0.8,
+          consistency: 0.65,
+          scope: input.accountId ? "account" : "brand",
+        },
+        evidenceCount: 4,
+        supportingObservationIds: [],
+        supportingSnapshotIds: [],
+        provenance: {
+          evidenceType: "account_specific",
+          observationIds: [],
+          snapshotIds: [],
+          notes: ["from_memory_or_hints"],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (effectiveLearnings.length) {
+    const advice = buildAdaptiveAdvice({
+      learnings: effectiveLearnings,
+      accountId: input.accountId,
+      platform: input.platforms?.[0],
+      brandId: input.brand?.name,
+      explicitUserInstructions: explicitInstructions,
+    });
+    strategy = applyLearningsToStrategy(strategy, advice);
   }
 
   const preflight = runCreativePreflight(strategy);

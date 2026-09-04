@@ -140,3 +140,26 @@ Phase 7 owns: executive creative decisions, explainability metadata, complexity 
 Phase 7 does NOT own: providers, FFmpeg, NLE UI, publishing, analytics dashboards, auth, onboarding redesign.
 No duplicate orchestrator — extends `createProductionPlan` / `directCreativeIntent`.
 
+## Phase 8 status (Performance Learning & Adaptive Content Intelligence)
+
+```
+PUBLISH / DISTRIBUTE (existing)
+ → PERFORMANCE DATA (existing analyticsPipeline — reused, not replaced)
+ → PerformanceSnapshot / Observation / Series (normalized)
+ → CreativeDNA (from Phase 7 CreativeStrategy)
+ → PerformanceAnalyzer → diagnoses + retention (when data exists)
+ → CreativeLearning (confidence, decay, provenance, scope)
+ → MemoryItem bridge (existing memoryService)
+ → Adaptive advice → Phase 7 Creative Director / buildCreativeStrategy
+ → next production
+```
+
+Phase 8 owns: provider-neutral performance model, metric vocabulary + windows, Creative DNA, analyzer/diagnoses, retention/hook/format/duration learning, account-scoped learning, experiments, confidence/decay/provenance, adaptive strategy influence, production-reliability consumption, quality vs audience-performance distinction.
+
+Phase 8 does NOT own: analytics ingestion replacement, OAuth/auth, publishing rebuild, analytics dashboard UI redesign, engagement bots, scraping, Creative Director v2, second orchestrator.
+
+Entry modules: `src/app/services/production/intelligence/performance/`.
+Feedback port: `CreativePerformanceFeedbackPort` / hints on `buildCreativeStrategy`.
+Viral Sparks: soft `opportunityBoostFromLearning` only (no second opportunity engine).
+Research: market evidence kept distinct from account-specific evidence.
+
