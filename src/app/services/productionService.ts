@@ -108,6 +108,7 @@ export class ProductionService implements IProductionService {
       spark: params.spark,
       memoryItems: params.memoryItems,
       productionMode: resolvedMode,
+      automationMode: params.brand?.automation_mode,
       preferredAspectRatio: aspectRatio as "9:16" | "16:9",
       targetDurationSec:
         typeof params.targetDurationSec === "number"
@@ -186,6 +187,21 @@ export class ProductionService implements IProductionService {
         creativeDirection: plan.directed.direction,
         generationTaskCount: plan.generationTasks?.length,
         routedShots: plan.trace.routedShots,
+        // Phase 7 — concise creative strategy for existing REVIEW/production surfaces
+        creativeStrategy: plan.directed.strategy
+          ? {
+              id: plan.directed.strategy.id,
+              format: plan.directed.strategy.format,
+              objective: plan.directed.strategy.objective.objective,
+              hookType: plan.directed.strategy.hook.type,
+              complexity: plan.directed.strategy.complexity.level,
+              optimizationProfile: plan.directed.strategy.optimizationProfile,
+              preflightStatus: plan.directed.preflight?.status,
+              preflightScore: plan.directed.preflight?.score,
+              userMessage: plan.directed.strategy.userFacingSummary,
+              confidence: plan.directed.strategy.confidence,
+            }
+          : undefined,
       },
     };
 

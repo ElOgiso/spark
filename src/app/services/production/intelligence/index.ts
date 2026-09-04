@@ -27,3 +27,35 @@ export {
   resolveIntelligenceRoleProvider,
 } from "./intelligenceRoles";
 export type { ProductionIntelligenceRole } from "./intelligenceRoles";
+
+/** Phase 7 — Creative Strategy executive layer */
+export {
+  buildCreativeStrategy,
+  understandIntent,
+  buildAudienceProfile,
+  planHook,
+  selectFormat,
+  planPacing,
+  estimateProductionComplexity,
+  planMasterReuse,
+  runCreativePreflight,
+  recommendCreativeEconomics,
+  resolveOptimizationProfile,
+  aggregateFailurePatterns,
+  diagnoseCreativeFailures,
+  applyCreativeDiagnosis,
+} from "./strategy";
+export type {
+  CreativeStrategy,
+  CreativePreflightResult,
+  CreativeObjective,
+  AudienceProfile,
+  HookStrategy,
+  PacingStrategy,
+  ProductionComplexity,
+  OptimizationProfile,
+  CreativeDiagnosis,
+  FailurePatternSummary,
+  DecisionExplanation,
+  CreativePerformanceFeedbackPort,
+} from "./strategy";

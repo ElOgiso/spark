@@ -23,6 +23,12 @@ import {
   resolveIntelligenceRoleProvider,
   type IntelligenceRoleTrace,
 } from "./intelligenceRoles";
+import {
+  buildCreativeStrategy,
+  type CreativeStrategy,
+  type CreativePreflightResult,
+  type BuildCreativeStrategyResult,
+} from "./strategy";
 
 export type TriStateRequirement = true | false | "unknown";
 
@@ -59,6 +65,7 @@ export interface CreativeDirectorInput {
   preferredAspectRatio?: AspectRatioId;
   targetDurationSec?: number;
   productionMode?: string;
+  automationMode?: "manual" | "balanced" | "autonomous";
   hasHostCharacter?: boolean;
   brandNiche?: string;
   brand?: Brand;
@@ -70,6 +77,9 @@ export interface CreativeDirectorInput {
   /** Explicit project overrides — always win */
   projectOverrides?: ProjectInstructionOverrides;
   learned?: LearnedPreferences;
+  optimizationProfile?: import("./strategy").OptimizationProfile;
+  existingMasters?: import("../specification/assetSpec").MasterAssetRef[];
+  explicitObjective?: string;
 }
 
 export interface CreativeDirectorResult {
@@ -79,6 +89,10 @@ export interface CreativeDirectorResult {
   creative: CreativeSpec;
   preferences: ReturnType<typeof resolveProductionPreferences>;
   roleTrace: IntelligenceRoleTrace;
+  /** Phase 7 executive strategy */
+  strategy?: CreativeStrategy;
+  preflight?: CreativePreflightResult;
+  strategyBundle?: BuildCreativeStrategyResult;
   errors: string[];
 }
 
@@ -148,14 +162,50 @@ export function directCreativeIntent(input: CreativeDirectorInput): CreativeDire
     productionComplexity = "standard";
   }
 
-  const maxClip = 8;
-  const estimatedSceneCount = Math.max(
-    3,
-    Math.min(24, Math.ceil((duration || 60) / maxClip))
-  );
-  const shotsPerScene =
-    grammar.coverage.brollDensity === "high" ? 3 : grammar.coverage.requireInserts ? 2 : 1;
-  const estimatedShotCount = estimatedSceneCount * shotsPerScene;
+  // Phase 7 — Creative Strategy (executive decisions above specialist planners)
+  const strategyBundle = buildCreativeStrategy({
+    idea: rawIdea,
+    genre: classification.primaryGenre,
+    styleTags: classification.styleTags,
+    tone: preferences.tone || classification.tone,
+    audienceHint: classification.audience,
+    platforms: classification.platformHints.map(String),
+    durationSec: duration,
+    aspectRatio:
+      (preferences.aspectRatio as string) ||
+      (classification.aspectRatioHint as string) ||
+      undefined,
+    productionMode: preferences.productionMode || input.productionMode,
+    creativeControl: preferences.creativeControl || input.creativeControl,
+    automationMode: input.automationMode,
+    brand: input.brand,
+    character: input.character,
+    creatorProfile: input.creatorProfile,
+    spark: input.spark,
+    memoryItems: input.memoryItems,
+    existingMasters: input.existingMasters,
+    requiresCharacters:
+      talkingHead ||
+      ["narrative_film", "anime", "animation", "comedy"].includes(classification.primaryGenre),
+    requiresDialogue: grammar.audioBias.dialogue && !faceless,
+    requiresNarration: grammar.audioBias.narration || faceless || !talkingHead,
+    requiresMusic: grammar.audioBias.music,
+    requiresProduct: ["advertisement", "product_demo"].includes(classification.primaryGenre),
+    optimizationProfile: input.optimizationProfile,
+    explicitObjective: input.explicitObjective,
+  });
+
+  const estimatedSceneCount = strategyBundle.strategy.complexity.estimatedScenes;
+  const estimatedShotCount = strategyBundle.strategy.complexity.estimatedShots;
+
+  // Map Phase 7 complexity onto legacy direction field
+  const levelMap: Record<string, CreativeDirection["productionComplexity"]> = {
+    simple: "simple",
+    moderate: "standard",
+    complex: "complex",
+    high_complexity: "complex",
+  };
+  productionComplexity = levelMap[strategyBundle.strategy.complexity.level] || productionComplexity;
 
   const requiresCharacters =
     talkingHead ||
@@ -213,6 +263,8 @@ export function directCreativeIntent(input: CreativeDirectorInput): CreativeDire
       input.brandNiche || input.brand?.niche
         ? `Brand niche context: ${input.brandNiche || input.brand?.niche}`
         : "",
+      strategyBundle.strategy.userFacingSummary,
+      strategyBundle.preflight.status === "ready" ? "Creative preflight ready" : `Creative preflight: ${strategyBundle.preflight.status}`,
     ].filter(Boolean),
   };
 
@@ -263,6 +315,9 @@ export function directCreativeIntent(input: CreativeDirectorInput): CreativeDire
     creative,
     preferences,
     roleTrace,
+    strategy: strategyBundle.strategy,
+    preflight: strategyBundle.preflight,
+    strategyBundle,
     errors,
   };
 }

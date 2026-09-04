@@ -123,3 +123,20 @@ Approved ProductionAssets
 Entry: `assembleEditorialTimeline` / `runEditorialPipeline` / `productionService.assembleEditorialForProduction`.
 Legacy `buildEditorialTimeline` preserved. No NLE UI. No UI redesign.
 
+## Phase 7 status (Autonomous Creative Director)
+
+```
+User Intent
+ → Creative Director (+ CreativeStrategy)
+ → Intent / Audience / Objective / Format / Hook / Pacing
+ → Production Complexity (+ master reuse)
+ → Creative Preflight
+ → Existing Genre / Grammar / Narrative / Production planners
+ → Phase 3–6 pipeline (generation → QC → editorial → master)
+ → QC failure patterns → bounded strategy adjustment
+```
+
+Phase 7 owns: executive creative decisions, explainability metadata, complexity estimation, preflight, QC→strategy feedback contracts.
+Phase 7 does NOT own: providers, FFmpeg, NLE UI, publishing, analytics dashboards, auth, onboarding redesign.
+No duplicate orchestrator — extends `createProductionPlan` / `directCreativeIntent`.
+

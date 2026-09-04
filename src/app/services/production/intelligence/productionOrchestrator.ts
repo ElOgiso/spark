@@ -68,12 +68,17 @@ export interface OrchestrateIdeaInput {
   preferredAspectRatio?: AspectRatioId;
   targetDurationSec?: number;
   productionMode?: string;
+  /** Phase 7 — automation mode (distinct from productionMode) */
+  automationMode?: "manual" | "balanced" | "autonomous";
   projectOverrides?: ProjectInstructionOverrides;
   learned?: LearnedPreferences;
   /** Optional: restrict routing to these provider ids (e.g. keyed providers) */
   availableProviderIds?: string[];
   /** When false, skip Phase 3 cinematography/routing (blueprint stubs only) */
   applyVisualPlanning?: boolean;
+  optimizationProfile?: import("./strategy").OptimizationProfile;
+  explicitObjective?: string;
+  existingMasters?: import("../specification/assetSpec").MasterAssetRef[];
 }
 
 export interface ProductionIntelligenceTrace {
@@ -96,6 +101,14 @@ export interface ProductionIntelligenceTrace {
   routedShots?: number;
   generationTaskCount?: number;
   continuityBridges?: number;
+  /** Phase 7 creative strategy summary (no chain-of-thought) */
+  creativeStrategyId?: string;
+  creativeFormat?: string;
+  creativePreflightStatus?: string;
+  creativePreflightScore?: number;
+  optimizationProfile?: string;
+  complexityLevel?: string;
+  userFacingCreativeSummary?: string;
 }
 
 export interface OrchestrateIdeaResult {
@@ -153,6 +166,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     targetDurationSec:
       input.targetDurationSec || input.brand?.formatSettings?.targetDurationSec || undefined,
     productionMode: input.productionMode,
+    automationMode: input.automationMode,
     hasHostCharacter: Boolean(input.character),
     brandNiche: input.brand?.niche,
     brand: input.brand,
@@ -163,6 +177,9 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     researchContextPresent: Boolean(input.spark?.researchContext),
     projectOverrides: input.projectOverrides,
     learned: input.learned,
+    optimizationProfile: input.optimizationProfile,
+    existingMasters: input.existingMasters,
+    explicitObjective: input.explicitObjective,
   });
 
   errors.push(...directed.errors);
@@ -219,7 +236,14 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
 
   const narrativePlan = planNarrative({
     idea: directed.creative.intent,
-    creative: directed.creative,
+    creative: {
+      ...directed.creative,
+      // Feed Phase 7 complexity into narrative beat count heuristics
+      estimatedSceneCount:
+        directed.strategy?.complexity.estimatedScenes || directed.creative.estimatedSceneCount,
+      estimatedShotCount:
+        directed.strategy?.complexity.estimatedShots || directed.creative.estimatedShotCount,
+    },
     grammar: directed.grammar,
     targetDurationSec: duration,
   });
@@ -263,6 +287,17 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
   narrative.acts[0].sceneIds = planned.scenes.map((s) => s.id);
 
   const preferI2V = String(input.productionMode || directed.preferences.productionMode || "standard") !== "express";
+  const optProfile = directed.strategy?.optimizationProfile || "balanced";
+  const preferCost = optProfile === "cost_sensitive" || optProfile === "speed_first";
+  const preferSpeed = optProfile === "speed_first" || directed.creative.pacing === "compressed";
+  const qualityTarget =
+    directed.strategyBundle?.economics.qcStrictnessHint === "strict" || duration >= 180
+      ? "cinema"
+      : directed.strategyBundle?.economics.qcStrictnessHint === "lenient"
+        ? "draft"
+        : duration >= 180
+          ? "cinema"
+          : "social";
 
   const spec: ProductionSpec = {
     id: `spec_${productionId}`,
@@ -313,11 +348,11 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
         preferCharacterConsistency: directed.creative.requiresCharacters,
         preferFirstLastFrame: preferI2V,
         preferNativeAudio: directed.creative.requiresDialogue,
-        preferSpeed: directed.creative.pacing === "compressed",
-        preferCost: false,
+        preferSpeed,
+        preferCost,
       },
     }),
-    quality: createDefaultQualitySpec(duration >= 180 ? "cinema" : "social"),
+    quality: createDefaultQualitySpec(qualityTarget as "cinema" | "social" | "draft" | "broadcast"),
     researchRequirements: buildResearchRequirement({
       idea: directed.creative.intent,
       requiresResearch: directed.creative.requiresResearch,
@@ -427,6 +462,9 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       ...validation.warnings,
       ...directed.direction.unknownFields.map((f) => `unknown:${f}`),
       ...(directed.direction.ambiguous ? ["ambiguous_classification"] : []),
+      ...(directed.preflight?.status === "improve" ? ["creative_preflight_improve"] : []),
+      ...(directed.preflight?.status === "clarify" ? ["creative_preflight_clarify"] : []),
+      ...(directed.strategy?.complexity.simplificationApplied ? ["complexity_simplified"] : []),
     ],
     createdAt: now,
     cinematographyApplied: Boolean(visualStats),
@@ -434,6 +472,13 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     routedShots: visualStats?.routedShots,
     generationTaskCount: visualStats?.generationTaskCount,
     continuityBridges: visualStats?.continuityBridges,
+    creativeStrategyId: directed.strategy?.id,
+    creativeFormat: directed.strategy?.format,
+    creativePreflightStatus: directed.preflight?.status,
+    creativePreflightScore: directed.preflight?.score,
+    optimizationProfile: directed.strategy?.optimizationProfile,
+    complexityLevel: directed.strategy?.complexity.level,
+    userFacingCreativeSummary: directed.strategy?.userFacingSummary,
   };
 
   return {
