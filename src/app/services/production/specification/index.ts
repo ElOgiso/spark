@@ -14,6 +14,7 @@ export * from "./adapters";
 export * from "./creatorProfile";
 export * from "./generationStrategy";
 export * from "./generationTask";
+export * from "./researchRequirement";
 
 import type { ProductionSpec } from "./productionSpec";
 import type { SceneSpec } from "./sceneSpec";

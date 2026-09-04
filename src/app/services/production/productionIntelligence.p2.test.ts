@@ -10,6 +10,10 @@ import { composeGrammars } from "./grammar";
 import { planNarrative, structureForGenre } from "./intelligence/narrativePlanner";
 import { createProductionPlan, orchestrateIdeaToProductionSpec } from "./intelligence/productionOrchestrator";
 import { resolveProductionPreferences } from "./intelligence/preferenceResolver";
+import {
+  validateCreativeDirection,
+  validateNarrativePlan,
+} from "./intelligence/stageValidation";
 import { createDefaultCreatorProfile } from "./specification/creatorProfile";
 import { validateProductionSpec } from "./specification";
 import { productionSpecToBrief } from "./specification/adapters";
@@ -245,5 +249,65 @@ describe("production orchestrator", () => {
     assert.equal(result.ok, true, result.errors.join("; "));
     assert.ok(result.spec!.project.targetDurationSec >= 1200);
     assert.ok(result.spec!.scenes.length >= 3);
+  });
+
+  it("sets structured research requirements without inventing facts", () => {
+    const result = createProductionPlan({
+      idea: "Create a 10 minute documentary about the history of Benin.",
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.equal(result.spec!.researchRequirements.required, true);
+    assert.equal(result.spec!.researchRequirements.status, "pending");
+    assert.equal(result.spec!.researchRequirements.inventFactsForbidden, true);
+    assert.ok(result.spec!.researchRequirements.kinds.includes("historical"));
+    assert.ok(result.spec!.researchRequirements.topics.length >= 1);
+  });
+
+  it("does not invent research requirements for pure comedy shorts", () => {
+    const result = createProductionPlan({
+      idea: "Make a funny animated short about a talking sandwich",
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.equal(result.spec!.researchRequirements.required, false);
+    assert.equal(result.spec!.researchRequirements.status, "not_required");
+  });
+
+  it("handles short-form social production", () => {
+    const result = createProductionPlan({
+      idea: "Make a 15-second TikTok tip about budgeting",
+      targetDurationSec: 15,
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.ok(result.spec!.project.targetDurationSec <= 30);
+    assert.ok(result.directed.direction.productionComplexity === "simple" || result.spec!.scenes.length >= 2);
+  });
+
+  it("uses custom grammar for unknown / ambiguous ideas without crashing", () => {
+    const result = createProductionPlan({
+      idea: "Make a video about X.",
+      targetDurationSec: 45,
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.ok(result.spec!.creative.genre);
+    assert.ok(result.trace.selectedGrammarIds.length >= 1);
+    assert.ok(result.spec!.scenes.length >= 2);
+  });
+});
+
+describe("stage validation", () => {
+  it("rejects malformed narrative plans", () => {
+    const bad = validateNarrativePlan([
+      { index: 0, narrativeFunction: "hook", purpose: "", durationSec: 0 },
+    ]);
+    assert.equal(bad.ok, false);
+  });
+
+  it("accepts valid creative direction from director", () => {
+    const directed = directCreativeIntent({
+      idea: "Make an educational explainer about gravity",
+      targetDurationSec: 90,
+    });
+    const gate = validateCreativeDirection(directed.direction);
+    assert.equal(gate.ok, true, gate.errors.join("; "));
   });
 });

@@ -121,27 +121,39 @@ export function planNarrative(params: {
 function purposeFor(fn: NarrativeFunction, idea: string, genre: string): string {
   switch (fn) {
     case "hook":
-      return genre === "advertisement" || genre === "product_demo"
-        ? `Capture attention for: ${idea}`
-        : `Open with a strong hook about: ${idea}`;
+      if (genre === "advertisement" || genre === "product_demo") {
+        return `Capture attention for: ${idea}`;
+      }
+      if (genre === "documentary" || genre === "educational" || genre === "news_explainer") {
+        return `Open with the core question / hook about: ${idea}`;
+      }
+      return `Open with a strong hook about: ${idea}`;
     case "problem":
-      return "Establish the problem, desire, or tension";
+      return genre === "advertisement" || genre === "product_demo"
+        ? "Establish desire / problem the product addresses"
+        : "Establish the problem, desire, or tension";
     case "context":
       return "Provide necessary context / setup";
     case "proof":
-      return genre === "documentary" ? "Present evidence / investigation findings" : "Show evidence or social proof";
+      return genre === "documentary"
+        ? "Present evidence / investigation findings"
+        : "Show evidence or social proof";
     case "example":
-      return "Demonstrate with a concrete example / explanation beat";
+      return genre === "educational"
+        ? "Explain with a concrete example / demonstration"
+        : "Demonstrate with a concrete example / explanation beat";
     case "myth_bust":
       return "Challenge a common misconception";
     case "payoff":
-      return "Deliver the key reveal / payoff";
+      return genre === "educational"
+        ? "Summarize the key takeaway"
+        : "Deliver the key reveal / payoff";
     case "cta":
       return "Close with a clear call to action";
     case "interview":
-      return "Interview / testimony coverage";
+      return "Interview / testimony / investigation coverage";
     case "broll":
-      return "Supporting B-roll / atmospheric coverage";
+      return "Supporting B-roll / atmospheric / archival coverage";
     case "product":
       return "Hero product demonstration / benefit";
     case "establishing":

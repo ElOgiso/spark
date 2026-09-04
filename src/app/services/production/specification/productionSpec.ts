@@ -10,6 +10,7 @@ import type { AudioSpec } from "./audioSpec";
 import type { RoutingSpec } from "./routingSpec";
 import type { QualitySpec } from "./qualitySpec";
 import type { AssetMasterRef, CharacterMaster, MasterAssetRef } from "./assetSpec";
+import type { ResearchRequirementSpec } from "./researchRequirement";
 
 export type CreativeControlMode = "auto" | "director" | "studio";
 
@@ -176,6 +177,8 @@ export interface ProductionSpec {
   continuity: ContinuitySpec;
   routing: RoutingSpec;
   quality: QualitySpec;
+  /** Structured research needs identified by Creative Director — not invented facts */
+  researchRequirements: ResearchRequirementSpec;
   researchContext?: StructuredResearchContext;
   approvalSummary?: ProductionApprovalSummary;
   /** Observability / compiler metadata */

@@ -20,6 +20,7 @@ import { buildDefaultAudioSpec } from "./audioSpec";
 import { createDefaultRoutingSpec } from "./routingSpec";
 import { createDefaultQualitySpec } from "./qualitySpec";
 import { emptyContinuityState } from "./continuitySpec";
+import { buildResearchRequirement } from "./researchRequirement";
 
 const SPEC_VERSION = "1.0.0";
 const COMPILER_VERSION = "1.0.0";
@@ -457,6 +458,12 @@ export function legacyProductionToSpec(params: {
     },
     routing: createDefaultRoutingSpec(),
     quality: createDefaultQualitySpec(targetDurationSec >= 180 ? "cinema" : "social"),
+    researchRequirements: buildResearchRequirement({
+      idea: project.idea,
+      requiresResearch: creative.requiresResearch,
+      genre: creative.genre,
+      existingResearchPresent: Boolean(brief?.researchContext || spark?.researchContext),
+    }),
     researchContext: brief?.researchContext || spark?.researchContext,
     approvalSummary: {
       projectTitle: project.title,

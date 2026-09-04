@@ -30,6 +30,7 @@ import {
   COMPILER_VERSION,
 } from "../specification/adapters";
 import { validateProductionSpec, type SpecValidationResult } from "../specification";
+import { buildResearchRequirement } from "../specification/researchRequirement";
 import { directCreativeIntent, type CreativeDirectorResult, type CreativeDirection } from "./creativeDirector";
 import { planNarrative, type NarrativeBeatPlan } from "./narrativePlanner";
 import { planProductionScenes } from "./productionPlanner";
@@ -301,6 +302,12 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       },
     }),
     quality: createDefaultQualitySpec(duration >= 180 ? "cinema" : "social"),
+    researchRequirements: buildResearchRequirement({
+      idea: directed.creative.intent,
+      requiresResearch: directed.creative.requiresResearch,
+      genre: directed.creative.genre,
+      existingResearchPresent: Boolean(input.spark?.researchContext),
+    }),
     researchContext: input.spark?.researchContext,
     meta: {
       specVersion: SPEC_VERSION,

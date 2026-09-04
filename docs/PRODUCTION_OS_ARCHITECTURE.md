@@ -53,10 +53,12 @@ User idea
  → Production Grammar (composable)
  → Narrative Planner (genre-specific structures)
  → Production Planner (scene blueprint + stub shots)
- → validated ProductionSpec
+ → validated ProductionSpec (+ structured researchRequirements)
  → ProductionBrief adapter (existing UI)
 ```
 
+Public entry: `createProductionPlan()` / `orchestrateIdeaToProductionSpec()`.
+Wired into `productionService.createProductionFromSpark` (intelligence owns storyboard structure; brief service keeps script polish).
 Intermediates preserved on `production.reasoning.productionIntelligenceTrace`.
 Cinematography / provider routing intentionally deferred to the next phase.
 
