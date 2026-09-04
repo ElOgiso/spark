@@ -2,7 +2,7 @@
 
 ## Goal
 
-Evolve existing Spark into a genre-agnostic AI Media Production OS without discarding working infrastructure. New intelligence lives under `src/app/services/production/{specification,intelligence,grammar,cinematography,generation,routing,...}` and adapts to/from legacy `ProductionBrief` / `ProductionScene`.
+Evolve existing Spark into a genre-agnostic AI Media Production OS without discarding working infrastructure. New intelligence lives under `src/app/services/production/{specification,intelligence,grammar,cinematography,generation,routing,continuity,qc,dag,editorial}` and adapts to/from legacy `ProductionBrief` / `ProductionScene`.
 
 ## Existing foundations (reuse)
 
@@ -11,45 +11,37 @@ Evolve existing Spark into a genre-agnostic AI Media Production OS without disca
 | Domain types | `src/app/domain/types.ts` | `Production`, `ProductionBrief`, `ProductionScene`, `ProductionAsset`, `GenerationProgress`, `ViralSpark` |
 | Create flow | `SparkContext` → `productionService` → `ProductionBriefService.generateBrief` → `ProductionAssetService.generateAssets` | Spark → brief → assets |
 | Modes | `resolveProductionMode.ts` | express / standard / deep |
-| Prompt packs | `productionPromptPacks.ts` | Mode recipes + motion prompts (compiler modules going forward) |
-| Continuity | Beat start/end, last-frame extract, `visualContinuityGate` | Frame chaining (advisory) |
-| QC | `viralSparkGate`, character sheet gate, continuity gate, generation guard | Preflight + readiness |
+| Prompt packs | `productionPromptPacks.ts` | Mode recipes + motion prompts (now compiler inputs/laws) |
+| Continuity | Beat start/end, last-frame extract, `visualContinuityGate` + new `continuityEngine` | Frame chain + structured state |
+| QC | viral/character/continuity gates + new structured QC module | Preflight + actionable remediation |
 | Video | `productionVideoRequest`, `/api/runtime/video`, `providerCapabilities`, `ModelRouter` | I2V + routing |
-| Merge | `sceneVideoMerger`, `narratorVideoCompiler` | Clip concat / slideshow |
-| Research | `StructuredResearchContext` on spark/brief | Factual/viral context |
-| Memory | `rankBrandLaws`, series bible, brand win writeback | Soft defaults |
-| Persistence | Supabase `productions` / `production_assets` + local cache | Keep intact |
-| Onboarding | `BrandGenesisFlow` (not CreatorProfile) | Preserve UI; soft-defaults later |
-| UI surfaces | `CreativeReview`, galleries, `ReviewCenter`, `ViralSparks` | Preserve; wire new plan underneath |
+| Merge | `sceneVideoMerger`, `narratorVideoCompiler` | Clip concat / slideshow (preview/fallback) |
+| Research / Memory / Supabase / UI | unchanged | Preserved |
 
-## Gaps this upgrade fills
-
-1. No shot-level canonical model (scenes ≈ beats; no ShotSpec).
-2. Prompt packs act as the production brain instead of a compiled output of a spec.
-3. Provider choice is production-wide, not shot-capability-scored.
-4. Continuity is mostly last-frame chaining, not structured ContinuityState.
-5. QC is not actionable remediation (rerender / change model / etc.).
-6. Editorial merge is clip concat, not a multi-track timeline.
-7. Genre/grammar intelligence is implicit in viral formats, not composable.
-
-## Canonical hierarchy (new)
+## Canonical hierarchy
 
 ```
 ProductionSpec
  └── SceneSpec[]
       └── ShotSpec[]          ← fundamental visual generation unit
-           └── GenerationTask
-                └── Asset refs (master IDs)
+           └── GenerationTask (DAG)
+                └── Master asset refs
 ```
 
-Legacy `ProductionBrief` / `ProductionScene` remain compatibility views via adapters.
+## Implemented in this PR
 
-## Implementation order (this PR = P0)
+**P0:** ProductionSpec/SceneSpec/ShotSpec, legacy adapters, Creative Director, Orchestrator, composable grammars, shot/camera/lighting/blocking planners, capability router + scorer + fallbacks, prompt compiler, generation/retry planners, tests.
 
-P0: specs, adapters, creative director, orchestrator, grammars, shot/camera planners, capability router, prompt compiler + tests.
+**P1 foundations:** Master asset types, CreatorProfile soft defaults + preference hierarchy, continuity engine, QC gates, production DAG, editorial timeline model.
 
-P1+: master assets runtime, continuity engine, QC/retry, DAG, editorial timeline, onboarding CreatorProfile soft-defaults, production board (reuse CreativeReview).
+**Wiring:** `productionService.createProductionFromSpark` attaches `reasoning.productionSpec` + `approvalSummary` without replacing brief/UI.
 
-## UI preservation
+## Compatibility
 
-No redesign. New architecture attaches to existing create/review/progress surfaces. Studio/Director controls only when no existing surface can expose required state.
+- `legacyProductionToSpec` / `productionSpecToBrief` keep persisted productions working.
+- No UI redesign; BrandGenesis / CreativeReview / galleries untouched.
+- Existing provider integrations and prompt packs preserved.
+
+## Next recommended step
+
+Drive `ProductionAssetService.generateAssets` from `planGenerationTasks` + shot-level `routeProductionShots` decisions (partial regeneration via `planShotRetry`), then surface `approvalSummary` in existing CreativeReview without a new board UI.
