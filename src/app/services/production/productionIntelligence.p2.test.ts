@@ -186,7 +186,10 @@ describe("production orchestrator", () => {
         assert.equal(result.spec!.creative.genre, c.expectGenre);
       }
       // No media generation in planning phase
-      assert.ok(result.spec!.approvalSummary?.generationStrategy.includes("Planning"));
+      assert.ok(
+        result.spec!.approvalSummary?.generationStrategy.includes("Planning") ||
+          result.spec!.approvalSummary?.generationStrategy.includes("deferred")
+      );
       // Brief compatibility for existing UI
       const brief = productionSpecToBrief(result.spec!);
       assert.ok(brief.storyboard && brief.storyboard.length > 0);

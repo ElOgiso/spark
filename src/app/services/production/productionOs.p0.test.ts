@@ -73,8 +73,9 @@ describe("orchestrate idea → production spec", () => {
     assert.ok((brief!.storyboard || []).length > 0);
 
     const shot = spec!.scenes[0].shots[0];
-    // Phase 2 is planning-only — prompts/providers may be deferred
     assert.ok(shot.productionReason);
+    assert.ok(shot.compiledPrompt);
+    assert.ok(spec!.routing.shotDecisions.length > 0);
     const sceneVal = validateSceneSpec(spec!.scenes[0]);
     assert.equal(sceneVal.ok, true, sceneVal.errors.join("; "));
     const shotVal = validateShotSpec(shot);
@@ -82,15 +83,17 @@ describe("orchestrate idea → production spec", () => {
   });
 
   it("plans generation tasks with dependencies", () => {
-    const { ok, spec } = orchestrateIdeaToProductionSpec({
+    const { ok, spec, generationTasks } = orchestrateIdeaToProductionSpec({
       idea: "Premium product commercial for a new headphone launch",
       targetDurationSec: 30,
       productionMode: "standard",
     });
     assert.equal(ok, true);
     assert.ok(spec);
-    // Phase 2 defers provider routing; blueprint shots still exist for hierarchy
     assert.ok(spec!.scenes.some((s) => s.shots.length > 0));
+    assert.ok((generationTasks || []).length >= 2);
+    assert.ok(spec!.routing.shotDecisions.length > 0);
+    assert.ok(spec!.scenes[0].shots[0].compiledPrompt);
   });
 });
 
@@ -138,7 +141,6 @@ describe("QC gates", () => {
     const gate = preflightGate(spec!);
     assert.equal(gate.status, "pass");
     const shotGate = shotQualityGate(spec!.scenes[0].shots[0]);
-    // Planning stubs may lack compiled prompts — treat retry as acceptable in Phase 2
     assert.ok(shotGate.status === "pass" || shotGate.status === "retry");
   });
 });

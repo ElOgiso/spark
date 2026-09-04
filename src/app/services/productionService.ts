@@ -172,6 +172,8 @@ export class ProductionService implements IProductionService {
         productionIntelligenceTrace: plan.trace,
         productionIntelligenceOk: plan.ok,
         creativeDirection: plan.directed.direction,
+        generationTaskCount: plan.generationTasks?.length,
+        routedShots: plan.trace.routedShots,
       },
     };
 

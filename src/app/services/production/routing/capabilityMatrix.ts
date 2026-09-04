@@ -220,17 +220,25 @@ export function strategyToRequiredCapabilities(strategy: GenerationStrategy, sho
     case "slideshow_still":
       req.push("text_to_image");
       break;
+    case "extend":
+      req.push("extension", "image_to_video");
+      break;
+    case "edit":
+      req.push("editing");
+      break;
+    case "voice":
+      req.push("voice");
+      break;
     case "image_to_video":
     default:
       req.push("image_to_video", "first_frame_conditioning", "motion_quality");
       break;
   }
-  if (shot.characterIds.length) req.push("character_consistency");
+  if (shot.characterIds?.length) req.push("character_consistency");
   if (shot.dialogue) req.push("dialogue");
   if ((shot.durationSec || 0) > 10) req.push("long_duration");
-  if (shot.camera.shotType === "macro" || shot.generationStrategy === "image_to_video") {
-    req.push("realism");
-  }
+  if (shot.camera?.shotType === "macro") req.push("realism");
+  if (shot.generationStrategySpec?.notes?.includes("animation")) req.push("animation", "stylization");
   return Array.from(new Set(req));
 }
 

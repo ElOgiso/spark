@@ -60,5 +60,21 @@ User idea
 Public entry: `createProductionPlan()` / `orchestrateIdeaToProductionSpec()`.
 Wired into `productionService.createProductionFromSpark` (intelligence owns storyboard structure; brief service keeps script polish).
 Intermediates preserved on `production.reasoning.productionIntelligenceTrace`.
-Cinematography / provider routing intentionally deferred to the next phase.
+## Phase 3 status (Cinematography + Routing + Generation Planning)
+
+After ProductionSpec is built:
+
+```
+ProductionSpec
+ → Cinematography (purposeful multi-shot coverage)
+ → Continuity bridges
+ → Generation strategy resolution
+ → Capability-based provider routing (shot-level)
+ → Prompt compilation (semantic + cinematic → provider)
+ → Generation task DAG
+```
+
+Public path still `createProductionPlan()` — now applies visual planning by default.
+Media generation remains deferred until approval / later execution phase.
+No UI redesign; existing ProductionBrief adapters continue to feed REVIEW.
 

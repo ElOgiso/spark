@@ -1,6 +1,10 @@
-export { compileShotPrompt, compileProductionPrompts } from "./promptCompiler";
-export { planGenerationTasks } from "./generationPlanner";
-export { planShotRetry } from "./retryPlanner";
+export { compileShotPrompt, compileProductionPrompts, buildSemanticLayer, buildCinematicLayer } from "./promptCompiler";
+export { planGenerationTasks, attachGenerationTasksToSpec } from "./generationPlanner";
+export { planShotRetry, planPartialRegeneration } from "./retryPlanner";
+export { resolveShotGenerationStrategy } from "./strategyResolver";
+export { applyVisualPlanningPipeline } from "./visualPlanningPipeline";
 export type { GenerationTask, GenerationTaskKind } from "./generationPlanner";
-export type { RetryPlan } from "./retryPlanner";
-export type { CompiledShotPrompt } from "./promptCompiler";
+export type { RetryPlan, PartialRegenerationPlan } from "./retryPlanner";
+export type { CompiledShotPrompt, SemanticPromptLayer, CinematicPromptLayer } from "./promptCompiler";
+export type { StrategyResolveResult } from "./strategyResolver";
+export type { VisualPlanningResult, VisualPlanningOptions } from "./visualPlanningPipeline";

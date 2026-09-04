@@ -9,7 +9,15 @@ export interface ShotRoutingDecision {
   strategy: string;
   score: number;
   reasons: string[];
-  fallbacks: Array<{ provider: string; model?: string; reason: string }>;
+  matchedCapabilities?: string[];
+  missingCapabilities?: string[];
+  fallbacks: Array<{
+    provider: string;
+    model?: string;
+    reason: string;
+    matchedCapabilities?: string[];
+    missingCapabilities?: string[];
+  }>;
 }
 
 export interface RoutingSpec {

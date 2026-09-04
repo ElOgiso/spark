@@ -1,5 +1,5 @@
 /**
- * Production Orchestrator — Phase 2 entry point for intelligent planning.
+ * Production Orchestrator — intelligent planning entry point.
  *
  * User Idea
  *   → Creative Director
@@ -7,10 +7,11 @@
  *   → Production Grammar
  *   → Narrative Planner
  *   → Production Planner
+ *   → ProductionSpec
+ *   → Cinematography / Continuity / Strategy / Routing / Prompt / Generation Tasks
  *   → validated ProductionSpec (+ ProductionBrief for existing UI)
  *
- * Does NOT generate media. Does NOT select final providers per shot.
- * Intermediate structured results are preserved for debugging / future UI.
+ * Does NOT execute media generation API calls.
  */
 
 import type { Brand, Character, MemoryItem, Production, ProductionBrief, ViralSpark } from "../../../domain/types";
@@ -31,6 +32,7 @@ import {
 } from "../specification/adapters";
 import { validateProductionSpec, type SpecValidationResult } from "../specification";
 import { buildResearchRequirement } from "../specification/researchRequirement";
+import type { GenerationTask } from "../specification/generationTask";
 import { directCreativeIntent, type CreativeDirectorResult, type CreativeDirection } from "./creativeDirector";
 import { planNarrative, type NarrativeBeatPlan } from "./narrativePlanner";
 import { planProductionScenes } from "./productionPlanner";
@@ -50,6 +52,8 @@ import {
   validateNarrativePlan,
   sanitizeNarrativeBeats,
 } from "./stageValidation";
+import { applyVisualPlanningPipeline } from "../generation/visualPlanningPipeline";
+import type { ProductionDag } from "../dag/productionDag";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -66,6 +70,10 @@ export interface OrchestrateIdeaInput {
   productionMode?: string;
   projectOverrides?: ProjectInstructionOverrides;
   learned?: LearnedPreferences;
+  /** Optional: restrict routing to these provider ids (e.g. keyed providers) */
+  availableProviderIds?: string[];
+  /** When false, skip Phase 3 cinematography/routing (blueprint stubs only) */
+  applyVisualPlanning?: boolean;
 }
 
 export interface ProductionIntelligenceTrace {
@@ -82,6 +90,12 @@ export interface ProductionIntelligenceTrace {
   errors: string[];
   warnings: string[];
   createdAt: string;
+  /** Phase 3 visual planning stats */
+  cinematographyApplied?: boolean;
+  shotCount?: number;
+  routedShots?: number;
+  generationTaskCount?: number;
+  continuityBridges?: number;
 }
 
 export interface OrchestrateIdeaResult {
@@ -96,6 +110,8 @@ export interface OrchestrateIdeaResult {
   };
   grammar?: ComposedGrammar;
   classification?: GenreClassification;
+  generationTasks?: GenerationTask[];
+  dag?: ProductionDag;
   trace: ProductionIntelligenceTrace;
   errors: string[];
 }
@@ -291,7 +307,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       shotBridges: [],
       lastFrameChainEnabled: preferI2V,
     },
-    // Routing contract only — no intelligent provider scoring in Phase 2
+    // Routing policy — Phase 3 fills shotDecisions via visual planning pipeline
     routing: createDefaultRoutingSpec({
       capabilityPolicy: {
         preferCharacterConsistency: directed.creative.requiresCharacters,
@@ -318,30 +334,68 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     },
   };
 
-  const shotCount = spec.scenes.reduce((n, s) => n + s.shots.length, 0);
-  spec.approvalSummary = {
-    projectTitle: spec.project.title,
-    genreLabel: directed.grammar.label,
-    styleLabel: spec.visualStyle.look,
-    structureLabel: `${spec.scenes.length} scenes / ${shotCount} blueprint shots`,
-    characterCount: spec.characters.length,
-    locationCount: spec.world.locations.length,
-    sceneCount: spec.scenes.length,
-    shotCount,
-    audioSummary: [
-      spec.audio.hasNarration ? "Narrator" : null,
-      spec.audio.hasDialogue ? "Dialogue" : null,
-      spec.audio.hasMusic ? "Music" : null,
-      spec.audio.hasSfx ? "SFX" : null,
-    ]
-      .filter(Boolean)
-      .join(" + ") || "Visual-led",
-    generationStrategy: "Planning only — generation deferred until approval",
-    estimatedGenerationTasks: shotCount + (spec.audio.hasNarration ? 1 : 0),
-    qualityTarget: spec.quality.target === "cinema" ? "Cinema" : "Social",
+  // Phase 3: cinematography → continuity → strategy → routing → prompts → generation tasks
+  // Still planning-only — no media API calls.
+  let generationTasks: GenerationTask[] | undefined;
+  let dag: ProductionDag | undefined;
+  let visualStats:
+    | {
+        shotCount: number;
+        routedShots: number;
+        generationTaskCount: number;
+        continuityBridges: number;
+      }
+    | undefined;
+
+  let plannedSpec = spec;
+  if (input.applyVisualPlanning !== false) {
+    const visual = applyVisualPlanningPipeline(spec, {
+      grammar: directed.grammar,
+      preferI2V,
+      availableProviderIds: input.availableProviderIds,
+    });
+    plannedSpec = visual.spec;
+    generationTasks = visual.generationTasks;
+    dag = visual.dag;
+    visualStats = {
+      shotCount: visual.stats.shotCount,
+      routedShots: visual.stats.routedShots,
+      generationTaskCount: visual.stats.generationTaskCount,
+      continuityBridges: visual.stats.continuityBridges,
+    };
+  }
+
+  const shotCount = plannedSpec.scenes.reduce((n, s) => n + s.shots.length, 0);
+  plannedSpec = {
+    ...plannedSpec,
+    approvalSummary: {
+      projectTitle: plannedSpec.project.title,
+      genreLabel: directed.grammar.label,
+      styleLabel: plannedSpec.visualStyle.look,
+      structureLabel: `${plannedSpec.scenes.length} scenes / ${shotCount} shots`,
+      characterCount: plannedSpec.characters.length,
+      locationCount: plannedSpec.world.locations.length,
+      sceneCount: plannedSpec.scenes.length,
+      shotCount,
+      audioSummary: [
+        plannedSpec.audio.hasNarration ? "Narrator" : null,
+        plannedSpec.audio.hasDialogue ? "Dialogue" : null,
+        plannedSpec.audio.hasMusic ? "Music" : null,
+        plannedSpec.audio.hasSfx ? "SFX" : null,
+      ]
+        .filter(Boolean)
+        .join(" + ") || "Visual-led",
+      generationStrategy: visualStats
+        ? `Planning complete — ${visualStats.generationTaskCount} generation tasks routed (media deferred until approval)`
+        : "Planning only — generation deferred until approval",
+      estimatedGenerationTasks:
+        visualStats?.generationTaskCount ??
+        shotCount + (plannedSpec.audio.hasNarration ? 1 : 0),
+      qualityTarget: plannedSpec.quality.target === "cinema" ? "Cinema" : "Social",
+    },
   };
 
-  const validation = validateProductionSpec(spec);
+  const validation = validateProductionSpec(plannedSpec);
   if (!validation.ok) {
     errors.push("invalid_production_spec", ...validation.errors);
   }
@@ -349,7 +403,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
   // Never let malformed specs silently continue as "ok"
   const ok = validation.ok && errors.length === 0;
 
-  const brief = ok ? productionSpecToBrief(spec) : undefined;
+  const brief = ok ? productionSpecToBrief(plannedSpec) : undefined;
 
   const trace: ProductionIntelligenceTrace = {
     productionRequestId: requestId,
@@ -365,6 +419,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       directed.roleTrace,
       role("narrativePlanning"),
       role("productionPlanning"),
+      role("visualReasoning"),
       ...(directed.creative.requiresResearch ? [role("research")] : []),
     ],
     errors,
@@ -374,17 +429,24 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       ...(directed.direction.ambiguous ? ["ambiguous_classification"] : []),
     ],
     createdAt: now,
+    cinematographyApplied: Boolean(visualStats),
+    shotCount: visualStats?.shotCount ?? shotCount,
+    routedShots: visualStats?.routedShots,
+    generationTaskCount: visualStats?.generationTaskCount,
+    continuityBridges: visualStats?.continuityBridges,
   };
 
   return {
     ok,
-    spec: ok ? spec : undefined,
+    spec: ok ? plannedSpec : undefined,
     brief,
     validation,
     directed,
     narrative: { structureId, beats },
     grammar: directed.grammar,
     classification: directed.classification,
+    generationTasks: ok ? generationTasks : undefined,
+    dag: ok ? dag : undefined,
     trace,
     errors,
   };

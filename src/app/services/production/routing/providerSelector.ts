@@ -1,38 +1,50 @@
 /**
- * Selects provider for a shot and plans fallbacks.
+ * Selects provider for a shot and plans capability-compatible fallbacks.
  */
 
 import type { ShotSpec } from "../specification/shotSpec";
 import type { RoutingSpec, ShotRoutingDecision } from "../specification/routingSpec";
 import { scoreProvidersForShot } from "./modelScorer";
+import { strategyToRequiredCapabilities } from "./capabilityMatrix";
 
 export function selectProviderForShot(
   shot: ShotSpec,
   routing: RoutingSpec,
   availableProviderIds?: string[]
 ): ShotRoutingDecision {
+  const required = strategyToRequiredCapabilities(shot.generationStrategy, shot);
   const scores = scoreProvidersForShot(shot, routing.capabilityPolicy, availableProviderIds);
   const preferred = routing.preferredVideoProvider;
+
   let ranked = scores;
   if (preferred && preferred !== "auto") {
-    ranked = [...scores].sort((a, b) => {
-      if (a.providerId === preferred) return -1;
-      if (b.providerId === preferred) return 1;
-      return b.score - a.score;
-    });
+    const preferredScore = scores.find((s) => s.providerId === preferred);
+    // Only honor preference if the provider actually passed capability filter
+    if (preferredScore) {
+      ranked = [preferredScore, ...scores.filter((s) => s.providerId !== preferred)];
+    }
   }
 
-  const best = ranked[0] || {
-    providerId: "gemini",
-    displayName: "Google Gemini / Veo",
-    score: 0.5,
-    reasons: ["default fallback"],
-    unsupported: [],
-  };
+  const best = ranked[0];
+  if (!best) {
+    return {
+      shotId: shot.id,
+      provider: "unavailable",
+      strategy: shot.generationStrategy,
+      score: 0,
+      reasons: ["no_compatible_provider"],
+      matchedCapabilities: [],
+      missingCapabilities: required,
+      fallbacks: [],
+    };
+  }
 
+  // Fallbacks must also be capability-compatible (already filtered by scorer)
   const fallbacks = ranked.slice(1, 4).map((s) => ({
     provider: s.providerId,
     reason: s.reasons.slice(0, 2).join("; ") || `score ${s.score}`,
+    matchedCapabilities: s.matchedCapabilities,
+    missingCapabilities: s.missingCapabilities,
   }));
 
   return {
@@ -41,6 +53,8 @@ export function selectProviderForShot(
     strategy: shot.generationStrategy,
     score: best.score,
     reasons: best.reasons,
+    matchedCapabilities: best.matchedCapabilities,
+    missingCapabilities: best.missingCapabilities,
     fallbacks,
   };
 }
