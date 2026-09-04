@@ -440,6 +440,10 @@ export async function persistProductionCreate(brandId: string, production: Produ
   if (!isSupabaseConfigured()) return null;
   const insert = domainProductionToInsert(brandId, production);
   const result = await createProduction(insert);
+  if (result.error) {
+    console.error("[workspaceSync] persistProductionCreate failed:", result.error);
+    return null;
+  }
   return result.data ? productionRowToDomain(result.data) : null;
 }
 
@@ -568,6 +572,13 @@ export async function persistReviewCreate(brandId: string, item: ReviewItem) {
   if (!isSupabaseConfigured()) return null;
   const insert = domainReviewToInsert(brandId, item);
   const result = await createReviewItem(insert);
+  if (result.error) {
+    console.error("[workspaceSync] persistReviewCreate failed:", result.error, {
+      productionId: item.productionId,
+      reviewId: item.id,
+    });
+    return null;
+  }
   return result.data ? reviewRowToDomain(result.data) : null;
 }
 

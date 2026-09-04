@@ -427,7 +427,8 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
     throw new Error("Grok video.generate returned neither video URL nor request id.");
   }
   const started = Date.now();
-  while (Date.now() - started < 6 * 60 * 1000) {
+  // Stay under Vercel maxDuration (300s) so the function can return a clean timeout error.
+  while (Date.now() - started < 4 * 60 * 1000) {
     await sleep(8000);
     const pollRes = await fetch(`https://api.x.ai/v1/videos/${requestId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },

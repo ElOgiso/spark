@@ -1120,7 +1120,9 @@ Return valid JSON with this exact structure:
       if (!shouldSynthesizeExternalVoice) {
         console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic per-scene dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
+        // Mark done for progress UX, but leave audioUrl empty — recovery path synthesizes emergency VO if I2V fails.
         markStage("voice", "done");
+        emitProgress(12, "Voice", `Skipped external VO bed for ${mode} (dialogue expected inside motion clips)`);
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         realVoiceUrl = production.audioUrl || brief.audioUrl;
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
@@ -1756,9 +1758,12 @@ CRITICAL PRODUCTION LAWS:
               try {
                 checkAborted();
                 const generateClip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
-                  if (isI2vApiProvider(activeVideo.providerId)) {
+                  const i2vFallbacks = ["grok", "kling", "seedance", "ark"].filter(
+                    (p) => p !== String(activeVideo.providerId || "").toLowerCase()
+                  );
+                  const tryI2v = async (providerId: string) => {
                     const apiClip = await requestProductionVideoClip({
-                      provider: activeVideo.providerId,
+                      provider: providerId,
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
                       endFrameUrl: sceneEndFrame,
@@ -1773,7 +1778,42 @@ CRITICAL PRODUCTION LAWS:
                       lastFrameDataUrl: apiClip.lastFrameDataUrl,
                       provider: apiClip.provider,
                     };
+                  };
+
+                  // Primary: selected I2V API provider (Grok/Kling/Seedance)
+                  if (isI2vApiProvider(activeVideo.providerId)) {
+                    try {
+                      return await tryI2v(activeVideo.providerId);
+                    } catch (primaryI2vErr: any) {
+                      console.warn(
+                        `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} failed Scene ${globalSceneNum}:`,
+                        primaryI2vErr?.message || primaryI2vErr
+                      );
+                      // Fail over across other I2V adapters before giving up on the scene
+                      for (const alt of i2vFallbacks) {
+                        try {
+                          console.log(`[SPARK Pipeline] I2V failover → ${alt} for Scene ${globalSceneNum}`);
+                          return await tryI2v(alt);
+                        } catch (altErr: any) {
+                          console.warn(`[SPARK Pipeline] I2V failover ${alt} failed:`, altErr?.message || altErr);
+                        }
+                      }
+                      // Last resort: orchestrator path (Gemini Veo / remaining plugins)
+                      console.log(`[SPARK Pipeline] I2V adapters exhausted — ModelRouter failover for Scene ${globalSceneNum}`);
+                      const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
+                        prompt: sceneMotionPrompt,
+                        referenceImageUrl: sceneFirstFrame,
+                        referenceImageUrls: orderedSceneRefs,
+                        aspectRatio: identityPack.aspectRatio,
+                        durationSec: sceneTargetDuration,
+                        lastFrameUrl: prevScene?.lastFrameUrl,
+                        endFrameUrl: sceneEndFrame,
+                        preferredProvider: "gemini",
+                      });
+                      return { url: routed, provider: "model_router_failover" };
+                    }
                   }
+
                   const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: sceneMotionPrompt,
                     referenceImageUrl: sceneFirstFrame,
@@ -1997,11 +2037,101 @@ CRITICAL PRODUCTION LAWS:
       }
 
       checkAborted();
-      const isVideoSuccess = mode === "express"
+      let isVideoSuccess = mode === "express"
         ? Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : mode === "standard"
         ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
+
+      // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
+      // Keeps motion error in lastError so executives can see the provider failure.
+      // Deep/cinematic normally skips the VO bed — synthesize an emergency bed so fallback can run.
+      if (!isVideoSuccess && sceneImages.length > 0) {
+        try {
+          if (!realVoiceUrl) {
+            console.warn(
+              `[SPARK Pipeline] No voice bed present (common in deep/cinematic). Synthesizing emergency VO for slideshow fallback.`
+            );
+            try {
+              const voiceScript = promptPack.voiceScript;
+              const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+              const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
+              const emergencyVoice = await withTimeout(
+                generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
+                45000,
+                "Emergency VO for motion-failure fallback timed out after 45s",
+                signal
+              );
+              if (isValidMediaData(emergencyVoice)) {
+                try {
+                  const storedAudio = await this.uploadAssetToStorage({
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    assetType: "audio",
+                    storagePath: `${production.id}/audio/voice-fallback.mp3`,
+                    dataUrlOrBlob: emergencyVoice,
+                    mimeType: "audio/mpeg",
+                    prompt: voiceScript,
+                    provider: "ElevenLabs",
+                  });
+                  realVoiceUrl = storedAudio?.publicUrl || emergencyVoice;
+                } catch {
+                  realVoiceUrl = emergencyVoice;
+                }
+              }
+            } catch (voErr: any) {
+              console.warn("[SPARK Pipeline] Emergency VO synthesis failed:", voErr?.message || voErr);
+            }
+          }
+
+          if (realVoiceUrl) {
+            console.warn(
+              `[SPARK Pipeline] Motion synthesis produced no clips — falling back to narrator slideshow (${sceneImages.length} stills + voice). Original error: ${lastError || "unknown"}`
+            );
+            const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+            const fallback = await withTimeout(
+              compileNarratorSlideshowVideo({
+                imageUrls: sceneImages,
+                audioUrl: realVoiceUrl,
+                sfxUrl: realSfxUrl,
+                totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+                width: compileWidth,
+                height: compileHeight,
+              }),
+              90000,
+              "Motion-failure slideshow fallback timed out after 90s",
+              signal
+            );
+            if (fallback?.blob && fallback.blob.size > 0) {
+              const ext = fallback.extension || "mp4";
+              const storedFallback = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "video",
+                storagePath: getStoragePath(`video/master-fallback.${ext}`),
+                dataUrlOrBlob: fallback.blob,
+                mimeType: fallback.mimeType || `video/${ext}`,
+                prompt: "Slideshow fallback after I2V provider failure",
+                provider: "NarratorSlideshowCompiler",
+              });
+              if (storedFallback?.publicUrl && isDurableMasterVideoReady(storedFallback.publicUrl)) {
+                realVideoUrl = storedFallback.publicUrl;
+                isVideoSuccess = true;
+                lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
+                console.log(`[SPARK Pipeline] Slideshow fallback master ready -> ${realVideoUrl}`);
+              }
+            }
+          } else {
+            console.warn(
+              "[SPARK Pipeline] Cannot run slideshow fallback: stills exist but no voice bed could be synthesized."
+            );
+          }
+        } catch (fallbackErr: any) {
+          if (fallbackErr?.name === "AbortError" || signal?.aborted) throw fallbackErr;
+          console.warn("[SPARK Pipeline] Slideshow fallback after motion failure also failed:", fallbackErr);
+        }
+      }
+
       if (!isVideoSuccess && !lastError) {
         lastError = mode === "express"
           ? "Narrator video synthesis completed but did not produce a verified durable video in Storage."
