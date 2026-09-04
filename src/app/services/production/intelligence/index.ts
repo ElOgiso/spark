@@ -4,10 +4,23 @@ export type { CreativeDirection, CreativeDirectorInput, CreativeDirectorResult }
 export { planNarrative, structureForGenre } from "./narrativePlanner";
 export { planProductionScenes } from "./productionPlanner";
 export {
+  createProductionPlan,
   orchestrateIdeaToProductionSpec,
   upgradeProductionWithSpec,
 } from "./productionOrchestrator";
-export type { OrchestrateIdeaResult, ProductionIntelligenceTrace, OrchestrateIdeaInput } from "./productionOrchestrator";
+export type {
+  OrchestrateIdeaResult,
+  ProductionIntelligenceTrace,
+  OrchestrateIdeaInput,
+  CreateProductionPlanInput,
+  CreateProductionPlanResult,
+} from "./productionOrchestrator";
+export {
+  validateCreativeDirection,
+  validateGenreClassification,
+  validateGrammarSelection,
+  validateNarrativePlan,
+} from "./stageValidation";
 export { resolveProductionPreferences } from "./preferenceResolver";
 export {
   mapIntelligenceRoleToRoutingCategory,

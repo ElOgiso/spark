@@ -8,7 +8,7 @@ import { classifyCreativeIntent, registerGenreClassificationRule } from "./intel
 import { directCreativeIntent } from "./intelligence/creativeDirector";
 import { composeGrammars } from "./grammar";
 import { planNarrative, structureForGenre } from "./intelligence/narrativePlanner";
-import { orchestrateIdeaToProductionSpec } from "./intelligence/productionOrchestrator";
+import { createProductionPlan, orchestrateIdeaToProductionSpec } from "./intelligence/productionOrchestrator";
 import { resolveProductionPreferences } from "./intelligence/preferenceResolver";
 import { createDefaultCreatorProfile } from "./specification/creatorProfile";
 import { validateProductionSpec } from "./specification";
@@ -161,11 +161,13 @@ describe("production orchestrator", () => {
     { idea: "Make a funny animated short.", expectGenre: "animation" },
     { idea: "Create a 60-second cinematic story about a young explorer discovering a hidden city.", expectGenre: "narrative_film" },
     { idea: "Short social tip about saving money on TikTok", expectGenre: "social" },
+    { idea: "Create a 60 second product commercial for a luxury watch.", expectGenre: "advertisement" },
+    { idea: "Create a 10 minute documentary about the history of Benin.", expectGenre: "documentary" },
   ];
 
   for (const c of cases) {
     it(`plans ProductionSpec for: ${c.idea.slice(0, 48)}`, () => {
-      const result = orchestrateIdeaToProductionSpec({ idea: c.idea });
+      const result = createProductionPlan({ idea: c.idea });
       assert.equal(result.ok, true, result.errors.join("; "));
       assert.ok(result.spec);
       assert.ok(result.brief);
@@ -188,15 +190,43 @@ describe("production orchestrator", () => {
     });
   }
 
+  it("createProductionPlan is the public entry point", () => {
+    const a = createProductionPlan({ idea: "Make an educational explainer about solar panels", targetDurationSec: 90 });
+    const b = orchestrateIdeaToProductionSpec({ idea: "Make an educational explainer about solar panels", targetDurationSec: 90 });
+    assert.equal(a.ok, b.ok);
+    assert.equal(a.spec?.creative.genre, b.spec?.creative.genre);
+    assert.ok((a.spec?.scenes.length || 0) >= 2);
+  });
+
+  it("luxury watch commercial sets product-oriented requirements", () => {
+    const result = createProductionPlan({
+      idea: "Create a 60 second product commercial for a luxury watch.",
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.equal(result.spec!.creative.genre, "advertisement");
+    assert.equal(result.spec!.creative.requiresProductShots, true);
+    assert.ok(result.directed.direction.visualStyle.toLowerCase().includes("luxury") || result.spec!.creative.grammarTags.includes("luxury"));
+  });
+
+  it("Benin history documentary requires research", () => {
+    const result = createProductionPlan({
+      idea: "Create a 10 minute documentary about the history of Benin.",
+    });
+    assert.equal(result.ok, true, result.errors.join("; "));
+    assert.equal(result.spec!.creative.genre, "documentary");
+    assert.equal(result.spec!.creative.requiresResearch, true);
+    assert.ok((result.spec!.project.targetDurationSec || 0) >= 600);
+  });
+
   it("rejects empty ideas without malformed spec", () => {
-    const result = orchestrateIdeaToProductionSpec({ idea: "" });
+    const result = createProductionPlan({ idea: "" });
     assert.equal(result.ok, false);
     assert.equal(result.spec, undefined);
     assert.ok(result.errors.includes("empty_idea"));
   });
 
   it("preserves intermediate trace roles without secrets", () => {
-    const result = orchestrateIdeaToProductionSpec({
+    const result = createProductionPlan({
       idea: "Documentary about African history for YouTube",
       targetDurationSec: 120,
     });
@@ -208,7 +238,7 @@ describe("production orchestrator", () => {
   });
 
   it("supports long-form duration scene scaling", () => {
-    const result = orchestrateIdeaToProductionSpec({
+    const result = createProductionPlan({
       idea: "Make a 20-minute documentary about ocean exploration",
       targetDurationSec: 1200,
     });

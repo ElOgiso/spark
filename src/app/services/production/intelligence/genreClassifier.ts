@@ -30,7 +30,7 @@ export interface GenreClassificationRule {
 }
 
 const DEFAULT_RULES: GenreClassificationRule[] = [
-  { id: "documentary", genre: "documentary", words: ["documentary", "true story", "history", "archive", "investigat", "kingdom", "ancient"], boost: 0.25, tone: "authoritative", audience: "curious learners / documentary viewers" },
+  { id: "documentary", genre: "documentary", words: ["documentary", "true story", "history", "archive", "investigat", "kingdom", "ancient", "benin", "historical"], boost: 0.25, tone: "authoritative", audience: "curious learners / documentary viewers" },
   { id: "advertisement", genre: "advertisement", words: ["ad", "commercial", "promo", "campaign", "brand film", "luxury commercial"], boost: 0.24, tone: "premium", audience: "buyers and prospects" },
   { id: "product_demo", genre: "product_demo", words: ["product", "demo", "unbox", "launch", "feature", "watch", "gadget"], boost: 0.2, tone: "clear", audience: "buyers and prospects" },
   { id: "educational", genre: "educational", words: ["explain", "tutorial", "how to", "lesson", "course", "teach", "bitcoin", "solar", "science"], boost: 0.22, tone: "instructive", audience: "learners seeking clarity" },

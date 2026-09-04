@@ -42,6 +42,13 @@ import {
   type IntelligenceRoleTrace,
   type ProductionIntelligenceRole,
 } from "./intelligenceRoles";
+import {
+  validateCreativeDirection,
+  validateGenreClassification,
+  validateGrammarSelection,
+  validateNarrativePlan,
+  sanitizeNarrativeBeats,
+} from "./stageValidation";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -92,6 +99,17 @@ export interface OrchestrateIdeaResult {
   errors: string[];
 }
 
+export type CreateProductionPlanInput = OrchestrateIdeaInput;
+export type CreateProductionPlanResult = OrchestrateIdeaResult;
+
+/**
+ * Clean public entry point for intelligent production planning.
+ * Idea → Creative Director → Grammar → Narrative → ProductionSpec (no media generation).
+ */
+export function createProductionPlan(input: CreateProductionPlanInput): CreateProductionPlanResult {
+  return orchestrateIdeaToProductionSpec(input);
+}
+
 function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
 }
@@ -132,6 +150,11 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
 
   errors.push(...directed.errors);
 
+  const directionGate = validateCreativeDirection(directed.direction);
+  const classGate = validateGenreClassification(directed.classification);
+  const grammarGate = validateGrammarSelection(directed.grammar);
+  errors.push(...directionGate.errors, ...classGate.errors, ...grammarGate.errors);
+
   const emptyTrace = (extraErrors: string[] = []): ProductionIntelligenceTrace => ({
     productionRequestId: requestId,
     idea: input.idea || "",
@@ -144,19 +167,23 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     productionSpecVersion: SPEC_VERSION,
     roles: [directed.roleTrace],
     errors: [...errors, ...extraErrors],
-    warnings: directed.direction.unknownFields.map((f) => `unknown:${f}`),
+    warnings: [
+      ...directed.direction.unknownFields.map((f) => `unknown:${f}`),
+      ...directionGate.warnings,
+      ...classGate.warnings,
+    ],
     createdAt: now,
   });
 
-  if (directed.errors.includes("empty_idea")) {
+  if (directed.errors.includes("empty_idea") || directionGate.errors.length > 0) {
     return {
       ok: false,
-      validation: { ok: false, errors: ["empty_idea"], warnings: [] },
+      validation: { ok: false, errors: errors.length ? errors : ["empty_idea"], warnings: directionGate.warnings },
       directed,
       grammar: directed.grammar,
       classification: directed.classification,
-      trace: emptyTrace(["Cannot plan production without an idea"]),
-      errors: ["empty_idea", "Cannot plan production without an idea"],
+      trace: emptyTrace(["Cannot plan production without valid creative direction"]),
+      errors: errors.length ? errors : ["empty_idea", "Cannot plan production without an idea"],
     };
   }
 
@@ -173,12 +200,30 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     directed.classification.aspectRatioHint ||
     (input.brand?.formatSettings?.aspectMode === "landscape" ? "16:9" : "9:16");
 
-  const { narrative, beats, structureId } = planNarrative({
+  const narrativePlan = planNarrative({
     idea: directed.creative.intent,
     creative: directed.creative,
     grammar: directed.grammar,
     targetDurationSec: duration,
   });
+  const beats = sanitizeNarrativeBeats(narrativePlan.beats);
+  const structureId = narrativePlan.structureId;
+  const narrative = narrativePlan.narrative;
+
+  const narrativeGate = validateNarrativePlan(beats, structureId);
+  if (!narrativeGate.ok) {
+    errors.push(...narrativeGate.errors);
+    return {
+      ok: false,
+      validation: { ok: false, errors: narrativeGate.errors, warnings: narrativeGate.warnings },
+      directed,
+      grammar: directed.grammar,
+      classification: directed.classification,
+      narrative: { structureId, beats },
+      trace: emptyTrace(narrativeGate.errors),
+      errors,
+    };
+  }
 
   const planned = planProductionScenes({
     productionId,

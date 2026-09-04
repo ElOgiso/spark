@@ -19,7 +19,7 @@ export interface NarrativeBeatPlan {
 /** Genre-specific narrative skeletons — extensible without rewriting planner core */
 const STRUCTURE_BY_GENRE: Record<string, NarrativeFunction[]> = {
   educational: ["problem", "context", "example", "proof", "payoff"],
-  documentary: ["hook", "context", "proof", "example", "payoff", "cta"],
+  documentary: ["hook", "context", "interview", "proof", "broll", "payoff"],
   news_explainer: ["hook", "context", "proof", "payoff", "cta"],
   advertisement: ["hook", "problem", "product", "proof", "payoff", "cta"],
   product_demo: ["hook", "product", "example", "proof", "cta"],

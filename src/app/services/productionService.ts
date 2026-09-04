@@ -5,7 +5,7 @@ import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
-import { upgradeProductionWithSpec } from "./production/intelligence/productionOrchestrator";
+import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -76,31 +76,75 @@ export class ProductionService implements IProductionService {
     researchContext?: any;
     targetDurationSec?: number;
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
-    const brief = await ProductionBriefService.generateBrief(params);
-
     const prodId = params.productionId || generateUuid();
     const reviewId = params.reviewId || generateUuid();
     const dateStr = new Date().toISOString().split("T")[0];
-
-    const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
-    const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
 
     const effectiveFormat = getEffectiveFormatSettings({
       formatSettings: (params.brand as any)?.formatSettings,
       brand: params.brand,
     });
-    const targetDurationSec = typeof params.targetDurationSec === "number"
-      ? params.targetDurationSec
-      : (typeof brief.targetDurationSec === "number" ? brief.targetDurationSec : effectiveFormat.targetDurationSec || 60);
-
     const resolvedMode = (params.productionMode as any) || "standard";
     const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
 
-    brief.formatSettings = { ...effectiveFormat, targetDurationSec };
-    brief.targetDurationSec = targetDurationSec;
-    brief.productionMode = resolvedMode;
+    // Phase 2: Creative Director planning FIRST (no media generation).
+    const plan = createProductionPlan({
+      idea: params.spark.hook || params.spark.title || params.spark.angle || "",
+      productionId: prodId,
+      brand: params.brand,
+      character: params.character || params.characters?.[0],
+      spark: params.spark,
+      memoryItems: params.memoryItems,
+      productionMode: resolvedMode,
+      preferredAspectRatio: aspectRatio as "9:16" | "16:9",
+      targetDurationSec:
+        typeof params.targetDurationSec === "number"
+          ? params.targetDurationSec
+          : params.brand.formatSettings?.targetDurationSec,
+    });
 
-    const productionBase: Production = {
+    // Existing brief service remains for script polish / brand-fit; intelligence owns structure.
+    const llmBrief = await ProductionBriefService.generateBrief(params);
+
+    const targetDurationSec =
+      typeof params.targetDurationSec === "number"
+        ? params.targetDurationSec
+        : typeof plan.spec?.project.targetDurationSec === "number"
+          ? plan.spec.project.targetDurationSec
+          : typeof llmBrief.targetDurationSec === "number"
+            ? llmBrief.targetDurationSec
+            : effectiveFormat.targetDurationSec || 60;
+
+    const brief: ProductionBrief = {
+      ...llmBrief,
+      ...(plan.ok && plan.brief
+        ? {
+            storyboard: plan.brief.storyboard,
+            beats: plan.brief.beats,
+            visualDirection: plan.brief.visualDirection || llmBrief.visualDirection,
+            platformRecommendation: plan.brief.platformRecommendation || llmBrief.platformRecommendation,
+            suggestedDuration: plan.brief.suggestedDuration || llmBrief.suggestedDuration,
+            whyThisWorks: llmBrief.whyThisWorks || plan.brief.whyThisWorks,
+          }
+        : {}),
+      title: llmBrief.title || plan.brief?.title || params.spark.title,
+      hook: llmBrief.hook || plan.brief?.hook || params.spark.hook || params.spark.title,
+      scriptOutline: llmBrief.scriptOutline || plan.brief?.scriptOutline || "",
+      spokenCta: llmBrief.spokenCta || plan.brief?.spokenCta,
+      onScreenCta: llmBrief.onScreenCta || plan.brief?.onScreenCta,
+      caption: llmBrief.caption || plan.brief?.caption || "",
+      brandFitScore: llmBrief.brandFitScore,
+      researchContext: llmBrief.researchContext || params.researchContext || params.spark.researchContext,
+      contentSource: llmBrief.contentSource,
+      formatSettings: { ...effectiveFormat, targetDurationSec },
+      targetDurationSec,
+      productionMode: resolvedMode,
+    };
+
+    const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
+    const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
+
+    const production: Production = {
       id: prodId,
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
@@ -114,28 +158,21 @@ export class ProductionService implements IProductionService {
       formats,
       brief,
       productionScenes: brief.storyboard,
-      scenes: [
-        { scene: 1, description: `Hook Angle: ${typeof brief.hook === "string" ? brief.hook : "Hook angle"}`, duration: "0-5s" },
-        { scene: 2, description: `Visual & Script Body: ${typeof brief.visualDirection === "string" ? brief.visualDirection.slice(0, 100) : "Visual breakdown"}...`, duration: "5-25s" },
-        { scene: 3, description: `Call to Action: ${typeof brief.caption === "string" ? brief.caption : "Call to action"}`, duration: "25-30s" },
-      ],
-    };
-
-    // Attach canonical ProductionSpec via Creative Director planning (no media generation).
-    const { production, spec, trace, ok } = upgradeProductionWithSpec(productionBase, {
-      brand: params.brand,
-      character: params.character || params.characters?.[0],
-      spark: params.spark,
-      idea: params.spark.hook || params.spark.title,
-      memoryItems: params.memoryItems,
-    });
-    production.reasoning = {
-      ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
-      productionSpec: spec,
-      approvalSummary: spec.approvalSummary,
-      grammarIds: spec.meta?.grammarIds,
-      productionIntelligenceTrace: trace,
-      productionIntelligenceOk: ok,
+      scenes: (brief.storyboard || []).slice(0, 3).map((s, i) => ({
+        scene: i + 1,
+        description: s.visualDescription || s.scriptSnippet || `Scene ${i + 1}`,
+        duration: s.duration || `${s.durationSec || 5}s`,
+        image: s.image,
+        videoUrl: s.videoUrl,
+      })),
+      reasoning: {
+        productionSpec: plan.spec,
+        approvalSummary: plan.spec?.approvalSummary,
+        grammarIds: plan.spec?.meta?.grammarIds || plan.trace.selectedGrammarIds,
+        productionIntelligenceTrace: plan.trace,
+        productionIntelligenceOk: plan.ok,
+        creativeDirection: plan.directed.direction,
+      },
     };
 
     const reviewItem: ReviewItem = {
