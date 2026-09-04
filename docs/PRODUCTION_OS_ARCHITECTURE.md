@@ -107,3 +107,19 @@ Entry: `runProductionQcHierarchy` / `runQcWithRepairLoop` / `executeProductionWi
 Results stored on `production.reasoning.productionQc` — no QC dashboard UI.
 Intelligent QC evaluates planned ShotSpec vs observed media; not aesthetic preference.
 
+## Phase 6 status (Editorial Timeline & Mastering)
+
+```
+Approved ProductionAssets
+ → QC-gated eligibility
+ → EditorialTimeline (frame timebase, multi-track)
+ → validation + decision engine (automation modes)
+ → provider-neutral MasteringService
+ → FFmpeg adapter boundary (deferred when unavailable)
+ → Master ProductionAsset + final technical QC
+ → delivery variants (16:9 / 9:16 / 1:1, …)
+```
+
+Entry: `assembleEditorialTimeline` / `runEditorialPipeline` / `productionService.assembleEditorialForProduction`.
+Legacy `buildEditorialTimeline` preserved. No NLE UI. No UI redesign.
+

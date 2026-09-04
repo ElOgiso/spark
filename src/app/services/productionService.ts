@@ -1,5 +1,5 @@
 import { IProductionService } from "../domain/contracts";
-import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief, getEffectiveFormatSettings } from "../domain/types";
+import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief, getEffectiveFormatSettings, AutomationMode, ProductionAsset } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
@@ -13,8 +13,11 @@ import {
   type ShotObservationInput,
 } from "./production/qc";
 import type { SparkAutomationMode } from "./production/qc/types";
+import {
+  runEditorialPipeline,
+  assembleEditorialTimeline,
+} from "./production/editorial";
 import type { ProductionSpec } from "./production/specification/productionSpec";
-import type { AutomationMode } from "../domain/types";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -571,6 +574,123 @@ export class ProductionService implements IProductionService {
       qcVerdict,
     };
   }
+
+  /**
+   * Phase 6 — assemble editorial timeline (+ optional mastering) from ProductionSpec + assets.
+   * Does not redesign UI — stores editorial summary on production.reasoning.editorial.
+   */
+  async assembleEditorialForProduction(params: {
+    production: Production;
+    brand?: Brand;
+    assets?: ProductionAsset[];
+    automationMode?: AutomationMode;
+    master?: boolean;
+    variantId?: string;
+  }): Promise<{
+    production: Production;
+    ok: boolean;
+    timelineId?: string;
+    decision?: string;
+    masterUrl?: string;
+  }> {
+    const reasoning =
+      typeof params.production.reasoning === "object" && params.production.reasoning
+        ? params.production.reasoning
+        : {};
+    const spec = (reasoning as any).productionSpec as ProductionSpec | undefined;
+    if (!spec) {
+      throw new Error("ProductionSpec missing — run planning first");
+    }
+
+    const qcVerdict = (reasoning as any).productionQc?.verdict as
+      | "production_ready"
+      | "production_needs_review"
+      | "production_failed"
+      | undefined;
+
+    const assets = params.assets || resultAssetsFromExecution(reasoning) || [];
+
+    const pipeline = await runEditorialPipeline(spec, {
+      assets,
+      qcVerdict,
+      automationMode: (params.automationMode ||
+        params.brand?.automation_mode ||
+        "balanced") as SparkAutomationMode,
+      master: params.master === true,
+      variantId: params.variantId,
+      brandId: params.brand?.id || params.production.brandId,
+    });
+
+    const updated: Production = {
+      ...params.production,
+      reasoning: {
+        ...reasoning,
+        productionSpec: spec,
+        editorial: {
+          timelineId: pipeline.timeline.id,
+          status: pipeline.timeline.status,
+          durationFrames: pipeline.timeline.durationFrames,
+          frameRate: pipeline.timeline.frameRate,
+          aspectRatio: pipeline.timeline.aspectRatio,
+          validationStatus: pipeline.validation.status,
+          validationScore: pipeline.validation.score,
+          decision: pipeline.decision.action,
+          allowMaster: pipeline.decision.allowMaster,
+          userMessage: pipeline.decision.userMessage || pipeline.timeline.userMessage,
+          unresolvedCount: pipeline.timeline.unresolvedDependencies.length,
+          variantIds: pipeline.timeline.variants.map((v) => v.id),
+          mastering: pipeline.mastering
+            ? {
+                ok: pipeline.mastering.ok,
+                jobId: pipeline.mastering.job.id,
+                jobStatus: pipeline.mastering.job.status,
+                deferred: pipeline.mastering.deferred,
+                masterId: pipeline.mastering.output?.masterId,
+                mediaUrl: pipeline.mastering.output?.mediaUrl,
+                userMessage: pipeline.mastering.userMessage,
+              }
+            : undefined,
+        },
+      },
+      status:
+        pipeline.mastering?.ok
+          ? "Ready for Review"
+          : pipeline.decision.requireReview
+            ? "Needs Edit"
+            : params.production.status,
+    };
+
+    const state = this.getFullState();
+    const currentProds: Production[] = state.productions || [];
+    this.saveFullState({
+      productions: currentProds.map((p) => (p.id === updated.id ? updated : p)).concat(
+        currentProds.some((p) => p.id === updated.id) ? [] : [updated]
+      ),
+    });
+
+    return {
+      production: updated,
+      ok: pipeline.ok,
+      timelineId: pipeline.timeline.id,
+      decision: pipeline.decision.action,
+      masterUrl: pipeline.mastering?.output?.mediaUrl,
+    };
+  }
+
+  /** Planned editorial preview from spec only (no assets) — for existing surfaces */
+  previewEditorialTimeline(production: Production) {
+    const reasoning =
+      typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {};
+    const spec = (reasoning as any).productionSpec as ProductionSpec | undefined;
+    if (!spec) return null;
+    return assembleEditorialTimeline(spec, { allowPlannedWithoutAssets: true });
+  }
+}
+
+function resultAssetsFromExecution(reasoning: Record<string, unknown>): ProductionAsset[] {
+  // Assets are typically persisted separately; execution summary does not embed blobs.
+  void reasoning;
+  return [];
 }
 
 export const productionService = new ProductionService();
