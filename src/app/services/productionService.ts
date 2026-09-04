@@ -5,6 +5,7 @@ import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
+import { upgradeProductionWithSpec } from "./production/intelligence/productionOrchestrator";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -99,7 +100,7 @@ export class ProductionService implements IProductionService {
     brief.targetDurationSec = targetDurationSec;
     brief.productionMode = resolvedMode;
 
-    const production: Production = {
+    const productionBase: Production = {
       id: prodId,
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
@@ -112,12 +113,29 @@ export class ProductionService implements IProductionService {
       aspectRatio,
       formats,
       brief,
+      productionScenes: brief.storyboard,
       scenes: [
         { scene: 1, description: `Hook Angle: ${typeof brief.hook === "string" ? brief.hook : "Hook angle"}`, duration: "0-5s" },
         { scene: 2, description: `Visual & Script Body: ${typeof brief.visualDirection === "string" ? brief.visualDirection.slice(0, 100) : "Visual breakdown"}...`, duration: "5-25s" },
         { scene: 3, description: `Call to Action: ${typeof brief.caption === "string" ? brief.caption : "Call to action"}`, duration: "25-30s" },
       ],
     };
+
+    // Attach canonical ProductionSpec (shot-level plan) without replacing legacy brief/UI.
+    const { production, spec } = upgradeProductionWithSpec(productionBase, {
+      brand: params.brand,
+      character: params.character || params.characters?.[0],
+      spark: params.spark,
+      idea: params.spark.hook || params.spark.title,
+    });
+    if (spec.approvalSummary) {
+      production.reasoning = {
+        ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
+        productionSpec: spec,
+        approvalSummary: spec.approvalSummary,
+        grammarIds: spec.meta.grammarIds,
+      };
+    }
 
     const reviewItem: ReviewItem = {
       id: reviewId,
