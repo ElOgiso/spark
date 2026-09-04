@@ -8,7 +8,13 @@ import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
 import { executeProduction } from "./production/execution/productionExecutor";
 import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
+import {
+  runQcWithRepairLoop,
+  type ShotObservationInput,
+} from "./production/qc";
+import type { SparkAutomationMode } from "./production/qc/types";
 import type { ProductionSpec } from "./production/specification/productionSpec";
+import type { AutomationMode } from "../domain/types";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -410,19 +416,23 @@ export class ProductionService implements IProductionService {
 
   /**
    * Phase 4 — execute planned GenerationTask DAG for a production that already has a ProductionSpec.
+   * Phase 5 — optionally runs intelligent QC (+ repair loop per automation mode).
    * Preserves existing generateAssetsForProduction path; this is the Spec→Task→Asset execution entry.
-   * Does not redesign UI — stores execution summary on production.reasoning.
+   * Does not redesign UI — stores execution + QC summary on production.reasoning.
    */
   async executeProductionPlan(params: {
     production: Production;
     brand?: Brand;
     dryRun?: boolean;
     signal?: AbortSignal;
+    enableQc?: boolean;
+    automationMode?: AutomationMode;
   }): Promise<{
     production: Production;
     ok: boolean;
     state: string;
     assetCount: number;
+    qcVerdict?: string;
   }> {
     const reasoning =
       typeof params.production.reasoning === "object" && params.production.reasoning
@@ -444,11 +454,88 @@ export class ProductionService implements IProductionService {
       sleep: params.dryRun ? async () => undefined : undefined,
     });
 
+    let qcSummary: Record<string, unknown> | undefined;
+    let qcVerdict: string | undefined;
+    let finalSpec = result.spec;
+
+    if (params.enableQc !== false && !params.dryRun && result.ok) {
+      const observations: ShotObservationInput[] = [];
+      for (const asset of result.assets) {
+        if (!asset.shotId) continue;
+        observations.push({
+          shotId: asset.shotId,
+          mediaType:
+            asset.assetType === "image" || asset.assetType === "frame" || asset.assetType === "thumbnail"
+              ? "image"
+              : asset.assetType === "audio"
+                ? "audio"
+                : "video",
+          sourceUrl: asset.publicUrl,
+          assetId: asset.id,
+          taskId: asset.taskId,
+          technical: { ok: true, reasons: [], retryable: false },
+        });
+      }
+      for (const scene of result.spec.scenes) {
+        for (const shot of scene.shots) {
+          if (observations.some((o) => o.shotId === shot.id)) continue;
+          if (shot.mediaUrl || shot.keyframeUrl) {
+            observations.push({
+              shotId: shot.id,
+              mediaType: shot.mediaUrl ? "video" : "image",
+              sourceUrl: shot.mediaUrl || shot.keyframeUrl,
+              technical: { ok: true, reasons: [], retryable: false },
+            });
+          }
+        }
+      }
+
+      const mode = (params.automationMode ||
+        params.brand?.automation_mode ||
+        "balanced") as SparkAutomationMode;
+
+      const qc = await runQcWithRepairLoop(result.spec, {
+        automationMode: mode,
+        observations,
+        // Dry-run / unit paths: no live re-execution — repair decisions still recorded
+        reexecute: undefined,
+      });
+
+      finalSpec = qc.finalSpec;
+      qcVerdict = qc.report.verdict;
+      qcSummary = {
+        verdict: qc.report.verdict,
+        status: qc.report.productionResult.status,
+        score: qc.report.productionResult.score,
+        scores: qc.report.productionResult.scores,
+        userMessage: qc.report.productionResult.userMessage,
+        stoppedReason: qc.stoppedReason,
+        shotCount: qc.report.shotResults.length,
+        sceneCount: qc.report.sceneResults.length,
+        repairsApplied: qc.repairsApplied.map((r) => ({
+          action: r.action,
+          providerChange: r.providerChange,
+          reason: r.reason,
+        })),
+        budget: qc.budget,
+        // Developer diagnostics only — no secrets
+        failures: qc.report.productionResult.failures.map((f) => ({
+          code: f.code,
+          dimension: f.dimension,
+          message: f.message,
+        })),
+      };
+    }
+
+    const ready =
+      result.productionState === "completed" &&
+      (qcVerdict === undefined || qcVerdict === "production_ready");
+
     const updated: Production = {
       ...params.production,
       reasoning: {
         ...reasoning,
-        productionSpec: result.spec,
+        productionSpec: finalSpec,
         productionExecution: {
           state: result.productionState,
           ok: result.ok,
@@ -457,12 +544,14 @@ export class ProductionService implements IProductionService {
           assetCount: result.assets.length,
           taskStatuses: result.tasks.map((t) => ({ id: t.id, kind: t.kind, status: t.status })),
         },
+        ...(qcSummary ? { productionQc: qcSummary } : {}),
       },
-      status:
-        result.productionState === "completed"
-          ? "Ready for Review"
-          : result.productionState === "failed"
-            ? "Failed"
+      status: ready
+        ? "Ready for Review"
+        : result.productionState === "failed" || qcVerdict === "production_failed"
+          ? "Failed"
+          : qcVerdict === "production_needs_review"
+            ? "Needs Edit"
             : params.production.status,
     };
 
@@ -476,9 +565,10 @@ export class ProductionService implements IProductionService {
 
     return {
       production: updated,
-      ok: result.ok,
+      ok: result.ok && (qcVerdict === undefined || qcVerdict === "production_ready"),
       state: result.productionState,
       assetCount: result.assets.length,
+      qcVerdict,
     };
   }
 }

@@ -91,3 +91,19 @@ Entry: `executeProduction` / `productionService.executeProductionPlan`.
 Existing `generateAssetsForProduction` path preserved.
 No UI redesign. Unit tests use mocks only — no live provider calls in CI.
 
+## Phase 5 status (Intelligent QC)
+
+```
+Generated Asset
+ → Phase 4 technical validation (reused)
+ → VisualAnalysisService (provider-neutral)
+ → multi-dimension QC (intent, identity, continuity, cinematography, motion, audio, style, technical)
+ → repair decision engine → Phase 3/4 retry/fallback
+ → shot → scene → production hierarchy
+ → automation modes (manual / balanced / autonomous)
+```
+
+Entry: `runProductionQcHierarchy` / `runQcWithRepairLoop` / `executeProductionWithQc`.
+Results stored on `production.reasoning.productionQc` — no QC dashboard UI.
+Intelligent QC evaluates planned ShotSpec vs observed media; not aesthetic preference.
+
