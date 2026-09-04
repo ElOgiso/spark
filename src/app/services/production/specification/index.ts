@@ -12,6 +12,8 @@ export * from "./routingSpec";
 export * from "./qualitySpec";
 export * from "./adapters";
 export * from "./creatorProfile";
+export * from "./generationStrategy";
+export * from "./generationTask";
 
 import type { ProductionSpec } from "./productionSpec";
 import type { SceneSpec } from "./sceneSpec";

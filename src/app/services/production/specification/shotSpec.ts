@@ -2,6 +2,9 @@
  * Shot-level canonical specification — fundamental unit of visual generation.
  */
 
+import type { GenerationStrategySpec } from "./generationStrategy";
+import type { GenerationTask } from "./generationTask";
+
 export type ShotType =
   | "establishing"
   | "wide"
@@ -114,6 +117,7 @@ export interface ShotSpec {
   /** Why this shot exists — empty purpose shots should not be generated */
   productionReason: string;
   timingStartSec: number;
+  startTime?: number;
   durationSec: number;
   camera: ShotCameraSpec;
   subject: string;
@@ -135,6 +139,9 @@ export interface ShotSpec {
   propIds: string[];
   assetIds: string[];
   generationStrategy: GenerationStrategy;
+  /** Structured provider-independent strategy (Phase 1+) */
+  generationStrategySpec?: GenerationStrategySpec;
+  generationTasks?: GenerationTask[];
   provider?: string;
   model?: string;
   resolution?: string;

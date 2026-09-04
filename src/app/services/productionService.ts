@@ -121,21 +121,22 @@ export class ProductionService implements IProductionService {
       ],
     };
 
-    // Attach canonical ProductionSpec (shot-level plan) without replacing legacy brief/UI.
-    const { production, spec } = upgradeProductionWithSpec(productionBase, {
+    // Attach canonical ProductionSpec via Creative Director planning (no media generation).
+    const { production, spec, trace, ok } = upgradeProductionWithSpec(productionBase, {
       brand: params.brand,
       character: params.character || params.characters?.[0],
       spark: params.spark,
       idea: params.spark.hook || params.spark.title,
+      memoryItems: params.memoryItems,
     });
-    if (spec.approvalSummary) {
-      production.reasoning = {
-        ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
-        productionSpec: spec,
-        approvalSummary: spec.approvalSummary,
-        grammarIds: spec.meta.grammarIds,
-      };
-    }
+    production.reasoning = {
+      ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
+      productionSpec: spec,
+      approvalSummary: spec.approvalSummary,
+      grammarIds: spec.meta?.grammarIds,
+      productionIntelligenceTrace: trace,
+      productionIntelligenceOk: ok,
+    };
 
     const reviewItem: ReviewItem = {
       id: reviewId,

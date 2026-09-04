@@ -1,21 +1,47 @@
 /**
- * Production Orchestrator — idea → ProductionSpec (approve before expensive generation).
- * Wires Creative Director → Grammar → Narrative → Scenes/Shots → Routing → Prompt compile.
+ * Production Orchestrator — Phase 2 entry point for intelligent planning.
+ *
+ * User Idea
+ *   → Creative Director
+ *   → Genre Classifier
+ *   → Production Grammar
+ *   → Narrative Planner
+ *   → Production Planner
+ *   → validated ProductionSpec (+ ProductionBrief for existing UI)
+ *
+ * Does NOT generate media. Does NOT select final providers per shot.
+ * Intermediate structured results are preserved for debugging / future UI.
  */
 
-import type { Brand, Character, Production, ProductionBrief, ViralSpark } from "../../../domain/types";
-import type { ProductionSpec, CreativeControlMode, PlatformId, AspectRatioId } from "../specification/productionSpec";
+import type { Brand, Character, MemoryItem, Production, ProductionBrief, ViralSpark } from "../../../domain/types";
+import type {
+  ProductionSpec,
+  CreativeControlMode,
+  PlatformId,
+  AspectRatioId,
+} from "../specification/productionSpec";
 import { buildDefaultAudioSpec } from "../specification/audioSpec";
 import { createDefaultRoutingSpec } from "../specification/routingSpec";
 import { createDefaultQualitySpec } from "../specification/qualitySpec";
-import { productionSpecToBrief, legacyProductionToSpec, SPEC_VERSION, COMPILER_VERSION } from "../specification/adapters";
-import { validateProductionSpec } from "../specification";
-import { directCreativeIntent } from "./creativeDirector";
-import { planNarrative } from "./narrativePlanner";
+import {
+  productionSpecToBrief,
+  legacyProductionToSpec,
+  SPEC_VERSION,
+  COMPILER_VERSION,
+} from "../specification/adapters";
+import { validateProductionSpec, type SpecValidationResult } from "../specification";
+import { directCreativeIntent, type CreativeDirectorResult, type CreativeDirection } from "./creativeDirector";
+import { planNarrative, type NarrativeBeatPlan } from "./narrativePlanner";
 import { planProductionScenes } from "./productionPlanner";
-import { routeProductionShots } from "../routing/capabilityRouter";
-import { compileProductionPrompts } from "../generation/promptCompiler";
-import { applyContinuityEngine } from "../continuity/continuityEngine";
+import type { ComposedGrammar } from "../grammar";
+import type { GenreClassification } from "./genreClassifier";
+import type { CreatorProfile } from "../specification/creatorProfile";
+import type { LearnedPreferences, ProjectInstructionOverrides } from "./preferenceResolver";
+import {
+  resolveIntelligenceRoleProvider,
+  type IntelligenceRoleTrace,
+  type ProductionIntelligenceRole,
+} from "./intelligenceRoles";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -23,58 +49,137 @@ export interface OrchestrateIdeaInput {
   brand?: Brand;
   character?: Character;
   spark?: ViralSpark;
+  memoryItems?: MemoryItem[];
+  creatorProfile?: CreatorProfile;
   creativeControl?: CreativeControlMode;
   preferredPlatforms?: PlatformId[];
   preferredAspectRatio?: AspectRatioId;
   targetDurationSec?: number;
   productionMode?: string;
+  projectOverrides?: ProjectInstructionOverrides;
+  learned?: LearnedPreferences;
+}
+
+export interface ProductionIntelligenceTrace {
+  productionRequestId: string;
+  idea: string;
+  creativeDirection: CreativeDirection;
+  classification: GenreClassification;
+  selectedGrammarIds: string[];
+  grammarLabel: string;
+  narrativeStructureId: string;
+  narrativeBeats: NarrativeBeatPlan[];
+  productionSpecVersion: string;
+  roles: IntelligenceRoleTrace[];
+  errors: string[];
+  warnings: string[];
+  createdAt: string;
 }
 
 export interface OrchestrateIdeaResult {
-  spec: ProductionSpec;
-  brief: ProductionBrief;
-  validation: ReturnType<typeof validateProductionSpec>;
+  ok: boolean;
+  spec?: ProductionSpec;
+  brief?: ProductionBrief;
+  validation: SpecValidationResult;
+  directed: CreativeDirectorResult;
+  narrative?: {
+    structureId: string;
+    beats: NarrativeBeatPlan[];
+  };
+  grammar?: ComposedGrammar;
+  classification?: GenreClassification;
+  trace: ProductionIntelligenceTrace;
+  errors: string[];
 }
 
 function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
 }
 
+function role(roleName: ProductionIntelligenceRole): IntelligenceRoleTrace {
+  return {
+    role: roleName,
+    routingCategory: roleName === "narrativePlanning" ? "executive" : roleName === "research" ? "research" : "production",
+    provider: resolveIntelligenceRoleProvider(roleName),
+  };
+}
+
 export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): OrchestrateIdeaResult {
   const now = new Date().toISOString();
   const productionId = input.productionId || newId("prod");
+  const requestId = newId("req");
+  const errors: string[] = [];
+
   const directed = directCreativeIntent({
-    idea: input.idea || input.spark?.hook || input.spark?.title || "Create a video",
+    idea: input.idea || input.spark?.hook || input.spark?.title || "",
     creativeControl: input.creativeControl || "auto",
     preferredPlatforms: input.preferredPlatforms,
     preferredAspectRatio: input.preferredAspectRatio,
     targetDurationSec:
-      input.targetDurationSec ||
-      input.brand?.formatSettings?.targetDurationSec ||
-      undefined,
+      input.targetDurationSec || input.brand?.formatSettings?.targetDurationSec || undefined,
+    productionMode: input.productionMode,
     hasHostCharacter: Boolean(input.character),
     brandNiche: input.brand?.niche,
+    brand: input.brand,
+    character: input.character,
+    creatorProfile: input.creatorProfile,
+    memoryItems: input.memoryItems,
+    spark: input.spark,
+    researchContextPresent: Boolean(input.spark?.researchContext),
+    projectOverrides: input.projectOverrides,
+    learned: input.learned,
   });
 
+  errors.push(...directed.errors);
+
+  const emptyTrace = (extraErrors: string[] = []): ProductionIntelligenceTrace => ({
+    productionRequestId: requestId,
+    idea: input.idea || "",
+    creativeDirection: directed.direction,
+    classification: directed.classification,
+    selectedGrammarIds: directed.grammar.sources,
+    grammarLabel: directed.grammar.label,
+    narrativeStructureId: "none",
+    narrativeBeats: [],
+    productionSpecVersion: SPEC_VERSION,
+    roles: [directed.roleTrace],
+    errors: [...errors, ...extraErrors],
+    warnings: directed.direction.unknownFields.map((f) => `unknown:${f}`),
+    createdAt: now,
+  });
+
+  if (directed.errors.includes("empty_idea")) {
+    return {
+      ok: false,
+      validation: { ok: false, errors: ["empty_idea"], warnings: [] },
+      directed,
+      grammar: directed.grammar,
+      classification: directed.classification,
+      trace: emptyTrace(["Cannot plan production without an idea"]),
+      errors: ["empty_idea", "Cannot plan production without an idea"],
+    };
+  }
+
   const duration =
-    input.targetDurationSec ||
+    directed.preferences.targetDurationSec ||
+    directed.direction.durationSec ||
     directed.classification.durationHintSec ||
     input.brand?.formatSettings?.targetDurationSec ||
     60;
 
-  const aspect =
-    input.preferredAspectRatio ||
+  const aspect: AspectRatioId | string =
+    directed.preferences.aspectRatio ||
+    (directed.direction.aspectRatio !== "unknown" ? directed.direction.aspectRatio : undefined) ||
     directed.classification.aspectRatioHint ||
     (input.brand?.formatSettings?.aspectMode === "landscape" ? "16:9" : "9:16");
 
-  const { narrative, beats } = planNarrative({
+  const { narrative, beats, structureId } = planNarrative({
     idea: directed.creative.intent,
     creative: directed.creative,
     grammar: directed.grammar,
     targetDurationSec: duration,
   });
 
-  const preferI2V = String(input.productionMode || "standard") !== "express";
   const planned = planProductionScenes({
     productionId,
     creative: directed.creative,
@@ -84,16 +189,20 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     character: input.character
       ? {
           name: input.character.name,
-          description: [input.character.style, ...(input.character.traits || [])].filter(Boolean).join(". "),
+          description: [input.character.style, ...(input.character.traits || [])]
+            .filter(Boolean)
+            .join(". "),
           sheetUrl: input.character.characterSheetUrl || input.character.imageUrl,
         }
       : undefined,
-    preferI2V,
+    blueprintShots: true,
   });
 
   narrative.acts[0].sceneIds = planned.scenes.map((s) => s.id);
 
-  let spec: ProductionSpec = {
+  const preferI2V = String(input.productionMode || directed.preferences.productionMode || "standard") !== "express";
+
+  const spec: ProductionSpec = {
     id: `spec_${productionId}`,
     version: 1,
     project: {
@@ -104,11 +213,15 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       idea: directed.creative.intent,
       createdAt: now,
       updatedAt: now,
-      productionMode: input.productionMode || input.brand?.productionMode || "standard",
-      creativeControl: input.creativeControl || "auto",
+      productionMode:
+        input.productionMode ||
+        directed.preferences.productionMode ||
+        input.brand?.productionMode ||
+        "standard",
+      creativeControl: directed.preferences.creativeControl || input.creativeControl || "auto",
       targetDurationSec: duration,
       platforms: directed.classification.platformHints,
-      aspectRatio: aspect,
+      aspectRatio: aspect as AspectRatioId,
       formats: directed.classification.platformHints.map(String),
       status: "brief_pending_approval",
     },
@@ -132,6 +245,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       shotBridges: [],
       lastFrameChainEnabled: preferI2V,
     },
+    // Routing contract only — no intelligent provider scoring in Phase 2
     routing: createDefaultRoutingSpec({
       capabilityPolicy: {
         preferCharacterConsistency: directed.creative.requiresCharacters,
@@ -152,16 +266,12 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     },
   };
 
-  spec = routeProductionShots(spec);
-  spec = applyContinuityEngine(spec);
-  spec = compileProductionPrompts(spec);
-
   const shotCount = spec.scenes.reduce((n, s) => n + s.shots.length, 0);
   spec.approvalSummary = {
     projectTitle: spec.project.title,
-    genreLabel: `${directed.grammar.label}`,
+    genreLabel: directed.grammar.label,
     styleLabel: spec.visualStyle.look,
-    structureLabel: `${spec.scenes.length} scenes / ${shotCount} shots`,
+    structureLabel: `${spec.scenes.length} scenes / ${shotCount} blueprint shots`,
     characterCount: spec.characters.length,
     locationCount: spec.world.locations.length,
     sceneCount: spec.scenes.length,
@@ -173,52 +283,133 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       spec.audio.hasSfx ? "SFX" : null,
     ]
       .filter(Boolean)
-      .join(" + ") || "Silent visual",
-    generationStrategy: preferI2V ? "Hybrid image-to-video + keyframes" : "Narrator slideshow stills",
+      .join(" + ") || "Visual-led",
+    generationStrategy: "Planning only — generation deferred until approval",
     estimatedGenerationTasks: shotCount + (spec.audio.hasNarration ? 1 : 0),
     qualityTarget: spec.quality.target === "cinema" ? "Cinema" : "Social",
   };
 
-  const brief = productionSpecToBrief(spec);
   const validation = validateProductionSpec(spec);
-  return { spec, brief, validation };
+  if (!validation.ok) {
+    errors.push("invalid_production_spec", ...validation.errors);
+  }
+
+  // Never let malformed specs silently continue as "ok"
+  const ok = validation.ok && errors.length === 0;
+
+  const brief = ok ? productionSpecToBrief(spec) : undefined;
+
+  const trace: ProductionIntelligenceTrace = {
+    productionRequestId: requestId,
+    idea: directed.creative.intent,
+    creativeDirection: directed.direction,
+    classification: directed.classification,
+    selectedGrammarIds: directed.grammar.sources,
+    grammarLabel: directed.grammar.label,
+    narrativeStructureId: structureId,
+    narrativeBeats: beats,
+    productionSpecVersion: SPEC_VERSION,
+    roles: [
+      directed.roleTrace,
+      role("narrativePlanning"),
+      role("productionPlanning"),
+      ...(directed.creative.requiresResearch ? [role("research")] : []),
+    ],
+    errors,
+    warnings: [
+      ...validation.warnings,
+      ...directed.direction.unknownFields.map((f) => `unknown:${f}`),
+      ...(directed.direction.ambiguous ? ["ambiguous_classification"] : []),
+    ],
+    createdAt: now,
+  };
+
+  return {
+    ok,
+    spec: ok ? spec : undefined,
+    brief,
+    validation,
+    directed,
+    narrative: { structureId, beats },
+    grammar: directed.grammar,
+    classification: directed.classification,
+    trace,
+    errors,
+  };
 }
 
 /**
- * Attach/upgrade an existing Production with a ProductionSpec without breaking UI fields.
+ * Attach ProductionSpec to an existing Production for UI compatibility.
+ * Uses orchestrator when no storyboard exists; otherwise legacy adapter only.
+ * Does not trigger media generation.
  */
 export function upgradeProductionWithSpec(
   production: Production,
-  opts?: { brand?: Brand; character?: Character; spark?: ViralSpark; idea?: string }
-): { production: Production; spec: ProductionSpec } {
+  opts?: {
+    brand?: Brand;
+    character?: Character;
+    spark?: ViralSpark;
+    idea?: string;
+    creatorProfile?: CreatorProfile;
+    memoryItems?: MemoryItem[];
+  }
+): { production: Production; spec: ProductionSpec; trace?: ProductionIntelligenceTrace; ok: boolean } {
   const idea =
-    opts?.idea ||
-    production.brief?.hook ||
-    opts?.spark?.hook ||
-    production.title;
+    opts?.idea || production.brief?.hook || opts?.spark?.hook || production.title;
 
   if (!production.brief?.storyboard?.length && !production.productionScenes?.length) {
-    const { spec, brief } = orchestrateIdeaToProductionSpec({
+    const result = orchestrateIdeaToProductionSpec({
       idea,
       productionId: production.id,
       brand: opts?.brand,
       character: opts?.character,
       spark: opts?.spark,
+      creatorProfile: opts?.creatorProfile,
+      memoryItems: opts?.memoryItems,
       targetDurationSec: production.targetDurationSec,
       productionMode: String(production.mode || production.productionMode || "standard"),
       preferredAspectRatio: production.aspectRatio as AspectRatioId,
     });
+
+    if (!result.ok || !result.spec || !result.brief) {
+      return {
+        ok: false,
+        spec: result.spec || legacyProductionToSpec({ production, brand: opts?.brand, character: opts?.character, spark: opts?.spark }),
+        trace: result.trace,
+        production: {
+          ...production,
+          reasoning: {
+            ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
+            productionIntelligenceTrace: result.trace,
+            productionIntelligenceErrors: result.errors,
+          },
+        },
+      };
+    }
+
     return {
-      spec,
+      ok: true,
+      spec: result.spec,
+      trace: result.trace,
       production: {
         ...production,
-        brief: { ...brief, ...production.brief, storyboard: brief.storyboard, beats: brief.beats },
-        productionScenes: brief.storyboard,
-        targetDurationSec: spec.project.targetDurationSec,
+        brief: {
+          ...result.brief,
+          ...production.brief,
+          storyboard: result.brief.storyboard,
+          beats: result.brief.beats,
+          visualDirection: result.brief.visualDirection,
+          whyThisWorks: result.brief.whyThisWorks,
+        },
+        productionScenes: result.brief.storyboard,
+        targetDurationSec: result.spec.project.targetDurationSec,
         reasoning: {
           ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
-          productionSpec: spec,
-          approvalSummary: spec.approvalSummary,
+          productionSpec: result.spec,
+          approvalSummary: result.spec.approvalSummary,
+          productionIntelligenceTrace: result.trace,
+          creativeDirection: result.directed.direction,
+          grammarIds: result.spec.meta.grammarIds,
         },
       },
     };
@@ -230,15 +421,16 @@ export function upgradeProductionWithSpec(
     character: opts?.character,
     spark: opts?.spark,
   });
-  const routed = compileProductionPrompts(routeProductionShots(spec));
+
   return {
-    spec: routed,
+    ok: true,
+    spec,
     production: {
       ...production,
       reasoning: {
         ...(typeof production.reasoning === "object" && production.reasoning ? production.reasoning : {}),
-        productionSpec: routed,
-        approvalSummary: routed.approvalSummary,
+        productionSpec: spec,
+        approvalSummary: spec.approvalSummary,
       },
     },
   };
