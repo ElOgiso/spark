@@ -6,6 +6,9 @@ import { ProductionAssetService, isDurableMasterVideoReady } from "./production/
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
+import { executeProduction } from "./production/execution/productionExecutor";
+import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
+import type { ProductionSpec } from "./production/specification/productionSpec";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -403,6 +406,80 @@ export class ProductionService implements IProductionService {
     const updated = [newAsset, ...assets];
     this.saveFullState({ assets: updated });
     return newAsset;
+  }
+
+  /**
+   * Phase 4 — execute planned GenerationTask DAG for a production that already has a ProductionSpec.
+   * Preserves existing generateAssetsForProduction path; this is the Spec→Task→Asset execution entry.
+   * Does not redesign UI — stores execution summary on production.reasoning.
+   */
+  async executeProductionPlan(params: {
+    production: Production;
+    brand?: Brand;
+    dryRun?: boolean;
+    signal?: AbortSignal;
+  }): Promise<{
+    production: Production;
+    ok: boolean;
+    state: string;
+    assetCount: number;
+  }> {
+    const reasoning =
+      typeof params.production.reasoning === "object" && params.production.reasoning
+        ? params.production.reasoning
+        : {};
+    const spec = (reasoning as any).productionSpec as ProductionSpec | undefined;
+    if (!spec) {
+      throw new Error("ProductionSpec missing — run createProductionFromSpark / planning first");
+    }
+
+    if (params.signal?.aborted) {
+      throw new Error("Aborted");
+    }
+
+    const result = await executeProduction(spec, {
+      brandId: params.brand?.id || params.production.brandId,
+      dryRun: params.dryRun === true,
+      ports: params.dryRun ? undefined : createRuntimeAdapterPorts(),
+      sleep: params.dryRun ? async () => undefined : undefined,
+    });
+
+    const updated: Production = {
+      ...params.production,
+      reasoning: {
+        ...reasoning,
+        productionSpec: result.spec,
+        productionExecution: {
+          state: result.productionState,
+          ok: result.ok,
+          errors: result.errors,
+          executionCount: result.executions.length,
+          assetCount: result.assets.length,
+          taskStatuses: result.tasks.map((t) => ({ id: t.id, kind: t.kind, status: t.status })),
+        },
+      },
+      status:
+        result.productionState === "completed"
+          ? "Ready for Review"
+          : result.productionState === "failed"
+            ? "Failed"
+            : params.production.status,
+    };
+
+    const state = this.getFullState();
+    const currentProds: Production[] = state.productions || [];
+    this.saveFullState({
+      productions: currentProds.map((p) => (p.id === updated.id ? updated : p)).concat(
+        currentProds.some((p) => p.id === updated.id) ? [] : [updated]
+      ),
+    });
+
+    return {
+      production: updated,
+      ok: result.ok,
+      state: result.productionState,
+      assetCount: result.assets.length,
+    };
   }
 }
 

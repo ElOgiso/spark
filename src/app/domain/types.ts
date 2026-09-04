@@ -356,6 +356,10 @@ export interface ProductionAsset {
   id: string;
   brandId?: string;
   productionId: string;
+  /** Optional Phase 4 association with generation task / shot */
+  taskId?: string;
+  sceneId?: string;
+  shotId?: string;
   assetType: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
   provider?: string;
   storageBucket?: string;

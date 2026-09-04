@@ -75,6 +75,19 @@ ProductionSpec
 ```
 
 Public path still `createProductionPlan()` — now applies visual planning by default.
-Media generation remains deferred until approval / later execution phase.
-No UI redesign; existing ProductionBrief adapters continue to feed REVIEW.
+## Phase 4 status (Media Execution Engine)
+
+```
+ProductionSpec + GenerationTask DAG
+ → executeProduction()
+ → dependency-aware scheduler
+ → provider adapters (kling/seedance/grok I2V, openai/gemini image ports, elevenlabs voice, mux)
+ → technical validation
+ → ProductionAsset persistence
+ → retry/fallback via Phase 3 planner
+```
+
+Entry: `executeProduction` / `productionService.executeProductionPlan`.
+Existing `generateAssetsForProduction` path preserved.
+No UI redesign. Unit tests use mocks only — no live provider calls in CI.
 
