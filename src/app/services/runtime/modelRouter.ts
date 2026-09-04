@@ -202,7 +202,11 @@ export class ModelRouter {
     userModelSelectionConfig?: AIModelSelectionConfig
   ): Promise<string> {
     const activeConfig = userRoutingConfig || this.getUserRoutingConfig();
-    const preferredProvider = this.resolveProvider(category, activeConfig);
+    // Honor an explicit preferredProvider from the caller (e.g. clip engine) over routing table.
+    const preferredProvider =
+      options.preferredProvider && options.preferredProvider !== "auto"
+        ? options.preferredProvider
+        : this.resolveProvider(category, activeConfig);
     const capability = options.capability || this.mapCategoryToCapability(category);
     const resolvedModel = options.model || this.resolveModel(category, preferredProvider, capability, userModelSelectionConfig);
 
