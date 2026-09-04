@@ -42,6 +42,21 @@ ProductionSpec
 - No UI redesign; BrandGenesis / CreativeReview / galleries untouched.
 - Existing provider integrations and prompt packs preserved.
 
-## Next recommended step
+## Phase 2 status (Creative Director + Production Intelligence)
 
-Drive `ProductionAssetService.generateAssets` from `planGenerationTasks` + shot-level `routeProductionShots` decisions (partial regeneration via `planShotRetry`), then surface `approvalSummary` in existing CreativeReview without a new board UI.
+Planning flow (no media generation, no shot-level provider scoring):
+
+```
+User idea
+ → Creative Director (+ preference hierarchy)
+ → Genre Classifier (extensible rules)
+ → Production Grammar (composable)
+ → Narrative Planner (genre-specific structures)
+ → Production Planner (scene blueprint + stub shots)
+ → validated ProductionSpec
+ → ProductionBrief adapter (existing UI)
+```
+
+Intermediates preserved on `production.reasoning.productionIntelligenceTrace`.
+Cinematography / provider routing intentionally deferred to the next phase.
+
