@@ -237,15 +237,34 @@ export function productionRowToDomain(row: ProductionRow): Production {
     };
   }
 
+  // Hoist provider/pipeline errors so Review UI can show them (not only character-sheet copy).
+  const lastError =
+    (typeof (briefObj as any).lastError === "string" && (briefObj as any).lastError) ||
+    (typeof generationProgress?.partialAssets?.lastError === "string" &&
+      generationProgress.partialAssets.lastError) ||
+    (generationProgress?.stage &&
+    String(generationProgress.stage).toLowerCase() === "failed" &&
+    typeof generationProgress.message === "string"
+      ? generationProgress.message
+      : undefined) ||
+    undefined;
+
   // isGeneratingAssets: true ONLY IF progress exists, percent < 100, stage not Complete/Cancelled/Failed, and updatedAt is recent (last 45 mins)
   let isGeneratingAssets = false;
   if (generationProgress) {
     const stageLower = (generationProgress.stage || "").toLowerCase();
     const percent = generationProgress.percent || 0;
-    const isFinished = stageLower === "complete" || stageLower === "failed" || stageLower === "cancelled" || percent >= 100;
+    const hasFailedStage = (generationProgress.stages || []).some((s: any) => s?.status === "failed");
+    const isFinished =
+      stageLower === "complete" ||
+      stageLower === "failed" ||
+      stageLower === "cancelled" ||
+      percent >= 100 ||
+      // If a critical stage failed and overall stage is past video, do not keep spinner forever
+      (hasFailedStage && (stageLower === "thumbnails" || stageLower === "captions" || stageLower === "saving" || stageLower === "failed"));
     const updatedAtTime = generationProgress.updatedAt ? new Date(generationProgress.updatedAt).getTime() : 0;
-    const isRecent = Date.now() - updatedAtTime < 45 * 60 * 1000;
-    isGeneratingAssets = !isFinished && isRecent;
+    const isRecent = !updatedAtTime || Date.now() - updatedAtTime < 45 * 60 * 1000;
+    isGeneratingAssets = !isFinished && isRecent && !lastError;
   }
 
   const mergedBrief: import("../../domain/types").ProductionBrief | undefined =
@@ -256,6 +275,7 @@ export function productionRowToDomain(row: ProductionRow): Production {
           videoUrl: videoUrl || (briefObj as any).videoUrl,
           storyboardGridUrl: storyboardGridUrl || (briefObj as any).storyboardGridUrl,
           generationProgress: generationProgress || (briefObj as any).generationProgress,
+          lastError: lastError || (briefObj as any).lastError,
         }
       : undefined;
 
@@ -274,6 +294,7 @@ export function productionRowToDomain(row: ProductionRow): Production {
     brief: mergedBrief,
     generationProgress,
     isGeneratingAssets,
+    lastError,
     reasoning: (row.reasoning && typeof row.reasoning === "object" && !Array.isArray(row.reasoning)) ? (row.reasoning as any) : {},
   };
 }

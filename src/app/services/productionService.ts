@@ -364,6 +364,12 @@ export class ProductionService implements IProductionService {
       videoUrl: result.videoUrl,
       isGeneratingAssets: false,
       generationProgress: result.brief.generatedAssets?.generationProgress,
+      lastError:
+        result.brief.lastError ||
+        result.brief.generatedAssets?.generationProgress?.partialAssets?.lastError ||
+        (finalProdStatus === "Failed"
+          ? result.brief.generatedAssets?.generationProgress?.message || "Asset generation failed"
+          : undefined),
     };
 
     

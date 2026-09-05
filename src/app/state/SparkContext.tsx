@@ -1707,9 +1707,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     setState((prev: any) => {
-      const alreadyCreatedReview = prev.reviewItems.some((r: any) => r.title === spark.title);
+      // Prefer id/spark-based dedupe — same title alone must not drop a new review draft
+      const alreadyCreatedReview = prev.reviewItems.some(
+        (r: any) =>
+          r.id === reviewId ||
+          r.productionId === prodId ||
+          (spark.id && r.brief?.sparkId === spark.id && r.status === "Pending Review")
+      );
       const updatedReviewItems = alreadyCreatedReview ? prev.reviewItems : [initialReviewItem, ...prev.reviewItems];
-      const updatedProductions = prev.productions.some((p: any) => p.title === spark.title)
+      const updatedProductions = prev.productions.some((p: any) => p.id === prodId || (spark.id && p.sparkId === spark.id && p.status === "Drafting"))
         ? prev.productions
         : [initialProduction, ...prev.productions];
 
@@ -1776,10 +1782,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const brandId = getBrandWorkspaceId();
           if (isSupabaseConfigured() && brandId) {
             try {
-              const [dbProd, dbReview] = await Promise.all([
-                persistProductionCreate(brandId, stableEnrichedProd),
-                persistReviewCreate(brandId, stableEnrichedReview),
-              ]);
+              // Production MUST exist before review (FK review_items.production_id → productions.id).
+              // Parallel Promise.all raced and silently dropped review rows.
+              const dbProd = await persistProductionCreate(brandId, stableEnrichedProd);
 
               if (dbProd?.id && dbProd.id !== prodId) {
                 const oldProdId = prodId;
@@ -1798,6 +1803,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }));
               }
 
+              const dbReview = await persistReviewCreate(brandId, {
+                ...stableEnrichedReview,
+                productionId: effectiveProdId,
+              });
+
               if (dbReview?.id && dbReview.id !== reviewId) {
                 const oldReviewId = reviewId;
                 effectiveReviewId = dbReview.id;
@@ -1808,6 +1818,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     r.id === oldReviewId ? { ...r, ...stableEnrichedReview, id: dbReview.id } : r
                   ),
                 }));
+              } else if (!dbReview) {
+                console.warn(
+                  "[SparkContext] Review persist returned null — draft may vanish after sync. productionId=",
+                  effectiveProdId
+                );
               }
             } catch (dbCreateErr) {
               console.warn("[SparkContext] Persist production/review create notice:", dbCreateErr);
@@ -2018,14 +2033,44 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return;
               }
               console.warn("[SparkContext] Auto asset generation notice:", assetErr);
+              const errMsg = assetErr?.message || String(assetErr);
               setState((prev: any) => ({
                 ...prev,
                 productions: prev.productions.map((p: any) =>
                   p.id === effectiveProdId
-                    ? { ...p, isGeneratingAssets: false, lastError: assetErr?.message || String(assetErr) }
+                    ? {
+                        ...p,
+                        isGeneratingAssets: false,
+                        status: p.status === "Drafting" ? "Failed" : p.status,
+                        lastError: errMsg,
+                      }
                     : p
                 ),
+                reviewItems: prev.reviewItems.map((r: any) =>
+                  r.productionId === effectiveProdId || r.id === effectiveReviewId
+                    ? {
+                        ...r,
+                        // Keep Pending Review so the draft remains findable after motion/provider failure
+                        status: r.status === "Approved" ? r.status : "Pending Review",
+                        lastError: errMsg,
+                      }
+                    : r
+                ),
               }));
+              const failBrandId = getBrandWorkspaceId();
+              if (isSupabaseConfigured() && failBrandId) {
+                void persistProductionUpdate(effectiveProdId, {
+                  isGeneratingAssets: false,
+                  status: "Failed",
+                  lastError: errMsg,
+                } as any);
+                if (effectiveReviewId) {
+                  void persistReviewUpdate(effectiveReviewId, {
+                    status: "Pending Review",
+                    lastError: errMsg,
+                  } as any);
+                }
+              }
             } finally {
               if (activeGenerationControllers.current.get(effectiveProdId) === controller) {
                 activeGenerationControllers.current.delete(effectiveProdId);

@@ -1240,12 +1240,20 @@ export class AIProviderOrchestrator {
                     if (options.onChunk) options.onChunk(immediate);
                     return immediate;
                   }
+                  throw new Error(
+                    `Grok Video Generation returned OK but no video URL in payload (model=${videoModel}).`
+                  );
                 } else {
                   const errTxt = await vRes.text().catch(() => "");
                   console.warn(`[Grok Provider] Direct video.generate failed (${videoModel} - ${vRes.status}):`, errTxt.slice(0, 300));
+                  throw new Error(
+                    `Grok Video Generation HTTP ${vRes.status}: ${errTxt.slice(0, 180) || "no body"}`
+                  );
                 }
-              } catch (vErr) {
+              } catch (vErr: any) {
+                if (String(vErr?.message || "").startsWith("Grok Video Generation")) throw vErr;
                 console.warn(`[Grok Provider] Direct video.generate notice (${videoModel}):`, vErr);
+                throw new Error(`Grok Video Generation request failed: ${vErr?.message || String(vErr)}`);
               }
             }
           }

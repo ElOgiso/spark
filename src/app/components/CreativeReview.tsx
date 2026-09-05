@@ -519,7 +519,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           {activeProd?.isGeneratingAssets &&
            activeProd.generationProgress?.stage !== "Complete" &&
            activeProd.generationProgress?.stage !== "Cancelled" &&
-           activeProd.generationProgress?.stage !== "Failed" && (
+           activeProd.generationProgress?.stage !== "Failed" &&
+           !(activeProd.generationProgress?.stages || []).some((s: any) => s?.status === "failed" && s?.id === "video") && (
             <div className="p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -582,19 +583,42 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           )}
 
           {/* Character Sheet Required Alert / Last Error */}
-          {(activeProd?.lastError || brief?.lastError) && !activeProd?.isGeneratingAssets && (
-            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-200">
-                  {activeProd?.lastError || brief?.lastError}
-                </p>
-                <p className="text-xs text-amber-200/70 mt-0.5">
-                  A locked character reference sheet is required for host / story / anime formats before asset rendering can begin.
-                </p>
+          {(() => {
+            const motionFailed = (activeProd?.generationProgress?.stages || []).some(
+              (s: any) => s?.id === "video" && s?.status === "failed"
+            );
+            const errText =
+              activeProd?.lastError ||
+              brief?.lastError ||
+              activeProd?.generationProgress?.partialAssets?.lastError ||
+              (activeProd?.generationProgress?.stage === "Failed"
+                ? activeProd?.generationProgress?.message
+                : undefined) ||
+              (motionFailed
+                ? "Motion synthesis (Image-to-video) failed — scenes remain stills until regenerate."
+                : undefined);
+            if (!errText) return null;
+            if (activeProd?.isGeneratingAssets && !motionFailed) return null;
+            const isCharacterGate = /character sheet|character reference/i.test(errText);
+            return (
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-200">
+                    {motionFailed ? "Motion synthesis failed" : "Generation issue"}
+                  </p>
+                  <p className="text-xs text-amber-100/90 mt-1 break-words">{errText}</p>
+                  <p className="text-xs text-amber-200/70 mt-1">
+                    {isCharacterGate
+                      ? "A locked character reference sheet is required for host / story / anime formats before asset rendering can begin."
+                      : motionFailed
+                        ? "Stills succeeded; image-to-video did not return clips. Use Regenerate All after checking the video provider (Grok/xAI), or wait for failover/slideshow recovery on the latest build."
+                        : "Open Regenerate All to retry asset synthesis."}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Interactive Media Preview Section */}
           <div className="space-y-6">
@@ -974,7 +998,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               {activeProd?.isGeneratingAssets &&
                activeProd.generationProgress?.stage !== "Complete" &&
                activeProd.generationProgress?.stage !== "Failed" &&
-               activeProd.generationProgress?.stage !== "Cancelled"
+               activeProd.generationProgress?.stage !== "Cancelled" &&
+               !(activeProd.generationProgress?.stages || []).some((s: any) => s?.id === "video" && s?.status === "failed")
                 ? (activeProd.generationProgress?.stage ? `Synthesizing ${activeProd.generationProgress.stage}...` : "Synthesizing Assets...")
                 : (brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.length)
                 ? "Generate Assets"
