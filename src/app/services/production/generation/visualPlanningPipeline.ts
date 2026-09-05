@@ -8,6 +8,8 @@ import type { ProductionSpec } from "../specification/productionSpec";
 import type { ShotSpec } from "../specification/shotSpec";
 import type { ComposedGrammar } from "../grammar";
 import { planShotsForScene } from "../cinematography/shotPlanner";
+import { developVisualTreatment, treatmentToVisualStyle } from "../cinematography/cinematicIntelligence";
+import { normalizeModeString } from "../resolveProductionMode";
 import { applyContinuityEngine } from "../continuity/continuityEngine";
 import { resolveShotGenerationStrategy } from "./strategyResolver";
 import { routeProductionShots } from "../routing/capabilityRouter";
@@ -55,10 +57,22 @@ export function applyVisualPlanningPipeline(
   const preferI2V = opts.preferI2V !== false;
   const hardCap = opts.maxShotsPerScene ?? 4;
   const grammar = opts.grammar;
+  const mode = normalizeModeString(String(spec.project.productionMode || "")) || "standard";
+  const treatment =
+    spec.visualTreatment ||
+    developVisualTreatment({
+      productionId: spec.id,
+      creative: spec.creative,
+      project: spec.project,
+      visualStyle: spec.visualStyle,
+    });
 
-  // 1) Cinematography — purposeful multi-shot coverage per scene
+
+  // 1) Cinematography — look treatment + purposeful multi-shot coverage per scene
   let next: ProductionSpec = {
     ...spec,
+    visualTreatment: treatment,
+    visualStyle: spec.visualTreatment ? spec.visualStyle : treatmentToVisualStyle(treatment),
     scenes: spec.scenes.map((scene) => {
       const characterIds = scene.characterIds?.length
         ? scene.characterIds
@@ -71,6 +85,8 @@ export function applyVisualPlanningPipeline(
         preferI2V,
         characterIds,
         genre: spec.creative.genre,
+        mode,
+        treatment,
       });
       return { ...scene, shots };
     }),
