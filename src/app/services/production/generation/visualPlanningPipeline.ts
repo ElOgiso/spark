@@ -8,7 +8,10 @@ import type { ProductionSpec } from "../specification/productionSpec";
 import type { ShotSpec } from "../specification/shotSpec";
 import type { ComposedGrammar } from "../grammar";
 import { planShotsForScene } from "../cinematography/shotPlanner";
-import { developVisualTreatment, treatmentToVisualStyle } from "../cinematography/cinematicIntelligence";
+import {
+  developVisualTreatment as developCinematicVisualTreatment,
+  treatmentToVisualStyle,
+} from "../cinematography/cinematicIntelligence";
 import { normalizeModeString } from "../resolveProductionMode";
 import { applyContinuityEngine } from "../continuity/continuityEngine";
 import { resolveShotGenerationStrategy } from "./strategyResolver";
@@ -18,7 +21,7 @@ import { attachGenerationTasksToSpec, planGenerationTasks } from "./generationPl
 import type { GenerationTask } from "../specification/generationTask";
 import { buildProductionDag, type ProductionDag } from "../dag/productionDag";
 import {
-  developVisualTreatment,
+  developVisualTreatment as developPreproductionVisualTreatment,
   type StoryboardBlueprint,
   type StoryboardPanelSpec,
   type VisualTreatment,
@@ -91,7 +94,7 @@ export function applyVisualPlanningPipeline(
   const mode = normalizeModeString(String(spec.project.productionMode || "")) || "standard";
   const treatment =
     spec.visualTreatment ||
-    developVisualTreatment({
+    developCinematicVisualTreatment({
       productionId: spec.id,
       creative: spec.creative,
       project: spec.project,
@@ -234,7 +237,7 @@ export function applyVisualPlanningPipeline(
   // Optional light preproduction enrichment — does not replace cinematography/routing
   const visualTreatment =
     opts.enrichVisualTreatment === true
-      ? developVisualTreatment({
+      ? developPreproductionVisualTreatment({
           productionId: next.id,
           creative: next.creative,
           project: next.project,
