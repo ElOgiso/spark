@@ -43,7 +43,7 @@ export async function executeProduction(
       tasks: [],
       executions: [],
       assets: [],
-      dag: { productionId: spec.project.id, nodes: [] },
+      dag: { productionId: spec.project.id, nodes: [], dependentsIndex: {}, version: 0 },
       errors: validation.errors,
     };
   }
