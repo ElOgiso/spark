@@ -179,7 +179,7 @@ describe("Phase 10 failure + recovery", () => {
                 action: "assemble",
                 allowMaster: true,
                 requireReview: false,
-                reasons: ["ok"],
+                reason: "ok",
                 userMessage: "ok",
               },
               mastering: {
