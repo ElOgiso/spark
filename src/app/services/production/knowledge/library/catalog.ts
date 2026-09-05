@@ -26,6 +26,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "reference-first-visual-continuity",
     name: "Reference-First Visual Continuity",
     domain: "continuity",
+    evidenceLevel: "verified",
     stages: ["continuity", "prompt_compilation", "generation_strategy"],
     purpose:
       "Prefer approved visual references before free-form description when identity or place must hold across shots.",
@@ -80,6 +81,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "character-visual-contract",
     name: "Character Visual Contract",
     domain: "character",
+    evidenceLevel: "verified",
     stages: ["planning", "prompt_compilation", "continuity"],
     purpose: "Keep recurring characters under a stable visual contract across the production.",
     applicability: {
@@ -152,6 +154,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "location-anchor",
     name: "Location Anchor",
     domain: "environment",
+    evidenceLevel: "verified",
     stages: ["planning", "continuity", "prompt_compilation"],
     purpose: "Anchor recurring locations so geography, lighting, and set dressing stay coherent.",
     applicability: {
@@ -187,6 +190,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "storyboard-blueprint",
     name: "Storyboard Blueprint",
     domain: "storyboard",
+    evidenceLevel: "verified",
     stages: ["shot_planning", "planning"],
     purpose: "Plan shots as intentional coverage beats before prompting generation.",
     applicability: {
@@ -315,6 +319,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "shot-handoff",
     name: "Shot Handoff",
     domain: "continuity",
+    evidenceLevel: "verified",
     stages: ["continuity", "shot_planning"],
     purpose: "Carry exit state of the previous shot into the entrance state of the next dependent shot.",
     applicability: {
@@ -408,6 +413,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "continuity-first-generation",
     name: "Continuity-First Generation",
     domain: "continuity",
+    evidenceLevel: "verified",
     stages: ["generation_strategy", "continuity", "qc"],
     purpose: "Prioritize continuity locks over novel variation when characters or locations recur.",
     applicability: {
@@ -437,6 +443,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "shot-purpose",
     name: "Shot Purpose",
     domain: "cinematography",
+    evidenceLevel: "verified",
     stages: ["shot_planning", "prompt_compilation"],
     purpose: "Keep the shot's narrative purpose as the organizing idea for framing and action.",
     applicability: {
@@ -466,6 +473,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "cinematic-coverage",
     name: "Cinematic Coverage",
     domain: "cinematography",
+    evidenceLevel: "verified",
     stages: ["shot_planning", "planning"],
     purpose: "Build readable coverage: establish space, then advance action and reaction.",
     applicability: {
@@ -498,6 +506,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "camera-movement-purpose",
     name: "Camera Movement Purpose",
     domain: "cinematography",
+    evidenceLevel: "verified",
     stages: ["shot_planning", "prompt_compilation"],
     purpose: "Choose camera movement only when it serves story emphasis; default to motivated stillness.",
     applicability: {
@@ -533,6 +542,7 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     id: "visual-style-consistency",
     name: "Visual Style Consistency",
     domain: "cinematography",
+    evidenceLevel: "verified",
     stages: ["prompt_compilation", "qc"],
     purpose: "Keep look, color, and lighting language consistent with the production visual style.",
     applicability: {

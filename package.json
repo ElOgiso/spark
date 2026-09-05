@@ -8,7 +8,7 @@
     "dev": "vite",
     "supabase:types": "supabase gen types typescript --linked > src/app/backend/database.types.generated.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test api/runtime/videoContract.test.ts src/app/services/production/visualContinuityGate.test.ts src/app/services/production/resolveProductionMode.test.ts src/app/services/production/productionPromptPacks.test.ts src/app/services/production/viralSparkGate.test.ts src/app/services/production/productionOs.p0.test.ts src/app/services/production/productionIntelligence.p2.test.ts src/app/services/production/productionPhase3.test.ts src/app/services/production/productionExecution.p4.test.ts src/app/services/production/productionQc.p5.test.ts src/app/services/production/productionEditorial.p6.test.ts src/app/services/production/productionCreativeDirector.p7.test.ts src/app/services/production/productionPerformance.p8.test.ts"
+    "test": "tsx --test api/runtime/videoContract.test.ts src/app/services/production/visualContinuityGate.test.ts src/app/services/production/resolveProductionMode.test.ts src/app/services/production/productionPromptPacks.test.ts src/app/services/production/viralSparkGate.test.ts src/app/services/production/productionOs.p0.test.ts src/app/services/production/productionIntelligence.p2.test.ts src/app/services/production/productionPhase3.test.ts src/app/services/production/productionExecution.p4.test.ts src/app/services/production/productionQc.p5.test.ts src/app/services/production/productionEditorial.p6.test.ts src/app/services/production/productionCreativeDirector.p7.test.ts src/app/services/production/productionPerformance.p8.test.ts src/app/services/production/filmmakingKnowledge.p2.test.ts"
   },
   "dependencies": {
     "react": "18.3.1",
