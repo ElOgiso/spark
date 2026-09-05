@@ -44,3 +44,21 @@ Risk from `scoreShotGenerationRisk` maps to recommended candidate count (configu
 ## Tests
 
 `src/app/services/production/productionPhase6Operational.test.ts` — deterministic, no live provider calls.
+
+## Storyboard density & sheets
+
+`chooseStoryboardLayout` selects readable layouts (`1x5`, `2x2`, `2x4`, `3x3`, `3x4`, `4x4`, `4x5`, sequences).
+`packStoryboardSheets` paginates panels (default max 12/sheet) while preserving global chronological order.
+
+## Prop visual contracts
+
+`PropVisualContract` / `buildPropVisualContract` / `createPropMaster` treat continuity-critical props as first-class visual entities (not generic attachments).
+
+## Cherry-pick & local regeneration
+
+`selectAndRecordCandidate` records the winning candidate on `GenerationIntent.trace`.
+`planShotLocalRegeneration` regenerates only the failed shot (plus last-frame chain dependents when enabled); approved neighbors stay in `preserveShotIds`.
+
+## Acceptance
+
+`productionPhase6Acceptance.test.ts` — John/coffee-shop structural E2E (no live providers).

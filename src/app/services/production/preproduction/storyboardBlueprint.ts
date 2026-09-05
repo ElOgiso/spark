@@ -19,6 +19,7 @@ import type {
   ProductVisualContract,
   StoryboardBlueprint,
   StoryboardLayout,
+  StoryboardSheet,
   StoryboardPanelSpec,
   StoryboardValidationResult,
   StoryboardVersionRecord,
@@ -53,15 +54,54 @@ function paceFromDuration(durationSec: number): string {
   return "held";
 }
 
+/** Max panels per sheet before readability forces pagination. */
+export const STORYBOARD_MAX_PANELS_PER_SHEET = 12;
+
 export function chooseStoryboardLayout(panelCount: number, aspectRatio: string): StoryboardLayout {
+  const vertical = aspectRatio.includes("9:16") || aspectRatio === "9:16";
   if (panelCount <= 1) return "single-panel";
+  if (panelCount === 5 && !vertical) return "1x5";
   if (panelCount <= 4) return "2x2";
+  if (panelCount === 8 && !vertical) return "2x4";
   if (panelCount <= 9) return "3x3";
   if (panelCount <= 12) return "3x4";
+  if (panelCount === 20 && !vertical) return "4x5";
   if (panelCount <= 16) return "4x4";
-  return aspectRatio.includes("9:16") || aspectRatio === "9:16"
-    ? "vertical-sequence"
-    : "horizontal-sequence";
+  return vertical ? "vertical-sequence" : "horizontal-sequence";
+}
+
+/**
+ * Pack panels into readable storyboard sheets (e.g. shots 01–12 / 13–24).
+ * Global chronological order is preserved across sheets.
+ */
+export function packStoryboardSheets(params: {
+  panels: Array<{ panelId: string; shotId: string; sequenceIndex: number }>;
+  aspectRatio: string;
+  maxPanelsPerSheet?: number;
+}): StoryboardSheet[] {
+  const max = Math.max(1, params.maxPanelsPerSheet ?? STORYBOARD_MAX_PANELS_PER_SHEET);
+  const ordered = [...params.panels].sort((a, b) => a.sequenceIndex - b.sequenceIndex);
+  if (ordered.length === 0) return [];
+
+  const sheets: StoryboardSheet[] = [];
+  for (let i = 0; i < ordered.length; i += max) {
+    const chunk = ordered.slice(i, i + max);
+    const sheetIndex = sheets.length;
+    const start = chunk[0].sequenceIndex + 1;
+    const end = chunk[chunk.length - 1].sequenceIndex + 1;
+    sheets.push({
+      sheetId: `sheet_${String(sheetIndex + 1).padStart(2, "0")}`,
+      sheetIndex,
+      layout: chooseStoryboardLayout(chunk.length, params.aspectRatio),
+      panelIds: chunk.map((p) => p.panelId),
+      shotIds: chunk.map((p) => p.shotId),
+      rangeLabel:
+        start === end
+          ? `Shot ${String(start).padStart(2, "0")}`
+          : `Shots ${String(start).padStart(2, "0")}–${String(end).padStart(2, "0")}`,
+    });
+  }
+  return sheets;
 }
 
 export function buildStoryboardPanelFromShot(params: {
@@ -245,7 +285,18 @@ export function buildStoryboardBlueprint(params: {
     sceneId: params.scene.id,
     sequenceId: params.sequenceId ?? params.scene.id,
     aspectRatio: params.aspectRatio,
-    layout: chooseStoryboardLayout(panels.length, params.aspectRatio),
+    layout: chooseStoryboardLayout(
+      Math.min(panels.length, STORYBOARD_MAX_PANELS_PER_SHEET),
+      params.aspectRatio
+    ),
+    sheets: packStoryboardSheets({
+      panels: panels.map((p) => ({
+        panelId: p.panelId,
+        shotId: p.shotId,
+        sequenceIndex: p.sequenceIndex,
+      })),
+      aspectRatio: params.aspectRatio,
+    }),
     visualTreatmentId: params.visualTreatment?.id,
     panels,
     panelToShotMap,
@@ -275,6 +326,14 @@ export function compileStoryboardImagePrompt(
 ): string {
   const lines: string[] = [
     `Storyboard layout: ${blueprint.layout} (${blueprint.panels.length} panels).`,
+    ...(blueprint.sheets && blueprint.sheets.length > 1
+      ? [
+          `Multiple sheets (${blueprint.sheets.length}): ${blueprint.sheets
+            .map((s) => `${s.sheetId} ${s.rangeLabel} layout ${s.layout}`)
+            .join("; ")}.`,
+          "Preserve chronological order across sheets; do not reshuffle panels.",
+        ]
+      : []),
     `Aspect ratio: ${blueprint.aspectRatio}.`,
     "Render panels in reading order. Label each panel as Panel 01, Panel 02, … when possible.",
     "Do not invent shots not listed. Follow composition and action per panel.",

@@ -32,6 +32,7 @@ export type VisualLockTarget =
   | "character"
   | "location"
   | "product"
+  | "prop"
   | "style"
   | "storyboard"
   | "shot_composition"
@@ -133,6 +134,26 @@ export interface ProductVisualContract {
   provenance: string;
 }
 
+
+export interface PropVisualContract {
+  id: string;
+  assetRef: string;
+  propId: string;
+  identity: string;
+  shape: string;
+  proportions: string;
+  materials: string[];
+  colors: string[];
+  objectState: string;
+  handheld: boolean;
+  approvedViews: string[];
+  canonicalReferenceUrl?: string;
+  approvedReferenceUrls: string[];
+  version: number;
+  approvalState: "draft" | "approved" | "locked" | "retired";
+  provenance: string;
+}
+
 export type ReferenceRole =
   | "identity"
   | "appearance"
@@ -196,10 +217,13 @@ export interface ReferenceBudgetPlan {
 }
 
 export type StoryboardLayout =
+  | "1x5"
   | "2x2"
+  | "2x4"
   | "3x3"
   | "3x4"
   | "4x4"
+  | "4x5"
   | "horizontal-sequence"
   | "vertical-sequence"
   | "single-panel";
@@ -280,6 +304,18 @@ export interface StoryboardValidationResult {
   issues: StoryboardValidationIssue[];
 }
 
+
+export interface StoryboardSheet {
+  sheetId: string;
+  sheetIndex: number;
+  layout: StoryboardLayout;
+  /** Global panel order indices included on this sheet */
+  panelIds: string[];
+  shotIds: string[];
+  /** Inclusive global sequence range label, e.g. "Shots 01–12" */
+  rangeLabel: string;
+}
+
 export interface StoryboardBlueprint {
   id: string;
   productionId: string;
@@ -287,6 +323,8 @@ export interface StoryboardBlueprint {
   sequenceId: string;
   aspectRatio: string;
   layout: StoryboardLayout;
+  /** Paginated sheets when panel count exceeds readable density */
+  sheets?: StoryboardSheet[];
   visualTreatmentId?: string;
   panels: StoryboardPanelSpec[];
   /** Machine mapping — do not rely on rendered panel labels */

@@ -6,6 +6,7 @@ import type {
   CharacterVisualContract,
   LocationVisualContract,
   ProductVisualContract,
+  PropVisualContract,
   StoryboardBlueprint,
   VisualLock,
   VisualLockTarget,
@@ -143,8 +144,8 @@ export function lockStoryboard(blueprint: StoryboardBlueprint, reason?: string):
 }
 
 export function contractVersionLock(
-  contract: CharacterVisualContract | LocationVisualContract | ProductVisualContract,
-  target: Extract<VisualLockTarget, "character" | "location" | "product">
+  contract: CharacterVisualContract | LocationVisualContract | ProductVisualContract | PropVisualContract,
+  target: Extract<VisualLockTarget, "character" | "location" | "product" | "prop">
 ): VisualLock {
   return createVisualLock({
     target,
@@ -153,7 +154,9 @@ export function contractVersionLock(
         ? contract.characterId
         : "locationId" in contract
           ? contract.locationId
-          : contract.productId,
+          : "propId" in contract
+            ? contract.propId
+            : contract.productId,
     version: contract.version,
     reason: "Approved visual contract locked",
   });

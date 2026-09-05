@@ -17,6 +17,12 @@ export {
 } from "./compileIntentToTasks";
 export { classifyGenerationFailure } from "./generationFailure";
 export { planOperationalShotGeneration } from "./operationalPipeline";
+export {
+  recordSelectedCandidate,
+  selectAndRecordCandidate,
+  planShotLocalRegeneration,
+} from "./shotCandidateSelection";
+export type { SelectedCandidateRecord } from "./shotCandidateSelection";
 
 export type { GenerationTask, GenerationTaskKind } from "./generationPlanner";
 export type { RetryPlan, PartialRegenerationPlan } from "./retryPlanner";

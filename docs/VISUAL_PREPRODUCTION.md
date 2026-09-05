@@ -25,9 +25,9 @@ SceneSpec.shots: ShotSpec[]
 | File | Role |
 |------|------|
 | `types.ts` | Shared contracts |
-| `visualContracts.ts` | Treatment + character/location/product contracts |
+| `visualContracts.ts` | Treatment + character/location/product/prop contracts |
 | `referenceManifest.ts` | Classification, conflicts, budget optimizer |
-| `storyboardBlueprint.ts` | Panels from ShotSpec, validation, localized repair |
+| `storyboardBlueprint.ts` | Panels from ShotSpec, dynamic layouts, multi-sheet packing, validation, localized repair |
 | `videoGenerationBridge.ts` | Intent + multimodal request (motion separate) |
 | `shotRisk.ts` | Generation risk + candidate recommendations |
 | `candidateStrategy.ts` | QC-like candidate ranking (no network) |

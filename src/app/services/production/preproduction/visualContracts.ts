@@ -3,13 +3,14 @@
  * Extends CharacterMaster / LocationMaster / ProductMaster — does not replace them.
  */
 
-import type { CharacterMaster, LocationMaster, ProductMaster } from "../specification/assetSpec";
+import type { CharacterMaster, LocationMaster, ProductMaster, PropMaster } from "../specification/assetSpec";
 import type { CreativeSpec, ProjectSpec, VisualStyleSpec } from "../specification/productionSpec";
 import type {
   CharacterViewKind,
   CharacterVisualContract,
   LocationVisualContract,
   ProductVisualContract,
+  PropVisualContract,
   VisualTreatment,
 } from "./types";
 import { filmmakingPrincipleIds } from "./filmmakingPrinciples";
@@ -184,6 +185,33 @@ export function buildProductVisualContract(params: {
     version: p.identity.version,
     approvalState: p.status === "approved" ? "approved" : "draft",
     provenance: "preproduction.buildProductVisualContract",
+  };
+}
+
+
+export function buildPropVisualContract(params: {
+  prop: PropMaster;
+  visualTreatment?: VisualTreatment;
+  userReferenceUrls?: string[];
+}): PropVisualContract {
+  const p = params.prop;
+  return {
+    id: `propvc_${p.identity.baseId}_v${p.identity.version}`,
+    assetRef: p.identity.ref,
+    propId: p.identity.baseId,
+    identity: p.description || p.name,
+    shape: "canonical prop silhouette",
+    proportions: "accurate prop proportions",
+    materials: [],
+    colors: [],
+    objectState: p.objectState || "stable prop state",
+    handheld: Boolean(p.handheld),
+    approvedViews: ["hero", "three_quarter", "detail"],
+    canonicalReferenceUrl: p.approvedReferenceUrls[0],
+    approvedReferenceUrls: [...p.approvedReferenceUrls, ...(params.userReferenceUrls || [])],
+    version: p.identity.version,
+    approvalState: p.status === "approved" ? "approved" : "draft",
+    provenance: "preproduction.buildPropVisualContract",
   };
 }
 

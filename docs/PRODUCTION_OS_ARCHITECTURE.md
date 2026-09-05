@@ -189,6 +189,10 @@ ShotSpec (+ StoryboardPanelSpec / ReferenceManifest)
 ```
 
 Entry: `planOperationalShotGeneration` in `generation/operationalPipeline.ts`.
+Storyboard sheets: `chooseStoryboardLayout` + `packStoryboardSheets`.
+Cherry-pick: `selectAndRecordCandidate` / `planShotLocalRegeneration`.
+Props: `PropVisualContract` via existing asset masters.
+Acceptance: `productionPhase6Acceptance.test.ts` (John coffee shop).
 Optional flag: `applyVisualPlanningPipeline(..., { enableOperationalGeneration: true })` (default OFF).
 No new orchestrator / DAG / provider agent / UI. See `docs/PHASE6_OPERATIONAL_STORYBOARD_PIPELINE.md`.
 
