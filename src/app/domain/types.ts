@@ -374,6 +374,15 @@ export interface ProductionAsset {
   generationSettings?: Record<string, any>;
   status: "completed" | "failed" | "pending";
   createdAt?: string;
+  /** Optional Phase 4 reference/asset intelligence fields (backward compatible). */
+  role?: string;
+  masterRef?: string;
+  version?: number;
+  variant?: string;
+  parentAssetId?: string;
+  authority?: string;
+  lifecycle?: string;
+  fingerprint?: string;
 }
 
 export interface Asset {
