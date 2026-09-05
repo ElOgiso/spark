@@ -53,17 +53,36 @@ export async function requestProductionVideoClip(
     }),
   });
 
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({} as Record<string, unknown>));
   if (!res.ok) {
-    throw new Error(data.error || `Video adapter failed (${res.status})`);
+    throw new Error(
+      (typeof data.error === "string" && data.error) ||
+        `Video adapter failed (${res.status})`
+    );
   }
-  const videoUrl = data.videoUrl || data.publicUrl || "";
+  // Explicit failure payloads must not be treated as successful generation
+  // even when HTTP 200 is used (e.g. mux client-fallback responses).
+  if (data && data.success === false) {
+    throw new Error(
+      (typeof data.error === "string" && data.error) ||
+        (typeof data.message === "string" && data.message) ||
+        "Video adapter reported success=false without a durable videoUrl"
+    );
+  }
+  const videoUrl =
+    (typeof data.videoUrl === "string" && data.videoUrl) ||
+    (typeof data.publicUrl === "string" && data.publicUrl) ||
+    "";
   if (!videoUrl) {
-    throw new Error(data.error || "Video adapter returned no videoUrl");
+    throw new Error(
+      (typeof data.error === "string" && data.error) ||
+        "Video adapter returned no videoUrl"
+    );
   }
   return {
     videoUrl,
-    lastFrameDataUrl: typeof data.lastFrameDataUrl === "string" ? data.lastFrameDataUrl : undefined,
-    provider: data.provider || params.provider,
+    lastFrameDataUrl:
+      typeof data.lastFrameDataUrl === "string" ? data.lastFrameDataUrl : undefined,
+    provider: (typeof data.provider === "string" && data.provider) || params.provider,
   };
 }
