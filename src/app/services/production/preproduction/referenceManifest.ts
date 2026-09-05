@@ -233,8 +233,12 @@ export function detectReferenceConflicts(refs: ClassifiedReference[]): Reference
       const a = (idRef.attributes?.wardrobe || "").toLowerCase();
       const b = (board.attributes?.wardrobeHint || "").toLowerCase();
       if (!a || !b) continue;
-      const colorA = a.match(/\b(black|red|blue|green|white|yellow|brown|gray|grey|pink|purple)\b/);
-      const colorB = b.match(/\b(black|red|blue|green|white|yellow|brown|gray|grey|pink|purple)\b/);
+      const colorA = a.match(
+        /\b(black|red|blue|green|white|yellow|brown|gray|grey|pink|purple|navy|beige|cream|tan|orange)\b/
+      );
+      const colorB = b.match(
+        /\b(black|red|blue|green|white|yellow|brown|gray|grey|pink|purple|navy|beige|cream|tan|orange)\b/
+      );
       if (
         colorA &&
         colorB &&
