@@ -11,6 +11,11 @@ export interface ProviderCapabilityProfile {
   allowedDurationsSec?: number[]; // official supported durations in seconds (e.g. [4, 6, 8] for Veo)
   supportsImageRefs?: boolean;
   supportsNativeAudio?: boolean;
+  /**
+   * Max multimodal reference image/slots for a single generation request.
+   * Read by preproduction reference budget optimizer — do not hard-code in cinematography/storyboard.
+   */
+  maxMultimodalReferences?: number;
   notes: string;
 }
 
@@ -22,8 +27,13 @@ export interface ProviderVideoCapability {
   maxNativeSec: number;
   supportsImageRefs: boolean;
   supportsNativeAudio: boolean;
+  /** Updatable registry value for multimodal reference packing */
+  maxMultimodalReferences: number;
   notes: string;
 }
+
+/** Default when a provider has no explicit multimodal reference budget */
+export const DEFAULT_MAX_MULTIMODAL_REFERENCES = 4;
 
 /**
  * Official Provider Native Video Capabilities & Duration Limits.
@@ -38,6 +48,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 8,
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: 3,
     notes: "Google Veo 3.1 & 2.0 (4s, 6s, or 8s vertical clips with synchronized native audio)",
   },
   grok: {
@@ -48,6 +59,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 15,
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: 7,
     notes: "xAI Grok Imagine Video (1–15s I2V, audio on, start-frame + up to 7 reference faces)",
   },
   kling: {
@@ -58,6 +70,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 10,
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: 4,
     notes: "Kling image2video JWT (5s or 10s, image_tail last-frame in pro/turbo/v2.6)",
   },
   seedance: {
@@ -68,6 +81,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 15,
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: 12,
     notes: "ByteDance Seedance Ark I2V (first_frame + last_frame continuation, 4–15s, 720p/1080p)",
   },
   runway: {
@@ -78,6 +92,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 10,
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: 3,
     notes: "Runway Gen-3 Alpha cinematic camera control (5s or 10s)",
   },
   luma: {
@@ -88,6 +103,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 9,
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: 2,
     notes: "Luma Ray 2 keyframe-to-motion interpolation (5s or 9s)",
   },
   higgsfield: {
@@ -98,6 +114,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 8,
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: 3,
     notes: "Higgsfield Pop / Cinema vertical video motion (4s or 8s)",
   },
   openai: {
@@ -108,6 +125,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 0,
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: 4,
     notes: "Reasoning & DALL-E / GPT Image only (no native video model)",
   },
   claude: {
@@ -118,6 +136,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 0,
     supportsImageRefs: false,
     supportsNativeAudio: false,
+    maxMultimodalReferences: 0,
     notes: "Reasoning & Scriptwriting only",
   },
   elevenlabs: {
@@ -128,6 +147,7 @@ export const PROVIDER_VIDEO_CAPABILITIES: Record<ConcreteAIProviderId, ProviderV
     maxNativeSec: 0,
     supportsImageRefs: false,
     supportsNativeAudio: true,
+    maxMultimodalReferences: 0,
     notes: "Voiceover & Audio Narration only",
   },
 };
@@ -145,6 +165,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [4, 6, 8],
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.gemini.maxMultimodalReferences,
     notes: "Google Veo native 9:16 vertical video (~8s single-shot, multimodal image ref conditioned, native synchronized audio)",
   },
   grok: {
@@ -155,6 +176,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.grok.maxMultimodalReferences,
     notes: "xAI Grok Imagine Video (up to 15s I2V, start-frame data URI + reference faces, audio on)",
   },
   openai: {
@@ -163,6 +185,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding", "Image Generation", "Text To Speech"],
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.openai.maxMultimodalReferences,
     notes: "GPT-5.6 Flagship reasoning, GPT Image 1.5 high-fidelity stills, Super Spark voice synthesis",
   },
   claude: {
@@ -171,6 +194,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding"],
     supportsImageRefs: false,
     supportsNativeAudio: false,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.claude.maxMultimodalReferences,
     notes: "Claude Sonnet 5 & Opus 5 executive production compiling, scriptwriting, and critique",
   },
   elevenlabs: {
@@ -179,6 +203,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     capabilities: ["Text To Speech"],
     supportsImageRefs: false,
     supportsNativeAudio: true,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.elevenlabs.maxMultimodalReferences,
     notes: "Dedicated production voiceover narration & brand voice cloning (Eleven Multilingual v2)",
   },
   kling: {
@@ -189,6 +214,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [5, 10],
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.kling.maxMultimodalReferences,
     notes: "Kling image2video with JWT, first-frame + image_tail continuity (~10s max)",
   },
   seedance: {
@@ -199,6 +225,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     supportsImageRefs: true,
     supportsNativeAudio: true,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.seedance.maxMultimodalReferences,
     notes: "ByteDance Seedance Ark I2V with first_frame / last_frame / reference_image roles (~15s max)",
   },
   runway: {
@@ -209,6 +236,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [5, 10],
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.runway.maxMultimodalReferences,
     notes: "Runway Gen-3 Alpha cinematic camera control & continuous movement (~10s max)",
   },
   luma: {
@@ -219,6 +247,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [5, 9],
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.luma.maxMultimodalReferences,
     notes: "Luma Ray 2 keyframe-to-motion interpolation (~9s max)",
   },
   higgsfield: {
@@ -229,6 +258,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
     allowedDurationsSec: [4, 8],
     supportsImageRefs: true,
     supportsNativeAudio: false,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxMultimodalReferences,
     notes: "Higgsfield Pop / Cinema vertical video motion (~8s max)",
   },
 };
@@ -247,6 +277,39 @@ export function snapToAllowedDuration(targetSec: number, providerId: ConcreteAIP
     return Math.max(...validLessOrEqual);
   }
   return Math.min(...allowed);
+}
+
+/**
+ * Max multimodal reference slots for a provider — single registry lookup.
+ * Preproduction / storyboard must read this instead of hard-coding Seedance or other ceilings.
+ */
+export function getMaxMultimodalReferences(providerId: string): number {
+  const id = providerId as ConcreteAIProviderId;
+  const video = PROVIDER_VIDEO_CAPABILITIES[id];
+  if (video && typeof video.maxMultimodalReferences === "number") {
+    return video.maxMultimodalReferences;
+  }
+  const profile = PROVIDER_CAPABILITY_MAP[id];
+  if (profile && typeof profile.maxMultimodalReferences === "number") {
+    return profile.maxMultimodalReferences;
+  }
+  return DEFAULT_MAX_MULTIMODAL_REFERENCES;
+}
+
+/**
+ * Update a provider's multimodal reference budget in the live registry (both maps stay in sync).
+ */
+export function setMaxMultimodalReferences(
+  providerId: ConcreteAIProviderId,
+  maxSlots: number
+): void {
+  const slots = Math.max(0, Math.floor(maxSlots));
+  if (PROVIDER_VIDEO_CAPABILITIES[providerId]) {
+    PROVIDER_VIDEO_CAPABILITIES[providerId].maxMultimodalReferences = slots;
+  }
+  if (PROVIDER_CAPABILITY_MAP[providerId]) {
+    PROVIDER_CAPABILITY_MAP[providerId].maxMultimodalReferences = slots;
+  }
 }
 
 /**

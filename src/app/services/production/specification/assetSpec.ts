@@ -214,6 +214,37 @@ export function createLocationMaster(params: {
   };
 }
 
+
+export function createPropMaster(params: {
+  baseId: string;
+  version?: number;
+  name: string;
+  description: string;
+  objectState?: string;
+  handheld?: boolean;
+  referenceUrls?: string[];
+}): PropMaster {
+  const version = params.version ?? 1;
+  const now = new Date().toISOString();
+  return {
+    identity: {
+      baseId: params.baseId,
+      version,
+      ref: makeAssetRef(params.baseId, version),
+    },
+    kind: "prop",
+    name: params.name,
+    description: params.description,
+    approvedReferenceUrls: params.referenceUrls ?? [],
+    tags: [],
+    status: "approved",
+    createdAt: now,
+    updatedAt: now,
+    objectState: params.objectState,
+    handheld: params.handheld,
+  };
+}
+
 export function resolveMasterByRef(
   assets: MasterAssetRef[],
   ref: string

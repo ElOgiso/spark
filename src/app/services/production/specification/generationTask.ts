@@ -48,6 +48,21 @@ export interface GenerationTask {
   retryCount?: number;
   maxRetries?: number;
   lastError?: string;
+
+  /** Phase 6 — optional operational storyboard → intent traceability */
+  intentId?: string;
+  panelId?: string;
+  referenceManifestId?: string;
+  storyboardId?: string;
+  generationMode?: string;
+  appearanceBrief?: string;
+  motionBrief?: string;
+  hardConstraintIds?: string[];
+  softPreferenceIds?: string[];
+  degradationNotes?: string[];
+  candidateIndex?: number;
+  candidateCount?: number;
+  traceJson?: string;
 }
 
 export function validateGenerationTask(task: GenerationTask): string[] {

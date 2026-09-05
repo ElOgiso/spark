@@ -15,6 +15,17 @@ import { compileProductionPrompts } from "./promptCompiler";
 import { attachGenerationTasksToSpec, planGenerationTasks } from "./generationPlanner";
 import type { GenerationTask } from "../specification/generationTask";
 import { buildProductionDag, type ProductionDag } from "../dag/productionDag";
+import {
+  developVisualTreatment,
+  type StoryboardBlueprint,
+  type StoryboardPanelSpec,
+  type VisualTreatment,
+  type CharacterVisualContract,
+  type LocationVisualContract,
+  type ProductVisualContract,
+} from "../preproduction";
+import { planOperationalShotGeneration } from "./operationalPipeline";
+import type { GenerationQualityMode } from "./generationIntent";
 
 export interface VisualPlanningOptions {
   grammar: ComposedGrammar;
@@ -22,18 +33,37 @@ export interface VisualPlanningOptions {
   availableProviderIds?: string[];
   /** Cap shots per scene (grammar density still applies within cap) */
   maxShotsPerScene?: number;
+  /** Optional: attach visual treatment enrichment (no new orchestrator) */
+  enrichVisualTreatment?: boolean;
+  /**
+   * Phase 6 — when true, enrich/replace per-shot video(+keyframe) tasks via
+   * operational storyboard → GenerationIntent → GenerationTask path for shots
+   * that have storyboard panels (provided via options). Default OFF.
+   */
+  enableOperationalGeneration?: boolean;
+  storyboard?: StoryboardBlueprint | null;
+  storyboardPanels?: StoryboardPanelSpec[];
+  qualityMode?: GenerationQualityMode;
+  characters?: CharacterVisualContract[];
+  location?: LocationVisualContract | null;
+  products?: ProductVisualContract[];
+  preferredProviderId?: string;
+  candidateCounts?: { low: number; medium: number; high: number };
 }
 
 export interface VisualPlanningResult {
   spec: ProductionSpec;
   generationTasks: GenerationTask[];
   dag: ProductionDag;
+  /** Optional preproduction treatment when enrichVisualTreatment is enabled */
+  visualTreatment?: VisualTreatment;
   stats: {
     sceneCount: number;
     shotCount: number;
     routedShots: number;
     generationTaskCount: number;
     continuityBridges: number;
+    operationalShots?: number;
   };
 }
 
@@ -117,21 +147,94 @@ export function applyVisualPlanningPipeline(
   next = compileProductionPrompts(next);
 
   // 6) Generation task graph + attach to shots
-  const generationTasks = planGenerationTasks(next);
+  let generationTasks = planGenerationTasks(next);
+
+  // 6b) Optional Phase 6 operational enrichment (default OFF — backward compatible)
+  let operationalShots = 0;
+  if (opts.enableOperationalGeneration === true) {
+    const panelByShot = new Map<string, StoryboardPanelSpec>();
+    for (const p of opts.storyboard?.panels || []) panelByShot.set(p.shotId, p);
+    for (const p of opts.storyboardPanels || []) panelByShot.set(p.shotId, p);
+
+    if (panelByShot.size > 0) {
+      const kept: GenerationTask[] = [];
+      const orderedShots: ShotSpec[] = [];
+      for (const scene of next.scenes) {
+        for (const shot of scene.shots) orderedShots.push(shot);
+      }
+
+      for (let i = 0; i < orderedShots.length; i++) {
+        const shot = orderedShots[i];
+        const panel = panelByShot.get(shot.id);
+        if (!panel) continue;
+        const scene = next.scenes.find((s) => s.id === shot.sceneId);
+        if (!scene) continue;
+        const result = planOperationalShotGeneration({
+          productionId: next.project.id,
+          scene,
+          shot,
+          routing: next.routing,
+          storyboard: opts.storyboard,
+          panel,
+          treatment: undefined,
+          characters: opts.characters,
+          location: opts.location,
+          products: opts.products,
+          previousShot: i > 0 ? orderedShots[i - 1] : null,
+          qualityMode: opts.qualityMode,
+          availableProviderIds: opts.availableProviderIds,
+          preferredProviderId: opts.preferredProviderId,
+          candidateCounts: opts.candidateCounts,
+        });
+        if (result.plan.blocked || !result.plan.tasks.length) continue;
+        operationalShots += 1;
+        kept.push(...result.plan.tasks);
+      }
+
+      if (kept.length) {
+        const replacedShotIds = new Set(
+          kept.map((t) => t.shotId).filter((id): id is string => Boolean(id))
+        );
+        generationTasks = [
+          ...generationTasks.filter((t) => {
+            if (!t.shotId || !replacedShotIds.has(t.shotId)) return true;
+            if (t.kind !== "video" && t.kind !== "keyframe") return true;
+            return false;
+          }),
+          ...kept,
+        ];
+      }
+    }
+  }
+
   next = attachGenerationTasksToSpec(next, generationTasks);
   const dag = buildProductionDag(next, generationTasks);
 
   const shotCount = next.scenes.reduce((n, s) => n + s.shots.length, 0);
+
+  // Optional light preproduction enrichment — does not replace cinematography/routing
+  const visualTreatment =
+    opts.enrichVisualTreatment === true
+      ? developVisualTreatment({
+          productionId: next.id,
+          creative: next.creative,
+          project: next.project,
+          visualStyle: next.visualStyle,
+        })
+      : undefined;
+
   return {
     spec: next,
     generationTasks,
     dag,
+    visualTreatment,
     stats: {
       sceneCount: next.scenes.length,
       shotCount,
       routedShots: next.routing.shotDecisions.length,
       generationTaskCount: generationTasks.length,
       continuityBridges: next.continuity.shotBridges.length,
+      ...(operationalShots ? { operationalShots } : {}),
     },
   };
 }
