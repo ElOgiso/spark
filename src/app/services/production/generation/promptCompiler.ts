@@ -104,6 +104,7 @@ export function buildSemanticLayer(
 }
 
 export function buildCinematicLayer(shot: ShotSpec): CinematicPromptLayer {
+  const cine = shot.cinematic;
   return {
     shotType: String(shot.camera.shotType),
     framing: shot.camera.framing,
@@ -119,7 +120,8 @@ export function buildCinematicLayer(shot: ShotSpec): CinematicPromptLayer {
     atmosphere: shot.atmosphere || shot.lighting.atmosphere,
     beginState: shot.motion.beginState,
     endState: shot.motion.endState,
-    cameraMoveDetail: shot.motion.cameraMovementDetail,
+    cameraMoveDetail: cine?.rationale.movement || shot.motion.cameraMovementDetail,
+    // Phase 5: keep provider prompt lean — only compile relevant cinematic intent
     performance: shot.performanceDirection || shot.motion.performanceDirection,
     blocking: shot.blocking,
   };
@@ -137,7 +139,7 @@ function compileProviderPrompt(
   const base = [
     `PRODUCTION: ${semantic.productionTitle} | GENRE: ${semantic.genre} | STYLE: ${spec.visualStyle.look}`,
     `SCENE (${semantic.narrativeFunction}): ${semantic.scenePurpose}`,
-    `SHOT PURPOSE: ${semantic.shotPurpose}`,
+    `SHOT PURPOSE: ${semantic.shotPurpose}` + (shot.cinematic ? ` | DRAMATIC: ${shot.cinematic.dramaticPurpose} | MOVE WHY: ${shot.cinematic.rationale.movement}` : ""),
     `WHY: ${semantic.productionReason}`,
     char,
     `SUBJECT: ${semantic.subject}`,

@@ -1,3 +1,4 @@
+import type { VisualTreatment } from "../cinematography/cinematicIntelligence";
 /**
  * Canonical production specification types for Spark Production OS.
  * ProductionSpec is the source of truth for planning; legacy ProductionBrief remains a compatibility view.
@@ -174,6 +175,8 @@ export interface ProductionSpec {
   scenes: SceneSpec[];
   audio: AudioSpec;
   visualStyle: VisualStyleSpec;
+  /** Phase 5 project-level look development (inherits to scenes/shots unless overridden) */
+  visualTreatment?: VisualTreatment;
   continuity: ContinuitySpec;
   routing: RoutingSpec;
   quality: QualitySpec;

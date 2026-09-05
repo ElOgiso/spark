@@ -1,3 +1,4 @@
+import type { ShotCinematicIntelligence } from "../cinematography/cinematicIntelligence";
 /**
  * Shot-level canonical specification — fundamental unit of visual generation.
  */
@@ -158,6 +159,8 @@ export interface ShotSpec {
   lastFrameUrl?: string;
   /** Attached by filmmaking knowledge runtime */
   filmmakingGuidance?: ShotFilmmakingGuidance;
+  /** Phase 5 cinematic direction intelligence (provider-neutral) */
+  cinematic?: ShotCinematicIntelligence;
   observability?: {
     productionId?: string;
     promptCompilerVersion?: string;

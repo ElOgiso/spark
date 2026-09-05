@@ -66,7 +66,9 @@ After ProductionSpec is built:
 
 ```
 ProductionSpec
- → Cinematography (purposeful multi-shot coverage)
+ → VisualTreatment (project look bible; scene overrides require reason)
+ → Cinematography (purpose → coverage → camera/lens/DOF/movement → blocking/lighting)
+ → ShotCinematicIntelligence on each ShotSpec (temporal beats, spatial axis, handoff, refs/capabilities)
  → Continuity bridges
  → Generation strategy resolution
  → Capability-based provider routing (shot-level)
@@ -75,6 +77,8 @@ ProductionSpec
 ```
 
 Public path still `createProductionPlan()` — now applies visual planning by default.
+Cinematic look/shot-direction intelligence lives in `cinematography/cinematicIntelligence.ts` and extends existing planners (no second orchestrator). See `docs/CINEMATIC_SHOT_INTELLIGENCE.md`.
+Roadmap “Phase 5 cinematic intelligence” maps here; repo “Phase 5” below remains Intelligent QC.
 ## Phase 4 status (Media Execution Engine)
 
 ```

@@ -57,6 +57,8 @@ export interface SceneSpec {
   wardrobeNotes?: string;
   propIds: string[];
   visualStyleNotes?: string;
+  /** Intentional look shift reason (Phase 5); empty means inherit production treatment */
+  visualTreatmentOverrideReason?: string;
   emotionalObjective: string;
   dialogue?: string;
   narration?: string;

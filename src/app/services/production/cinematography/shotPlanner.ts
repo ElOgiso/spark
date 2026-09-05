@@ -10,6 +10,13 @@ import { strategyFromAlias } from "../specification/generationStrategy";
 import { planCameraForShot } from "./cameraPlanner";
 import { planLightingForShot } from "./lightingPlanner";
 import { planBlockingForShot } from "./blockingPlanner";
+import type { ResolvedMode } from "../resolveProductionMode";
+import type { VisualTreatment } from "./cinematicIntelligence";
+import {
+  planCoverage,
+  buildShotCinematicIntelligence,
+  validateCinematicShot,
+} from "./cinematicIntelligence";
 
 export interface ShotPlanContext {
   scene: Omit<SceneSpec, "shots"> & { shots?: ShotSpec[] };
@@ -20,6 +27,10 @@ export interface ShotPlanContext {
   characterIds: string[];
   /** Optional genre for lighting/treatment */
   genre?: string;
+  /** Phase 5 production mode for coverage depth */
+  mode?: ResolvedMode;
+  /** Phase 5 project look treatment */
+  treatment?: VisualTreatment;
 }
 
 function shotPurpose(
@@ -112,25 +123,20 @@ function selectShotTypes(fn: NarrativeFunction, grammar: ComposedGrammar, maxSho
 export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
   const { scene, grammar, aspectRatio, preferI2V, characterIds } = ctx;
   const maxShots = Math.max(1, ctx.maxShots);
-  const shotTypes = selectShotTypes(scene.narrativeFunction, grammar, maxShots);
+  const mode = ctx.mode || "standard";
+  const coverage = planCoverage({
+    narrativeFunction: scene.narrativeFunction,
+    grammar,
+    mode,
+    maxShots,
+  });
+  const shotTypes = coverage.shotTypes;
   const perShot = Math.max(2, Math.round(scene.durationSec / shotTypes.length));
   let t = 0;
 
   return shotTypes.map((shotType, index) => {
     const { purpose, reason } = shotPurpose(scene.narrativeFunction, shotType, index);
-    const camera = planCameraForShot({
-      shotType,
-      grammar,
-      emotionalObjective: scene.emotionalObjective,
-      narrativeFunction: scene.narrativeFunction,
-    });
-    const lighting = planLightingForShot({
-      environment: scene.environment,
-      timeOfDay: scene.timeOfDay,
-      tone: scene.emotionalObjective,
-      narrativeFunction: scene.narrativeFunction,
-      genre: ctx.genre || grammar.id,
-    });
+    const coverageRole = coverage.roles[index] || (index === 0 ? "master" : "medium");
     const blocking = planBlockingForShot({
       shotType,
       subjectAction: scene.visualDescription || scene.purpose,
@@ -148,14 +154,79 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
         ? blocking.exit || scene.continuity.exitState
         : `${shotType} completes its motivated action`;
 
+    const fallbackTreatment: VisualTreatment = ctx.treatment || {
+      id: `treatment_${scene.id}`,
+      lookPreset: "naturalistic",
+      lookLabel: "Naturalistic",
+      palette: "observed environmental hues",
+      contrast: "moderate",
+      saturation: "natural",
+      lightingMood: "motivated practicals",
+      texture: "subtle real-world texture",
+      atmosphere: "clear observational air",
+      cameraLanguage: "observational / restrained",
+      lensCharacter: "neutral modern prime",
+      depthOfFieldLanguage: "moderate depth",
+      aspectRatioIntent: "television",
+      aspectRatio,
+      references: [],
+      principles: ["A", "D", "E"],
+      confidence: 0.6,
+      provenance: "shotPlanner.fallbackTreatment",
+    };
+
+    const { cinematic, movement } = buildShotCinematicIntelligence({
+      shotType,
+      narrativeFunction: scene.narrativeFunction,
+      coverageRole,
+      index,
+      durationSec,
+      characterIds,
+      locationId: scene.locationId,
+      propIds: scene.propIds || [],
+      emotionalObjective: scene.emotionalObjective,
+      preferredMovements: grammar.coverage.preferredMovements,
+      treatment: fallbackTreatment,
+      beginState: begin,
+      endState: end,
+      preferI2V,
+    });
+    cinematic.validationIssues = validateCinematicShot(cinematic);
+
+    const camera = planCameraForShot({
+      shotType,
+      grammar,
+      emotionalObjective: scene.emotionalObjective,
+      narrativeFunction: scene.narrativeFunction,
+      movementOverride: movement,
+    });
+    // Align lens/DOF text with cinematic intent when available
+    if (cinematic.focalLengthIntent) camera.lens = cinematic.focalLengthIntent;
+    if (cinematic.depthOfFieldIntent) {
+      camera.depthOfField =
+        cinematic.depthOfFieldIntent === "shallow_depth" || cinematic.depthOfFieldIntent === "very_shallow" || cinematic.depthOfFieldIntent === "subject_isolation"
+          ? "shallow — isolate subject"
+          : cinematic.depthOfFieldIntent === "deep_focus"
+            ? "deep — readable geography"
+            : "natural cinema DOF";
+    }
+
+    const lighting = planLightingForShot({
+      environment: scene.environment,
+      timeOfDay: scene.timeOfDay,
+      tone: scene.emotionalObjective,
+      narrativeFunction: scene.narrativeFunction,
+      genre: ctx.genre || grammar.id,
+    });
+
     const strategy: GenerationStrategy = preferI2V ? "image_to_video" : "slideshow_still";
 
     const shot: ShotSpec = {
       id: `${scene.id}_shot_${index}`,
       sceneId: scene.id,
       index,
-      purpose,
-      productionReason: reason,
+      purpose: cinematic.visualObjective || purpose,
+      productionReason: cinematic.rationale.purpose || reason,
       timingStartSec: t,
       startTime: t,
       durationSec,
@@ -171,9 +242,10 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
       atmosphere: scene.emotionalObjective,
       motion: {
         subjectMovement: blocking.subjectAction,
-        cameraMovementDetail: describeMovement(camera.cameraMovement),
-        environmentalMovement: "subtle practical atmosphere only if motivated",
+        cameraMovementDetail: cinematic.rationale.movement || describeMovement(camera.cameraMovement),
+        environmentalMovement: cinematic.motionSeparation.environmentalMotion,
         performanceDirection: blocking.performanceDirection,
+        timingNotes: cinematic.temporalBeats.map((b) => `${b.label}: ${b.description}`).join(" | "),
         beginState: begin,
         endState: end,
         interaction: blocking.spatialRelationship,
@@ -181,12 +253,14 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
       references: {
         characterRefs: characterIds,
         locationRefs: scene.locationId ? [scene.locationId] : [],
-        styleRefs: [],
+        styleRefs: fallbackTreatment.references || [],
       },
       continuityRequirements: [
         ...scene.continuity.identityLocks,
         ...scene.continuity.wardrobeLocks,
         blocking.screenDirection,
+        cinematic.spatial.screenDirection,
+        cinematic.spatial.eyeline,
         begin,
         end,
       ].filter(Boolean),
@@ -198,6 +272,7 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
       aspectRatio,
       generationStatus: "planned",
       qcStatus: "pending",
+      cinematic,
     };
     t += durationSec;
     return shot;
