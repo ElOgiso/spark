@@ -126,7 +126,16 @@ Not integrated in this phase: ModelRouter, provider adapters, QC repair, DAG sch
 
 ## Tests
 
-See validation section in the Phase 2 completion summary. Focused suite: `filmmakingKnowledge.p2.test.ts` (discovery, location, motion, continuity, isolation, composition, conflict, versioning, classification, provider neutrality, pipeline/prompt integration).
+Focused suite: `filmmakingKnowledge.p2.test.ts` (discovery, location, motion, continuity, isolation, composition, conflict, versioning, classification, provider neutrality, pipeline/prompt integration).
+
+### Actual results (this branch)
+
+| Check | Result |
+|-------|--------|
+| `npm run typecheck` | pass |
+| `npx tsx --test …/filmmakingKnowledge.p2.test.ts` | 14/14 pass |
+| `npm test` | 216/216 pass |
+| `npm run build` | pass |
 
 ## Remaining gaps (intentional)
 
