@@ -348,7 +348,7 @@ describe("execution engine", () => {
       },
     });
     const plan = createProductionPlan({ idea: "Product demo short", targetDurationSec: 20 });
-    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe");
+    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe" && t.shotId);
     assert.ok(keyframe);
     const engine = new GenerationExecutionEngine({
       ports,
@@ -380,7 +380,7 @@ describe("execution engine", () => {
       },
     });
     const plan = createProductionPlan({ idea: "Social tip", targetDurationSec: 15 });
-    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe")!;
+    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe" && t.shotId)!;
     const engine = new GenerationExecutionEngine({
       ports,
       sleep: async () => undefined,
@@ -416,7 +416,7 @@ describe("execution engine", () => {
     const plan = createProductionPlan({ idea: "Luxury watch ad", targetDurationSec: 30 });
     // Seed prior keyframe output via a succeeded keyframe first
     const tasks = planGenerationTasks(plan.spec!);
-    const keyframe = tasks.find((t) => t.kind === "keyframe")!;
+    const keyframe = tasks.find((t) => t.kind === "keyframe" && t.shotId)!;
     const video = tasks.find((t) => t.kind === "video" && t.dependsOn.includes(keyframe.id))!;
     video.selectedProvider = "kling";
     video.fallbackProviders = ["seedance", "grok"];
@@ -459,7 +459,7 @@ describe("execution engine", () => {
       },
     });
     const plan = createProductionPlan({ idea: "Tip video", targetDurationSec: 15 });
-    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe")!;
+    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe" && t.shotId)!;
     const store = createMemoryIdempotencyStore();
     const engine = new GenerationExecutionEngine({
       ports,
@@ -478,7 +478,7 @@ describe("execution engine", () => {
 
   it("cancels queued tasks before execution", async () => {
     const plan = createProductionPlan({ idea: "Comedy short", targetDurationSec: 20 });
-    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe");
+    const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe" && t.shotId);
     assert.ok(keyframe);
     const engine = new GenerationExecutionEngine({
       ports: mockPorts(),

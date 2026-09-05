@@ -268,3 +268,70 @@ Acceptance: `productionPhase6Acceptance.test.ts` (John coffee shop).
 Optional flag: `applyVisualPlanningPipeline(..., { enableOperationalGeneration: true })` (default OFF).
 No new orchestrator / DAG / provider agent / UI. See `docs/PHASE6_OPERATIONAL_STORYBOARD_PIPELINE.md`.
 
+## SPARK Generation DAG (Phase 8 — Execution Ordering)
+
+> Naming note: the historical “Phase 8” section above covers Performance Learning.
+> This section documents the SPARK roadmap **Generation DAG** work (execution ordering).
+> It does not replace Performance Learning and does not implement visual QC (Phase 9)
+> or full end-to-end production UX (Phase 10).
+
+### Responsibility
+
+Phase 8 answers: **when** may each `GenerationTask` run?
+
+```
+ProductionSpec
+  → GenerationTask[] (planner)
+  → ProductionDag (typed dependencies)
+  → ready queue / execution waves
+  → Scheduler (bounded concurrency)
+  → ExecutionEngine / adapters (how)
+  → Assets
+```
+
+### Dependency model
+
+Edges are typed (`DependencyReason`) and strength-tagged (`hard` | `soft`):
+
+| Reason | Typical use |
+|--------|-------------|
+| REFERENCE | Character/location reference readiness |
+| CONTINUITY | Prior shot approved end-state required |
+| SEQUENTIAL | Soft narrative adjacency (never blocks alone) |
+| ASSET | Keyframe → video |
+| EDITORIAL | Leaf media → master merge |
+| VALIDATION | Candidate approval gates |
+
+Hard edges block readiness. Soft edges never silently become hard.
+
+Completion ≠ approval: `markNode(..., "done")` does not auto-approve.
+`approveNode` sets `approved` for `approved_output` requirements.
+
+### Parallelism & waves
+
+`readyNodes` / `computeExecutionWaves` maximize safe parallelism.
+Narrative order is not execution order unless CONTINUITY/hard edges say so.
+
+### Scheduler
+
+`selectReadyBatch` consumes DAG readiness + priority + modality/provider concurrency caps.
+It does **not** choose providers (routing owns that).
+
+### Failure / retry / resume
+
+- `propagateFailure` blocks hard dependents; independents keep running
+- `planRetry` / `applyRetry` regenerate minimal scope
+- `createCheckpoint` / `resumeFromCheckpoint` preserve completed work
+- Idempotent scheduling skips already-succeeded tasks
+
+### Critical path
+
+`computeCriticalPath` exposes the longest dependency chain for orchestration insight.
+
+### Out of scope here
+
+- Visual QC / automated repair (Phase 9)
+- Full autonomous production UX (Phase 10)
+- LLM schedulers / second DAG engines
+- Rewrites of `productionAssetService`
+
