@@ -162,9 +162,35 @@ Every semantic finding carries **score / confidence / evidence**. Missing vision
 
 No provider-named QC agents. Provider/model metadata is evidence only.
 
-### Deferred to Phase 10
+## Phase 10 status (End-to-end Production Lifecycle)
 
-End-to-end production execution lifecycle wiring (generate → QA → repair → approve → editorial master) as a single autonomous run loop.
+Phase 10 is an **integration conductor only** — it does not rebuild QC, editorial, DAG, or the executor.
+
+```
+Planned ProductionSpec
+ → runProductionPreflight (spec + legacy gate + DAG)
+ → executeProduction (Phase 4)
+ → runQcWithRepairLoop (Phase 5/9)
+ → runEditorialPipeline + optional master (Phase 6)
+ → ProductionLifecycleReport (+ checkpoint)
+```
+
+Entry points:
+- `runProductionLifecycle` / `resumeProductionLifecycle` in `execution/productionLifecycleRunner.ts`
+- `productionService.runFullProductionLifecycle` (persists summary on `production.reasoning.lifecycle`)
+
+Conductor behavior:
+- Provider-agnostic; supports `dryRun`
+- Preflight blockers → `blocked` with actionable codes (no generation)
+- QC `production_failed` → `failed` (no editorial)
+- QC needs review → `awaiting_review` (no editorial)
+- Mastering failure (not deferred) → `failed`, never `completed`
+- `allowCompleteWithoutMaster` / express-like modes may complete without master
+- Resume of a `completed` checkpoint is a no-op (no regeneration)
+- `AbortSignal` → `cancelled`
+- Structured lifecycle events; cost is estimated-only; timing rollup included
+
+Out of scope here: Phase 11 learning loops / Phase 12 UX polish.
 
 
 ## Phase 6 status (Editorial Timeline & Mastering)
@@ -276,8 +302,8 @@ No new orchestrator / DAG / provider agent / UI. See `docs/PHASE6_OPERATIONAL_ST
 
 > Naming note: the historical “Phase 8” section above covers Performance Learning.
 > This section documents the SPARK roadmap **Generation DAG** work (execution ordering).
-> It does not replace Performance Learning and does not implement visual QC (Phase 9)
-> or full end-to-end production UX (Phase 10).
+> It does not replace Performance Learning and does not implement visual QC (Phase 9).
+> End-to-end lifecycle wiring lives in Phase 10 (`runProductionLifecycle`).
 
 ### Responsibility
 
@@ -335,7 +361,7 @@ It does **not** choose providers (routing owns that).
 ### Out of scope here
 
 - Visual QC / automated repair (Phase 9)
-- Full autonomous production UX (Phase 10)
+- Full production UX surfaces (Phase 12) — Phase 10 wires the lifecycle conductor only
 - LLM schedulers / second DAG engines
 - Rewrites of `productionAssetService`
 
