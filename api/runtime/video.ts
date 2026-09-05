@@ -25,13 +25,17 @@ import {
   extractGrokVideoUrl,
   resolveClipFrames,
   type VideoClipRequest,
-} from "./_videoContract";
+} from "./_videoContract.js";
 
 const execFileAsync = promisify(execFile);
 
+/** Keep in sync with Vercel serverless limit — poll loops must finish before this. */
 export const config = {
   maxDuration: 300,
 };
+
+/** In-process provider polls must stay under config.maxDuration with headroom for download/persist. */
+const GROK_IN_PROCESS_POLL_MS = 4 * 60 * 1000;
 
 let klingJwtCache: { token: string; issuedAt: number } | null = null;
 
@@ -427,7 +431,9 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
     throw new Error("Grok video.generate returned neither video URL nor request id.");
   }
   const started = Date.now();
-  while (Date.now() - started < 6 * 60 * 1000) {
+  // Cap under config.maxDuration (300s) so the serverless function can return a real error
+  // instead of being killed mid-poll with an opaque platform timeout.
+  while (Date.now() - started < GROK_IN_PROCESS_POLL_MS) {
     await sleep(8000);
     const pollRes = await fetch(`https://api.x.ai/v1/videos/${requestId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
