@@ -7,6 +7,7 @@ import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
 import { executeProduction } from "./production/execution/productionExecutor";
+import { executeProductionViaAssetBridge } from "./production/execution/productionExecutionBridge";
 import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
 import {
   runQcWithRepairLoop,
@@ -310,18 +311,41 @@ export class ProductionService implements IProductionService {
       });
     };
 
-    const result = await ProductionAssetService.generateAssets({
-      production,
-      brief: production.brief,
-      brand,
-      character,
-      characters,
-      memoryItems,
-      creditSettings,
-      onProgress: handleProgress,
-      forceRegenerate,
-      signal,
-    });
+    const hasProductionSpec = Boolean(
+      (production.reasoning as any)?.productionSpec?.scenes?.length
+    );
+
+    // Phase 2: Spec-first live spine when ProductionSpec is present.
+    // Legacy productions without a Spec keep the prior AssetService-only path.
+    const bridgeOrDirect = hasProductionSpec
+      ? await executeProductionViaAssetBridge({
+          production,
+          brand,
+          character,
+          characters,
+          memoryItems,
+          creditSettings,
+          onProgress: handleProgress,
+          forceRegenerate,
+          signal,
+        })
+      : null;
+
+    const result = bridgeOrDirect
+      ? bridgeOrDirect.assetResult
+      : await ProductionAssetService.generateAssets({
+          production,
+          brief: production.brief,
+          brand,
+          character,
+          characters,
+          memoryItems,
+          creditSettings,
+          onProgress: handleProgress,
+          forceRegenerate,
+          signal,
+        });
+
 
     const isVideoSuccess = Boolean(result.videoUrl && isDurableMasterVideoReady(result.videoUrl));
     const finalProdStatus = isVideoSuccess ? "Ready for Review" : "Failed";
@@ -342,12 +366,24 @@ export class ProductionService implements IProductionService {
       generationProgress: result.brief.generatedAssets?.generationProgress,
     };
 
+    
+
+    const updatedWithSpine: Production = bridgeOrDirect
+      ? {
+          ...bridgeOrDirect.production,
+          // Keep persistence/progress fields from this service path
+          isGeneratingAssets: false,
+          generationProgress:
+            result.brief.generationProgress || bridgeOrDirect.production.generationProgress,
+        }
+      : updatedProd;
+
     const state = this.getFullState();
     const currentProds: Production[] = state.productions || [];
     const currentReviews: ReviewItem[] = state.reviewItems || [];
 
     this.saveFullState({
-      productions: currentProds.map((p) => (p.id === production.id ? updatedProd : p)),
+      productions: currentProds.map((p) => (p.id === production.id ? updatedWithSpine : p)),
       reviewItems: currentReviews.map((r) =>
         r.productionId === production.id
           ? {
@@ -360,7 +396,7 @@ export class ProductionService implements IProductionService {
       ),
     });
 
-    return { production: updatedProd, brief: result.brief };
+    return { production: updatedWithSpine, brief: result.brief };
   }
 
   /**

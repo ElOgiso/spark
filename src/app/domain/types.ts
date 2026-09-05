@@ -132,6 +132,12 @@ export interface ProductionScene {
   videoUrl?: string;
 
   id?: string;
+  /** Stable SceneSpec.id when generated from ProductionSpec */
+  sceneId?: string;
+  /** Stable ShotSpec.id when generated from ProductionSpec */
+  shotId?: string;
+  /** Optional GenerationTask.id for this panel's primary media task */
+  generationTaskId?: string;
   productionId?: string;
   brandId?: string;
   index?: number;

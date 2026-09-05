@@ -1025,8 +1025,25 @@ Return valid JSON with this exact structure:
     let parsedStoryboard: any[] = [];
     let thumbnails: any[] = [];
 
+    // Phase 2: when ProductionSpec already stamped stable shotIds onto the storyboard,
+    // do not regenerate structure via LLM (preserves ShotSpec identity into AssetService).
+    const specLinkedStoryboard =
+      !forceRegenerate &&
+      Array.isArray(brief.storyboard) &&
+      brief.storyboard.length > 0 &&
+      brief.storyboard.every(
+        (s: any) => typeof s?.shotId === "string" && s.shotId.length > 0
+      );
+
     try {
       checkAborted();
+      if (specLinkedStoryboard) {
+        console.log(
+          `[SPARK Pipeline] Using ProductionSpec-linked storyboard (${brief.storyboard!.length} shot panels) — skipping LLM structure regen`
+        );
+        parsedStoryboard = brief.storyboard as any[];
+        thumbnails = Array.isArray((brief as any).thumbnails) ? (brief as any).thumbnails : [];
+      } else {
       console.log(`[SPARK Pipeline] Provider Request: ${mode.toUpperCase()} Storyboard structure via ModelRouter...`);
       const rawResponse = await withTimeout(
         ModelRouter.executeCategoryRequest("production", {
@@ -1046,6 +1063,7 @@ Return valid JSON with this exact structure:
 
       parsedStoryboard = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
       thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
+      }
     } catch (llmErr: any) {
       if (llmErr?.name === "AbortError" || signal?.aborted) throw llmErr;
       console.warn("[SPARK Pipeline] Storyboard LLM generation notice, using structured fallback:", llmErr);

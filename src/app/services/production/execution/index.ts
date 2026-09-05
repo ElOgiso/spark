@@ -57,3 +57,23 @@ export {
 } from "./adapters/registry";
 export type { MediaProviderAdapter, AdapterPorts } from "./adapters/registry";
 export { createRuntimeAdapterPorts } from "./runtimePorts";
+
+/** Phase 2 — Spec → AssetService live generate bridge */
+export {
+  executeProductionViaAssetBridge,
+  resolveProductionSpec,
+  buildSpecLinkedStoryboard,
+  buildSpecDrivenBrief,
+  ensureGenerationTasks,
+  markShotRetry,
+  applyTaskDependencyFailures,
+  projectAssetsOntoSpec,
+  isSpecLinkedStoryboard,
+  collectSpecShots,
+} from "./productionExecutionBridge";
+export type {
+  ProductionExecutionBridgeParams,
+  ProductionExecutionBridgeResult,
+  BridgeLogEvent,
+  BridgeLogger,
+} from "./productionExecutionBridge";
