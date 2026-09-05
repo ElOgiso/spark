@@ -339,12 +339,14 @@ describe("Phase 6 — capability resolution", () => {
   });
 
   it("falls back when preferred provider misses hard capability", () => {
-    const { shot, scene, panel, routing, cvc, lvc, pvc, treatment } = fixtures();
+    const { scene, panel, routing, cvc, lvc, pvc, treatment } = fixtures();
+    // multi_reference requires multi_reference (non-critical) — runway lacks it, kling has it
+    const shot = makeShot({ generationStrategy: "multi_reference" });
     const intent = buildGenerationIntent({
       productionId: project.id,
       scene,
       shot,
-      panel,
+      panel: { ...panel, shotId: shot.id },
       treatment,
       characters: [cvc],
       location: lvc,
@@ -354,49 +356,34 @@ describe("Phase 6 — capability resolution", () => {
       intent,
       shot,
       routing,
-      availableProviderIds: ["runway", "seedance", "kling"],
+      availableProviderIds: ["runway", "kling", "seedance"],
       preferredProviderId: "runway",
     });
-    // runway lacks first_frame_conditioning required by image_to_video strategy
     assert.equal(resolution.ok, true);
     assert.notEqual(resolution.providerId, "runway");
     assert.equal(resolution.degradation.action, "fallback_provider");
   });
 
   it("explicitly degrades soft preferences", () => {
-    const { shot, scene, panel, routing } = fixtures();
+    const { scene, panel, routing } = fixtures();
+    const softShot = makeShot({
+      generationStrategy: "text_to_video",
+      characterIds: [],
+      propIds: [],
+      assetIds: [],
+      dialogue: undefined,
+      continuityRequirements: [],
+    });
     const intent = buildGenerationIntent({
       productionId: project.id,
       scene,
-      shot,
-      panel,
+      shot: softShot,
+      panel: { ...panel, shotId: softShot.id },
       qualityMode: "high_quality",
     });
-    // Force soft high_resolution against a provider that lacks it
-    const resolution = resolveGenerationCapabilities({
-      intent,
-      shot,
-      routing,
-      availableProviderIds: ["runway"],
-      preferredProviderId: "runway",
-    });
-    // runway may fail hard (first_frame) — if so, block/fallback; otherwise soft drop
-    if (resolution.ok && resolution.providerId === "runway") {
-      assert.equal(resolution.degradation.action, "drop_soft_preference");
-      assert.ok(resolution.degradation.droppedSoftPreferences.length >= 1);
-    } else {
-      // With only runway available and hard first_frame missing → unsupported block
-      assert.equal(resolution.ok, false);
-      assert.ok(
-        resolution.degradation.action === "block" ||
-          resolution.degradation.action === "fallback_provider"
-      );
-    }
-
-    // Explicit soft-only degradation: craft intent where hard is satisfied
     const softIntent: GenerationIntent = {
       ...intent,
-      capabilityRequirements: ["image_to_video", "motion_quality"],
+      capabilityRequirements: ["text_to_video", "motion_quality"],
       hardConstraints: intent.hardConstraints.filter((c) => !c.capability),
       softPreferences: [
         {
@@ -408,9 +395,6 @@ describe("Phase 6 — capability resolution", () => {
         },
       ],
     };
-    // Use a shot strategy that runway can satisfy: text_to_video
-    const softShot = makeShot({ generationStrategy: "text_to_video" });
-    softIntent.strategy = { modality: "text_to_video" };
     const softRes = resolveGenerationCapabilities({
       intent: softIntent,
       shot: softShot,
