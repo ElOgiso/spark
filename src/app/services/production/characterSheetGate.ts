@@ -1,6 +1,11 @@
 import type { Brand, Character, Production, ProductionBrief } from "../../domain/types";
+import type { ProductionAssetRegistry } from "./assets/registry";
+import { hasValidCharacterIdentityAnchor as identityAnchorFromAssets } from "./assets/characterIdentity";
+import { hasValidCharacterSheet } from "./characterSheetValidation";
 
 export type EffectiveContentFormat = "faceless" | "host" | "story" | "anime";
+
+export { hasValidCharacterSheet };
 
 /**
  * Determines the effective content format for the production:
@@ -111,75 +116,32 @@ export function getEffectiveContentFormat(params: {
 }
 
 /**
- * Validates whether the character has a real, usable character sheet URL.
- * - HTTP(S), data:image, or blob URL counts as valid.
- * - Empty initials or missing URL = no sheet.
- * - Portrait (imageUrl or avatarUrl) is accepted as a weak sheet (logs "weak sheet — prefer turnaround").
+ * Phase 4 identity anchor — thin wrapper over assets/characterIdentity.
+ * Prefer registry canonical/approved character refs when registry is provided;
+ * otherwise fall back to URL sheet validation.
  */
-export function hasValidCharacterSheet(character?: Partial<Character> | null): {
-  hasSheet: boolean;
+export function hasValidCharacterIdentityAnchor(params: {
+  character?: Partial<Character> | null;
+  registry?: ProductionAssetRegistry;
+  productionId?: string;
+  entityId?: string;
+}): {
+  valid: boolean;
+  reason?: string;
+  assetId?: string;
+  isWeak?: boolean;
+  authority?: string;
   sheetUrl?: string;
-  isWeak: boolean;
 } {
-  if (!character) return { hasSheet: false, isWeak: false };
-
-  const isHttpOrData = (url?: string | null): boolean => {
-    if (!url || typeof url !== "string") return false;
-    const clean = url.trim();
-    if (!clean) return false;
-    if (
-      clean.startsWith("initials://") ||
-      clean.startsWith("avatar://") ||
-      clean === "null" ||
-      clean === "undefined"
-    ) {
-      return false;
-    }
-    return (
-      clean.startsWith("http://") ||
-      clean.startsWith("https://") ||
-      clean.startsWith("data:image/") ||
-      clean.startsWith("blob:")
-    );
-  };
-
-  // 1. Direct character sheet
-  const directSheet = character.characterSheetUrl;
-  if (isHttpOrData(directSheet)) {
-    return { hasSheet: true, sheetUrl: directSheet!, isWeak: false };
-  }
-
-  // 2. Sheet image URLs array
-  const sheetList = (character as any).sheet_image_urls;
-  if (Array.isArray(sheetList)) {
-    for (const u of sheetList) {
-      if (isHttpOrData(u)) {
-        return { hasSheet: true, sheetUrl: u, isWeak: false };
-      }
-    }
-  }
-
-  // 3. Portrait image (weak sheet)
-  const imgUrl = character.imageUrl;
-  if (isHttpOrData(imgUrl)) {
-    console.log("[CharacterSheetGate] weak sheet — prefer turnaround:", imgUrl);
-    return { hasSheet: true, sheetUrl: imgUrl!, isWeak: true };
-  }
-
-  // 4. Avatar URL (weak sheet)
-  const avatarUrl = character.avatarUrl;
-  if (isHttpOrData(avatarUrl)) {
-    console.log("[CharacterSheetGate] weak sheet — prefer turnaround:", avatarUrl);
-    return { hasSheet: true, sheetUrl: avatarUrl!, isWeak: true };
-  }
-
-  return { hasSheet: false, isWeak: false };
+  return identityAnchorFromAssets(params);
 }
 
 /**
  * Gate check before starting asset generation.
  * - faceless: sheet optional, generate proceeds.
- * - host | story | anime: requires a real character sheet URL. If missing, returns allowed: false with reason.
+ * - host | story | anime: requires a real character identity anchor (registry) or sheet URL.
+ * Optional registry/productionId/entityId enable Phase 4 identity-anchor checks;
+ * URL fallback remains for backward compatibility.
  */
 export function canStartAssetGeneration(params: {
   production?: Partial<Production> | null;
@@ -187,6 +149,9 @@ export function canStartAssetGeneration(params: {
   brand?: Partial<Brand> | null;
   character?: Partial<Character> | null;
   formatSettings?: any;
+  registry?: ProductionAssetRegistry;
+  productionId?: string;
+  entityId?: string;
 }): { allowed: boolean; reason?: string; contentFormat: EffectiveContentFormat } {
   const contentFormat = getEffectiveContentFormat(params);
 
@@ -195,7 +160,24 @@ export function canStartAssetGeneration(params: {
     return { allowed: true, contentFormat };
   }
 
-  // host | story | anime: character sheet is required
+  // host | story | anime: identity anchor or character sheet required
+  if (params.registry && (params.productionId || params.production?.id)) {
+    const anchor = hasValidCharacterIdentityAnchor({
+      character: params.character,
+      registry: params.registry,
+      productionId: params.productionId || params.production?.id,
+      entityId: params.entityId || params.character?.id,
+    });
+    if (!anchor.valid) {
+      return {
+        allowed: false,
+        reason: anchor.reason || "Add a character sheet in My Spark or Onboard first.",
+        contentFormat,
+      };
+    }
+    return { allowed: true, contentFormat };
+  }
+
   const { hasSheet } = hasValidCharacterSheet(params.character);
   if (!hasSheet) {
     return {
