@@ -22,16 +22,16 @@ Authoritative planning types (unchanged, reused):
 
 | Layer | Type | Location |
 |-------|------|----------|
-| Production | `ProductionSpec` | `specification/productionSpec.ts` |
-| Scene | `SceneSpec` | `specification/sceneSpec.ts` |
-| Shot | `ShotSpec` | `specification/shotSpec.ts` |
-| Work unit | `GenerationTask` | `specification/generationTask.ts` |
+| Production | `ProductionSpec` | `src/app/services/production/specification/productionSpec.ts` |
+| Scene | `SceneSpec` | `src/app/services/production/specification/sceneSpec.ts` |
+| Shot | `ShotSpec` | `src/app/services/production/specification/shotSpec.ts` |
+| Work unit | `GenerationTask` | `src/app/services/production/specification/generationTask.ts` |
 
 Adapters reused (not duplicated):
 
 - `legacyProductionToSpec` — rebuild Spec when missing
 - `productionSpecToBrief` — Spec → legacy `ProductionBrief`
-- `sceneSpecToProductionScene` — Scene/Shot → Review-compatible `ProductionScene` (now stamps `sceneId` / `shotId`)
+- `sceneSpecToProductionScene` — Scene/Shot → Review-compatible `ProductionScene` (stamps `sceneId` / `shotId`)
 
 ## B. Execution
 
@@ -45,7 +45,7 @@ UI / SparkContext
        │     → executeProductionViaAssetBridge  ← Phase 2 live spine
        │           → resolveProductionSpec
        │           → ensureGenerationTasks
-       │           → buildSpecDrivenBrief (one storyboard panel per ShotSpec, shotId stamped)
+       │           → buildSpecDrivenBrief (one storyboard panel per ShotSpec; shotId stamped)
        │           → ProductionAssetService.generateAssets  ← existing filmmaker
        │           → projectAssetsOntoSpec (attach media to ShotSpec + task statuses)
        │           → Production.reasoning.productionSpec + generationSpine metadata
@@ -56,10 +56,23 @@ UI / SparkContext
 
 Bridge module: `src/app/services/production/execution/productionExecutionBridge.ts`
 
+Exported bridge helpers:
+
+- `executeProductionViaAssetBridge`
+- `resolveProductionSpec`
+- `buildSpecLinkedStoryboard`
+- `buildSpecDrivenBrief`
+- `ensureGenerationTasks`
+- `collectSpecShots`
+- `markShotRetry`
+- `applyTaskDependencyFailures`
+- `projectAssetsOntoSpec`
+- `isSpecLinkedStoryboard`
+
 What the bridge does **not** do:
 
 - Does not call `executeProduction` / full DAG scheduler as the UI path
-- Does not choose vendors (ModelRouter remains inside AssetService)
+- Does not choose vendors (`ModelRouter` remains inside AssetService)
 - Does not implement provider APIs, QC, editorial mastering, or a second Review UI
 - Does not regenerate storyboard structure via LLM when Spec-linked panels already carry `shotId` (unless `forceRegenerate`)
 
@@ -79,14 +92,14 @@ Shot / panel requirements
 
 ## C. Persistence
 
-Stored on existing `Production` (local persistence via `savePersistedState`; no second production DB):
+Stored on existing `Production` (local persistence via existing save path; no second production DB):
 
 | Data | Where |
 |------|--------|
 | ProductionSpec | `production.reasoning.productionSpec` |
 | Task spine snapshot | `production.reasoning.generationSpine.taskStatuses` |
 | Review media | `production.videoUrl`, `audioUrl`, `scenes[]`, `productionScenes[]`, `brief` |
-| Progress | `production.generationProgress` / brief progress (existing stages) |
+| Progress | existing generation progress fields on Production / brief |
 | Shot ↔ panel identity | `ProductionScene.shotId`, `.sceneId`, optional `.generationTaskId` |
 
 Reload reconstruction:
@@ -112,7 +125,7 @@ IDs do not change on reload when Spec was persisted.
 
 Review continues to consume existing contracts:
 
-- `ReviewItem.brief`, `videoUrl`, opening moment from storyboard
+- Review item brief / `videoUrl` / opening moment from storyboard
 - `Production.status` (`Ready for Review` / `Failed`)
 - Scene images / video URLs on `production.scenes` / `productionScenes` / brief storyboard
 
@@ -120,7 +133,7 @@ Review does **not** need to understand the DAG or GenerationTask graph yet.
 
 ## F. Provider routing
 
-ModelRouter is **not** called from the bridge.
+`ModelRouter` is **not** called from the bridge.
 
 ```
 Bridge → ProductionAssetService.generateAssets → (existing) ModelRouter / orchestrator → adapters
@@ -132,8 +145,8 @@ No ShotSpec→Kling/Veo/Grok hardcoding was added.
 
 | Condition | Result |
 |-----------|--------|
-| Master video missing | Production `Failed`; bridge logs `bridge_failed` |
-| Keyframe/video task failure | Task `failed` with `lastError`; projected onto ShotSpec |
+| Master video missing | Production `Failed`; bridge logs failure |
+| Keyframe/video task failure | Task `failed` with error; projected onto ShotSpec |
 | Dependency failed or blocked | Dependent tasks `blocked` (transitive) via `applyTaskDependencyFailures` |
 | Retry | `markShotRetry` increments attempt on **same** `ShotSpec.id` |
 
