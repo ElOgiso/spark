@@ -39,6 +39,8 @@ export interface ProviderCapabilityScorecard {
   capabilities: Partial<Record<GenerationCapability, number>>; // 0-1
   allowedDurationsSec: number[];
   maxNativeSec: number;
+  /** Mirrors PROVIDER_VIDEO_CAPABILITIES — never hard-code in cinematography/storyboard */
+  maxMultimodalReferences: number;
   notes: string;
 }
 
@@ -49,6 +51,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Google Gemini / Veo",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.gemini.allowedDurationsSec,
     maxNativeSec: 8,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.gemini.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.gemini.notes,
     capabilities: {
       text_to_video: 0.85,
@@ -68,6 +71,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "xAI Grok",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.grok.allowedDurationsSec,
     maxNativeSec: 15,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.grok.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.grok.notes,
     capabilities: {
       image_to_video: 0.86,
@@ -87,6 +91,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Kling AI",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.kling.allowedDurationsSec,
     maxNativeSec: 10,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.kling.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.kling.notes,
     capabilities: {
       image_to_video: 0.9,
@@ -105,6 +110,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Seedance",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.seedance.allowedDurationsSec,
     maxNativeSec: 15,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.seedance.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.seedance.notes,
     capabilities: {
       image_to_video: 0.88,
@@ -123,6 +129,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Runway Gen-3",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.runway.allowedDurationsSec,
     maxNativeSec: 10,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.runway.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.runway.notes,
     capabilities: {
       image_to_video: 0.84,
@@ -139,6 +146,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Luma Dream Machine",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.luma.allowedDurationsSec,
     maxNativeSec: 9,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.luma.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.luma.notes,
     capabilities: {
       image_to_video: 0.8,
@@ -155,6 +163,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "Higgsfield AI",
     allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.allowedDurationsSec,
     maxNativeSec: 8,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxMultimodalReferences,
     notes: PROVIDER_VIDEO_CAPABILITIES.higgsfield.notes,
     capabilities: {
       image_to_video: 0.78,
@@ -169,6 +178,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "OpenAI",
     allowedDurationsSec: [],
     maxNativeSec: 0,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.openai.maxMultimodalReferences,
     notes: "Stills / reasoning",
     capabilities: {
       text_to_image: 0.92,
@@ -187,6 +197,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
     displayName: "ElevenLabs",
     allowedDurationsSec: [],
     maxNativeSec: 0,
+    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.elevenlabs.maxMultimodalReferences,
     notes: "Voice",
     capabilities: {
       voice: 0.95,

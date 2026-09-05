@@ -15,6 +15,10 @@ import { compileProductionPrompts } from "./promptCompiler";
 import { attachGenerationTasksToSpec, planGenerationTasks } from "./generationPlanner";
 import type { GenerationTask } from "../specification/generationTask";
 import { buildProductionDag, type ProductionDag } from "../dag/productionDag";
+import {
+  developVisualTreatment,
+  type VisualTreatment,
+} from "../preproduction";
 
 export interface VisualPlanningOptions {
   grammar: ComposedGrammar;
@@ -22,12 +26,16 @@ export interface VisualPlanningOptions {
   availableProviderIds?: string[];
   /** Cap shots per scene (grammar density still applies within cap) */
   maxShotsPerScene?: number;
+  /** Optional: attach visual treatment enrichment (no new orchestrator) */
+  enrichVisualTreatment?: boolean;
 }
 
 export interface VisualPlanningResult {
   spec: ProductionSpec;
   generationTasks: GenerationTask[];
   dag: ProductionDag;
+  /** Optional preproduction treatment when enrichVisualTreatment is enabled */
+  visualTreatment?: VisualTreatment;
   stats: {
     sceneCount: number;
     shotCount: number;
@@ -122,10 +130,23 @@ export function applyVisualPlanningPipeline(
   const dag = buildProductionDag(next, generationTasks);
 
   const shotCount = next.scenes.reduce((n, s) => n + s.shots.length, 0);
+
+  // Optional light preproduction enrichment — does not replace cinematography/routing
+  const visualTreatment =
+    opts.enrichVisualTreatment === true
+      ? developVisualTreatment({
+          productionId: next.id,
+          creative: next.creative,
+          project: next.project,
+          visualStyle: next.visualStyle,
+        })
+      : undefined;
+
   return {
     spec: next,
     generationTasks,
     dag,
+    visualTreatment,
     stats: {
       sceneCount: next.scenes.length,
       shotCount,
