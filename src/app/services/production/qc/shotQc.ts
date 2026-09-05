@@ -21,11 +21,17 @@ import { evaluateMotion } from "./evaluators/motionEvaluator";
 import { evaluateAudio } from "./evaluators/audioEvaluator";
 import { evaluateStyle } from "./evaluators/styleEvaluator";
 import { evaluateTechnicalFromPhase4 } from "./evaluators/technicalConsumer";
+import { evaluateStructural } from "./evaluators/structuralEvaluator";
+import { evaluateHandoff } from "./evaluators/handoffEvaluator";
+import { evaluateCinematicCoverage } from "./evaluators/coverageEvaluator";
 import {
   aggregateScores,
   collectWarnings,
   deriveOverallStatus,
   defaultActionForStatus,
+  partitionFailures,
+  gateDecisionFromQc,
+  annotateFailure,
 } from "./scoring";
 import { thresholdsForQualityTarget } from "./thresholds";
 import { userFacingFailureSummary, userFacingQcAction } from "./userMessages";
@@ -56,6 +62,7 @@ export async function evaluateShotQc(params: {
   spec: ProductionSpec;
   shot: ShotSpec;
   previousShot?: ShotSpec;
+  nextShot?: ShotSpec;
   mediaType?: "image" | "video" | "audio";
   sourceUrl?: string;
   assetId?: string;
@@ -69,6 +76,9 @@ export async function evaluateShotQc(params: {
   const analyzer = params.visualAnalysis || createStructuralVisualAnalyzer();
   const mediaType = params.mediaType || (params.shot.keyframeUrl && !params.shot.mediaUrl ? "image" : "video");
   const bridge = params.spec.continuity.shotBridges.find((b) => b.shotId === params.shot.id);
+  const nextBridge = params.nextShot
+    ? params.spec.continuity.shotBridges.find((b) => b.shotId === params.nextShot!.id)
+    : undefined;
 
   const analysis =
     mediaType === "image"
@@ -97,7 +107,16 @@ export async function evaluateShotQc(params: {
   const useful = hasUsefulObservation(observed);
   const intentional = isIntentionalContinuityChange(params.shot, params.previousShot);
 
+    const structural = evaluateStructural({
+    shot: params.shot,
+    technical: params.technical,
+    sourceUrl: params.sourceUrl,
+    mediaType,
+    observed,
+  });
+
   const parts = [
+    structural,
     evaluateIntent({ shot: params.shot, observed, hasObservation: useful }),
     evaluateIdentity({
       shot: params.shot,
@@ -113,7 +132,17 @@ export async function evaluateShotQc(params: {
       hasObservation: useful,
       intentionalChange: intentional,
     }),
+    evaluateHandoff({
+      shot: params.shot,
+      nextShot: params.nextShot,
+      bridge,
+      nextBridge,
+      observed,
+      hasObservation: useful,
+      frames: params.frames,
+    }),
     evaluateCinematography({ shot: params.shot, observed, hasObservation: useful }),
+    evaluateCinematicCoverage({ shot: params.shot, observed, hasObservation: useful }),
     evaluateMotion({ shot: params.shot, observed, hasObservation: useful, mediaType }),
     evaluateAudio({
       spec: params.spec,
@@ -127,12 +156,14 @@ export async function evaluateShotQc(params: {
   ];
 
   const dimensions: QCDimensionResult[] = parts.map((p) => p.dimension);
-  const failures: QCFailure[] = parts.flatMap((p) => p.failures);
+  const failures: QCFailure[] = parts.flatMap((p) => p.failures).map(annotateFailure);
+  const { hardFailures, softFailures, hardFailurePresent } = partitionFailures(failures);
   const scores = aggregateScores(dimensions);
   const warnings = collectWarnings(dimensions);
   const thresholds = thresholdsForQualityTarget(params.spec.quality.target);
   const status = deriveOverallStatus({ scores, dimensions, failures, thresholds });
   const recommendedAction = defaultActionForStatus(status, failures);
+  const gateDecision = gateDecisionFromQc({ status, failures, hardFailurePresent });
   const providerChange =
     recommendedAction === "reroute_provider" || recommendedAction === "reroute";
 
@@ -151,6 +182,10 @@ export async function evaluateShotQc(params: {
     failures,
     warnings,
     recommendedAction,
+    hardFailures,
+    softFailures,
+    hardFailurePresent,
+    gateDecision,
     remediation:
       status === "pass"
         ? "continue"

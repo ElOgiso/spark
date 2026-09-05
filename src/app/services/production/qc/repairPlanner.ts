@@ -15,7 +15,15 @@ import type {
   QCFailure,
 } from "./types";
 import { canChangeProvider, canRetryQc } from "./budgets";
-import { prefersProviderChange, prefersReferenceStrengthening } from "./failureTaxonomy";
+import {
+  prefersProviderChange,
+  prefersReferenceStrengthening,
+  inferRootCause,
+  suggestedRepairStrategy,
+  failureSeverity,
+} from "./failureTaxonomy";
+import { planDownstreamRevalidation } from "./dagFeedback";
+import type { QcRepairScope, QcRepairStrategy, QcRootCause } from "./types";
 
 function mapActionToRemediation(action: QcRecommendedAction): QcRemediation | "continue" | "manual_review" {
   switch (action) {
@@ -50,8 +58,12 @@ export function planRepairFromQc(params: {
   shot?: ShotSpec;
   budget: QcBudgetState;
   forceManualReview?: boolean;
+  attempt?: number;
+  maxAttempts?: number;
 }): RepairDecision {
   const { qc, spec, shot, budget, forceManualReview } = params;
+  const attempt = params.attempt ?? budget.qcRetries + 1;
+  const maxAttempts = params.maxAttempts ?? budget.maxQcRetries;
 
   if (qc.recommendedAction === "accept" || qc.status === "pass") {
     return {
@@ -65,6 +77,16 @@ export function planRepairFromQc(params: {
       preserveShotIds: spec.scenes.flatMap((s) => s.shots.map((sh) => sh.id)),
       reason: "QC passed",
       withinBudget: true,
+      ...buildPhase9RepairMeta({
+        qc,
+        spec,
+        shotId: shot?.id,
+        attempt,
+        maxAttempts,
+        escalate: false,
+      }),
+      escalate: false,
+      scope: "candidate",
     };
   }
 
@@ -80,6 +102,16 @@ export function planRepairFromQc(params: {
       preserveShotIds: spec.scenes.flatMap((s) => s.shots.map((sh) => sh.id)),
       reason: forceManualReview ? "automation requires manual review" : "QC regeneration budget exhausted",
       withinBudget: false,
+      ...buildPhase9RepairMeta({
+        qc,
+        spec,
+        shotId: shot?.id,
+        attempt,
+        maxAttempts,
+        escalate: true,
+      }),
+      escalate: true,
+      strategy: "escalate_human_review",
     };
   }
 
@@ -161,6 +193,14 @@ export function planRepairFromQc(params: {
     regenerateTaskIds: partial?.regenerateTaskIds || [],
     preserveShotIds: partial?.preserveShotIds || [],
     reason: `QC ${qc.status}: ${failureStrings.join(", ") || action}`,
+    ...buildPhase9RepairMeta({
+      qc,
+      spec,
+      shotId: shot?.id,
+      attempt,
+      maxAttempts,
+      escalate: undefined,
+    }),
     withinBudget: true,
   };
 }
@@ -175,4 +215,64 @@ function hintForFailures(failures: QCFailure[]): string | undefined {
     return "Reinforce continuity locks for location, wardrobe, and screen direction";
   }
   return undefined;
+}
+
+
+function buildPhase9RepairMeta(params: {
+  qc: ProductionQCResult;
+  spec: ProductionSpec;
+  shotId?: string;
+  attempt?: number;
+  maxAttempts?: number;
+  escalate?: boolean;
+}): {
+  scope: QcRepairScope;
+  strategy: QcRepairStrategy;
+  rootCauses: QcRootCause[];
+  revalidateShotIds: string[];
+  attempt: number;
+  maxAttempts: number;
+  escalate: boolean;
+} {
+  const failures = params.qc.failures;
+  const rootCauses = failures.slice(0, 5).map((f) => inferRootCause(f.code));
+  const primary = failures[0]?.code;
+  let strategy: QcRepairStrategy = primary ? suggestedRepairStrategy(primary) : "regenerate_same_intent";
+  let scope: QcRepairScope = "shot";
+  if (!failures.length) scope = "candidate";
+  else if (failures.some((f) => f.code === "handoff_failure" || f.code === "end_state_mismatch")) {
+    scope = "shot_and_dependents";
+  } else if (failures.some((f) => f.code === "coverage_gap" || f.code === "narrative_incoherence")) {
+    scope = "scene";
+  }
+
+  const revalidate = params.shotId
+    ? planDownstreamRevalidation({
+        spec: params.spec,
+        replacedShotId: params.shotId,
+        qc: params.qc,
+      })
+    : null;
+
+  const maxAttempts = params.maxAttempts ?? 3;
+  const attempt = params.attempt ?? 1;
+  const escalate =
+    Boolean(params.escalate) ||
+    attempt >= maxAttempts ||
+    failures.some((f) => f.code === "repair_exhausted") ||
+    failures.some((f) => failureSeverity(f.code) === "critical" && f.confidence < 0.55);
+
+  if (escalate) {
+    strategy = "escalate_human_review";
+  }
+
+  return {
+    scope,
+    strategy,
+    rootCauses,
+    revalidateShotIds: revalidate?.revalidateShotIds || [],
+    attempt,
+    maxAttempts,
+    escalate,
+  };
 }

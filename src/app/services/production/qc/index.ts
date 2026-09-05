@@ -72,3 +72,29 @@ export {
   type QcRepairLoopResult,
   type RunProductionQcOptions,
 } from "./qcOrchestrator";
+
+
+
+export { rankCandidates, selectBestValidCandidate } from "./candidateRanking";
+export { planDownstreamRevalidation, continuityFeedbackFromQc } from "./dagFeedback";
+export {
+  failureSeverity,
+  requirementStrength,
+  inferRootCause,
+  suggestedRepairStrategy,
+} from "./failureTaxonomy";
+export {
+  annotateFailure,
+  partitionFailures,
+  gateDecisionFromQc,
+} from "./scoring";
+export type {
+  QcSeverity,
+  QcRequirementStrength,
+  QcRepairScope,
+  QcRepairStrategy,
+  QcRootCause,
+  CandidateRankResult,
+  HandoffQcFinding,
+  DownstreamRevalidationPlan,
+} from "./types";

@@ -8,6 +8,8 @@ import type { ProductionQCResult, QCFailure, QCDimensionResult } from "./types";
 import { aggregateScores, collectWarnings, deriveOverallStatus, defaultActionForStatus } from "./scoring";
 import { thresholdsForQualityTarget } from "./thresholds";
 import { userFacingQcAction, userFacingFailureSummary } from "./userMessages";
+import { evaluateSceneCoverageCompleteness } from "./evaluators/coverageEvaluator";
+import { annotateFailure, partitionFailures, gateDecisionFromQc } from "./scoring";
 
 function newQcId(): string {
   return `qc_scene_${Math.random().toString(36).slice(2, 10)}`;
@@ -132,7 +134,10 @@ export function evaluateSceneQc(params: {
   const warnings = collectWarnings(dimensions);
   const thresholds = thresholdsForQualityTarget(spec.quality.target);
   const status = deriveOverallStatus({ scores, dimensions, failures, thresholds });
-  const recommendedAction = defaultActionForStatus(status, failures);
+  const annotatedFailures = failures.map(annotateFailure);
+  const { hardFailures, softFailures, hardFailurePresent } = partitionFailures(annotatedFailures);
+  const recommendedAction = defaultActionForStatus(status, annotatedFailures);
+  const gateDecision = gateDecisionFromQc({ status, failures: annotatedFailures, hardFailurePresent });
 
   return {
     id: newQcId(),
@@ -143,7 +148,11 @@ export function evaluateSceneQc(params: {
     score: scores.overall,
     scores,
     dimensions,
-    failures,
+    failures: annotatedFailures,
+    hardFailures,
+    softFailures,
+    hardFailurePresent,
+    gateDecision,
     warnings,
     recommendedAction:
       recommendedAction === "regenerate_shot" && failedShots.length > 1

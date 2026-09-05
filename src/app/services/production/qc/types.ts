@@ -30,7 +30,13 @@ export type QcDimensionId =
   | "motion"
   | "technical"
   | "audio"
-  | "style";
+  | "style"
+  /** Phase 9 — structural usability of the candidate asset */
+  | "structural"
+  /** Phase 9 — start/end/handoff state verification */
+  | "handoff"
+  /** Phase 9 — coverage / cinematic role completeness (scene+) */
+  | "coverage";
 
 export type QcDimensionApplicability = "applicable" | "not_applicable" | "inconclusive";
 
@@ -60,7 +66,32 @@ export type QcFailureCode =
   | "screen_direction_break"
   | "insufficient_visual_evidence"
   | "coverage_gap"
-  | "narrative_incoherence";
+  | "narrative_incoherence"
+  // Phase 9 — requirement-aware generation QA
+  | "asset_missing"
+  | "asset_unreadable"
+  | "resolution_mismatch"
+  | "orientation_mismatch"
+  | "product_mismatch"
+  | "wardrobe_mismatch"
+  | "prop_missing"
+  | "prop_state_mismatch"
+  | "eyeline_mismatch"
+  | "axis_violation"
+  | "screen_direction_violation"
+  | "blocking_mismatch"
+  | "action_mismatch"
+  | "start_state_mismatch"
+  | "end_state_mismatch"
+  | "handoff_failure"
+  | "camera_intent_mismatch"
+  | "framing_mismatch"
+  | "coverage_role_mismatch"
+  | "cinematic_purpose_mismatch"
+  | "visual_treatment_mismatch"
+  | "sync_failure"
+  | "repair_exhausted"
+  | "not_evaluated";
 
 export interface QcEvidence {
   failureCode?: QcFailureCode;
@@ -79,6 +110,10 @@ export interface QCDimensionResult {
   failureCodes: QcFailureCode[];
 }
 
+export type QcSeverity = "pass" | "warning" | "fail" | "critical" | "unknown";
+
+export type QcRequirementStrength = "hard" | "soft";
+
 export interface QCFailure {
   code: QcFailureCode;
   dimension: QcDimensionId;
@@ -86,6 +121,9 @@ export interface QCFailure {
   confidence: number;
   evidence: QcEvidence;
   retryable: boolean;
+  /** Phase 9 — hard failures cannot be outweighed by a high overall score */
+  severity?: QcSeverity;
+  requirementStrength?: QcRequirementStrength;
 }
 
 export interface QCWarning {
@@ -127,6 +165,80 @@ export interface ProductionQCResult {
     actualAnalysisCost?: number;
   };
   metadata?: Record<string, unknown>;
+  /** Phase 9 — hard requirement failures (dominate aesthetic score) */
+  hardFailures?: QCFailure[];
+  /** Phase 9 — soft deviations that may warn without rejecting */
+  softFailures?: QCFailure[];
+  /** Phase 9 — true when any hard failure is unresolved */
+  hardFailurePresent?: boolean;
+  /** Phase 9 — gate decision distinct from raw score */
+  gateDecision?: "approve" | "approve_with_warnings" | "reject" | "needs_review" | "not_evaluated";
+}
+
+export type QcRepairScope =
+  | "candidate"
+  | "shot"
+  | "shot_and_dependents"
+  | "scene"
+  | "sequence"
+  | "production";
+
+export type QcRepairStrategy =
+  | "regenerate_same_intent"
+  | "change_reference_set"
+  | "strengthen_continuity_constraints"
+  | "change_generation_strategy"
+  | "change_provider"
+  | "change_camera_intent"
+  | "change_motion_intent"
+  | "change_start_frame"
+  | "change_end_frame"
+  | "regenerate_candidates"
+  | "roll_back_to_approved_state"
+  | "escalate_human_review";
+
+export interface QcRootCause {
+  observedFailure: QcFailureCode;
+  probableCause: string;
+  confidence: number;
+  category:
+    | "reference"
+    | "prompt"
+    | "strategy"
+    | "provider"
+    | "continuity_state"
+    | "technical"
+    | "unknown";
+}
+
+export interface CandidateRankResult {
+  candidateId: string;
+  qc: ProductionQCResult;
+  aestheticScore: number;
+  hardRequirementScore: number;
+  rankScore: number;
+  eligible: boolean;
+  rejectionReasons: QcFailureCode[];
+}
+
+export interface HandoffQcFinding {
+  fromShotId: string;
+  toShotId: string;
+  status: QcResultStatus;
+  failures: QCFailure[];
+  expectedEnd?: string;
+  expectedStart?: string;
+  observedEnd?: string;
+  observedStart?: string;
+}
+
+export interface DownstreamRevalidationPlan {
+  replacedShotId: string;
+  replacedAssetVersion?: string;
+  revalidateShotIds: string[];
+  regenerateShotIds: string[];
+  blockedTaskIds: string[];
+  reason: string;
 }
 
 export interface ObservedVisualState {
@@ -163,6 +275,15 @@ export interface ObservedVisualState {
   subjectPresent?: boolean;
   continuityObserved?: Partial<ContinuityState>;
   confidence?: number;
+  /** Phase 9 — optional begin/end snapshots when temporal sampling is available */
+  beginState?: string;
+  endState?: string;
+  heldProps?: string[];
+  eyelineTarget?: string;
+  cameraSide?: string;
+  productIdentity?: string;
+  /** When a check could not run, list reasons — never invent confidence */
+  notEvaluatedReasons?: string[];
 }
 
 export interface VisualFrameSample {
@@ -202,4 +323,12 @@ export interface RepairDecision {
   preserveShotIds: string[];
   reason: string;
   withinBudget: boolean;
+  /** Phase 9 */
+  scope?: QcRepairScope;
+  strategy?: QcRepairStrategy;
+  rootCauses?: QcRootCause[];
+  revalidateShotIds?: string[];
+  attempt?: number;
+  maxAttempts?: number;
+  escalate?: boolean;
 }
