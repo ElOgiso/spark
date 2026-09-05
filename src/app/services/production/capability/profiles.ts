@@ -117,7 +117,7 @@ export const MEDIA_CAPABILITY_PROFILES: MediaCapabilityProfile[] = [
     generationModes: ["image_to_video"],
     adapterSupported: true,
     references: {
-      supportedTypes: ["image", "character", "environment", "style"],
+      supportedTypes: ["image", "character", "environment", "location", "style"],
       maxReferences: 4,
       supportsMultipleReferences: true,
       supportsTypedReferences: true,
