@@ -1,5 +1,6 @@
 /**
  * Selects provider for a shot and plans capability-compatible fallbacks.
+ * Soft preferences never override hard capability rejections from Phase 3.
  */
 
 import type { ShotSpec } from "../specification/shotSpec";
@@ -32,7 +33,7 @@ export function selectProviderForShot(
       provider: "unavailable",
       strategy: shot.generationStrategy,
       score: 0,
-      reasons: ["no_compatible_provider"],
+      reasons: ["no_compatible_provider", "NO_COMPATIBLE_CANDIDATE"],
       matchedCapabilities: [],
       missingCapabilities: required,
       fallbacks: [],
@@ -47,12 +48,21 @@ export function selectProviderForShot(
     missingCapabilities: s.missingCapabilities,
   }));
 
+  const capabilityReasons = best.capabilityReasonCodes || [];
+  const reasons = Array.from(
+    new Set([
+      ...best.reasons,
+      ...capabilityReasons,
+      ...(preferred && preferred === best.providerId ? ["PREFERRED_PROVIDER"] : []),
+    ])
+  );
+
   return {
     shotId: shot.id,
     provider: best.providerId,
     strategy: shot.generationStrategy,
     score: best.score,
-    reasons: best.reasons,
+    reasons,
     matchedCapabilities: best.matchedCapabilities,
     missingCapabilities: best.missingCapabilities,
     fallbacks,

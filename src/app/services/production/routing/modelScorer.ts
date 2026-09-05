@@ -1,6 +1,9 @@
 /**
  * Scores providers against shot requirements.
  * Returns explainable heuristic scores — not claimed objective quality.
+ *
+ * Hard capability filter (Phase 3 Media Capability Intelligence) runs before
+ * soft scorecard ranking. Preferences never resurrect hard-rejected providers.
  */
 
 import type { ShotSpec } from "../specification/shotSpec";
@@ -12,6 +15,10 @@ import {
 } from "./capabilityMatrix";
 import type { RoutingSpec } from "../specification/routingSpec";
 import { DEFAULT_ROUTING_WEIGHTS, type RoutingWeightConfig } from "./routingWeights";
+import { capabilityRequirementsFromShot } from "../capability/requirements";
+import { listProviderModelCandidates } from "../capability/registry";
+import { validateCapabilityRequirements } from "../capability/validate";
+import type { RoutingReasonCode } from "../capability/types";
 
 export interface ModelScore {
   providerId: string;
@@ -24,6 +31,8 @@ export interface ModelScore {
   unsupported: GenerationCapability[];
   disqualified: boolean;
   disqualifyReason?: string;
+  /** Phase 3 capability reason codes when hard filter applied */
+  capabilityReasonCodes?: RoutingReasonCode[];
 }
 
 export function scoreProvidersForShot(
@@ -44,8 +53,44 @@ export function scoreProvidersForShot(
     return (c.capabilities.image_to_video || 0) > 0.4 || (c.capabilities.text_to_video || 0) > 0.4;
   });
 
+  const capabilityReq = capabilityRequirementsFromShot(shot, {
+    aspectRatio: shot.aspectRatio,
+    objective: policy.preferCost ? "cost_first" : policy.preferSpeed ? "speed_first" : "balanced",
+  });
+  const candidates = listProviderModelCandidates({
+    providerIds: availableProviderIds,
+    requireAdapter: false,
+  });
+  const candidateByProvider = new Map(candidates.map((c) => [c.providerId, c]));
+
   return cards
-    .map((card) => scoreCard(card, required, policy, shot, weights))
+    .map((card) => {
+      const candidate = candidateByProvider.get(card.providerId);
+      if (candidate) {
+        const match = validateCapabilityRequirements(capabilityReq, candidate.effective);
+        if (!match.hardRequirementsSatisfied) {
+          const rejectCodes = match.reasonCodes.filter((r) => r.startsWith("REJECTED")) as RoutingReasonCode[];
+          return {
+            providerId: card.providerId,
+            displayName: card.displayName,
+            score: 0,
+            reasons: rejectCodes.length ? rejectCodes : ["NO_COMPATIBLE_CANDIDATE"],
+            matchedCapabilities: [] as GenerationCapability[],
+            missingCapabilities: required,
+            unsupported: required,
+            disqualified: true,
+            disqualifyReason: `capability_hard:${rejectCodes.join(",") || "reject"}`,
+            capabilityReasonCodes: rejectCodes,
+          } satisfies ModelScore;
+        }
+      }
+      const scored = scoreCard(card, required, policy, shot, weights);
+      if (candidate && !scored.disqualified) {
+        scored.reasons = ["CAPABILITY_MATCH", ...scored.reasons];
+        scored.capabilityReasonCodes = ["CAPABILITY_MATCH"];
+      }
+      return scored;
+    })
     .filter((s) => !s.disqualified)
     .sort((a, b) => b.score - a.score);
 }
