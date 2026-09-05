@@ -35,12 +35,24 @@ export interface ModelScore {
   capabilityReasonCodes?: RoutingReasonCode[];
 }
 
+export interface ScoreProvidersOptions {
+  /**
+   * When true (default), Phase 3 registry/adapter hard requirements disqualify
+   * providers before scorecard ranking. Planning-time capability resolution
+   * (Phase 6) should set this false so scorecards remain the planning prior —
+   * adapter presence is an execution concern, not a soft-preference gate.
+   */
+  applyRegistryHardFilter?: boolean;
+}
+
 export function scoreProvidersForShot(
   shot: ShotSpec,
   policy: RoutingSpec["capabilityPolicy"],
   availableProviderIds?: string[],
-  weights: RoutingWeightConfig = DEFAULT_ROUTING_WEIGHTS
+  weights: RoutingWeightConfig = DEFAULT_ROUTING_WEIGHTS,
+  options?: ScoreProvidersOptions
 ): ModelScore[] {
+  const applyRegistryHardFilter = options?.applyRegistryHardFilter !== false;
   const required = strategyToRequiredCapabilities(shot.generationStrategy, shot);
   const cards = PROVIDER_GENERATION_SCORECARDS.filter((c) => {
     if (availableProviderIds?.length) return availableProviderIds.includes(c.providerId);
@@ -66,7 +78,7 @@ export function scoreProvidersForShot(
   return cards
     .map((card) => {
       const candidate = candidateByProvider.get(card.providerId);
-      if (candidate) {
+      if (applyRegistryHardFilter && candidate) {
         const match = validateCapabilityRequirements(capabilityReq, candidate.effective);
         if (!match.hardRequirementsSatisfied) {
           const rejectCodes = match.reasonCodes.filter((r) => r.startsWith("REJECTED")) as RoutingReasonCode[];
@@ -85,7 +97,7 @@ export function scoreProvidersForShot(
         }
       }
       const scored = scoreCard(card, required, policy, shot, weights);
-      if (candidate && !scored.disqualified) {
+      if (applyRegistryHardFilter && candidate && !scored.disqualified) {
         scored.reasons = ["CAPABILITY_MATCH", ...scored.reasons];
         scored.capabilityReasonCodes = ["CAPABILITY_MATCH"];
       }

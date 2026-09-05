@@ -106,17 +106,32 @@ export function resolveGenerationCapabilities(params: {
     };
   }
 
-  let scores = scoreProvidersForShot(shot, routing.capabilityPolicy, params.availableProviderIds);
+  // Planning resolution uses scorecards only — Phase 3 registry/adapter hard
+  // filter is for executable routing, not soft-preference / preferred fallback planning.
+  let scores = scoreProvidersForShot(
+    shot,
+    routing.capabilityPolicy,
+    params.availableProviderIds,
+    DEFAULT_ROUTING_WEIGHTS,
+    { applyRegistryHardFilter: false }
+  );
   if (intent.candidatePolicy.preferStrongerProvider) {
     scores = [...scores].sort((a, b) => b.score - a.score);
   }
+  const preferredId =
+    params.preferredProviderId && params.preferredProviderId !== "auto"
+      ? params.preferredProviderId
+      : undefined;
   // Explicit preferred provider wins over score ordering (fallback path still available)
-  if (params.preferredProviderId && params.preferredProviderId !== "auto") {
-    const preferred = scores.find((s) => s.providerId === params.preferredProviderId);
+  if (preferredId) {
+    const preferred = scores.find((s) => s.providerId === preferredId);
     if (preferred) {
-      scores = [preferred, ...scores.filter((s) => s.providerId !== params.preferredProviderId)];
+      scores = [preferred, ...scores.filter((s) => s.providerId !== preferredId)];
     }
   }
+  const preferredPresent = preferredId
+    ? scores.some((s) => s.providerId === preferredId)
+    : true;
 
   const best = scores[0];
   if (!best) {
@@ -137,6 +152,46 @@ export function resolveGenerationCapabilities(params: {
         droppedSoftPreferences: [],
       },
       score: 0,
+    };
+  }
+
+  // Preferred was hard-filtered out of the scorecard set — pick alternate explicitly.
+  if (preferredId && !preferredPresent && best.providerId !== preferredId) {
+    const preferredHardMiss = required.filter(
+      (c) =>
+        isHardCapability(norm(c), hardCaps, fromStrategy.map(norm)) &&
+        providerLacksCapability(preferredId, norm(c))
+    );
+    const altSoft: CapabilityResolutionIssue[] = [];
+    for (const soft of intent.softPreferences) {
+      if (!soft.capability) continue;
+      const cap = norm(soft.capability);
+      if (!providerLacksCapability(best.providerId, cap)) continue;
+      altSoft.push({
+        capability: cap,
+        severity: "soft",
+        message: `Provider ${best.providerId} lacks soft preference ${cap}`,
+        constraintId: soft.id,
+      });
+    }
+    return {
+      ok: true,
+      providerId: best.providerId,
+      fallbackProviders: scores.slice(1, 4).map((s) => s.providerId),
+      matchedCapabilities: best.matchedCapabilities.map(String),
+      missingHard: [],
+      missingSoft: altSoft,
+      degradation: {
+        action: "fallback_provider",
+        reasons: [
+          preferredHardMiss.length
+            ? `preferred_missing_hard:${preferredHardMiss.map(norm).join(",")}`
+            : `preferred_unavailable:${preferredId}`,
+          `using:${best.providerId}`,
+        ],
+        droppedSoftPreferences: altSoft.map((m) => m.constraintId || m.capability),
+      },
+      score: best.score,
     };
   }
 
