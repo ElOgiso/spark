@@ -163,3 +163,32 @@ Feedback port: `CreativePerformanceFeedbackPort` / hints on `buildCreativeStrate
 Viral Sparks: soft `opportunityBoostFromLearning` only (no second opportunity engine).
 Research: market evidence kept distinct from account-specific evidence.
 
+## Visual preproduction + storyboard bridge
+
+```
+ProductionSpec / ShotSpec (canonical)
+ → VisualTreatment + character/location/product contracts
+ → ReferenceManifest (priority, conflict, budget from capability registry)
+ → StoryboardBlueprint (panel.shotId → ShotSpec; non-canonical)
+ → VideoGenerationIntent (appearance ⊥ motion) → MultimodalVideoGenerationRequest
+ → shot risk / candidate ranking / visual lock versioning
+```
+
+Module: `src/app/services/production/preproduction/`. See `docs/VISUAL_PREPRODUCTION.md`.
+ShotSpec remains the generation unit; storyboard does not replace it. Multimodal reference ceilings (e.g. Seedance ~12) live in `providerCapabilities.maxMultimodalReferences`, not in cinematography/storyboard code.
+
+## Phase 6 status (Operational Storyboard → GenerationIntent → GenerationTask)
+
+Operational bridge after visual preproduction (distinct from editorial timeline Phase 6 numbering in earlier sprints):
+
+```
+ShotSpec (+ StoryboardPanelSpec / ReferenceManifest)
+ → GenerationIntent (appearance ⊥ motion; hard/soft constraints; candidate policy)
+ → CapabilityResolution (existing scoreProvidersForShot / capability matrix)
+ → GenerationTask[] (existing DAG contract + optional trace fields)
+```
+
+Entry: `planOperationalShotGeneration` in `generation/operationalPipeline.ts`.
+Optional flag: `applyVisualPlanningPipeline(..., { enableOperationalGeneration: true })` (default OFF).
+No new orchestrator / DAG / provider agent / UI. See `docs/PHASE6_OPERATIONAL_STORYBOARD_PIPELINE.md`.
+
