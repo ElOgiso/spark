@@ -340,8 +340,13 @@ describe("Phase 6 — capability resolution", () => {
 
   it("falls back when preferred provider misses hard capability", () => {
     const { scene, panel, routing, cvc, lvc, pvc, treatment } = fixtures();
-    // multi_reference requires multi_reference (non-critical) — runway lacks it, kling has it
-    const shot = makeShot({ generationStrategy: "multi_reference" });
+    // multi_reference requires multi_reference — runway lacks it; grok has it
+    const shot = makeShot({
+      generationStrategy: "multi_reference",
+      dialogue: undefined,
+      propIds: [],
+      assetIds: [],
+    });
     const intent = buildGenerationIntent({
       productionId: project.id,
       scene,
@@ -356,7 +361,7 @@ describe("Phase 6 — capability resolution", () => {
       intent,
       shot,
       routing,
-      availableProviderIds: ["runway", "kling", "seedance"],
+      availableProviderIds: ["runway", "grok", "seedance"],
       preferredProviderId: "runway",
     });
     assert.equal(resolution.ok, true);
