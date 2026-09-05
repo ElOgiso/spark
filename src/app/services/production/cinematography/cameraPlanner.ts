@@ -11,9 +11,11 @@ export function planCameraForShot(params: {
   grammar: ComposedGrammar;
   emotionalObjective?: string;
   narrativeFunction: NarrativeFunction;
+  /** Phase 5: motivated movement from cinematic intelligence */
+  movementOverride?: CameraMovement;
 }): ShotCameraSpec {
   const { shotType, grammar, narrativeFunction, emotionalObjective } = params;
-  const movement = pickMovement(shotType, grammar, narrativeFunction);
+  const movement = params.movementOverride ?? pickMovement(shotType, grammar, narrativeFunction);
   const height = heightFor(shotType, narrativeFunction);
   const angle = angleFor(shotType, narrativeFunction, emotionalObjective);
   const lens =
