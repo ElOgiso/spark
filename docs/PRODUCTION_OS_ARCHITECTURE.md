@@ -107,6 +107,62 @@ Entry: `runProductionQcHierarchy` / `runQcWithRepairLoop` / `executeProductionWi
 Results stored on `production.reasoning.productionQc` — no QC dashboard UI.
 Intelligent QC evaluates planned ShotSpec vs observed media; not aesthetic preference.
 
+
+## Phase 9 status (Generation QA + Automated Repair)
+
+Phase 9 extends the existing QC subsystem — it does **not** introduce a second QA engine.
+
+```
+GenerationTask → Candidate(s)
+  → Structural / Technical / Identity / Continuity / Cinematic / Temporal QA
+  → Compare against ProductionSpec truth (ShotSpec + ContinuityState + GenerationIntent)
+  → PASS | WARN | FAIL | CRITICAL | UNKNOWN
+  → Failure taxonomy + root-cause hints
+  → Localized repair plan (bounded retries)
+  → Re-QA → approve | escalate
+```
+
+### Evaluation layers (existing `qc/` module)
+
+| Layer | Module | Role |
+| --- | --- | --- |
+| Structural | `evaluators/structuralEvaluator.ts` | Asset exists / readable / usable before semantic spend |
+| Technical | `evaluators/technicalConsumer.ts` | Consumes Phase 4 technical validation (duration, resolution, …) |
+| Identity / reference | `evaluators/identityEvaluator.ts` | Character / product / wardrobe identity vs contracts |
+| Continuity | `evaluators/continuityEvaluator.ts` | Wardrobe, props, location, screen direction, eyeline, axis |
+| Handoff / temporal | `evaluators/handoffEvaluator.ts` | Start/end state + shot N→N+1 handoff |
+| Cinematic intent / coverage | `evaluators/coverageEvaluator.ts` + cinematography | Purpose, framing, coverage role |
+| Motion / audio / style | existing evaluators | Soft vs hard as taxonomy dictates |
+
+Every semantic finding carries **score / confidence / evidence**. Missing vision capability returns `not_evaluated` / inconclusive — never fabricated confidence.
+
+### Scoring + gate
+
+- Composite score is summary-only.
+- Hard-requirement failures dominate aesthetic score (`hardFailures` / `hardFailurePresent` via `partitionFailures` + `gateDecisionFromQc` in `scoring.ts`).
+- Gate outcomes follow `gateDecision`: approve | approve_with_warnings | reject | needs_review | not_evaluated.
+
+### Repair
+
+- `repairPlanner.ts` chooses the smallest valid scope (`candidate` → `shot` → `shot_and_dependents` → `scene`).
+- Strategies include reference strengthening, continuity constraints, camera/motion intent, provider change, and `escalate_human_review`.
+- `automationPolicy.ts` + QC budgets bound autonomous retries; budget exhaustion escalates rather than looping forever.
+- Continuity feedback (`dagFeedback.ts`) records findings only — it does **not** silently mutate ContinuityState.
+- Downstream dependents are marked for **revalidation**, not automatic full-production regeneration.
+
+### Candidate ranking
+
+`candidateRanking.ts`: hard-requirement eligibility outranks aesthetic score (cherry-pick the best **valid** candidate).
+
+### Provider-agnostic
+
+No provider-named QC agents. Provider/model metadata is evidence only.
+
+### Deferred to Phase 10
+
+End-to-end production execution lifecycle wiring (generate → QA → repair → approve → editorial master) as a single autonomous run loop.
+
+
 ## Phase 6 status (Editorial Timeline & Mastering)
 
 ```

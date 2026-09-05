@@ -8,6 +8,24 @@ import type { ContinuityState, ShotContinuityBridge } from "../../specification/
 import type { ObservedVisualState, QCDimensionResult, QCFailure, QcEvidence } from "../types";
 import { clampScore, semanticOverlap, normalizeText } from "./helpers";
 
+
+const COLOR_TOKENS = new Set([
+  "red", "blue", "green", "yellow", "black", "white", "brown", "pink", "purple", "orange", "gray", "grey", "beige", "navy", "teal",
+]);
+
+/** True when wardrobe strings share little overlap or assert conflicting colors. */
+function wardrobeConflict(expected: string, observed: string, overlap: number): boolean {
+  if (overlap <= 0.25) return true;
+  const a = new Set(expected.toLowerCase().split(/\W+/).filter(Boolean));
+  const b = new Set(observed.toLowerCase().split(/\W+/).filter(Boolean));
+  const aColors = [...a].filter((t) => COLOR_TOKENS.has(t));
+  const bColors = [...b].filter((t) => COLOR_TOKENS.has(t));
+  if (aColors.length && bColors.length && !aColors.some((c) => bColors.includes(c))) {
+    return true;
+  }
+  return false;
+}
+
 export function evaluateContinuity(params: {
   shot: ShotSpec;
   previousShot?: ShotSpec;
@@ -91,9 +109,29 @@ export function evaluateContinuity(params: {
 
   const expWardrobe = expected?.wardrobe.clothing;
   const obsWardrobe = observed.identity?.clothing || observed.continuityObserved?.wardrobe?.clothing;
-  if (expWardrobe && obsWardrobe && semanticOverlap(expWardrobe, obsWardrobe) < 0.25) {
-    score -= 22;
-    pushFail("wardrobe_drift", "Wardrobe continuity broken", expWardrobe, obsWardrobe);
+  if (expWardrobe && obsWardrobe) {
+    const wardrobeOverlap = semanticOverlap(expWardrobe, obsWardrobe);
+    if (wardrobeConflict(expWardrobe, obsWardrobe, wardrobeOverlap)) {
+      score -= 22;
+      // Prefer structured wardrobe_mismatch (Phase 9) over legacy wardrobe_drift
+      const ev: QcEvidence = {
+        failureCode: "wardrobe_mismatch",
+        expected: expWardrobe,
+        observed: obsWardrobe,
+        confidence: conf,
+      };
+      evidence.push(ev);
+      failures.push({
+        code: "wardrobe_mismatch",
+        dimension: "continuity",
+        message: "Wardrobe does not match expected continuity wardrobe",
+        confidence: conf,
+        evidence: ev,
+        retryable: true,
+        severity: "fail",
+        requirementStrength: "hard",
+      });
+    }
   }
 
   const expLight = expected?.lighting.color || previousShot?.lighting.color;
@@ -128,6 +166,64 @@ export function evaluateContinuity(params: {
   if (expPos && obsPos && semanticOverlap(expPos, obsPos) < 0.25) {
     score -= 18;
     pushFail("spatial_continuity_break", "Spatial geography continuity broken", expPos, obsPos);
+  }
+
+
+  // Phase 9 — eyeline / axis (structured codes)
+  const expEye = (expected as { eyeline?: string } | undefined)?.eyeline || expected?.spatial?.cameraRelationship;
+  const obsEye = observed.eyelineTarget;
+  if (expEye && obsEye && semanticOverlap(expEye, obsEye) < 0.3) {
+    score -= 18;
+    const ev: QcEvidence = {
+      failureCode: "eyeline_mismatch",
+      expected: expEye,
+      observed: obsEye,
+      confidence: conf,
+    };
+    evidence.push(ev);
+    failures.push({
+      code: "eyeline_mismatch",
+      dimension: "continuity",
+      message: "Eyeline does not match expected gaze relationship",
+      confidence: conf,
+      evidence: ev,
+      retryable: true,
+      severity: "fail",
+      requirementStrength: "hard",
+    });
+  }
+
+  const expSide = expected?.spatial?.cameraRelationship;
+  const obsSide = observed.cameraSide;
+  const intentionalAxis = /axis.?break|cross.?axis|intentional/i.test(
+    `${shot.purpose} ${shot.productionReason} ${(shot as { transitionNotes?: string }).transitionNotes || ""}`
+  );
+  if (expSide && obsSide && semanticOverlap(expSide, obsSide) < 0.3 && !intentionalAxis) {
+    score -= 20;
+    const ev: QcEvidence = {
+      failureCode: "axis_violation",
+      expected: expSide,
+      observed: obsSide,
+      confidence: conf,
+      note: "unintentional axis/side change",
+    };
+    evidence.push(ev);
+    failures.push({
+      code: "axis_violation",
+      dimension: "continuity",
+      message: "Camera side appears to violate established spatial axis",
+      confidence: conf,
+      evidence: ev,
+      retryable: true,
+      severity: "fail",
+      requirementStrength: "hard",
+    });
+  } else if (expSide && obsSide && intentionalAxis) {
+    evidence.push({
+      expected: "intentional axis break allowed",
+      observed: obsSide,
+      confidence: 0.85,
+    });
   }
 
   if (!failures.length) {
