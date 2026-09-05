@@ -183,6 +183,8 @@ export function sceneSpecToProductionScene(scene: SceneSpec): ProductionScene {
     scene: scene.index,
     index: scene.index,
     id: scene.id,
+    sceneId: scene.id,
+    shotId: primary?.id,
     duration: `${scene.durationSec}s`,
     durationSec: scene.durationSec,
     shotList: primary?.camera.shotType || "medium",
