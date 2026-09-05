@@ -196,6 +196,22 @@ Phase 7 owns: executive creative decisions, explainability metadata, complexity 
 Phase 7 does NOT own: providers, FFmpeg, NLE UI, publishing, analytics dashboards, auth, onboarding redesign.
 No duplicate orchestrator — extends `createProductionPlan` / `directCreativeIntent`.
 
+## Continuity State & Propagation (SPARK prompt Phase 7)
+
+Separate from Creative Director above. Extends the existing continuity engine — does not replace it.
+
+```
+ProductionSpec / ShotSpec
+ → ContinuityState (expected)
+ → ContinuityDelta (deterministic)
+ → Constraints + Conflicts + Risk
+ → ContinuityGenerationHandoff → GenerationIntent
+```
+
+See `docs/CONTINUITY_STATE_PROPAGATION.md` for ContinuityState, delta, locks, versioning,
+scope inheritance, impact analysis, and Phase 6 handoff. Pixel verification remains Phase 9;
+execution DAG scheduling remains Phase 8.
+
 ## Phase 8 status (Performance Learning & Adaptive Content Intelligence)
 
 ```
