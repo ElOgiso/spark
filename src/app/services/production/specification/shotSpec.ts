@@ -2,6 +2,7 @@
  * Shot-level canonical specification — fundamental unit of visual generation.
  */
 
+import type { ShotFilmmakingGuidance } from "../knowledge/types";
 import type { GenerationStrategySpec } from "./generationStrategy";
 import type { GenerationTask } from "./generationTask";
 
@@ -155,11 +156,15 @@ export interface ShotSpec {
   mediaUrl?: string;
   keyframeUrl?: string;
   lastFrameUrl?: string;
+  /** Attached by filmmaking knowledge runtime */
+  filmmakingGuidance?: ShotFilmmakingGuidance;
   observability?: {
     productionId?: string;
     promptCompilerVersion?: string;
     generationDurationMs?: number;
     costCredits?: number;
     qcScore?: number;
+    filmmakingSkillIds?: string[];
+    filmmakingSkillVersions?: Record<string, string>;
   };
 }

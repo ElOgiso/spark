@@ -26,6 +26,7 @@ import {
 } from "../preproduction";
 import { planOperationalShotGeneration } from "./operationalPipeline";
 import type { GenerationQualityMode } from "./generationIntent";
+import { applyFilmmakingSkillsToProduction } from "../knowledge";
 
 export interface VisualPlanningOptions {
   grammar: ComposedGrammar;
@@ -143,7 +144,10 @@ export function applyVisualPlanningPipeline(
   // 4) Capability-based routing (no media calls)
   next = routeProductionShots(next, opts.availableProviderIds);
 
-  // 5) Prompt compilation
+  // 5) Filmmaking knowledge/skills — structured guidance for prompt compilation (no generation)
+  next = applyFilmmakingSkillsToProduction(next);
+
+  // 6) Prompt compilation (consumes filmmakingGuidance when present)
   next = compileProductionPrompts(next);
 
   // 6) Generation task graph + attach to shots
@@ -206,7 +210,6 @@ export function applyVisualPlanningPipeline(
       }
     }
   }
-
   next = attachGenerationTasksToSpec(next, generationTasks);
   const dag = buildProductionDag(next, generationTasks);
 

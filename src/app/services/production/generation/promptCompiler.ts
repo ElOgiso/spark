@@ -163,21 +163,45 @@ function compileProviderPrompt(
     .filter(Boolean)
     .join("\n");
 
-  let prompt = base;
+  const guidance = shot.filmmakingGuidance;
+  let withSkills = base;
+  if (guidance) {
+    const skillLines: string[] = [];
+    if (guidance.constraints.length) {
+      skillLines.push(`FILMMAKING CONSTRAINTS: ${guidance.constraints.slice(0, 8).join(" | ")}`);
+    }
+    if (guidance.recommendations.length) {
+      skillLines.push(`FILMMAKING GUIDANCE: ${guidance.recommendations.slice(0, 6).join(" | ")}`);
+    }
+    const pc = guidance.promptContext || {};
+    for (const key of Object.keys(pc).slice(0, 8)) {
+      const val = pc[key];
+      const text = Array.isArray(val) ? val.join("; ") : String(val);
+      if (text.trim()) skillLines.push(`SKILL CONTEXT (${key}): ${text}`);
+    }
+    if (guidance.warnings.length) {
+      skillLines.push(`FILMMAKING WARNINGS: ${guidance.warnings.slice(0, 4).join(" | ")}`);
+    }
+    if (skillLines.length) {
+      withSkills = `${base}\n${skillLines.join("\n")}`;
+    }
+  }
+
+  let prompt = withSkills;
   if (provider === "kling" || provider === "seedance") {
-    prompt = `${base}\nCONDITIONING: Prefer first-frame (and last-frame when supplied) continuity. Single primary action only.`;
+    prompt = `${withSkills}\nCONDITIONING: Prefer first-frame (and last-frame when supplied) continuity. Single primary action only.`;
   } else if (provider === "grok") {
-    prompt = `${base}\nCONDITIONING: Start-frame locked; maintain face references; audio-capable motion.`;
+    prompt = `${withSkills}\nCONDITIONING: Start-frame locked; maintain face references; audio-capable motion.`;
   } else if (provider === "runway") {
-    prompt = `${base}\nCAMERA CONTROL: Emphasize explicit camera move; single coherent motion path.`;
+    prompt = `${withSkills}\nCAMERA CONTROL: Emphasize explicit camera move; single coherent motion path.`;
   } else if (provider === "luma") {
-    prompt = `${base}\nCONDITIONING: First-frame continuity; natural motion only.`;
+    prompt = `${withSkills}\nCONDITIONING: First-frame continuity; natural motion only.`;
   } else if (provider === "higgsfield") {
-    prompt = `${base}\nCONDITIONING: Stylized motion consistent with visual language; no identity drift.`;
+    prompt = `${withSkills}\nCONDITIONING: Stylized motion consistent with visual language; no identity drift.`;
   } else if (strategy === "slideshow_still" || strategy === "text_to_image") {
-    prompt = `${base}\nSTILL: Single decisive frame; no burned-in text; identity locked to references.`;
+    prompt = `${withSkills}\nSTILL: Single decisive frame; no burned-in text; identity locked to references.`;
   } else if (provider === "gemini") {
-    prompt = `${base}\nCONDITIONING: First-frame aware motion; keep wardrobe and set locked.`;
+    prompt = `${withSkills}\nCONDITIONING: First-frame aware motion; keep wardrobe and set locked.`;
   }
 
   return stripFiller(prompt);
@@ -224,6 +248,8 @@ export function compileProductionPrompts(spec: ProductionSpec): ProductionSpec {
           ...(shot.observability || {}),
           productionId: spec.project.id,
           promptCompilerVersion: COMPILER_VERSION,
+          filmmakingSkillIds: shot.filmmakingGuidance?.skillIds,
+          filmmakingSkillVersions: shot.filmmakingGuidance?.skillVersions,
         },
       };
     }),
