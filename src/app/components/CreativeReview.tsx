@@ -185,15 +185,26 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const handleRequestEdit = () => {
-    rejectOrRequestEditReviewItem(reviewId);
+    const note = window.prompt(
+      "Describe the edit needed (shot/scene, reason, requested change):",
+      ""
+    );
+    if (note === null) return; // cancelled
+    const trimmed = String(note || "").trim();
+    if (!trimmed) {
+      window.alert("An edit note is required so regeneration can act on it.");
+      return;
+    }
+    rejectOrRequestEditReviewItem(reviewId, trimmed);
     setActionSuccess("Needs Edit");
     NotificationService.addNotification({
       title: "Revision Requested",
-      description: `"${proposal.title}" opened in Production Assets for image and scene corrections.`,
+      description: `"${proposal.title}" needs edit: ${trimmed.slice(0, 140)}`,
       type: "brand_rule_conflict",
       priority: "high",
       actionLabel: "Open Production Assets",
-      relatedRoute: "/review"
+      relatedRoute: "/review",
+      metadata: { editNote: trimmed, reviewId },
     });
     setShowAssetsGallery(true);
   };
@@ -222,12 +233,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
   const handleExport = () => {
     setExporting(true);
-    setActionSuccess("Exporting...");
+    setActionSuccess("Export unavailable — no export package connector is configured.");
     setTimeout(() => {
       setExporting(false);
-      setActionSuccess("Exported");
       setTimeout(() => setActionSuccess(null), 3500);
-    }, 1800);
+    }, 600);
   };
 
   const handleDeleteProduction = () => {
@@ -266,7 +276,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     aiConfidence: brief?.brandFitScore || 94,
     concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText, "Reveal proven viral tactics adapted to brand identity"),
     targetAudience: asText(activeProd?.reasoning?.research?.audience, "Target Audience & Brand Followers"),
-    expectedReach: "2.4M – 3.8M views",
+    expectedReach: "UNKNOWN",
     format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)})`,
     platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
     hook: asText(brief?.hook || activeReview?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
@@ -796,7 +806,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 ],
                 confidence: "Very High",
                 confidencePercent: proposal.aiConfidence,
-                expectedOutcome: "High reach (2.4M – 3.8M views) with 60%+ average audience retention across connected channels.",
+                expectedOutcome: "Reach UNKNOWN — live analytics connector not configured.",
                 risk: "Low",
                 nextBestAction: "Approve and Publish Production",
                 brandRules: ["Brand Voice Pillar 2: Professional", "Creator Authority Rules"]
@@ -973,7 +983,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 : actionSuccess === "Exporting..."
                 ? "Compiling production sequence, voice narrative, and subtitles to 4K Master Zip..."
                 : actionSuccess === "Exported"
-                ? "Success! Export package compiled and downloaded (45.0 MB Zip Archive)."
+                ? "Export unavailable — no export package connector is configured."
                 : actionSuccess}
             </div>
           )}

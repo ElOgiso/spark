@@ -316,12 +316,22 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   };
 
   // Privacy preferences
-  const [privacySettings, setPrivacySettings] = useState({
-    dataRetentionMonths: 12,
-    shareTelemetry: false,
-    anonymizeAudienceData: true,
-    restrictAITraining: true
+  const [privacySettings, setPrivacySettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem("spark-privacy-settings");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      dataRetentionMonths: 12,
+      shareTelemetry: false,
+      anonymizeAudienceData: true,
+      restrictAITraining: true
+    };
   });
+
+  useEffect(() => {
+    localStorage.setItem("spark-privacy-settings", JSON.stringify(privacySettings));
+  }, [privacySettings]);
 
   const handleCopy = (key: string) => {
     navigator.clipboard.writeText(key);
@@ -331,6 +341,9 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
   const handleCreateKey = (e: React.FormEvent) => {
     e.preventDefault();
+    window.alert("API key create/revoke is unavailable — no secrets connector is configured.");
+    return;
+    // unreachable stub retained for UI structure
     if (!newKeyName.trim()) return;
     const randomHex = Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
     const newKey = {
@@ -395,6 +408,9 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
   const handleInvite = (e: React.FormEvent) => {
     e.preventDefault();
+    setInviteSent(false);
+    window.alert("Team invitations are unavailable — no invite connector is configured.");
+    return;
     if (!inviteName.trim() || !inviteEmail.trim()) return;
     const newMember = {
       id: Date.now().toString(),
@@ -812,10 +828,33 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           <button
                             onClick={() => {
                               const id = asset.id;
-                              setAssets(assets.filter(a => a.id !== id));
-                              void import("../backend/repositories/productionAssetRepository").then(({ safeDeleteProductionAsset }) => {
-                                void safeDeleteProductionAsset(id);
-                              }).catch(() => {});
+                              const referenceIds = (productions || []).flatMap((p: any) => {
+                                const refs: string[] = [];
+                                if (p?.masterAssetId) refs.push(p.masterAssetId);
+                                if (p?.selectedCandidateId) refs.push(p.selectedCandidateId);
+                                if (p?.continuitySourceAssetId) refs.push(p.continuitySourceAssetId);
+                                for (const s of p?.scenes || p?.productionScenes || []) {
+                                  if (s?.assetId) refs.push(s.assetId);
+                                  if (s?.videoAssetId) refs.push(s.videoAssetId);
+                                  if (s?.selectedCandidateId) refs.push(s.selectedCandidateId);
+                                }
+                                return refs;
+                              });
+                              void import("../backend/workspaceSync").then(async ({ deleteBrandStorageAsset }) => {
+                                const brandId = auth.brand?.id || "";
+                                const result = await deleteBrandStorageAsset(brandId, id, { referenceIds });
+                                if (!result.ok && result.mode === "blocked") {
+                                  window.alert(result.reason || "Asset is referenced by production lineage and was not deleted.");
+                                  return;
+                                }
+                                if (!result.ok) {
+                                  window.alert(result.reason || "Delete failed — asset kept.");
+                                  return;
+                                }
+                                setAssets((prev) => prev.filter((a) => a.id !== id));
+                              }).catch(() => {
+                                window.alert("Delete unavailable — asset kept.");
+                              });
                             }}
                             className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                           >
@@ -1440,6 +1479,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                                           routing: newRouting,
                                         });
                                       }
+                                      ModelRouter.setUserRoutingConfig(newRouting as any);
                                     }}
                                     className="px-2.5 py-1.5 bg-input-background border border-border rounded-lg text-xs outline-none focus:border-accent text-foreground"
                                   >
@@ -1693,7 +1733,26 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           Cancel
                         </button>
                         <button
-                          onClick={() => setShowCredentialsModal(false)}
+                          onClick={() => {
+                            const providerId = String((selectedIntegration as any)?.id || (selectedIntegration as any)?.provider || "custom").toLowerCase();
+                            const key = credentialsInput.trim();
+                            if (!key || key.includes("****")) {
+                              setShowCredentialsModal(false);
+                              return;
+                            }
+                            const nextKeys = {
+                              ...((spark.aiSettings as any)?.customApiKeys || {}),
+                              [providerId]: key,
+                            };
+                            if (spark.updateAISettings) {
+                              spark.updateAISettings({
+                                ...spark.aiSettings,
+                                customApiKeys: nextKeys,
+                              } as any);
+                            }
+                            setCredentialsInput("************************");
+                            setShowCredentialsModal(false);
+                          }}
                           className="px-4 py-2 bg-accent text-accent-foreground text-xs font-semibold rounded-lg hover:bg-accent/90"
                         >
                           Save Credentials
@@ -2062,6 +2121,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                                       routing: newRouting,
                                     });
                                   }
+                                  ModelRouter.setUserRoutingConfig(newRouting as any);
                                 }}
                                 className="px-2.5 py-1.5 bg-input-background border border-border rounded-lg text-xs outline-none focus:border-accent text-foreground"
                               >

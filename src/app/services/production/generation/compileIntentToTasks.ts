@@ -9,6 +9,7 @@ import type {
   GenerationIntent,
 } from "./generationIntent";
 import { buildMultimodalVideoGenerationRequest } from "../preproduction";
+import { frameStrategyToVideoRequestFields } from "./frameStrategy";
 import type { MultimodalVideoGenerationRequest } from "../preproduction/types";
 
 export interface CompiledGenerationPlan {
@@ -165,18 +166,61 @@ export function compileGenerationIntentToTasks(params: {
     providerId,
   });
 
+  const frameFields = intent.frameStrategy
+    ? frameStrategyToVideoRequestFields(intent.frameStrategy)
+    : null;
+  const multimodalRequestWithFrames = multimodalRequest
+    ? ({
+        ...multimodalRequest,
+        ...(frameFields || {}),
+        frameStrategyMode: intent.frameStrategy?.mode,
+        storyboardFrameId: intent.storyboardFrameId,
+        previousGeneratedStateFrameId: intent.previousGeneratedStateFrameId,
+      } as typeof multimodalRequest)
+    : multimodalRequest;
+
+  const tasksWithFrameStrategy = tasks.map((task) => {
+    if (task.kind !== "video" || !intent.frameStrategy) return task;
+    const mode = intent.frameStrategy.mode;
+    return {
+      ...task,
+      strategy: {
+        ...task.strategy,
+        conditioning: {
+          ...(task.strategy?.conditioning || {}),
+          firstFrame:
+            Boolean(intent.frameStrategy.firstFrameUrl) ||
+            mode === "FIRST_FRAME" ||
+            mode === "FIRST_LAST_FRAME" ||
+            mode === "START_END" ||
+            mode === "REFERENCE_PLUS_FIRST_FRAME",
+          lastFrame:
+            Boolean(intent.frameStrategy.lastFrameUrl) ||
+            mode === "FIRST_LAST_FRAME" ||
+            mode === "START_END",
+          referenceImages:
+            (intent.frameStrategy.referenceUrls?.length || 0) > 0 ||
+            mode === "REFERENCE_ONLY" ||
+            mode === "REFERENCE_PLUS_FIRST_FRAME" ||
+            mode === "REFERENCE_PLUS_CONTINUATION",
+        },
+        notes: [task.strategy?.notes, `frameStrategy=${mode}`].filter(Boolean).join(" | "),
+      },
+    };
+  });
+
   return {
     intent: {
       ...intent,
       trace: {
         ...intent.trace,
         providerId,
-        generationTaskIds: tasks.map((t) => t.id),
+        generationTaskIds: tasksWithFrameStrategy.map((t) => t.id),
       },
     },
     resolution,
-    tasks,
-    multimodalRequest,
+    tasks: tasksWithFrameStrategy,
+    multimodalRequest: multimodalRequestWithFrames,
     blocked: false,
     blockReasons: [],
   };

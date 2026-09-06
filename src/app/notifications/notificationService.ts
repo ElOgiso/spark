@@ -28,7 +28,7 @@ export class NotificationService {
     relatedRoute?: string,
     actionLabel?: string,
     metadata?: any
-  ): AppNotification {
+  ): AppNotification | null {
     let type: NotificationType;
     let finalTitle = title || "";
     let finalDescription = description || "";
@@ -48,6 +48,31 @@ export class NotificationService {
     } else {
       type = typeOrObj;
     }
+
+
+    // Honor user notification preferences (More → Notifications). Soft-drop when disabled.
+    try {
+      const raw = localStorage.getItem("spark-notif-settings");
+      if (raw) {
+        const prefs = JSON.parse(raw) as Record<string, unknown>;
+        const typeKey = String(type || "");
+        const isPublish = typeKey.includes("publish") || typeKey.includes("publishing");
+        const isReview = typeKey.includes("review") || typeKey.includes("brand_rule") || typeKey.includes("conflict");
+        const isSystem = typeKey.includes("system") || typeKey.includes("update");
+        if (isPublish && prefs.pushPublishConfirm === false) return null as any;
+        if (isReview && prefs.pushReviewAlerts === false) return null as any;
+        if (prefs.quietHoursEnabled) {
+          const now = new Date();
+          const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const start = String(prefs.quietHoursStart || "22:00");
+          const end = String(prefs.quietHoursEnd || "08:00");
+          const inQuiet = start <= end ? (hm >= start && hm < end) : (hm >= start || hm < end);
+          if (inQuiet && finalPriority !== "critical" && finalPriority !== "high") {
+            return null as any;
+          }
+        }
+      }
+    } catch {}
 
     const notifications = this.getNotifications();
     const newNotif: AppNotification = {
