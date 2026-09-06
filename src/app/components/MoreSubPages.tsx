@@ -2419,7 +2419,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     return <AIPreferencesPanel onNavigate={onNavigate} />;
   }
 
-  if ((subPath === "/more/credit-control" || subPath === "credit-control" || subPath === "/more/generation-controls" || subPath === "/more/production-settings") && isMobileDevice) {
+  if ((subPath === "/more/credit-control" || subPath === "credit-control" || subPath === "/more/generation-controls") && isMobileDevice) {
     return <CreditControlPanel onNavigate={onNavigate} isMobile={true} />;
   }
 

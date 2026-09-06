@@ -77,6 +77,8 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     wipeWorkspaceLearning,
     productionGenerationEnabled,
     toggleProductionGeneration,
+    automationMode: sparkAutomationMode,
+    updateAutomationMode,
   } = useSpark() as any;
   const auth = useAuth();
 
@@ -84,7 +86,15 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const userEmail = auth.currentUser?.email || "";
 
   const [currentTheme, setCurrentTheme] = useState<ThemeMode>(() => getStoredTheme());
-  const [automationMode, setAutomationMode] = useState<AutomationMode>("balanced");
+  const [automationMode, setAutomationMode] = useState<AutomationMode>(
+    () => (sparkAutomationMode as AutomationMode) || "balanced"
+  );
+
+  useEffect(() => {
+    if (sparkAutomationMode && sparkAutomationMode !== automationMode) {
+      setAutomationMode(sparkAutomationMode as AutomationMode);
+    }
+  }, [sparkAutomationMode]);
   const [profile, setProfile] = useState({
     name: userDisplayName,
     email: userEmail,
@@ -1169,7 +1179,10 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
             {(["manual", "balanced", "autonomous"] as AutomationMode[]).map((mode) => (
               <button
                 key={mode}
-                onClick={() => setAutomationMode(mode)}
+                onClick={() => {
+                  setAutomationMode(mode);
+                  updateAutomationMode?.(mode);
+                }}
                 className={`py-2 rounded-lg text-xs font-medium transition-all ${
                   automationMode === mode
                     ? "bg-accent text-foreground"
