@@ -169,4 +169,44 @@ describe("reviewPresentation — production review intelligence", () => {
     assert.equal(view.brandFitScore, null);
     assert.match(String(view.brandFitUnavailableReason), /unavailable/i);
   });
+
+  it("does not prefer slideshow fallback master when durable scene clips exist", () => {
+    const view = buildReviewProductionView({
+      id: "prod-fallback-vs-clips",
+      title: "Cinematic Spark",
+      status: "Ready for Review",
+      videoUrl: "https://cdn.example.com/storage/v1/object/public/spark/prod/video/master-fallback.mp4",
+      brief: {
+        storyboard: [
+          { videoUrl: "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-1.mp4" },
+          { videoUrl: "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-2.mp4" },
+        ],
+        generatedAssets: {
+          generatedVideos: [
+            "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-1.mp4",
+            "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-2.mp4",
+          ],
+        },
+      },
+      productionScenes: [
+        {
+          id: "scene-1",
+          videoUrl: "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-1.mp4",
+          shots: [
+            {
+              id: "shot-1",
+              videoUrl: "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-1.mp4",
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(view.primaryMediaType, "video");
+    assert.equal(
+      view.primaryMediaUrl,
+      "https://cdn.example.com/storage/v1/object/public/spark/prod/video/scene-1.mp4",
+    );
+    assert.ok(!String(view.primaryMediaUrl).includes("master-fallback"));
+  });
+
 });

@@ -31,6 +31,11 @@ import {
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
 import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
+import {
+  resolveCanonicalMasterVideoUrl,
+  resolveCanonicalReviewAudioUrl,
+  buildReviewPlaybackScenes,
+} from "../services/production/canonicalPlaybackMedia";
 import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 
 interface CreativeReviewProps {
@@ -270,6 +275,17 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const brief = activeProd?.brief || activeReview?.brief;
+  const reviewMasterVideoUrl = resolveCanonicalMasterVideoUrl({
+    production: activeProd,
+    review: activeReview,
+    brief,
+  });
+  const reviewAudioUrl = resolveCanonicalReviewAudioUrl({
+    production: activeProd,
+    review: activeReview,
+    brief,
+    masterVideoUrl: reviewMasterVideoUrl,
+  });
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
   const isExpressMode = prodMode === "express" || prodMode === "narrator";
 
@@ -309,35 +325,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       reveal: "Here's exactly what works",
       payoff: "Implement these and 10× your organic reach",
     },
-    storyboard: activeProd?.productionScenes?.length
-      ? activeProd.productionScenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : activeProd?.scenes?.length
-      ? activeProd.scenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.description,
-          duration: s.duration || "0–10s",
-          image: s.image || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : brief?.storyboard?.length
-      ? brief.storyboard.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : [
-          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
-        ],
+    storyboard: buildReviewPlaybackScenes({ production: activeProd, brief }),
     platformStrategy: {
       youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
       tiktok: "60s cut with CTA to bio link",
@@ -715,14 +703,8 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 id={activeReview?.id || "p1"} 
                 title={proposal.title} 
                 scenes={proposal.storyboard} 
-                videoUrl={
-                  [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].find((u) => isDurableMasterVideoReady(u))
-                }
-                audioUrl={
-                  ![activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].some((u) => isDurableMasterVideoReady(u))
-                    ? (activeProd?.audioUrl || activeReview?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.generatedAudio?.[0])
-                    : undefined
-                }
+                videoUrl={reviewMasterVideoUrl}
+                audioUrl={reviewAudioUrl}
                 onApprove={handleApprove}
                 reviewRequired={activeProd?.review_required !== false}
               />

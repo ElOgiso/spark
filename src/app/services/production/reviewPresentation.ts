@@ -5,6 +5,11 @@
 
 import type { PublishGateResult } from "./publishing/publishPolicy";
 import { evaluatePublishGate } from "./publishing/publishPolicy";
+import {
+  resolveCanonicalMasterVideoUrl,
+  collectDurableSceneClipUrls,
+  isEmergencySlideshowFallbackUrl,
+} from "./canonicalPlaybackMedia";
 
 export type ReviewCheckStatus =
   | "pass"
@@ -787,14 +792,30 @@ function resolvePrimaryMedia(
   production: AnyProd,
   shots: ReviewShotView[],
 ): { url: string | null; type: "video" | "image" | "none" } {
+  // Prefer the same spine Review player / Production Assets use: durable scene clips
+  // over emergency narrator slideshow masters.
+  const brief = (production as any).brief;
+  const canonicalMaster = resolveCanonicalMasterVideoUrl({ production, brief });
+  if (canonicalMaster) return { url: canonicalMaster, type: "video" };
+
+  const sceneClips = collectDurableSceneClipUrls({ production, brief });
+  if (sceneClips.length > 0) return { url: sceneClips[0], type: "video" };
+
   const productionVideo = pickMediaUrl(production.videoUrl, production.masterUrl);
-  if (productionVideo) return { url: productionVideo, type: "video" };
+  if (productionVideo && !isEmergencySlideshowFallbackUrl(productionVideo)) {
+    return { url: productionVideo, type: "video" };
+  }
+
   const selectedGenerated = shots.find((shot) => shot.generatedResultUrl)?.generatedResultUrl ?? null;
   if (selectedGenerated) {
     const isVideo =
       /\.(mp4|webm|mov)(\?|$)/i.test(selectedGenerated) || selectedGenerated.includes("video");
     return { url: selectedGenerated, type: isVideo ? "video" : "image" };
   }
+
+  // Last resort: slideshow fallback only when no scene clips exist
+  if (productionVideo) return { url: productionVideo, type: "video" };
+
   const thumb = pickMediaUrl(production.thumbnailUrl);
   if (thumb) return { url: thumb, type: "image" };
   return { url: null, type: "none" };

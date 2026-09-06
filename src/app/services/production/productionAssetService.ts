@@ -233,6 +233,17 @@ export function isDurableMasterVideoReady(val?: string | null): boolean {
   return isPlayableVideoUrl(val) && isStorageVerifiedVideoUrl(val);
 }
 
+/** Emergency narrator slideshow written after I2V failure (not the cinematic spine). */
+export function isEmergencySlideshowFallbackUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes("master-fallback.") ||
+    lower.includes("/video/master-fallback") ||
+    lower.includes("master-fallback/")
+  );
+}
+
 export function isValidMediaData(val?: string | null): val is string {
   if (!val || typeof val !== "string") return false;
   const trimmed = val.trim();
@@ -2080,10 +2091,31 @@ CRITICAL PRODUCTION LAWS:
         ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
 
+      // Partial cinematic/standard success: durable scene clips exist but not every shot
+      // succeeded. Never overwrite those clips with a narrator slideshow master — that
+      // created a dual spine (Review played fallback, Assets played clips).
+      if (!isVideoSuccess && sceneClips.some((c) => isDurableMasterVideoReady(c))) {
+        const durablePartial = sceneClips.filter((c) => isDurableMasterVideoReady(c));
+        console.warn(
+          `[SPARK Pipeline] Partial scene clips ready (${durablePartial.length}/${currentStoryboard.length || sceneClips.length}) — skipping narrator slideshow fallback to keep a single media spine.`
+        );
+        if (!realVideoUrl || isEmergencySlideshowFallbackUrl(realVideoUrl)) {
+          realVideoUrl = durablePartial[0];
+        }
+        // Standard treats first durable clip as success; deep/cinematic keeps reviewable clips.
+        isVideoSuccess = mode === "standard"
+          ? isDurableMasterVideoReady(durablePartial[0])
+          : durablePartial.length > 0;
+        if (!lastError) {
+          lastError = `Partial motion: ${durablePartial.length} durable scene clip(s) ready; remaining shots need repair.`;
+        }
+      }
+
       // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
       // Keeps motion error in lastError so executives can see the provider failure.
       // Deep/cinematic normally skips the VO bed — synthesize an emergency bed so fallback can run.
-      if (!isVideoSuccess && sceneImages.length > 0) {
+      // Only when ZERO durable scene clips exist (true total motion failure).
+      if (!isVideoSuccess && sceneClips.length === 0 && sceneImages.length > 0) {
         try {
           if (!realVoiceUrl) {
             console.warn(

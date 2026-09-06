@@ -19,6 +19,11 @@ import {
 } from "lucide-react";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
+import {
+  resolveCanonicalMasterVideoUrl,
+  resolveCanonicalReviewAudioUrl,
+  buildReviewPlaybackScenes,
+} from "../../services/production/canonicalPlaybackMedia";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
 
@@ -70,6 +75,17 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     (item?.id && item.id.replace("rev-", "") === p.id)
   );
   const brief = activeProd?.brief || item?.brief;
+  const reviewMasterVideoUrl = resolveCanonicalMasterVideoUrl({
+    production: activeProd,
+    review: item,
+    brief,
+  });
+  const reviewAudioUrl = resolveCanonicalReviewAudioUrl({
+    production: activeProd,
+    review: item,
+    brief,
+    masterVideoUrl: reviewMasterVideoUrl,
+  });
   const genProgress = activeProd?.generationProgress || item?.generationProgress || brief?.generationProgress;
   const isGenerating = Boolean(
     activeProd?.isGeneratingAssets ||
@@ -206,35 +222,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these tactics to 10x your results",
     },
-    storyboard: activeProd?.productionScenes?.length
-      ? activeProd.productionScenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : activeProd?.scenes?.length
-      ? activeProd.scenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.description,
-          duration: s.duration || "0–10s",
-          image: s.image || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : brief?.storyboard?.length
-      ? brief.storyboard.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : [
-          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
-        ],
+    storyboard: buildReviewPlaybackScenes({ production: activeProd, brief }),
     platformStrategy: {
       youtube: "12-15 min deep dive, SEO optimized",
       tiktok: "60s version highlighting primary hook",
@@ -401,20 +389,8 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             id={item?.id || activeProd?.id || "p1"} 
             title={proposal.title} 
             scenes={proposal.storyboard} 
-            videoUrl={
-              isDurableMasterVideoReady(activeProd?.videoUrl)
-                ? activeProd?.videoUrl
-                : isDurableMasterVideoReady(item?.videoUrl)
-                ? item?.videoUrl
-                : isDurableMasterVideoReady(brief?.videoUrl)
-                ? brief?.videoUrl
-                : undefined
-            }
-            audioUrl={
-              !isDurableMasterVideoReady(activeProd?.videoUrl) && !isDurableMasterVideoReady(item?.videoUrl) && !isDurableMasterVideoReady(brief?.videoUrl)
-                ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])
-                : undefined
-            }
+            videoUrl={reviewMasterVideoUrl}
+            audioUrl={reviewAudioUrl}
             reviewRequired={activeProd?.review_required !== false}
             onApprove={() => {
               if (item?.id) {

@@ -83,6 +83,22 @@ function defaultLogger(event: BridgeLogEvent): void {
   console.log(parts.join(" "));
 }
 
+
+function hasDurableSceneClips(assetResult: any): boolean {
+  const brief = assetResult?.brief || {};
+  const generated = brief.generatedAssets?.generatedVideos || brief.generatedAssets?.sceneClips || [];
+  const storyboard = brief.storyboard || [];
+  const productionScenes = assetResult.productionScenes || [];
+  const urls: string[] = [];
+  for (const g of generated) {
+    if (typeof g === "string" && g) urls.push(g);
+    else if (g?.videoUrl) urls.push(g.videoUrl);
+  }
+  for (const s of storyboard) if (s?.videoUrl) urls.push(s.videoUrl);
+  for (const s of productionScenes) if (s?.videoUrl) urls.push(s.videoUrl);
+  return urls.some((u) => typeof u === "string" && u.includes("http") && !u.toLowerCase().includes("master-fallback"));
+}
+
 export function resolveProductionSpec(
   production: Production,
   brand?: Brand,
@@ -274,7 +290,7 @@ export function projectAssetsOntoSpec(params: {
   const { assetResult, productionId, logger } = params;
   let tasks = params.tasks.map((t) => ({ ...t }));
   const panels = panelByShotId(assetResult.productionScenes || assetResult.brief.storyboard);
-  const masterOk = Boolean(assetResult.videoUrl);
+  const masterOk = Boolean(assetResult.videoUrl) || hasDurableSceneClips(assetResult);
 
   const nextScenes = params.spec.scenes.map((scene) => ({
     ...scene,
@@ -468,7 +484,7 @@ export async function executeProductionViaAssetBridge(
   tasks = projected.tasks;
 
   const anyTaskFailed = tasks.some((t) => t.status === "failed");
-  const masterOk = Boolean(assetResult.videoUrl);
+  const masterOk = Boolean(assetResult.videoUrl) || hasDurableSceneClips(assetResult);
   const finalStatus = masterOk && !anyTaskFailed ? "Ready for Review" : "Failed";
 
   const updatedProduction: Production = {
