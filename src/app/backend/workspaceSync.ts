@@ -136,6 +136,7 @@ function brandRowToDomain(row: BrandRow): Brand {
     contentFormat: rawContentFormat,
     locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
     formatSettings,
+    productionMode: settingsObj.production_mode || undefined,
     settings: settingsObj,
     creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
@@ -1340,11 +1341,51 @@ export async function persistCharacterDelete(characterId: string): Promise<boole
 }
 
 export async function persistExecutiveModeUpdate(brandId: string, patch: { automationMode?: string; productionMode?: string }) {
+  if (typeof localStorage !== "undefined" && patch.productionMode) {
+    try {
+      localStorage.setItem(`spark_production_mode_${brandId || "default"}`, patch.productionMode);
+    } catch {}
+  }
   if (!isSupabaseConfigured() || !isUuid(brandId)) return;
   try {
     const summaryPatch: any = { brand_id: brandId };
     if (patch.automationMode) summaryPatch.automation_mode = patch.automationMode;
+
+    if (patch.productionMode) {
+      const existing = await executiveSummaryRepository.getSummary(brandId);
+      const objectives =
+        existing?.current_objectives && typeof existing.current_objectives === "object" && !Array.isArray(existing.current_objectives)
+          ? { ...(existing.current_objectives as any) }
+          : {};
+      objectives.production_mode = patch.productionMode;
+      summaryPatch.current_objectives = objectives;
+    }
+
     await executiveSummaryRepository.upsertSummary(summaryPatch);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const brandPatch: any = { updated_at: new Date().toISOString() };
+      if (patch.automationMode) {
+        brandPatch.automation_mode = patch.automationMode;
+        brandPatch.autonomous_publishing_enabled = patch.automationMode === "autonomous";
+      }
+      if (patch.productionMode) {
+        const { data: brandRow } = await (supabase.from("brands") as any)
+          .select("settings")
+          .eq("id", brandId)
+          .single();
+        const existingSettings =
+          brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
+            ? { ...brandRow.settings }
+            : {};
+        existingSettings.production_mode = patch.productionMode;
+        brandPatch.settings = existingSettings;
+      }
+      if (patch.automationMode || patch.productionMode) {
+        await (supabase.from("brands") as any).update(brandPatch).eq("id", brandId);
+      }
+    }
   } catch (err) {
     console.warn("[workspaceSync] Executive mode update persist notice:", err);
   }
