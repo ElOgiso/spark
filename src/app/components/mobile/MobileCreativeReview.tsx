@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
+import { buildReviewProductionView } from "../../services/production/reviewPresentation";
+import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -57,6 +59,9 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     cancelProduction,
     deleteProduction,
     productions,
+    fixProductionScene,
+    selectProductionCandidate,
+    automationMode,
   } = useSpark() as any;
 
   const activeProd = productions?.find((p: any) =>
@@ -83,6 +88,9 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const [feedback, setFeedback] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
+  const [selectedReviewSceneId, setSelectedReviewSceneId] = useState<string | null>(null);
+  const [selectedReviewShotId, setSelectedReviewShotId] = useState<string | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   useEffect(() => {
     const st = String(item?.status || activeProd?.status || "");
@@ -170,10 +178,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
 
   const proposal = {
     title: asText(brief?.title || activeProd?.title || item?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
-    opportunityScore: brief?.brandFitScore || 94,
-    aiConfidence: brief?.brandFitScore || 94,
+    opportunityScore: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
+    aiConfidence: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
     concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || item?.conceptText, "Reveal proven marketing tactics adapted to brand rules"),
-    expectedReach: "2.4M – 3.8M views",
+    expectedReach: "Unavailable",
     platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
     hook: asText(brief?.hook || item?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
     openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment, "Vertical 9:16 presenter with text overlays"),
@@ -234,15 +242,53 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     },
   };
 
+  const reviewView = activeProd
+    ? buildReviewProductionView(activeProd as any, {
+        reviewItems: item ? [item] : [],
+        automationMode: automationMode || activeProd?.automationMode,
+        publishRequiresApproval: activeProd?.publishRequiresApproval,
+        userApproved: ["Approved", "Published", "Scheduled"].includes(String(activeProd?.status || item?.status || "")),
+        destinationCredentialsValid: false,
+        publicationTargetValid: Boolean(activeProd?.platform || brief?.platformRecommendation),
+      })
+    : null;
+
+  const handleStructuredEditRequest = async (payload: {
+    categories: string[];
+    notes: string;
+    shotId: string | null;
+    sceneId: string | null;
+    formattedNote: string;
+  }) => {
+    const note = String(payload.formattedNote || "").trim();
+    if (!note || !reviewId) return;
+    setEditSubmitting(true);
+    try {
+      rejectOrRequestEditReviewItem(reviewId, note);
+      if (prodId && fixProductionScene && payload.shotId) {
+        const scenes = activeProd?.productionScenes || activeProd?.scenes || [];
+        let sceneIndex = 0;
+        if (payload.sceneId) {
+          const idx = scenes.findIndex((s: any) => s?.id === payload.sceneId || s?.sceneId === payload.sceneId);
+          if (idx >= 0) sceneIndex = idx;
+        }
+        await fixProductionScene(prodId, sceneIndex, note);
+      }
+      setFeedback("Needs Edit — localized regeneration requested.");
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   if (approved) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center pb-24">
         <div className="w-16 h-16 rounded-full bg-success/15 border border-success/30 flex items-center justify-center mb-5">
           <CheckCircle2 className="w-8 h-8 text-success animate-bounce" />
         </div>
-        <h2 className="text-xl font-medium mb-2">Approved & Scheduled</h2>
+        <h2 className="text-xl font-medium mb-2">Approved</h2>
         <p className="text-sm text-muted-foreground mb-8">
-          "{proposal.title}" has been approved and moved to the publishing queue.
+          "{proposal.title}" has been approved. Publish only when policy allows.
         </p>
         <button
           onClick={onBack}
@@ -429,6 +475,21 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
               </div>
             )}
           </div>
+        )}
+
+        {reviewView && (
+          <ReviewIntelligencePanel
+            reviewView={reviewView}
+            selectedSceneId={selectedReviewSceneId}
+            selectedShotId={selectedReviewShotId}
+            onSelectScene={setSelectedReviewSceneId}
+            onSelectShot={setSelectedReviewShotId}
+            onSelectCandidate={(shotId, candidateId) => {
+              if (prodId && selectProductionCandidate) selectProductionCandidate(prodId, shotId, candidateId);
+            }}
+            onRequestEdit={handleStructuredEditRequest}
+            editSubmitting={editSubmitting}
+          />
         )}
 
         {/* High impact cover selection */}

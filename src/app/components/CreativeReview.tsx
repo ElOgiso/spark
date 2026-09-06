@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { NotificationService } from "../notifications/notificationService";
 import { Button, WhySparkRecommends } from "./ds";
 import { InteractiveVideoPlayer, ThumbnailVariantCard, MiniMediaThumbnail } from "./MediaPreviewHelper";
+import { ReviewIntelligencePanel } from "./ReviewIntelligencePanel";
+import { buildReviewProductionView } from "../services/production/reviewPresentation";
 import {
   ArrowLeft,
   TrendingUp,
@@ -61,7 +63,7 @@ function clip(value: unknown, n: number, fallback: string): string {
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
-  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction } = useSpark() as any;
+  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode } = useSpark() as any;
 
   // 1. Resolve focus target ID from query params or sessionStorage
   const [focusId] = useState<string | null>(() => {
@@ -126,6 +128,10 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   const [exporting, setExporting] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
+  const [selectedReviewSceneId, setSelectedReviewSceneId] = useState<string | null>(null);
+  const [selectedReviewShotId, setSelectedReviewShotId] = useState<string | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
 
   useEffect(() => {
     const st = String(activeReview?.status || activeProd?.status || "");
@@ -173,7 +179,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     setActionSuccess("Approved");
     NotificationService.addNotification({
       title: "Production Approved",
-      description: `"${proposal.title}" has been approved and moved to the calendar.`,
+      description: `"${proposal.title}" has been approved. Schedule/publish only when policy allows.`,
       type: "publishing_complete",
       priority: "medium",
       actionLabel: "View Calendar",
@@ -272,11 +278,11 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     contentType: `${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)} Production`,
     series: asText(activeReview?.series, "Viral Concept Series"),
     account: asText(brief?.platformRecommendation || activeReview?.account, "YouTube Shorts"),
-    opportunityScore: brief?.brandFitScore || 94,
-    aiConfidence: brief?.brandFitScore || 94,
+    opportunityScore: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
+    aiConfidence: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
     concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText, "Reveal proven viral tactics adapted to brand identity"),
     targetAudience: asText(activeProd?.reasoning?.research?.audience, "Target Audience & Brand Followers"),
-    expectedReach: "UNKNOWN",
+    expectedReach: "Unavailable",
     format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)})`,
     platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
     hook: asText(brief?.hook || activeReview?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
@@ -345,7 +351,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       "Brand memory rules enforced for maximum audience fit",
     ],
     brandConsistency: {
-      score: brief?.brandFitScore || 92,
+      score: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
       checks: [
         { label: "Tone matches brand voice profile", pass: true },
         { label: "Hook style consistent with top performers", pass: true },
@@ -381,6 +387,78 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       )}
     </button>
   );
+
+
+  const statusNote = (status: string) => status === "not_evaluated" ? "Not evaluated" : status === "not_analyzed" ? "Not analyzed" : status;
+
+  const reviewView = useMemo(() => {
+    if (!activeProd) return null;
+    return buildReviewProductionView(activeProd as any, {
+      reviewItems: activeReview ? [activeReview] : reviewItems.filter((item: any) => item?.productionId === activeProd.id),
+      automationMode: automationMode || brand?.automationMode || activeProd?.automationMode,
+      publishRequiresApproval: brand?.publishRequiresApproval ?? activeProd?.publishRequiresApproval,
+      publishingPermission: brand?.publishingPermission ?? activeProd?.publishingPermission,
+      userApproved: ["Approved", "Published", "Scheduled"].includes(String(activeProd?.status || activeReview?.status || "")),
+      destinationCredentialsValid: Array.isArray((brand as any)?.connectedAccounts)
+        ? (brand as any).connectedAccounts.some((a: any) => a?.status === "connected")
+        : false,
+      publicationTargetValid: Boolean(activeProd?.platform || brief?.platformRecommendation || activeReview?.account),
+    });
+  }, [activeProd, activeReview, reviewItems, automationMode, brand, brief]);
+
+  useEffect(() => {
+    if (!reviewView) return;
+    if (!selectedReviewSceneId && reviewView.scenes[0]) {
+      setSelectedReviewSceneId(reviewView.scenes[0].id);
+    }
+    if (!selectedReviewShotId && reviewView.shots[0]) {
+      setSelectedReviewShotId(reviewView.shots[0].id);
+    }
+  }, [reviewView, selectedReviewSceneId, selectedReviewShotId]);
+
+  const handleStructuredEditRequest = async (payload: {
+    categories: string[];
+    notes: string;
+    shotId: string | null;
+    sceneId: string | null;
+    formattedNote: string;
+  }) => {
+    const note = String(payload.formattedNote || "").trim();
+    if (!note) return;
+    setEditSubmitting(true);
+    try {
+      rejectOrRequestEditReviewItem(reviewId, note);
+      const prodId = activeProd?.id || activeReview?.productionId;
+      if (prodId && fixProductionScene && payload.shotId) {
+        const scenes = activeProd?.productionScenes || activeProd?.scenes || [];
+        let sceneIndex = 0;
+        if (payload.sceneId) {
+          const idx = scenes.findIndex((s: any) => s?.id === payload.sceneId || s?.sceneId === payload.sceneId);
+          if (idx >= 0) sceneIndex = idx;
+        } else {
+          const idx = scenes.findIndex((s: any) =>
+            Array.isArray(s?.shots)
+              ? s.shots.some((sh: any) => sh?.id === payload.shotId || sh?.shotId === payload.shotId)
+              : s?.id === payload.shotId,
+          );
+          if (idx >= 0) sceneIndex = idx;
+        }
+        await fixProductionScene(prodId, sceneIndex, note);
+      }
+      setActionSuccess("Needs Edit");
+      NotificationService.addNotification({
+        title: "Revision Requested",
+        description: `"${proposal.title}" needs edit: ${note.slice(0, 140)}`,
+        type: "brand_rule_conflict",
+        priority: "high",
+        actionLabel: "Open Production Assets",
+        relatedRoute: "/review",
+        metadata: { editNote: note, reviewId, shotId: payload.shotId, sceneId: payload.sceneId, categories: payload.categories },
+      });
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -513,14 +591,14 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   <TrendingUp className="w-3.5 h-3.5" />
                   <span className="text-xs font-medium">Opportunity</span>
                 </div>
-                <p className="text-2xl font-medium">{proposal.opportunityScore}%</p>
+                <p className="text-2xl font-medium">{proposal.opportunityScore == null ? "—" : `${proposal.opportunityScore}%`}</p>
               </div>
               <div className="px-4 py-3 rounded-xl bg-accent/20 border border-accent/40 text-center min-w-[80px]">
                 <div className="flex items-center gap-1 text-accent-foreground mb-1 justify-center">
                   <Sparkles className="w-3.5 h-3.5" />
                   <span className="text-xs font-medium">AI Score</span>
                 </div>
-                <p className="text-2xl font-medium">{proposal.aiConfidence}%</p>
+                <p className="text-2xl font-medium">{proposal.aiConfidence == null ? "—" : `${proposal.aiConfidence}%`}</p>
               </div>
             </div>
           </div>
@@ -682,6 +760,25 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             </div>
           </div>
 
+
+          {reviewView && (
+            <ReviewIntelligencePanel
+              reviewView={reviewView}
+              selectedSceneId={selectedReviewSceneId}
+              selectedShotId={selectedReviewShotId}
+              onSelectScene={setSelectedReviewSceneId}
+              onSelectShot={setSelectedReviewShotId}
+              onSelectCandidate={(shotId, candidateId) => {
+                const prodId = activeProd?.id || activeReview?.productionId;
+                if (prodId && selectProductionCandidate) {
+                  selectProductionCandidate(prodId, shotId, candidateId);
+                }
+              }}
+              onRequestEdit={handleStructuredEditRequest}
+              editSubmitting={editSubmitting}
+            />
+          )}
+
           {/* Executive Summary */}
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <h2 className="text-base font-medium mb-4">Executive Summary</h2>
@@ -806,7 +903,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 ],
                 confidence: "Very High",
                 confidencePercent: proposal.aiConfidence,
-                expectedOutcome: "Reach UNKNOWN — live analytics connector not configured.",
+                expectedOutcome: "Reach unavailable — live analytics connector not configured.",
                 risk: "Low",
                 nextBestAction: "Approve and Publish Production",
                 brandRules: ["Brand Voice Pillar 2: Professional", "Creator Authority Rules"]
@@ -864,7 +961,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             {expandedSections.has("quality") && (
               <div className="px-6 pb-6">
                 <div className="grid grid-cols-2 gap-2">
-                  {proposal.qualityChecks.map((check, i) => (
+                  {((reviewView?.qcSummary?.length ? reviewView.qcSummary.map((c) => ({ label: c.label, pass: c.status === "pass", note: c.detail || statusNote(c.status) })) : proposal.qualityChecks)).map((check: any, i: number) => (
                     <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${check.pass ? "bg-success/5 border border-success/10" : "bg-warning/5 border border-warning/20"}`}>
                       {check.pass
                         ? <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />
@@ -973,7 +1070,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               }`}
             >
               {actionSuccess === "Approved"
-                ? "Production approved! Publishing job & export packages created."
+                ? "Production approved. Publishing still follows the publishing policy gate."
                 : actionSuccess === "Needs Edit"
                 ? "Review flagged for Edit. Status updated."
                 : actionSuccess === "Regenerating..."
