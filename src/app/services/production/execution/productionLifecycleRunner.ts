@@ -34,6 +34,7 @@ import type {
   RunProductionLifecycleInput,
   RunProductionLifecycleOptions,
 } from "./lifecycleTypes";
+import { ProductionGenerationGuard } from "../ProductionGenerationGuard";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -124,6 +125,15 @@ export async function runProductionLifecycle(
   const enableMaster = options.enableMaster !== false;
   const allowCompleteWithoutMaster =
     options.allowCompleteWithoutMaster === true || isExpressLike(input.spec);
+
+  // App Production Generation ON/OFF — live lifecycle spend must not bypass the UI switch.
+  // dryRun remains allowed so readiness/hardening tests and planning simulations still work.
+  if (options.dryRun !== true) {
+    ProductionGenerationGuard.assertEnabled(
+      "runProductionLifecycle",
+      options.brandId || input.spec.project?.brandId
+    );
+  }
 
   const executeFn = options.deps?.executeProduction ?? executeProduction;
   const runQcFn = options.deps?.runQcWithRepairLoop ?? runQcWithRepairLoop;

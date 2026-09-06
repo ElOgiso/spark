@@ -7,6 +7,7 @@
 import { eventBus } from "./eventBus";
 import { ViralSpark, Production, ReviewItem, MemoryItem } from "../../domain/types";
 import { liveIntelligenceService } from "../liveIntelligenceService";
+import { ProductionGenerationGuard } from "../production/ProductionGenerationGuard";
 
 export class AutonomousEngine {
   private static instance: AutonomousEngine;
@@ -116,7 +117,8 @@ export class AutonomousEngine {
     }
 
     // Step 2: Autonomous Production Storyboard Drafting
-    if (automationMode === "autonomous") {
+    // Respect the Production Generation ON/OFF switch — when OFF, no autonomous drafting.
+    if (automationMode === "autonomous" && ProductionGenerationGuard.isEnabled(brand?.id)) {
       const pendingReview = (reviewItems || []).filter((r: ReviewItem) => r.status === "Pending Review");
       if (pendingReview.length === 0 && currentSparks.length > 0) {
         const sparkToDraft = currentSparks[0];
