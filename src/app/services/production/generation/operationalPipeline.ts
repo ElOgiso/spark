@@ -25,6 +25,9 @@ import type {
   GenerationIntent,
   GenerationQualityMode,
 } from "./generationIntent";
+import type { StoryboardFrameAsset } from "../preproduction/storyboardFrame";
+import type { GeneratedStateFrame } from "./generatedStateFrame";
+import type { FrameStrategyCapabilities } from "./frameStrategy";
 
 export interface OperationalShotGenerationParams {
   productionId: string;
@@ -43,6 +46,12 @@ export interface OperationalShotGenerationParams {
   preferredProviderId?: string;
   candidateCounts?: { low: number; medium: number; high: number };
   includeKeyframe?: boolean;
+  /** Individual planned storyboard frame for this shot (not the sheet overview). */
+  storyboardFrame?: StoryboardFrameAsset | null;
+  storyboardEndFrame?: StoryboardFrameAsset | null;
+  /** Observed last frame from prior generated shot for continuation. */
+  previousGeneratedStateFrame?: GeneratedStateFrame | null;
+  frameStrategyCapabilities?: FrameStrategyCapabilities;
 }
 
 export interface OperationalShotGenerationResult {
@@ -70,6 +79,10 @@ export function planOperationalShotGeneration(
     previousShot: params.previousShot,
     qualityMode: params.qualityMode,
     candidateCounts: params.candidateCounts,
+    storyboardFrame: params.storyboardFrame,
+    storyboardEndFrame: params.storyboardEndFrame,
+    previousGeneratedStateFrame: params.previousGeneratedStateFrame,
+    frameStrategyCapabilities: params.frameStrategyCapabilities,
   });
 
   const resolution = resolveGenerationCapabilities({

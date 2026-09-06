@@ -137,7 +137,7 @@ interface SparkContextType {
   productionGenerationEnabled?: boolean;
   toggleProductionGeneration?: (enabled?: boolean) => void;
   approveReviewItem: (reviewId: string) => void;
-  rejectOrRequestEditReviewItem: (reviewId: string) => void;
+  rejectOrRequestEditReviewItem: (reviewId: string, editNote?: string) => void;
   addMemoryItem: (text: string, type: "learned" | "rule", category?: any) => void;
   removeMemoryItem: (id: string) => void;
   updateMemoryItem: (id: string, text: string, type: "learned" | "rule", category?: any) => void;
@@ -386,6 +386,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
     const brandId = getBrandWorkspaceId();
     persistAISettings(brandId, newSettings);
+    // Canonical dual-write: keep ModelRouter localStorage aligned with Spark aiSettings
+    // so production + Super Spark + mobile/desktop share one routing truth.
+    try {
+      const { ModelRouter } = require("../services/runtime/modelRouter") as typeof import("../services/runtime/modelRouter");
+      if (newSettings?.routing) {
+        ModelRouter.setUserRoutingConfig(newSettings.routing as any);
+      }
+      if (newSettings?.models) {
+        ModelRouter.setUserModelSelectionConfig(newSettings.models as any);
+      }
+    } catch (err) {
+      console.warn("[SparkContext] ModelRouter dual-write skipped:", err);
+    }
   };
 
   const updateCreditSettings = useCallback(async (newSettings: Partial<GenerationCreditSettings>): Promise<boolean> => {
@@ -2626,31 +2639,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             productionId: review.productionId,
             title: review.title,
             platform: review.account,
-            scheduledTime: publishGate.action === "PUBLISH" ? "Thu 4:00 PM" : null,
+            scheduledTime: null,
             status:
               publishGate.action === "PUBLISH"
-                ? "Scheduled"
+                ? "Ready to Publish"
                 : publishGate.action === "BLOCKED"
                   ? "Blocked"
                   : "Awaiting Approval",
             decisionSource: audit.decisionSource,
             publishAudit: audit,
+            // Do NOT invent a fake calendar slot — publication time comes from a real connector/schedule.
           },
         ];
       }
 
       const pkgExists = prev.exportPackages.some((ep: any) => ep.productionId === review.productionId);
-      const newExportPackages = pkgExists ? prev.exportPackages : [
-        ...prev.exportPackages,
-        {
-          id: `ep-${Date.now()}`,
-          productionId: review.productionId,
-          title: review.title,
-          size: "45.0 MB",
-          formats: [review.account],
-          readyAt: "Just now"
-        }
-      ];
+      // Do not fabricate a successful export package on approve — export requires a real connector.
+      const newExportPackages = prev.exportPackages;
 
       const targetProd = prev.productions.find((p: any) => p.id === review.productionId);
       let updatedMemories = prev.memoryItems;
@@ -2689,17 +2694,33 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const rejectOrRequestEditReviewItem = (reviewId: string) => {
+  const rejectOrRequestEditReviewItem = (reviewId: string, editNote?: string) => {
+    const note = String(editNote || "").trim();
     setState((prev: any) => {
       const review = prev.reviewItems.find((r: any) => r.id === reviewId);
       if (!review) return prev;
 
       const updatedReviewItems = prev.reviewItems.map((r: any) =>
-        r.id === reviewId ? { ...r, status: "Needs Edit" } : r
+        r.id === reviewId
+          ? {
+              ...r,
+              status: "Needs Edit",
+              editNote: note || r.editNote,
+              revisionNotes: note
+                ? [...(Array.isArray(r.revisionNotes) ? r.revisionNotes : []), { note, at: new Date().toISOString(), source: "user" }]
+                : r.revisionNotes,
+            }
+          : r
       );
 
       const updatedProductions = prev.productions.map((p: any) =>
-        p.id === review.productionId ? { ...p, status: "Needs Edit" } : p
+        p.id === review.productionId
+          ? {
+              ...p,
+              status: "Needs Edit",
+              lastEditNote: note || p.lastEditNote,
+            }
+          : p
       );
 
       return {
@@ -2711,7 +2732,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Background Supabase persistence if configured
     if (isSupabaseConfigured()) {
-      void persistReviewNeedsEdit(reviewId);
+      void persistReviewNeedsEdit(reviewId, note || undefined);
     }
   };
 
@@ -3479,6 +3500,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         { productionId, title: (job as any).title || productionId }
       );
 
+      if (!result?.success) {
+        const reason = result?.error || "Connector did not confirm publication";
+        setState((prev: any) => ({
+          ...prev,
+          publishJobs: prev.publishJobs.map((j: any) =>
+            j.productionId === productionId
+              ? { ...j, status: "Failed", publishError: reason }
+              : j
+          ),
+        }));
+        alert(`Publishing not completed: ${reason}`);
+        return;
+      }
+
       const postUrl = result.postUrl || "";
       const publishJob: PublishJob = {
         id: `pub-${Date.now()}`,
@@ -3488,10 +3523,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         status: "Published",
         scheduledTime: new Date().toISOString(),
       };
+      const publishJobWithUrl = { ...publishJob, postUrl } as PublishJob & { postUrl?: string };
 
       setState((prev: any) => ({
         ...prev,
-        publishJobs: [publishJob, ...(prev.publishJobs || [])],
+        publishJobs: [publishJobWithUrl, ...(prev.publishJobs || []).filter((j: any) => j.productionId !== productionId)],
         productions: prev.productions.map((p: any) => (p.id === productionId ? { ...p, status: "Published" } : p)),
       }));
 

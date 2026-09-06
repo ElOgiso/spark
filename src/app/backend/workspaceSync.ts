@@ -665,9 +665,9 @@ export async function persistAccountToken(brandId: string, account: any) {
   }
 }
 
-export async function persistReviewNeedsEdit(id: string) {
+export async function persistReviewNeedsEdit(id: string, notes?: string) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
-  await requestReviewEdits(id);
+  await requestReviewEdits(id, notes);
 }
 export async function persistPublishJobCreate(brandId: string, job: PublishJob) {
   if (!isSupabaseConfigured()) return null;
@@ -1189,6 +1189,65 @@ export async function uploadBrandAssetFile(brandId: string, file: File): Promise
     return null;
   }
 }
+
+/**
+ * Persistently delete a brand storage asset (and optional media_assets row).
+ * Does not cascade-delete production lineage — callers should pass referenceIds
+ * of master/selected/continuity assets to soft-block hard delete when referenced.
+ */
+export async function deleteBrandStorageAsset(
+  brandId: string,
+  assetId: string,
+  options?: { referenceIds?: string[]; forceSoft?: boolean }
+): Promise<{ ok: boolean; mode?: "hard" | "soft" | "blocked" | "storage"; reason?: string }> {
+  if (!brandId || !assetId) return { ok: false, reason: "missing ids" };
+
+  // Prefer safe media_assets delete when id looks like a DB row id
+  try {
+    const { safeDeleteProductionAsset } = await import("./repositories/productionAssetRepository");
+    const refs = options?.referenceIds || [];
+    if (refs.includes(assetId) && !options?.forceSoft) {
+      return { ok: false, mode: "blocked", reason: "Asset is referenced by production lineage" };
+    }
+    if (isUuid(assetId)) {
+      const result = await safeDeleteProductionAsset(assetId, {
+        referenceIds: refs,
+        forceSoft: options?.forceSoft || refs.includes(assetId),
+      });
+      if ((result as any).mode === "blocked") {
+        return { ok: false, mode: "blocked", reason: (result as any).reason || "referenced" };
+      }
+      if (!result.error) {
+        return { ok: true, mode: (result as any).mode || "hard" };
+      }
+    }
+  } catch (err) {
+    console.warn("[workspaceSync] media_assets delete notice:", err);
+  }
+
+  if (!isSupabaseConfigured() || !isUuid(brandId)) {
+    return { ok: false, reason: "storage unavailable" };
+  }
+  const supabase = getSupabaseClient();
+  if (!supabase) return { ok: false, reason: "supabase unavailable" };
+
+  // assetId may be a storage path (brands/... ) or a storage object id
+  const storagePath = assetId.includes("/")
+    ? assetId
+    : `brands/${brandId}/uploads/${assetId}`;
+
+  try {
+    const { error } = await supabase.storage.from("Spark").remove([storagePath]);
+    if (error) {
+      console.warn("[workspaceSync] storage remove notice:", error);
+      return { ok: false, reason: error.message || "storage remove failed" };
+    }
+    return { ok: true, mode: "storage" };
+  } catch (err: any) {
+    return { ok: false, reason: err?.message || "storage remove failed" };
+  }
+}
+
 
 export async function persistCharacterUpdate(brandId: string, character: Character): Promise<void> {
   if (!isSupabaseConfigured() || !isUuid(brandId)) return;

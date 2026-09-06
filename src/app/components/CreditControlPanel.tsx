@@ -139,6 +139,57 @@ function CreditControlMobile({ onNavigate }: { onNavigate: (path: string) => voi
             ))}
           </div>
         </div>
+        
+        {/* 3. Preferred clip durations (hard planning inputs) */}
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">Shorts clip length</span>
+            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-accent/15 text-accent">
+              {settings.shortsDurationSec}s
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Preferred duration per Shorts generation clip (not total episode length).</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {[5, 8, 10, 15].map((sec) => (
+              <button
+                key={sec}
+                onClick={() => setSettings({ ...settings, shortsDurationSec: sec })}
+                className={`py-3 rounded-xl border text-xs font-bold transition-all active:scale-[0.97] ${
+                  settings.shortsDurationSec === sec
+                    ? "border-accent bg-accent text-accent-foreground shadow-sm shadow-accent/20"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {sec}s
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">Cinematic clip length</span>
+            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-accent/15 text-accent">
+              {settings.cinematicDurationSec}s
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Preferred duration per cinematic generation clip. Total runtime still comes from Format length.</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {[8, 12, 15, 20].map((sec) => (
+              <button
+                key={sec}
+                onClick={() => setSettings({ ...settings, cinematicDurationSec: sec })}
+                className={`py-3 rounded-xl border text-xs font-bold transition-all active:scale-[0.97] ${
+                  settings.cinematicDurationSec === sec
+                    ? "border-accent bg-accent text-accent-foreground shadow-sm shadow-accent/20"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {sec}s
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Save CTA */}
         <button
           onClick={handleSave}
@@ -154,7 +205,7 @@ function CreditControlMobile({ onNavigate }: { onNavigate: (path: string) => voi
         </button>
 
         <p className="text-[11px] text-muted-foreground text-center pt-1 leading-normal">
-          Fewer assets synthesized = lower credit usage per production.
+          Keyframe/panel count caps clips. Clip length and total Format length both feed the planner.
         </p>
       </div>
     </div>
@@ -242,7 +293,7 @@ function CreditControlDesktop({ onNavigate }: { onNavigate: (path: string) => vo
           <div>
             <h3 className="text-base font-semibold text-foreground">Keyframe Panels</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Maximum sequential visual keyframe panels synthesized per production brief.
+              Maximum storyboard panels / video clips per production (budget cap — not clip duration).
             </p>
           </div>
           <span className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-accent/15 text-accent">
@@ -266,6 +317,64 @@ function CreditControlDesktop({ onNavigate }: { onNavigate: (path: string) => vo
           ))}
         </div>
       </div>
+      
+      {/* 3. Preferred clip durations */}
+      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/40 pb-3">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Preferred Clip Durations</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Hard planning inputs for per-clip length. Total episode length is controlled in Format settings.
+              Keyframe count caps panels/clips — it is not a duration.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 pt-1">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Shorts clip</span>
+              <span className="text-xs font-mono text-accent">{settings.shortsDurationSec}s</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {[5, 8, 10, 15].map((sec) => (
+                <button
+                  key={sec}
+                  onClick={() => setSettings({ ...settings, shortsDurationSec: sec })}
+                  className={`py-2 rounded-lg border text-xs font-bold ${
+                    settings.shortsDurationSec === sec
+                      ? "border-accent bg-accent text-accent-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {sec}s
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Cinematic clip</span>
+              <span className="text-xs font-mono text-accent">{settings.cinematicDurationSec}s</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {[8, 12, 15, 20].map((sec) => (
+                <button
+                  key={sec}
+                  onClick={() => setSettings({ ...settings, cinematicDurationSec: sec })}
+                  className={`py-2 rounded-lg border text-xs font-bold ${
+                    settings.cinematicDurationSec === sec
+                      ? "border-accent bg-accent text-accent-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {sec}s
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Save Action Bar */}
       <div className="flex items-center justify-between gap-4 pt-2">
         <button

@@ -349,7 +349,10 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     input.click();
   };
 
-  const handleInvite = (e: React.FormEvent) => {
+  const handleInvite = (e?: any) => {
+    if (e?.preventDefault) e.preventDefault();
+    window.alert("Team invitations are unavailable — no invite connector is configured.");
+    return;
     e.preventDefault();
     if (!inviteName.trim() || !inviteEmail.trim()) return;
     setTeam([...team, { id: Date.now().toString(), name: inviteName, email: inviteEmail, role: "Editor" }]);
@@ -731,9 +734,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (!newKeyName.trim()) return;
-                    setApiKeyList([...apiKeyList, { id: Date.now().toString(), name: newKeyName, key: "sk_live_spark_new", created: "Today" }]);
-                    setNewKeyName("");
+                    window.alert("API key create/revoke is unavailable — no secrets connector is configured.");
                     setShowAddKey(false);
                   }}
                   className="p-3 border border-border bg-card rounded-xl space-y-2.5"

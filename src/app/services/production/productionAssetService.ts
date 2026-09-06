@@ -5,6 +5,7 @@ import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
+import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
@@ -1103,7 +1104,19 @@ Return valid JSON with this exact structure:
           creditSettings: activeCreditSettings,
         });
 
-    currentStoryboard = storyboard;
+    // Even when a storyboard already exists, honor credit clip/panel budget.
+    const creditCap =
+      typeof activeCreditSettings?.maxVideoClips === "number"
+        ? activeCreditSettings.maxVideoClips
+        : typeof activeCreditSettings?.keyframeCount === "number"
+          ? activeCreditSettings.keyframeCount
+          : undefined;
+    const budgetedStoryboard =
+      typeof creditCap === "number" && creditCap > 0 && storyboard.length > creditCap
+        ? storyboard.slice(0, Math.max(1, Math.floor(creditCap)))
+        : storyboard;
+
+    currentStoryboard = budgetedStoryboard;
     currentThumbnails = thumbnails.length > 0
       ? thumbnails.map((t: any, idx: number) => ({
           id: t.id || `t${idx + 1}`,
@@ -2639,13 +2652,6 @@ Brand: ${brand.name}
     creditSettings?: GenerationCreditSettings;
   }): ProductionScene[] {
     const { production, brief, brand, formatSettings, creditSettings } = params;
-    const targetSec =
-      formatSettings?.targetDurationSec ||
-      (production as any)?.targetDurationSec ||
-      (production as any)?.formatSettings?.targetDurationSec ||
-      (brief as any)?.targetDurationSec ||
-      (brand as any)?.formatSettings?.targetDurationSec ||
-      60;
     const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
     const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
 
@@ -2654,7 +2660,26 @@ Brand: ${brand.name}
       preferredVideoProvider: formatSettings?.preferredVideoProvider,
     });
     const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
-    const providerMaxClipSec = mode === "deep" ? Math.min(nativeMaxClipSec, 12) : nativeMaxClipSec;
+
+    // Canonical duration policy: format total + credit clip prefs + clip budget
+    const durationPolicy = resolveDurationPolicy({
+      formatSettings: {
+        ...formatSettings,
+        targetDurationSec:
+          formatSettings?.targetDurationSec ||
+          (production as any)?.targetDurationSec ||
+          (production as any)?.formatSettings?.targetDurationSec ||
+          (brief as any)?.targetDurationSec ||
+          (brand as any)?.formatSettings?.targetDurationSec ||
+          60,
+      },
+      creditSettings,
+      productionMode: mode === "deep" ? "cinematic" : mode === "express" ? "shorts" : "standard",
+      contentFormat: formatSettings?.contentFormat,
+      providerMaxClipSec: nativeMaxClipSec,
+    });
+    const targetSec = durationPolicy.totalTargetDurationSec;
+    const providerMaxClipSec = durationPolicy.maxClipDurationSec;
     const isOneTake = targetSec <= providerMaxClipSec;
     const briefBeats = brief.beats || [];
 
@@ -2663,23 +2688,22 @@ Brand: ${brand.name}
     const plannedScenesCount = briefBeats.length > 0
       ? briefBeats.length
       : Math.max(minScenesForDuration, (brief.storyboard as any[])?.length || 1);
-    // Honor Credit Control keyframe / max video clip limits when set
-    const creditCap =
-      typeof creditSettings?.maxVideoClips === "number"
-        ? creditSettings.maxVideoClips
-        : typeof creditSettings?.keyframeCount === "number"
-          ? creditSettings.keyframeCount
-          : undefined;
-    const totalScenesCount =
-      typeof creditCap === "number" && creditCap > 0
-        ? Math.min(plannedScenesCount, Math.max(1, Math.floor(creditCap)))
-        : plannedScenesCount;
+    // Honor Credit Control max video clip / keyframe budget via duration policy
+    const totalScenesCount = Math.min(
+      plannedScenesCount,
+      Math.max(1, durationPolicy.maxClips)
+    );
 
-    // Calculate per-scene legal duration snapped to provider capability map (e.g. Veo: 4|6|8s, Grok: 1..15s)
-    const rawPerSceneSec = Math.max(1, Math.min(providerMaxClipSec, Math.ceil(targetSec / totalScenesCount)));
+    // Prefer credit clip duration, then snap to provider capability map (e.g. Veo: 4|6|8s)
+    const rawPerSceneSec = Math.max(
+      1,
+      Math.min(providerMaxClipSec, Math.ceil(targetSec / totalScenesCount), durationPolicy.preferredClipDurationSec)
+    );
     const perSceneSec = snapToAllowedDuration(rawPerSceneSec, activeVideo.providerId);
 
-    console.log(`[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s, Allowed: [${activeVideo.allowedDurationsSec.join(",")}]) -> Sized ${totalScenesCount} scenes (${perSceneSec}s each) for ${targetSec}s target runtime.`);
+    console.log(
+      `[SPARK Scene Planner] Active Provider: "${activeVideo.providerId}" (Native Max: ${nativeMaxClipSec}s, Policy Max Clip: ${providerMaxClipSec}s, Mode: ${durationPolicy.mode}) -> Sized ${totalScenesCount} scenes (${perSceneSec}s each) for ${targetSec}s target. ${durationPolicy.rationale.join("; ")}`
+    );
 
     const storyboard: any[] = (brief.storyboard as any[]) || [];
     const scenesList: ProductionScene[] = [];

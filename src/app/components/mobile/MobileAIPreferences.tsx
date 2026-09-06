@@ -308,7 +308,7 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
           const matchingModels = getModelsForProviderAndCapability(cat.provider, capability);
           if (matchingModels.length > 0) {
             const recommended = matchingModels.find((m) => m.recommended) || matchingModels[0];
-            const currentSelectedModel = (currentModels as any)[cat.provider];
+            const currentSelectedModel = (currentModels as any)[capability];
             const activeLabel = currentSelectedModel
               ? getModelLabel(cat.provider, currentSelectedModel)
               : recommended?.label || cat.displayName;

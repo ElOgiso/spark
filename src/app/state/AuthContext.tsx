@@ -628,6 +628,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       localStorage.setItem("spark_demo_user", JSON.stringify(updatedUser));
       setDemoUser(updatedUser);
+
+      // Persist to canonical profile repository when backend is configured
+      void import("../backend/repositories/profileRepository").then(({ updateProfile: persistProfile }) => {
+        void persistProfile(currentUser.id, { display_name: displayName }).catch((err) => {
+          console.warn("[AuthContext] Profile cloud persist skipped:", err);
+        });
+      });
     }
   }, [currentUser, brand]);
 
