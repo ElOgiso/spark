@@ -65,6 +65,7 @@ import {
 import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
+import { hasCanonicalPlayableMedia } from "../services/production/canonicalPlaybackMedia";
 import { canStartAssetGeneration } from "../services/production/characterSheetGate";
 import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
@@ -2348,6 +2349,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const prod = state.productions.find((p: any) => p.id === productionId);
     if (!prod) return;
+
+    // Idempotent: do not re-burn credits when canonical media already exists
+    // unless the user explicitly force-regenerates.
+    if (!forceRegenerate && hasCanonicalPlayableMedia({ production: prod, brief: prod.brief })) {
+      console.info(
+        `[SPARK:MEDIA-LINEAGE] Skipping generateProductionAssets for ${productionId} — canonical playable media already present (forceRegenerate=false).`
+      );
+      return;
+    }
+
 
     if (activeGenerationControllers.current.has(productionId)) {
       activeGenerationControllers.current.get(productionId)?.abort();

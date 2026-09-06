@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { VideoFullscreenModal } from "./mobile/DonorSparkMediaHome";
 import { useSpark } from "../state/SparkContext";
+import { resolveCanonicalProductionMedia, resolveCanonicalSceneVideoUrl } from "../services/production/canonicalPlaybackMedia";
 
 export interface DesktopSceneItem {
   id: string;
@@ -45,6 +46,11 @@ export function DesktopProductionAssetsGallery({
   const { fixProductionScene, mergeProductionScenes, character } = useSpark() as any;
   const activeProd = production || item?.production;
   const brief = activeProd?.brief || item?.brief;
+  const canonicalAssetsMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    brief,
+  });
+
   const title = brief?.title || activeProd?.title || item?.title || "Production Assets";
   const isLandscape =
     activeProd?.aspectRatio === "16:9" || brief?.formatSettings?.aspectMode === "landscape";
@@ -73,7 +79,7 @@ export function DesktopProductionAssetsGallery({
   const initialScenes: DesktopSceneItem[] =
     rawStoryboard.length > 0
       ? rawStoryboard.map((s: any, idx: number) => {
-          const clipUrl = s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? activeProd?.videoUrl || brief?.videoUrl : undefined);
+          const clipUrl = resolveCanonicalSceneVideoUrl({ production: activeProd, brief, sceneIndex: idx }) || s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? canonicalAssetsMedia.masterVideoUrl : undefined);
           const stillUrl = s.image || s.keyframeImageUrl || s.keyframeUrl || undefined;
           return {
             id: `scene-${idx + 1}`,
@@ -609,9 +615,9 @@ export function DesktopProductionAssetsGallery({
         </div>
 
         <div className="flex items-center gap-4">
-          {(activeProd?.videoUrl || brief?.videoUrl) && (
+          {(canonicalAssetsMedia?.masterVideoUrl || (canonicalAssetsMedia?.sceneClipUrls?.length === 1 ? canonicalAssetsMedia.sceneClipUrls[0] : undefined)) && (
             <button
-              onClick={() => setFullscreenVideo({ url: (activeProd?.videoUrl || brief?.videoUrl)!, title: `Master Film · ${title}` })}
+              onClick={() => setFullscreenVideo({ url: (canonicalAssetsMedia.masterVideoUrl || canonicalAssetsMedia.sceneClipUrls[0])!, title: `Master Film · ${title}` })}
               className="px-4 py-2.5 rounded-xl border border-white/20 hover:border-white/40 bg-white/5 text-xs font-semibold text-white flex items-center gap-1.5 transition-all cursor-pointer hover:bg-white/10 active:scale-95"
             >
               <Play className="w-3.5 h-3.5 fill-current text-purple-300" />

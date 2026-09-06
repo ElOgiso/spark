@@ -253,6 +253,8 @@ export interface ProductionBrief {
     generatedFrames?: string[];
     generatedVideos?: string[];
     generatedAudio?: string[];
+    /** Quarantined narrator slideshow after cinematic I2V failure — never Review/Assets hero for deep/standard. */
+    emergencyFallbackVideoUrl?: string;
     generationProgress?: GenerationProgress;
     generationMetadata?: {
       renderStartedAt?: string;

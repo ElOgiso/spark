@@ -23,6 +23,7 @@ import {
   resolveCanonicalMasterVideoUrl,
   resolveCanonicalReviewAudioUrl,
   buildReviewPlaybackScenes,
+  resolveCanonicalProductionMedia,
 } from "../../services/production/canonicalPlaybackMedia";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
@@ -75,17 +76,13 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     (item?.id && item.id.replace("rev-", "") === p.id)
   );
   const brief = activeProd?.brief || item?.brief;
-  const reviewMasterVideoUrl = resolveCanonicalMasterVideoUrl({
+  const canonicalMedia = resolveCanonicalProductionMedia({
     production: activeProd,
     review: item,
     brief,
   });
-  const reviewAudioUrl = resolveCanonicalReviewAudioUrl({
-    production: activeProd,
-    review: item,
-    brief,
-    masterVideoUrl: reviewMasterVideoUrl,
-  });
+  const reviewMasterVideoUrl = canonicalMedia.masterVideoUrl;
+  const reviewAudioUrl = canonicalMedia.audioUrl;
   const genProgress = activeProd?.generationProgress || item?.generationProgress || brief?.generationProgress;
   const isGenerating = Boolean(
     activeProd?.isGeneratingAssets ||
@@ -222,7 +219,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these tactics to 10x your results",
     },
-    storyboard: buildReviewPlaybackScenes({ production: activeProd, brief }),
+    storyboard: canonicalMedia.scenes,
     platformStrategy: {
       youtube: "12-15 min deep dive, SEO optimized",
       tiktok: "60s version highlighting primary hook",
@@ -383,7 +380,22 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       )}
 
       <div className="p-4 space-y-6">
-        {/* Playable Storyboard Draft Player */}
+        
+        {(canonicalMedia.modeMismatchMessage || canonicalMedia.availabilityMessage) && (
+          <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+            canonicalMedia.modeMismatch
+              ? "bg-amber-500/10 border-amber-500/40 text-amber-100"
+              : "bg-muted/40 border-border text-muted-foreground"
+          }`}>
+            <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${canonicalMedia.modeMismatch ? "text-amber-400" : ""}`} />
+            <div className="space-y-1">
+              {canonicalMedia.modeMismatchMessage && <p className="font-semibold">{canonicalMedia.modeMismatchMessage}</p>}
+              {canonicalMedia.availabilityMessage && <p>{canonicalMedia.availabilityMessage}</p>}
+              {canonicalMedia.modeLabel && <p className="opacity-80">Requested mode: {canonicalMedia.modeLabel}</p>}
+            </div>
+          </div>
+        )}
+{/* Playable Storyboard Draft Player */}
         <div className="p-0.5 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border overflow-hidden">
           <InteractiveVideoPlayer 
             id={item?.id || activeProd?.id || "p1"} 

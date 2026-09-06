@@ -2111,15 +2111,16 @@ CRITICAL PRODUCTION LAWS:
         }
       }
 
-      // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
-      // Keeps motion error in lastError so executives can see the provider failure.
-      // Deep/cinematic normally skips the VO bed — synthesize an emergency bed so fallback can run.
-      // Only when ZERO durable scene clips exist (true total motion failure).
+      // Total I2V failure with ZERO scene clips.
+      // Express (narrator): slideshow master is the canonical deliverable.
+      // Deep/standard (cinematic/hybrid): NEVER promote narrator slideshow to production.videoUrl —
+      // that created Review≠Assets dual spine and silent mode substitution. Quarantine only.
+      let emergencyFallbackVideoUrl: string | undefined;
       if (!isVideoSuccess && sceneClips.length === 0 && sceneImages.length > 0) {
         try {
           if (!realVoiceUrl) {
             console.warn(
-              `[SPARK Pipeline] No voice bed present (common in deep/cinematic). Synthesizing emergency VO for slideshow fallback.`
+              `[SPARK Pipeline] No voice bed present (common in deep/cinematic). Synthesizing emergency VO for slideshow ${mode === "express" ? "master" : "quarantine artifact"}.`
             );
             try {
               const voiceScript = promptPack.voiceScript;
@@ -2155,7 +2156,7 @@ CRITICAL PRODUCTION LAWS:
 
           if (realVoiceUrl) {
             console.warn(
-              `[SPARK Pipeline] Motion synthesis produced no clips — falling back to narrator slideshow (${sceneImages.length} stills + voice). Original error: ${lastError || "unknown"}`
+              `[SPARK Pipeline] Motion synthesis produced no clips — compiling narrator slideshow (${sceneImages.length} stills + voice). Mode=${mode}. Original error: ${lastError || "unknown"}`
             );
             const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
             const fallback = await withTimeout(
@@ -2184,10 +2185,20 @@ CRITICAL PRODUCTION LAWS:
                 provider: "NarratorSlideshowCompiler",
               });
               if (storedFallback?.publicUrl && isDurableMasterVideoReady(storedFallback.publicUrl)) {
-                realVideoUrl = storedFallback.publicUrl;
-                isVideoSuccess = true;
-                lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
-                console.log(`[SPARK Pipeline] Slideshow fallback master ready -> ${realVideoUrl}`);
+                if (mode === "express") {
+                  // Narrator mode: slideshow IS the canonical master.
+                  realVideoUrl = storedFallback.publicUrl;
+                  isVideoSuccess = true;
+                  lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
+                  console.log(`[SPARK Pipeline] Express slideshow master ready -> ${realVideoUrl}`);
+                } else {
+                  // Cinematic/hybrid: quarantine only — do not write as production.videoUrl.
+                  emergencyFallbackVideoUrl = storedFallback.publicUrl;
+                  lastError = `${lastError || "Motion synthesis failed"} — cinematic clips missing; narrator slideshow quarantined (not promoted to Review/Assets hero).`;
+                  console.warn(
+                    `[SPARK Pipeline] Quarantined narrator slideshow for ${mode} mode (not canonical) -> ${emergencyFallbackVideoUrl}`
+                  );
+                }
               }
             }
           } else {
@@ -2431,10 +2442,28 @@ Brand: ${brand.name}
       emitProgress(98, "Saving", "Finalizing verified media assets package...");
       void persistCurrentStage("Saving");
 
+      // Final hero hygiene: never leave a quarantined narrator slideshow on deep/standard hero fields.
+      if (
+        (mode === "deep" || mode === "standard") &&
+        realVideoUrl &&
+        isEmergencySlideshowFallbackUrl(realVideoUrl)
+      ) {
+        if (!emergencyFallbackVideoUrl) emergencyFallbackVideoUrl = realVideoUrl;
+        realVideoUrl = sceneClips.find((c) => isDurableMasterVideoReady(c)) || undefined;
+      }
+
       brief.videoUrl = realVideoUrl;
       brief.audioUrl = realVoiceUrl;
       if (!brief.generatedAssets) brief.generatedAssets = {};
-      brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
+      brief.generatedAssets.generatedVideos =
+        sceneClips.length > 0
+          ? sceneClips
+          : realVideoUrl && !isEmergencySlideshowFallbackUrl(realVideoUrl)
+            ? [realVideoUrl]
+            : undefined;
+      if (emergencyFallbackVideoUrl) {
+        brief.generatedAssets.emergencyFallbackVideoUrl = emergencyFallbackVideoUrl;
+      }
       brief.generatedAssets.voiceoverUrl = realVoiceUrl;
       brief.generatedAssets.generatedFrames = sceneImages.length > 0 ? sceneImages : brief.generatedAssets.generatedFrames;
       brief.generatedAssets.generatedAudio = [realVoiceUrl, realSfxUrl].filter(Boolean) as string[];
@@ -2533,7 +2562,13 @@ Brand: ${brand.name}
           thumbnails: enrichedThumbnails.length > 0 ? enrichedThumbnails : thumbnails,
           voiceoverUrl: realVoiceUrl,
           generatedFrames: sceneImages.length > 0 ? sceneImages : undefined,
-          generatedVideos: sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined),
+          generatedVideos:
+            sceneClips.length > 0
+              ? sceneClips
+              : realVideoUrl && !isEmergencySlideshowFallbackUrl(realVideoUrl)
+                ? [realVideoUrl]
+                : undefined,
+          emergencyFallbackVideoUrl,
           generatedAudio: realVoiceUrl ? [realVoiceUrl] : undefined,
           generationProgress: finalProgress,
           generationMetadata: {

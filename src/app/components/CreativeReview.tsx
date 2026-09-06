@@ -35,6 +35,7 @@ import {
   resolveCanonicalMasterVideoUrl,
   resolveCanonicalReviewAudioUrl,
   buildReviewPlaybackScenes,
+  resolveCanonicalProductionMedia,
 } from "../services/production/canonicalPlaybackMedia";
 import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 
@@ -275,17 +276,13 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const brief = activeProd?.brief || activeReview?.brief;
-  const reviewMasterVideoUrl = resolveCanonicalMasterVideoUrl({
+    const canonicalMedia = resolveCanonicalProductionMedia({
     production: activeProd,
     review: activeReview,
     brief,
   });
-  const reviewAudioUrl = resolveCanonicalReviewAudioUrl({
-    production: activeProd,
-    review: activeReview,
-    brief,
-    masterVideoUrl: reviewMasterVideoUrl,
-  });
+  const reviewMasterVideoUrl = canonicalMedia.masterVideoUrl;
+  const reviewAudioUrl = canonicalMedia.audioUrl;
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
   const isExpressMode = prodMode === "express" || prodMode === "narrator";
 
@@ -325,7 +322,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       reveal: "Here's exactly what works",
       payoff: "Implement these and 10× your organic reach",
     },
-    storyboard: buildReviewPlaybackScenes({ production: activeProd, brief }),
+    storyboard: canonicalMedia.scenes,
     platformStrategy: {
       youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
       tiktok: "60s cut with CTA to bio link",
@@ -481,12 +478,15 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   const rev = reviewItems.find((r: any) => r.productionId === p.id || r.id === p.id);
                   const brief = p.brief || rev?.brief;
 
-                  const videoUrl = [
-                    p.videoUrl,
-                    rev?.videoUrl,
-                    brief?.videoUrl,
-                    brief?.generatedAssets?.generatedVideos?.[0],
-                  ].find((u) => isPlayableVideoUrl(u));
+                                    const queueMedia = resolveCanonicalProductionMedia({
+                    production: p,
+                    review: rev,
+                    brief,
+                  });
+                  const videoUrl =
+                    queueMedia.masterVideoUrl ||
+                    queueMedia.sceneClipUrls[0] ||
+                    undefined;
 
                   const sceneStill =
                     p.scenes?.[0]?.image ||
@@ -696,7 +696,28 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             );
           })()}
 
-          {/* Interactive Media Preview Section */}
+          
+            {(canonicalMedia.modeMismatchMessage || canonicalMedia.availabilityMessage) && (
+              <div className={`mb-3 p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                canonicalMedia.modeMismatch
+                  ? "bg-amber-500/10 border-amber-500/40 text-amber-100"
+                  : "bg-muted/40 border-border text-muted-foreground"
+              }`}>
+                <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${canonicalMedia.modeMismatch ? "text-amber-400" : "text-muted-foreground"}`} />
+                <div className="space-y-1">
+                  {canonicalMedia.modeMismatchMessage && (
+                    <p className="font-semibold">{canonicalMedia.modeMismatchMessage}</p>
+                  )}
+                  {canonicalMedia.availabilityMessage && (
+                    <p>{canonicalMedia.availabilityMessage}</p>
+                  )}
+                  {canonicalMedia.modeLabel && (
+                    <p className="opacity-80">Requested mode: {canonicalMedia.modeLabel}</p>
+                  )}
+                </div>
+              </div>
+            )}
+{/* Interactive Media Preview Section */}
           <div className="space-y-6">
             <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">
               <InteractiveVideoPlayer 

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
 import { useSpark } from "../../state/SparkContext";
+import { resolveCanonicalProductionMedia, resolveCanonicalSceneVideoUrl } from "../../services/production/canonicalPlaybackMedia";
 
 export interface ProductionSceneItem {
   id: string;
@@ -41,6 +42,10 @@ export function MobileProductionAssetsGallery({
   const { fixProductionScene, mergeProductionScenes, character } = useSpark() as any;
   const activeProd = production || item?.production;
   const brief = activeProd?.brief || item?.brief;
+  const canonicalAssetsMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    brief,
+  });
   const title = brief?.title || activeProd?.title || item?.title || "Production Assets";
   const generatedImages: { id: string; label: string; url: string }[] = [];
   const pushImg = (id: string, label: string, url?: string) => {
@@ -64,7 +69,7 @@ export function MobileProductionAssetsGallery({
   const initialScenes: ProductionSceneItem[] =
     rawStoryboard.length > 0
       ? rawStoryboard.map((s: any, idx: number) => {
-          const clipUrl = s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? activeProd?.videoUrl || brief?.videoUrl : undefined);
+          const clipUrl = resolveCanonicalSceneVideoUrl({ production: activeProd, brief, sceneIndex: idx }) || s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? canonicalAssetsMedia.masterVideoUrl : undefined);
           const stillUrl = s.image || s.keyframeImageUrl || s.keyframeUrl || undefined;
           return {
             id: `scene-${idx + 1}`,
