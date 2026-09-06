@@ -131,6 +131,7 @@ interface SparkContextType {
   strengthenSpark: (sparkId: string) => ViralSpark | undefined;
   generateProductionAssets: (productionId: string, forceRegenerate?: boolean) => Promise<void>;
   fixProductionScene: (productionId: string, sceneIndex: number, editNotes: string) => Promise<any>;
+  selectProductionCandidate: (productionId: string, shotId: string, candidateId: string) => void;
   mergeProductionScenes: (productionId: string) => Promise<string | null>;
   cancelProduction: (productionId: string) => void;
   deleteProduction: (productionId: string) => void;
@@ -2190,6 +2191,57 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [state.productions, state.brand, state.character, state.memoryItems]
   );
 
+
+  const selectProductionCandidate = useCallback(
+    (productionId: string, shotId: string, candidateId: string) => {
+      if (!productionId || !shotId || !candidateId) return;
+      setState((prev: any) => {
+        const productions = (prev.productions || []).map((p: any) => {
+          if (p.id !== productionId) return p;
+          const patchShot = (shot: any) => {
+            if (!shot || (shot.id !== shotId && shot.shotId !== shotId)) return shot;
+            const candidates = Array.isArray(shot.candidates)
+              ? shot.candidates.map((c: any) => ({
+                  ...c,
+                  selected: c?.id === candidateId,
+                }))
+              : shot.candidates;
+            return { ...shot, selectedCandidateId: candidateId, candidates };
+          };
+          const productionScenes = Array.isArray(p.productionScenes)
+            ? p.productionScenes.map((scene: any) => ({
+                ...scene,
+                shots: Array.isArray(scene?.shots) ? scene.shots.map(patchShot) : scene?.shots,
+                ...(scene?.id === shotId || scene?.shotId === shotId ? patchShot(scene) : {}),
+              }))
+            : p.productionScenes;
+          const scenes = Array.isArray(p.scenes)
+            ? p.scenes.map((scene: any) => ({
+                ...scene,
+                shots: Array.isArray(scene?.shots) ? scene.shots.map(patchShot) : scene?.shots,
+                ...(scene?.id === shotId || scene?.shotId === shotId ? patchShot(scene) : {}),
+              }))
+            : p.scenes;
+          const shots = Array.isArray(p.shots) ? p.shots.map(patchShot) : p.shots;
+          return {
+            ...p,
+            selectedCandidateId: candidateId,
+            selectedShotId: shotId,
+            productionScenes,
+            scenes,
+            shots,
+          };
+        });
+        const updated = productions.find((p: any) => p.id === productionId);
+        if (updated) {
+          void persistProductionUpdate(productionId, updated as any);
+        }
+        return { ...prev, productions };
+      });
+    },
+    [],
+  );
+
   const mergeProductionScenes = useCallback(
     async (productionId: string) => {
       const prod = state.productions?.find((p: any) => p.id === productionId);
@@ -3569,6 +3621,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         strengthenSpark,
         generateProductionAssets,
         fixProductionScene,
+        selectProductionCandidate,
         mergeProductionScenes,
         cancelProduction,
         deleteProduction,
