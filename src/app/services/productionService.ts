@@ -24,6 +24,13 @@ import {
   type ProductionLifecycleReport,
   type RunProductionLifecycleOptions,
 } from "./production/execution";
+import {
+  runLearningUpdatePipeline,
+  buildOutcomeFromLifecycle,
+  type CreativeLearning,
+  type LearningUpdateInput,
+  type PerformanceSnapshot,
+} from "./production/intelligence";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -93,6 +100,8 @@ export class ProductionService implements IProductionService {
     reviewId?: string;
     researchContext?: any;
     targetDurationSec?: number;
+    /** Phase 11 — optional prior learnings for Creative Director (soft influence only). */
+    creativeLearnings?: CreativeLearning[];
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
     const prodId = params.productionId || generateUuid();
     const reviewId = params.reviewId || generateUuid();
@@ -106,6 +115,7 @@ export class ProductionService implements IProductionService {
     const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
 
     // Phase 2: Creative Director planning FIRST (no media generation).
+    // Phase 11: optional creativeLearnings influence soft strategy only.
     const plan = createProductionPlan({
       idea: params.spark.hook || params.spark.title || params.spark.angle || "",
       productionId: prodId,
@@ -120,6 +130,7 @@ export class ProductionService implements IProductionService {
         typeof params.targetDurationSec === "number"
           ? params.targetDurationSec
           : params.brand.formatSettings?.targetDurationSec,
+      creativeLearnings: params.creativeLearnings,
     });
 
     // Existing brief service remains for script polish / brand-fit; intelligence owns structure.
@@ -757,10 +768,17 @@ export class ProductionService implements IProductionService {
   async runFullProductionLifecycle(params: {
     production: Production;
     brand?: Brand;
-    options?: RunProductionLifecycleOptions;
+    options?: RunProductionLifecycleOptions & {
+      /** Phase 11 — when provided, run observe→learn after lifecycle (never fabricates metrics). */
+      learningUpdate?: Omit<LearningUpdateInput, "productionId" | "snapshots"> & {
+        snapshots?: PerformanceSnapshot[];
+        run?: boolean;
+      };
+    };
   }): Promise<{
     production: Production;
     report: ProductionLifecycleReport;
+    learningUpdate?: ReturnType<typeof runLearningUpdatePipeline>;
   }> {
     const reasoning =
       typeof params.production.reasoning === "object" && params.production.reasoning
@@ -779,6 +797,38 @@ export class ProductionService implements IProductionService {
         ...params.options,
       },
     });
+
+    let learningUpdate: ReturnType<typeof runLearningUpdatePipeline> | undefined;
+    const learningOpts = params.options?.learningUpdate;
+    if (learningOpts?.run) {
+      const snapshots = learningOpts.snapshots || [];
+      learningUpdate = runLearningUpdatePipeline({
+        ...learningOpts,
+        productionId: params.production.id,
+        snapshots,
+        productionQualityScore:
+          learningOpts.productionQualityScore ??
+          (typeof report.qcReport?.productionResult?.score === "number" ? report.qcReport.productionResult.score : undefined),
+        outcome: {
+          ...buildOutcomeFromLifecycle({
+            productionId: params.production.id,
+            lifecycle: {
+              ok: report.ok,
+              completed: report.completed,
+              deliverableReady: report.deliverableReady,
+              cost: report.cost,
+              timing: report.timing,
+            },
+            qualityScore:
+              learningOpts.productionQualityScore ??
+              (typeof report.qcReport?.productionResult?.score === "number" ? report.qcReport.productionResult.score : undefined),
+            audiencePerformanceScore: learningOpts.outcome?.audiencePerformanceScore,
+            platform: learningOpts.platform,
+          }),
+          ...(learningOpts.outcome || {}),
+        },
+      });
+    }
 
     const updated: Production = {
       ...params.production,
@@ -803,6 +853,23 @@ export class ProductionService implements IProductionService {
           masterUrl: report.editorial?.mastering?.output?.mediaUrl,
           checkpointId: report.checkpoint?.id,
         },
+        ...(learningUpdate
+          ? {
+              learning: {
+                snapshotId: learningUpdate.snapshot.id,
+                snapshotVersion: learningUpdate.snapshot.version,
+                learningIds: learningUpdate.learnings.map((l) => l.id),
+                quarantinedIds: learningUpdate.quarantined.map((l) => l.id),
+                advice: learningUpdate.advice,
+                outcome: learningUpdate.outcome,
+                decisions: learningUpdate.decisions,
+                providerPreferences: learningUpdate.providerPreferences,
+                repairPreferences: learningUpdate.repairPreferences,
+                // Structured memory only — never raw analytics dumps
+                memoryItemIds: learningUpdate.memoryItems.map((m) => m.id),
+              },
+            }
+          : {}),
       },
       status: report.completed
         ? "Ready for Review"
@@ -821,7 +888,7 @@ export class ProductionService implements IProductionService {
         .concat(currentProds.some((p) => p.id === updated.id) ? [] : [updated]),
     });
 
-    return { production: updated, report };
+    return { production: updated, report, learningUpdate };
   }
 }
 

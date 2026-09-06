@@ -63,3 +63,6 @@ export type {
 
 /** Phase 8 — Performance Learning & Adaptive Content Intelligence */
 export * from "./performance";
+
+/** Phase 11 — Autonomous Production + Learning */
+export * from "./autonomy";

@@ -190,7 +190,116 @@ Conductor behavior:
 - `AbortSignal` → `cancelled`
 - Structured lifecycle events; cost is estimated-only; timing rollup included
 
-Out of scope here: Phase 11 learning loops / Phase 12 UX polish.
+## Phase 11 status (Autonomous Production + Learning)
+
+Governing build-order Phase 11 closes the loop:
+
+```
+USER INTENT
+ → Creative Director
+ → Creative Strategy (+ adaptive advice)
+ → Production planning
+ → Phase 10 execute / QC / master
+ → Performance observations (existing analytics)
+ → Analysis / diagnosis
+ → Learning (confidence, provenance, scope, decay)
+ → Adaptive advice
+ → Creative Director (next production)
+```
+
+**Principle:** learning influences decisions; learning does not rewrite story/visual/production hard truth.
+
+### Reused (not duplicated)
+
+| Capability | Module |
+|---|---|
+| Performance snapshots / series / DNA | `intelligence/performance/*` (historical Phase 8) |
+| Creative learning + decay + experiments | `createLearning`, `accumulateLearnings`, `applyDecay`, `buildAdaptiveAdvice` |
+| Memory persistence | `persistLearningsAsMemory` / `MemoryItem` |
+| Creative Director | existing `directCreativeIntent` / strategy builder |
+| Provider routing | soft prefs via `deriveProviderPreferences` → existing ModelRouter |
+| QC / repair | soft prefs via `deriveRepairPreferences` → existing repair planner |
+| Execution | Phase 10 lifecycle conductor unchanged |
+
+### New integration layer
+
+`intelligence/autonomy/*` — bounded autonomy + learning update pipeline only:
+
+- `runLearningUpdatePipeline` — observe → analyze → learn → decay → quarantine weak evidence → adaptive advice → memory
+- `buildAutonomousPlan` / `planProductionWithLearning` — Creative Director remains decision layer
+- `evaluateAutonomyGate` — manual / assisted / balanced / autonomous with budget, quality, exploration guards
+- `filterLearningsByHardConstraints` — identity, continuity, story, legal, explicit user prefs cannot be overridden
+- `captureLearningSnapshot` / `recordDecision` / `adviceFingerprint` — decision lineage + deterministic replay
+- Provider/repair preference bridges — capability-scoped, model-version aware; no second router/QC engine
+
+### Hard rules enforced
+
+- Quality score ≠ audience performance score (missing audience metrics stay `undefined` / UNKNOWN, never `0`)
+- Insufficient sample → quarantine / hypothesis, not established rule
+- Scope-aware evidence (series/account/platform/global); no blind global transfer
+- Exploration vs exploitation is policy-driven (`explorationRatio`, default 0.2)
+- No self-modifying source code; structured learning/preferences only
+
+### Service wiring
+
+- `createProductionFromSpark({ creativeLearnings })` → Creative Director soft influence
+- `runFullProductionLifecycle({ learningUpdate: { run: true, snapshots? } })` → optional post-lifecycle learning persist on `production.reasoning.learning`
+
+### Tests
+
+`productionAutonomy.p11.test.ts` covers quarantine, hard-constraint protection, explicit preference priority, budget pause, exploration, replay fingerprints, quality≠audience, provider/version scoping, repair prefs, closed loop, and decay.
+
+Phase 12 (below) owns production validation / hardening / readiness gates. UX polish remains out of scope.
+
+
+## Phase 12 status (Production Validation, Hardening & Readiness Gate)
+
+Governing build-order Phase 12 does **not** add a second orchestrator, continuity engine, DAG, QC engine, learning brain, or provider router. It proves Phases 0–11 work together and fail safely.
+
+```
+USER INTENT
+ → ProductionSpec → SceneSpec → ShotSpec
+ → storyboard / continuity / references / cinematic plan
+ → GenerationIntent → GenerationTask → Production DAG
+ → capability resolution → provider routing → media generation
+ → asset persistence → technical + visual QC → repair / retry / fallback
+ → candidate selection → editorial → mastering → final QC → delivery
+ → performance → learning → next production
+```
+
+### Hardening module
+
+`src/app/services/production/hardening/*` — validation / readiness only:
+
+| Concern | Module | Reuses |
+|---|---|---|
+| Contract validation | `contractValidation.ts` | existing `validateProductionSpec` / scene / shot / DAG validators |
+| Lineage integrity | `lineageIntegrity.ts` | ProductionSpec ancestry; no second asset registry |
+| Idempotent lifecycle | `idempotentLifecycle.ts` | Phase 10 `runProductionLifecycle` + checkpoints |
+| Failure injection | `failureInjection.ts` | mocked provider paths; taxonomy via `errorTaxonomy.ts` |
+| QC evidence gate | `qcEvidence.ts` | PASS requires evidence; else `UNVERIFIED` (never fake PASS) |
+| Secrets boundary | `secretsBoundary.ts` | client/server key scrubbing helpers |
+| Readiness scorecard | `readinessScorecard.ts` | hard gates G1–G12; no percentage score hiding blockers |
+| Golden E2E | `goldenScenario.ts` | dryRun + mocked QC; no live paid providers |
+
+### Hard gates (G1–G12)
+
+G1 Spec construction · G2 Storyboard↔shot mapping · G3 Continuity propagation · G4 DAG safety · G5 Idempotent execution · G6 Provider failure isolation · G7 QC evidence · G8 Approved asset protection · G9 Master validation · G10 Autonomy bounds · G11 Secret boundary · G12 Golden E2E
+
+### Known limitations (honest)
+
+- CI generation uses `dryRun` (no live paid providers)
+- Visual QC in golden path uses deterministic evidence-bearing mocks (not live vision models)
+- Mastering may defer/degrade when FFmpeg is unavailable in serverless/CI
+- Storyboard↔shot mapping coverage depends on upstream storyboard attachments already present on the spec
+
+### Tests
+
+`productionHardening.p12.test.ts` — contracts, lineage, DAG cycle rejection, idempotency ×3, failure injection taxonomy, QC adversarial fixtures (character/wardrobe/spatial drift + intentional montage), autonomy budget stop, secrets boundary, golden E2E, readiness scorecard, concurrency reuse.
+
+### Architecture integrity (canonical singles)
+
+One orchestrator · one ProductionSpec · one shot model · one continuity engine · one DAG · one QC system · one provider router · one learning system.
 
 
 ## Phase 6 status (Editorial Timeline & Mastering)
@@ -360,8 +469,8 @@ It does **not** choose providers (routing owns that).
 
 ### Out of scope here
 
-- Visual QC / automated repair (Phase 9)
-- Full production UX surfaces (Phase 12) — Phase 10 wires the lifecycle conductor only
-- LLM schedulers / second DAG engines
+- Visual QC / automated repair (owned by QC modules; Phase 11 only feeds soft repair prefs)
+- Full production UX surfaces (Phase 12 hardening/readiness gates are implemented; UX polish remains separate)
+- LLM schedulers / second DAG engines / second Creative Director / second analytics pipeline
 - Rewrites of `productionAssetService`
 
