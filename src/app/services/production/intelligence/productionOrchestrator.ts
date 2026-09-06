@@ -79,6 +79,8 @@ export interface OrchestrateIdeaInput {
   optimizationProfile?: import("./strategy").OptimizationProfile;
   explicitObjective?: string;
   existingMasters?: import("../specification/assetSpec").MasterAssetRef[];
+  /** Phase 11 — structured creative learnings for Creative Director */
+  creativeLearnings?: import("./performance").CreativeLearning[];
 }
 
 export interface ProductionIntelligenceTrace {
@@ -173,6 +175,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     character: input.character,
     creatorProfile: input.creatorProfile,
     memoryItems: input.memoryItems,
+    creativeLearnings: input.creativeLearnings,
     spark: input.spark,
     researchContextPresent: Boolean(input.spark?.researchContext),
     projectOverrides: input.projectOverrides,

@@ -190,7 +190,66 @@ Conductor behavior:
 - `AbortSignal` → `cancelled`
 - Structured lifecycle events; cost is estimated-only; timing rollup included
 
-Out of scope here: Phase 11 learning loops / Phase 12 UX polish.
+## Phase 11 status (Autonomous Production + Learning)
+
+Governing build-order Phase 11 closes the loop:
+
+```
+USER INTENT
+ → Creative Director
+ → Creative Strategy (+ adaptive advice)
+ → Production planning
+ → Phase 10 execute / QC / master
+ → Performance observations (existing analytics)
+ → Analysis / diagnosis
+ → Learning (confidence, provenance, scope, decay)
+ → Adaptive advice
+ → Creative Director (next production)
+```
+
+**Principle:** learning influences decisions; learning does not rewrite story/visual/production hard truth.
+
+### Reused (not duplicated)
+
+| Capability | Module |
+|---|---|
+| Performance snapshots / series / DNA | `intelligence/performance/*` (historical Phase 8) |
+| Creative learning + decay + experiments | `createLearning`, `accumulateLearnings`, `applyDecay`, `buildAdaptiveAdvice` |
+| Memory persistence | `persistLearningsAsMemory` / `MemoryItem` |
+| Creative Director | existing `directCreativeIntent` / strategy builder |
+| Provider routing | soft prefs via `deriveProviderPreferences` → existing ModelRouter |
+| QC / repair | soft prefs via `deriveRepairPreferences` → existing repair planner |
+| Execution | Phase 10 lifecycle conductor unchanged |
+
+### New integration layer
+
+`intelligence/autonomy/*` — bounded autonomy + learning update pipeline only:
+
+- `runLearningUpdatePipeline` — observe → analyze → learn → decay → quarantine weak evidence → adaptive advice → memory
+- `buildAutonomousPlan` / `planProductionWithLearning` — Creative Director remains decision layer
+- `evaluateAutonomyGate` — manual / assisted / balanced / autonomous with budget, quality, exploration guards
+- `filterLearningsByHardConstraints` — identity, continuity, story, legal, explicit user prefs cannot be overridden
+- `captureLearningSnapshot` / `recordDecision` / `adviceFingerprint` — decision lineage + deterministic replay
+- Provider/repair preference bridges — capability-scoped, model-version aware; no second router/QC engine
+
+### Hard rules enforced
+
+- Quality score ≠ audience performance score (missing audience metrics stay `undefined` / UNKNOWN, never `0`)
+- Insufficient sample → quarantine / hypothesis, not established rule
+- Scope-aware evidence (series/account/platform/global); no blind global transfer
+- Exploration vs exploitation is policy-driven (`explorationRatio`, default 0.2)
+- No self-modifying source code; structured learning/preferences only
+
+### Service wiring
+
+- `createProductionFromSpark({ creativeLearnings })` → Creative Director soft influence
+- `runFullProductionLifecycle({ learningUpdate: { run: true, snapshots? } })` → optional post-lifecycle learning persist on `production.reasoning.learning`
+
+### Tests
+
+`productionAutonomy.p11.test.ts` covers quarantine, hard-constraint protection, explicit preference priority, budget pause, exploration, replay fingerprints, quality≠audience, provider/version scoping, repair prefs, closed loop, and decay.
+
+Out of scope here: Phase 12 production validation / hardening / UX polish.
 
 
 ## Phase 6 status (Editorial Timeline & Mastering)
@@ -360,8 +419,8 @@ It does **not** choose providers (routing owns that).
 
 ### Out of scope here
 
-- Visual QC / automated repair (Phase 9)
-- Full production UX surfaces (Phase 12) — Phase 10 wires the lifecycle conductor only
-- LLM schedulers / second DAG engines
+- Visual QC / automated repair (owned by QC modules; Phase 11 only feeds soft repair prefs)
+- Full production UX surfaces / hardening (Phase 12)
+- LLM schedulers / second DAG engines / second Creative Director / second analytics pipeline
 - Rewrites of `productionAssetService`
 
