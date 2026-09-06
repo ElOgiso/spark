@@ -622,6 +622,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const cloudAiSettings = (execContext as any)?.summary?.current_objectives?.ai_settings;
           const cloudCreditSettings = (execContext as any)?.summary?.current_objectives?.credit_settings || snap.creditSettings;
           const cloudAutomationMode = (execContext as any)?.summary?.automation_mode || snap.brand?.automation_mode;
+          let localProductionMode: string | undefined;
+          if (typeof localStorage !== "undefined" && activeBrandId) {
+            try {
+              localProductionMode = localStorage.getItem(`spark_production_mode_${activeBrandId}`) || undefined;
+            } catch {}
+          }
+          const cloudProductionMode =
+            (execContext as any)?.summary?.current_objectives?.production_mode ||
+            snap.brand?.productionMode ||
+            (snap.brand as any)?.settings?.production_mode ||
+            localProductionMode;
 
           // Source of truth hierarchy for formatSettings:
           // 1) brands.settings.format_settings (snap.formatSettings / snap.brand.formatSettings)
@@ -661,8 +672,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const merged = {
             ...prev,
             brand: snap.brand
-              ? { ...prev.brand, ...snap.brand, formatSettings: mergedFormatSettings, creditSettings: mergedCreditSettings }
-              : (prev.brand ? { ...prev.brand, formatSettings: mergedFormatSettings, creditSettings: mergedCreditSettings } : prev.brand),
+              ? {
+                  ...prev.brand,
+                  ...snap.brand,
+                  formatSettings: mergedFormatSettings,
+                  creditSettings: mergedCreditSettings,
+                  productionMode: cloudProductionMode || snap.brand.productionMode || prev.brand?.productionMode,
+                  automation_mode: cloudAutomationMode || snap.brand.automation_mode || prev.brand?.automation_mode,
+                }
+              : (prev.brand
+                  ? {
+                      ...prev.brand,
+                      formatSettings: mergedFormatSettings,
+                      creditSettings: mergedCreditSettings,
+                      ...(cloudProductionMode ? { productionMode: cloudProductionMode } : {}),
+                      ...(cloudAutomationMode ? { automation_mode: cloudAutomationMode } : {}),
+                    }
+                  : prev.brand),
             character: snap.character
               ? {
                   ...prev.character,
@@ -679,6 +705,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             characters: snap.characters || (snap.character ? [snap.character] : (prev.characters || [])),
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
+            productionMode: (cloudProductionMode as any) || prev.productionMode,
             aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
             creditSettings: mergedCreditSettings,
             formatSettings: mergedFormatSettings,
@@ -983,9 +1010,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const brandName = data.brandName || "My Brand";
     const creatorName = data.creatorName || "Creator";
     const niche = data.niche || "Content Creation";
-    const vision = data.vision || "To build a leading media brand.";
-    const audience = data.audience || "General Audience";
     const goal = data.goal || "Growth & Authority";
+    const vision = data.vision || data.purpose || goal || "To build a leading media brand.";
+    const audience = data.audience || "General Audience";
     const platforms =
       data.platforms && data.platforms.length > 0
         ? data.platforms
@@ -1193,6 +1220,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (brandId) {
       try {
         localStorage.setItem(`spark_format_settings_${brandId}`, JSON.stringify(resolvedFormatSettings));
+        localStorage.setItem(`spark_production_mode_${brandId}`, productionMode);
+        void import("../backend/workspaceSync").then(({ persistExecutiveModeUpdate }) => {
+          void persistExecutiveModeUpdate(brandId, { automationMode, productionMode });
+        });
       } catch {}
     }
 
@@ -1520,7 +1551,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateAutomationMode = (mode: AutomationMode) => {
-    setState((prev: any) => ({ ...prev, automationMode: mode }));
+    setState((prev: any) => ({
+      ...prev,
+      automationMode: mode,
+      brand: prev.brand
+        ? {
+            ...prev.brand,
+            automation_mode: mode,
+            autonomous_publishing_enabled: mode === "autonomous",
+          }
+        : prev.brand,
+    }));
     const brandId = getBrandWorkspaceId();
     if (brandId) {
       void import("../backend/workspaceSync").then(({ persistExecutiveModeUpdate }) => {
@@ -1530,7 +1571,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateProductionMode = (mode: ProductionMode) => {
-    setState((prev: any) => ({ ...prev, productionMode: mode }));
+    setState((prev: any) => ({
+      ...prev,
+      productionMode: mode,
+      brand: prev.brand ? { ...prev.brand, productionMode: mode } : prev.brand,
+    }));
     const brandId = getBrandWorkspaceId();
     if (brandId) {
       void import("../backend/workspaceSync").then(({ persistExecutiveModeUpdate }) => {

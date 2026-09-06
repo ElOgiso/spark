@@ -5,7 +5,8 @@
  */
 
 import { eventBus } from "./eventBus";
-import { ViralSpark, Production, ReviewItem, MemoryItem } from "../../domain/types";
+import { ViralSpark, Production, ReviewItem, MemoryItem, getEffectiveFormatSettings } from "../../domain/types";
+import { resolveProductionMode } from "../production/resolveProductionMode";
 import { liveIntelligenceService } from "../liveIntelligenceService";
 import { ProductionGenerationGuard } from "../production/ProductionGenerationGuard";
 
@@ -127,14 +128,21 @@ export class AutonomousEngine {
         const reviewId = generateUuid();
 
         const { ProductionBriefService } = await import("../production/productionBriefService");
+        const resolvedProductionMode = resolveProductionMode({
+          modeOverride: state.productionMode,
+          brand,
+        });
+        const effectiveFormat = getEffectiveFormatSettings(state);
+        const targetDurationSec =
+          typeof effectiveFormat?.targetDurationSec === "number" ? effectiveFormat.targetDurationSec : 60;
         const brief = await ProductionBriefService.generateBrief({
           spark: sparkToDraft,
           brand,
           character,
           characters: state.characters || [],
           memoryItems: state.memoryItems || [],
-          productionMode: "standard",
-          targetDurationSec: 45,
+          productionMode: resolvedProductionMode,
+          targetDurationSec,
         });
 
         const newProduction: Production = {
@@ -142,7 +150,7 @@ export class AutonomousEngine {
           title: brief.title || sparkToDraft.title,
           sparkId: sparkToDraft.id,
           status: "Ready for Review",
-          mode: "standard",
+          mode: resolvedProductionMode,
           dateCreated: new Date().toISOString().split("T")[0],
           aspectRatio: "9:16",
           formats: ["YouTube Shorts", "TikTok"],
