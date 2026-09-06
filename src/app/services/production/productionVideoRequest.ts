@@ -41,7 +41,8 @@ export async function requestProductionVideoClip(
       prompt: params.prompt,
       imageUrl: params.firstFrameUrl,
       firstFrameUrl: params.firstFrameUrl,
-      lastFrameUrl: params.firstFrameUrl,
+      // End-frame conditioning must NOT silently reuse the first frame.
+      lastFrameUrl: params.endFrameUrl,
       endFrameUrl: params.endFrameUrl,
       referenceImageUrls: params.referenceImageUrls || [],
       aspectRatio: params.aspectRatio,

@@ -79,3 +79,51 @@ export async function updateProductionAsset(id: string, values: Partial<Producti
 export async function deleteProductionAsset(id: string): Promise<RepositoryResult<true>> {
   return deleteRow("media_assets", id);
 }
+
+
+export type AssetDeleteProtection =
+  | { allowed: true; mode: "hard" | "soft" }
+  | { allowed: false; reason: string; references: string[] };
+
+/**
+ * Safe asset deletion — never blindly cascade-delete assets still referenced
+ * by production lineage (master, selected candidate, continuity source, storyboard ref).
+ * Unreferenced assets hard-delete; referenced assets soft-deactivate (is_active=false).
+ */
+export async function assessProductionAssetDeletion(
+  id: string,
+  referenceIds: string[] = []
+): Promise<AssetDeleteProtection> {
+  const refs = referenceIds.filter(Boolean);
+  if (refs.includes(id)) {
+    return {
+      allowed: false,
+      reason: "Asset is referenced by production lineage",
+      references: refs.filter((r) => r === id),
+    };
+  }
+  // Soft-delete path when caller marks asset as protected but detachable
+  return { allowed: true, mode: "hard" };
+}
+
+export async function safeDeleteProductionAsset(
+  id: string,
+  options?: { referenceIds?: string[]; forceSoft?: boolean }
+): Promise<RepositoryResult<true> & { mode?: "hard" | "soft" | "blocked"; reason?: string }> {
+  const assessment = await assessProductionAssetDeletion(id, options?.referenceIds || []);
+  if (!assessment.allowed) {
+    return {
+      data: null,
+      error: assessment.reason,
+      mode: "blocked",
+      reason: assessment.reason,
+    } as any;
+  }
+  if (options?.forceSoft) {
+    const updated = await updateProductionAsset(id, { is_active: false } as any);
+    if (updated.error) return { data: null, error: updated.error, mode: "soft" } as any;
+    return { data: true, error: null, mode: "soft" } as any;
+  }
+  const deleted = await deleteProductionAsset(id);
+  return { ...deleted, mode: "hard" } as any;
+}

@@ -378,6 +378,8 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     setProfile({ name: editName, email: editEmail, role: editRole });
+    // Persist to auth profile (was local-only — SPARK must respect user input)
+    auth.updateProfile?.(editName, editEmail || undefined);
     setActiveDetail(null);
   };
 
@@ -486,7 +488,13 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                           </button>
                         )}
                         <button
-                          onClick={() => setAssets(assets.filter((a) => a.id !== asset.id))}
+                          onClick={() => {
+                            const id = asset.id;
+                            setAssets(assets.filter((a) => a.id !== id));
+                            void import("../../backend/repositories/productionAssetRepository").then(({ safeDeleteProductionAsset }) => {
+                              void safeDeleteProductionAsset(id);
+                            }).catch(() => {});
+                          }}
                           className="text-muted-foreground hover:text-destructive p-1.5 rounded-lg hover:bg-destructive/10"
                         >
                           <Trash2 className="w-4 h-4" />

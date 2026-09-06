@@ -112,6 +112,16 @@ export interface GenerationIntent {
 
   videoIntent: VideoGenerationIntent;
   trace: GenerationIntentTrace;
+
+  /**
+   * Capability-driven frame strategy for video generation.
+   * Storyboard sheet is never the default video input — individual panel frames are.
+   */
+  frameStrategy?: import("./frameStrategy").ResolvedFrameStrategy;
+  /** Planned individual storyboard frame for this shot (not the sheet). */
+  storyboardFrameId?: string;
+  /** Observed LAST frame from prior generated shot — temporal continuity. */
+  previousGeneratedStateFrameId?: string;
 }
 
 export interface CapabilityResolutionIssue {
