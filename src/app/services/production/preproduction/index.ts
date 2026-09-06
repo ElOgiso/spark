@@ -7,6 +7,7 @@ export * from "./types";
 export * from "./visualContracts";
 export * from "./referenceManifest";
 export * from "./storyboardBlueprint";
+export * from "./storyboardFrame";
 export * from "./videoGenerationBridge";
 export * from "./shotRisk";
 export * from "./candidateStrategy";

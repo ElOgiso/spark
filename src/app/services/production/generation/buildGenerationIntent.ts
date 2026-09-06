@@ -26,6 +26,9 @@ import type {
   GenerationQualityMode,
   ShotHandoffState,
 } from "./generationIntent";
+import { resolveGenerationFrameStrategy } from "./frameStrategy";
+import type { StoryboardFrameAsset } from "../preproduction/storyboardFrame";
+import type { GeneratedStateFrame } from "./generatedStateFrame";
 
 function hashId(prefix: string, seed: string): string {
   let h = 2166136261;
@@ -193,6 +196,19 @@ export function buildGenerationIntent(params: {
   qualityMode?: GenerationQualityMode;
   previousShot?: ShotSpec | null;
   candidateCounts?: { low: number; medium: number; high: number };
+  /** Planned individual storyboard frame for this shot (never the sheet overview). */
+  storyboardFrame?: StoryboardFrameAsset | null;
+  storyboardEndFrame?: StoryboardFrameAsset | null;
+  /** Observed LAST frame from previous generated shot */
+  previousGeneratedStateFrame?: GeneratedStateFrame | null;
+  frameStrategyCapabilities?: {
+    supportsReferenceImages?: boolean;
+    supportsStartFrame?: boolean;
+    supportsEndFrame?: boolean;
+    supportsStartAndEndFrame?: boolean;
+    supportsVideoContinuation?: boolean;
+    supportsLastFrameContinuation?: boolean;
+  };
 }): GenerationIntent {
   const { shot, scene } = params;
   const panel =
@@ -248,6 +264,32 @@ export function buildGenerationIntent(params: {
   });
 
   const { hard, soft } = buildConstraints({ shot, manifest, qualityMode });
+  const frameStrategy = resolveGenerationFrameStrategy({
+    storyboardFrame: params.storyboardFrame,
+    storyboardEndFrame: params.storyboardEndFrame,
+    previousGeneratedState: params.previousGeneratedStateFrame
+      ? {
+          id: params.previousGeneratedStateFrame.id,
+          url: params.previousGeneratedStateFrame.url,
+          position: params.previousGeneratedStateFrame.position,
+          sourceVideoAssetId: params.previousGeneratedStateFrame.sourceVideoAssetId,
+          sourceShotId: params.previousGeneratedStateFrame.sourceShotId,
+          sourceGenerationTaskId: params.previousGeneratedStateFrame.sourceGenerationTaskId,
+          timestampSec: params.previousGeneratedStateFrame.timestampSec,
+        }
+      : null,
+    preferContinuation: Boolean(params.previousGeneratedStateFrame),
+    preferFirstLast: Boolean(params.storyboardEndFrame),
+    capabilities: params.frameStrategyCapabilities || {
+      supportsReferenceImages: true,
+      supportsStartFrame: true,
+      supportsEndFrame: true,
+      supportsStartAndEndFrame: true,
+      supportsVideoContinuation: true,
+      supportsLastFrameContinuation: true,
+    },
+  });
+
   const intentId = hashId("gint", `${params.productionId}:${shot.id}:${panel.panelId}`);
 
   return {
@@ -294,6 +336,9 @@ export function buildGenerationIntent(params: {
       "Motion is never inferred from a still alone",
     ],
     videoIntent,
+    frameStrategy,
+    storyboardFrameId: params.storyboardFrame?.id,
+    previousGeneratedStateFrameId: params.previousGeneratedStateFrame?.id,
     trace: {
       productionId: params.productionId,
       sceneId: scene.id,

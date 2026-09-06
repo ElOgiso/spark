@@ -125,8 +125,11 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
     setSelectedTaskKey(null);
   };
 
-  const handleSelectModel = async (providerId: AIProviderId, modelId: string) => {
-    const updatedModels = { ...currentModels, [providerId]: modelId };
+  const handleSelectModel = async (_providerId: AIProviderId, modelId: string) => {
+    // ModelRouter.resolveModel keys selections by routing CATEGORY, not providerId.
+    const category = selectedTaskKey;
+    if (!category) return;
+    const updatedModels = { ...currentModels, [category]: modelId };
     ModelRouter.setUserModelSelectionConfig(updatedModels);
     if (updateAISettings) {
       await updateAISettings({

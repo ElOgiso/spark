@@ -50,3 +50,28 @@ export type {
   GenerationFailurePlan,
   GenerationCandidateRankingContract,
 } from "./generationIntent";
+
+export {
+  resolveGenerationFrameStrategy,
+  frameStrategyToVideoRequestFields,
+  capabilityNeedsForFrameStrategy,
+} from "./frameStrategy";
+export type {
+  GenerationFrameStrategyMode,
+  FrameStrategyCapabilities,
+  FrameStrategyInput,
+  ResolvedFrameStrategy,
+  GeneratedStateFrameRef,
+} from "./frameStrategy";
+
+export {
+  buildGeneratedStateFrame,
+  buildContinuityFrameHandoff,
+  flagGeneratedStateVsPlan,
+  GENERATED_STATE_FRAME_CATEGORY,
+} from "./generatedStateFrame";
+export type {
+  GeneratedStateFrame,
+  GeneratedStateFramePosition,
+  ContinuityFrameHandoff,
+} from "./generatedStateFrame";

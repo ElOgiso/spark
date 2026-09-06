@@ -160,7 +160,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
   });
 
   const [aiModelSelectionConfig, setAiModelSelectionConfig] = useState<Record<AIRoutingCategory, string>>(() => {
-    return aiSettings?.modelSelection || ModelRouter.getUserModelSelectionConfig();
+    return aiSettings?.models || ModelRouter.getUserModelSelectionConfig();
   });
 
   const [activeTaskModal, setActiveTaskModal] = useState<TaskDefinition | null>(null);
@@ -185,7 +185,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
     if (typeof updateAISettings === "function") {
       updateAISettings({
         routing: ModelRouter.getUserRoutingConfig(),
-        modelSelection: ModelRouter.getUserModelSelectionConfig(),
+        models: ModelRouter.getUserModelSelectionConfig(),
       });
     }
     setActiveTaskModal(null);
@@ -206,7 +206,7 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
     setAiModelSelectionConfig(updatedModels as any);
 
     if (typeof updateAISettings === "function") {
-      updateAISettings({ routing: updatedRouting, modelSelection: updatedModels });
+      updateAISettings({ routing: updatedRouting, models: updatedModels });
     }
   };
 

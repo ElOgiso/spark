@@ -444,6 +444,11 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const handleUpdateAIRouting = (category: AIRoutingCategory, provider: AIProviderId) => {
     const updated = ModelRouter.setUserRoutingConfig({ [category]: provider });
     setAiRoutingConfig(updated);
+    // Dual-write: keep ModelRouter LS and SparkContext AI settings unified
+    spark?.updateAISettings?.({
+      routing: updated,
+      models: ModelRouter.getUserModelSelectionConfig(),
+    });
     NotificationService.addNotification({
       title: "AI Routing Updated",
       description: `Default AI provider for ${category} updated to ${provider === "auto" ? "Best Available" : provider.toUpperCase()}.`,
@@ -457,6 +462,10 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const handleUpdateAIModel = (category: AIRoutingCategory, modelId: string) => {
     const updated = ModelRouter.setUserModelSelectionConfig({ [category]: modelId });
     setAiModelSelectionConfig(updated);
+    spark?.updateAISettings?.({
+      routing: ModelRouter.getUserRoutingConfig(),
+      models: updated,
+    });
   };
 
   // Map subPath to titles and components
@@ -801,7 +810,13 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                             </button>
                           )}
                           <button
-                            onClick={() => setAssets(assets.filter(a => a.id !== asset.id))}
+                            onClick={() => {
+                              const id = asset.id;
+                              setAssets(assets.filter(a => a.id !== id));
+                              void import("../backend/repositories/productionAssetRepository").then(({ safeDeleteProductionAsset }) => {
+                                void safeDeleteProductionAsset(id);
+                              }).catch(() => {});
+                            }}
                             className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />

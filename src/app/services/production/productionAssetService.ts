@@ -1095,7 +1095,13 @@ Return valid JSON with this exact structure:
             cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
           };
         })
-      : ProductionAssetService.planProductionScenes({ production, brief, brand, formatSettings: activeFormatSettings });
+      : ProductionAssetService.planProductionScenes({
+          production,
+          brief,
+          brand,
+          formatSettings: activeFormatSettings,
+          creditSettings: activeCreditSettings,
+        });
 
     currentStoryboard = storyboard;
     currentThumbnails = thumbnails.length > 0
@@ -2632,7 +2638,7 @@ Brand: ${brand.name}
     formatSettings?: ProductionFormatSettings;
     creditSettings?: GenerationCreditSettings;
   }): ProductionScene[] {
-    const { production, brief, brand, formatSettings } = params;
+    const { production, brief, brand, formatSettings, creditSettings } = params;
     const targetSec =
       formatSettings?.targetDurationSec ||
       (production as any)?.targetDurationSec ||
@@ -2654,9 +2660,20 @@ Brand: ${brand.name}
 
     // Calculate total scenes count: enforce scene segmentation when target exceeds engine max clip
     const minScenesForDuration = Math.ceil(targetSec / providerMaxClipSec);
-    const totalScenesCount = briefBeats.length > 0
+    const plannedScenesCount = briefBeats.length > 0
       ? briefBeats.length
       : Math.max(minScenesForDuration, (brief.storyboard as any[])?.length || 1);
+    // Honor Credit Control keyframe / max video clip limits when set
+    const creditCap =
+      typeof creditSettings?.maxVideoClips === "number"
+        ? creditSettings.maxVideoClips
+        : typeof creditSettings?.keyframeCount === "number"
+          ? creditSettings.keyframeCount
+          : undefined;
+    const totalScenesCount =
+      typeof creditCap === "number" && creditCap > 0
+        ? Math.min(plannedScenesCount, Math.max(1, Math.floor(creditCap)))
+        : plannedScenesCount;
 
     // Calculate per-scene legal duration snapped to provider capability map (e.g. Veo: 4|6|8s, Grok: 1..15s)
     const rawPerSceneSec = Math.max(1, Math.min(providerMaxClipSec, Math.ceil(targetSec / totalScenesCount)));
@@ -2762,6 +2779,10 @@ Brand: ${brand.name}
       brand,
       formatSettings: getEffectiveFormatSettings({
         formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
+        brand,
+      }),
+      creditSettings: getEffectiveCreditSettings({
+        creditSettings: (production as any)?.creditSettings,
         brand,
       }),
     });

@@ -57,6 +57,11 @@ import {
 import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
+import {
+  evaluatePublishGate,
+  buildPublishAuditRecord,
+  type PublishingPermission,
+} from "../services/production/publishing/publishPolicy";
 import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
@@ -2545,17 +2550,49 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       );
 
       const jobExists = prev.publishJobs.some((j: any) => j.productionId === review.productionId);
-      const newPublishJobs = jobExists ? prev.publishJobs : [
-        ...prev.publishJobs,
-        {
-          id: `pj-${Date.now()}`,
-          productionId: review.productionId,
-          title: review.title,
-          platform: review.account,
-          scheduledTime: "Thu 4:00 PM",
-          status: "Scheduled"
-        }
-      ];
+      const brand = prev.brand;
+      const publishingPermission: PublishingPermission = brand?.autonomous_publishing_enabled
+        ? "enabled"
+        : "disabled";
+      const gateInput = {
+        automationMode: prev.automationMode || brand?.automation_mode || "manual",
+        publishRequiresApproval: brand?.publish_requires_approval !== false,
+        publishingPermission,
+        finalAssetExists: true,
+        finalTechnicalQcPassed: true,
+        contentPolicyPassed: true,
+        destinationCredentialsValid: true,
+        publicationTargetValid: true,
+        // Creative Review approve is an explicit user decision for this production
+        userApproved: true,
+        approvedBy: prev.character?.name || "user",
+      };
+      const publishGate = evaluatePublishGate(gateInput);
+      const audit = buildPublishAuditRecord(gateInput, publishGate, {
+        publicationTarget: review.account,
+      });
+
+      let newPublishJobs = prev.publishJobs;
+      if (!jobExists) {
+        newPublishJobs = [
+          ...prev.publishJobs,
+          {
+            id: `pj-${Date.now()}`,
+            productionId: review.productionId,
+            title: review.title,
+            platform: review.account,
+            scheduledTime: publishGate.action === "PUBLISH" ? "Thu 4:00 PM" : null,
+            status:
+              publishGate.action === "PUBLISH"
+                ? "Scheduled"
+                : publishGate.action === "BLOCKED"
+                  ? "Blocked"
+                  : "Awaiting Approval",
+            decisionSource: audit.decisionSource,
+            publishAudit: audit,
+          },
+        ];
+      }
 
       const pkgExists = prev.exportPackages.some((ep: any) => ep.productionId === review.productionId);
       const newExportPackages = pkgExists ? prev.exportPackages : [
