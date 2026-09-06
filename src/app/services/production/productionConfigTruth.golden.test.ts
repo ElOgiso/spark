@@ -172,6 +172,44 @@ describe("production settings snapshot", () => {
     assert.equal(resolved.formatSettings.targetDurationSec, 15);
     assert.equal(resolved.productionMode, "deep");
   });
+
+  it("keeps cinematic snapshot authoritative when live brand prefers narrator", () => {
+    const brand = baseBrand();
+    (brand as any).productionMode = "narrator";
+    const snapshot = buildProductionSettingsSnapshot({
+      brand,
+      spark: baseSpark(),
+      character: baseCharacter(),
+      productionMode: "cinematic",
+      automationMode: "balanced",
+    });
+    assert.equal(snapshot.productionMode, "deep");
+    assert.equal(isCinematicMode(snapshot.productionMode), true);
+
+    const production = attachProductionSettingsSnapshot(
+      {
+        id: "prod-mode-lock",
+        title: "Mode Lock",
+        status: "Ready for Review",
+        mode: "express",
+        dateCreated: "2026-09-06",
+        aspectRatio: "9:16",
+        formats: ["YouTube Shorts"],
+        scenes: [],
+      } as Production,
+      snapshot,
+    );
+
+    const resolved = resolveGenerationSettings({
+      production,
+      brief: production.brief,
+      brand,
+    });
+    assert.equal(resolved.source, "snapshot");
+    assert.equal(resolved.productionMode, "deep");
+    assert.equal(resolved.preferredVideoProvider, "gemini");
+    assert.equal(resolved.preferredVideoModel, "veo");
+  });
 });
 
 describe("canonical media spine", () => {

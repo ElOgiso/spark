@@ -142,6 +142,44 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     if (st === "Needs Edit") setShowAssetsGallery(true);
   }, [activeReview?.status, activeProd?.status]);
 
+  const brief = activeProd?.brief || activeReview?.brief;
+  const canonicalMedia = useMemo(
+    () =>
+      resolveCanonicalProductionMedia({
+        production: activeProd,
+        review: activeReview,
+        brief,
+      }),
+    [activeProd, activeReview, brief]
+  );
+  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
+  const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
+  const isExpressMode = prodMode === "express" || prodMode === "narrator";
+  const reviewView = useMemo(() => {
+    if (!activeProd) return null;
+    return buildReviewProductionView(activeProd as any, {
+      reviewItems: activeReview ? [activeReview] : reviewItems.filter((item: any) => item?.productionId === activeProd.id),
+      automationMode: automationMode || brand?.automationMode || activeProd?.automationMode,
+      publishRequiresApproval: brand?.publishRequiresApproval ?? activeProd?.publishRequiresApproval,
+      publishingPermission: brand?.publishingPermission ?? activeProd?.publishingPermission,
+      userApproved: ["Approved", "Published", "Scheduled"].includes(String(activeProd?.status || activeReview?.status || "")),
+      destinationCredentialsValid: Array.isArray((brand as any)?.connectedAccounts)
+        ? (brand as any).connectedAccounts.some((a: any) => a?.status === "connected")
+        : false,
+      publicationTargetValid: Boolean(activeProd?.platform || brief?.platformRecommendation || activeReview?.account),
+    });
+  }, [activeProd, activeReview, reviewItems, automationMode, brand, brief]);
+
+  useEffect(() => {
+    if (!reviewView) return;
+    if (!selectedReviewSceneId && reviewView.scenes[0]) {
+      setSelectedReviewSceneId(reviewView.scenes[0].id);
+    }
+    if (!selectedReviewShotId && reviewView.shots[0]) {
+      setSelectedReviewShotId(reviewView.shots[0].id);
+    }
+  }, [reviewView, selectedReviewSceneId, selectedReviewShotId]);
+
   if (showAssetsGallery) {
     return (
       <DesktopProductionAssetsGallery
@@ -273,19 +311,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     }
   };
 
-  const brief = activeProd?.brief || activeReview?.brief;
-  const canonicalMedia = useMemo(
-    () =>
-      resolveCanonicalProductionMedia({
-        production: activeProd,
-        review: activeReview,
-        brief,
-      }),
-    [activeProd, activeReview, brief]
-  );
-  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
-  const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
-  const isExpressMode = prodMode === "express" || prodMode === "narrator";
+
 
   const proposal = {
     title: asText(brief?.title || activeProd?.title || activeReview?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
@@ -405,30 +431,6 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
   const statusNote = (status: string) => status === "not_evaluated" ? "Not evaluated" : status === "not_analyzed" ? "Not analyzed" : status;
 
-  const reviewView = useMemo(() => {
-    if (!activeProd) return null;
-    return buildReviewProductionView(activeProd as any, {
-      reviewItems: activeReview ? [activeReview] : reviewItems.filter((item: any) => item?.productionId === activeProd.id),
-      automationMode: automationMode || brand?.automationMode || activeProd?.automationMode,
-      publishRequiresApproval: brand?.publishRequiresApproval ?? activeProd?.publishRequiresApproval,
-      publishingPermission: brand?.publishingPermission ?? activeProd?.publishingPermission,
-      userApproved: ["Approved", "Published", "Scheduled"].includes(String(activeProd?.status || activeReview?.status || "")),
-      destinationCredentialsValid: Array.isArray((brand as any)?.connectedAccounts)
-        ? (brand as any).connectedAccounts.some((a: any) => a?.status === "connected")
-        : false,
-      publicationTargetValid: Boolean(activeProd?.platform || brief?.platformRecommendation || activeReview?.account),
-    });
-  }, [activeProd, activeReview, reviewItems, automationMode, brand, brief]);
-
-  useEffect(() => {
-    if (!reviewView) return;
-    if (!selectedReviewSceneId && reviewView.scenes[0]) {
-      setSelectedReviewSceneId(reviewView.scenes[0].id);
-    }
-    if (!selectedReviewShotId && reviewView.shots[0]) {
-      setSelectedReviewShotId(reviewView.shots[0].id);
-    }
-  }, [reviewView, selectedReviewSceneId, selectedReviewShotId]);
 
   const handleStructuredEditRequest = async (payload: {
     categories: string[];
@@ -507,12 +509,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   const rev = reviewItems.find((r: any) => r.productionId === p.id || r.id === p.id);
                   const brief = p.brief || rev?.brief;
 
-                  const videoUrl = [
-                    p.videoUrl,
-                    rev?.videoUrl,
-                    brief?.videoUrl,
-                    brief?.generatedAssets?.generatedVideos?.[0],
-                  ].find((u) => isPlayableVideoUrl(u));
+                  const queueCanonical = resolveCanonicalProductionMedia({
+                    production: p,
+                    review: rev,
+                    brief,
+                  });
+                  const videoUrl = queueCanonical.canonicalMasterUrl;
 
                   const sceneStill =
                     p.scenes?.[0]?.image ||

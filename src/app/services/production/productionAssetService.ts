@@ -110,14 +110,23 @@ export function buildLockedIdentityPack(params: {
   const characterReferenceImageUrl =
     character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || undefined;
 
-  // Single source of mode truth — honors the user's production/brand/brief preference and legacy
-  // synonyms (narrator→express, hybrid→standard, cinematic→deep) instead of only production.mode.
-  const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
+  // Snapshot wins when present — live brand/brief must not silently rebind cinematic→narrator.
+  const generationSettings = resolveGenerationSettings({ production, brief, brand });
+  const mode: "express" | "standard" | "deep" =
+    generationSettings.source === "snapshot"
+      ? generationSettings.productionMode
+      : resolveProductionMode({ production, brief, brand });
 
-  const formatSettings = getEffectiveFormatSettings({
-    formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings || (params as any).formatSettings,
-    brand,
-  });
+  const formatSettings =
+    generationSettings.source === "snapshot"
+      ? generationSettings.formatSettings
+      : getEffectiveFormatSettings({
+          formatSettings:
+            (production as any)?.formatSettings ||
+            (brief as any)?.formatSettings ||
+            (params as any).formatSettings,
+          brand,
+        });
   const aspectMode = formatSettings?.aspectMode || "portrait";
 
   let aspectRatio = aspectMode === "landscape" ? "16:9" : "9:16";
@@ -712,12 +721,22 @@ export class ProductionAssetService {
     checkAborted();
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
-    const { mode, aspectRatio } = identityPack;
+    // Authoritative mode from snapshot (when present) — never let live re-resolution drift the pipeline.
+    const mode: "express" | "standard" | "deep" = generationSettings.productionMode || identityPack.mode;
+    const aspectRatio = identityPack.aspectRatio;
+    if (generationSettings.source === "snapshot" && identityPack.mode !== mode) {
+      console.warn(
+        `[SPARK Pipeline] Identity pack mode (${identityPack.mode}) overridden by immutable snapshot mode (${mode})`
+      );
+    }
     // On-concept directive from the researched viral spark — injected into still + motion prompts
     // so generated visuals reflect the researched format/retention/niche, not generic templates.
     const viralConcept = buildViralConceptDirective(brief);
     (production as any).aspectRatio = aspectRatio;
+    (production as any).mode = mode;
+    (production as any).productionMode = mode;
     brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
+    (brief as any).productionMode = mode;
     const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
     const compileHeight = aspectRatio === "16:9" ? 1080 : 1920;
     const promptPack = getProductionPromptPack({
@@ -730,16 +749,25 @@ export class ProductionAssetService {
       memoryItems,
     });
 
+    const skipExternalVoice = mode === "deep";
+    const skipSfx = mode === "deep";
+    const targetThumbCountEarly =
+      typeof activeCreditSettings.thumbnailCount === "number"
+        ? Math.max(0, activeCreditSettings.thumbnailCount)
+        : 3;
+    const skipThumbnails = targetThumbCountEarly === 0;
+
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
-      { id: "voice", label: "Voiceover synthesis", status: "pending" },
+      { id: "voice", label: skipExternalVoice ? "Voiceover synthesis (skipped — cinematic)" : "Voiceover synthesis", status: skipExternalVoice ? "done" : "pending" },
       { id: "keyframes", label: "Scene stills", status: "pending" },
-      { id: "sfx", label: "Sound FX", status: "pending" },
+      { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "done" : "pending" },
       { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
-      { id: "captions", label: "Captions", status: "pending" },
-      { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
+      { id: "captions", label: mode === "express" ? "Captions" : "Captions (skipped)", status: mode === "express" ? "pending" : "done" },
+      { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "done" : "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
+
     const markStage = (id: string, status: import("../../domain/types").GenerationProgressStage["status"]) => {
       const stage = stages.find((s) => s.id === id);
       if (stage) stage.status = status;
@@ -789,6 +817,10 @@ export class ProductionAssetService {
         onProgress(latestProgressSnapshot);
       }
     };
+
+    // Seed Stage UI immediately — before any provider / LLM work — so Review never shows
+    // "Synthesizing" without a Stage while media credits are already burning.
+    emitProgress(1, "Initializing", `Initializing ${mode.toUpperCase()} production pipeline (single spine)...`);
 
     const persistCurrentStage = async (stageName: string) => {
       try {
@@ -1194,7 +1226,8 @@ Return valid JSON with this exact structure:
         checkAborted();
         try {
           const voiceScript = promptPack.voiceScript;
-          const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+          const snapshotVoiceId = generationSettings.snapshot?.voice?.voiceId;
+              const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await withTimeout(
             generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
@@ -2121,10 +2154,11 @@ CRITICAL PRODUCTION LAWS:
         ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
 
-      // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
-      // Keeps motion error in lastError so executives can see the provider failure.
-      // Deep/cinematic normally skips the VO bed — synthesize an emergency bed so fallback can run.
-      if (!isVideoSuccess && sceneImages.length > 0) {
+      // Provider I2V total failure handling.
+      // Express/narrator may compile a slideshow master from stills + VO.
+      // Cinematic/deep/standard must NOT burn emergency VO or narrator slideshow credits —
+      // those assets are unused (quarantined) and must not be generated.
+      if (!isVideoSuccess && sceneImages.length > 0 && mode === "express") {
         try {
           if (!realVoiceUrl) {
             console.warn(
@@ -2132,7 +2166,8 @@ CRITICAL PRODUCTION LAWS:
             );
             try {
               const voiceScript = promptPack.voiceScript;
-              const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+              const snapshotVoiceId = generationSettings.snapshot?.voice?.voiceId;
+              const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
               const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
               const emergencyVoice = await withTimeout(
                 generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
@@ -2219,6 +2254,15 @@ CRITICAL PRODUCTION LAWS:
           if (fallbackErr?.name === "AbortError" || signal?.aborted) throw fallbackErr;
           console.warn("[SPARK Pipeline] Slideshow fallback after motion failure also failed:", fallbackErr);
         }
+      }
+
+      if (!isVideoSuccess && mode !== "express") {
+        lastError =
+          lastError ||
+          `Cinematic/hybrid motion synthesis failed — refusing narrator slideshow fallback (unused for ${mode}).`;
+        console.warn(
+          `[SPARK Pipeline] Skipping narrator slideshow fallback for mode=${mode} (do not generate unused assets). Original error: ${lastError}`
+        );
       }
 
       if (!isVideoSuccess && !lastError) {

@@ -1749,6 +1749,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       formatSettings: effectiveFormat,
       targetDurationSec: effectiveFormat.targetDurationSec,
       isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
+      generationProgress: ProductionGenerationGuard.isEnabled()
+        ? {
+            percent: 1,
+            stage: "Queued",
+            message: "Production created — waiting for asset pipeline...",
+            stages: [],
+            updatedAt: new Date().toISOString(),
+          }
+        : undefined,
       scenes: [
         { scene: 1, description: `Hook Angle: ${spark.angle} (${hostStyle} host presentation)`, duration: "0-5s" },
         { scene: 2, description: `Body Point 1: Deep dive on ${spark.title}`, duration: "5-25s" },
@@ -1944,6 +1953,36 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
               const controller = new AbortController();
               activeGenerationControllers.current.set(effectiveProdId, controller);
+
+              // Seed Stage UI before auto asset generation starts so Review shows Stage immediately.
+              setState((prev: any) => ({
+                ...prev,
+                productions: prev.productions.map((p: any) =>
+                  p.id === effectiveProdId
+                    ? {
+                        ...p,
+                        isGeneratingAssets: true,
+                        generationProgress: {
+                          percent: 1,
+                          stage: "Initializing",
+                          message: "Initializing production pipeline (single spine)...",
+                          stages: [
+                            { id: "storyboard", label: "Storyboard structure", status: "pending" },
+                            { id: "voice", label: "Voiceover synthesis", status: "pending" },
+                            { id: "keyframes", label: "Scene stills", status: "pending" },
+                            { id: "sfx", label: "Sound FX", status: "pending" },
+                            { id: "video", label: "Motion synthesis", status: "pending" },
+                            { id: "captions", label: "Captions", status: "pending" },
+                            { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
+                            { id: "saving", label: "Finalizing media package", status: "pending" },
+                          ],
+                          updatedAt: new Date().toISOString(),
+                        },
+                      }
+                    : p
+                ),
+              }));
+
 
               try {
                 const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
@@ -2360,7 +2399,29 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState((prev: any) => ({
       ...prev,
       productions: prev.productions.map((p: any) =>
-        p.id === productionId ? { ...p, isGeneratingAssets: true, lastError: undefined } : p
+        p.id === productionId
+          ? {
+              ...p,
+              isGeneratingAssets: true,
+              lastError: undefined,
+              generationProgress: {
+                percent: 1,
+                stage: "Initializing",
+                message: "Initializing production pipeline (single spine)...",
+                stages: p.generationProgress?.stages || [
+                  { id: "storyboard", label: "Storyboard structure", status: "pending" },
+                  { id: "voice", label: "Voiceover synthesis", status: "pending" },
+                  { id: "keyframes", label: "Scene stills", status: "pending" },
+                  { id: "sfx", label: "Sound FX", status: "pending" },
+                  { id: "video", label: "Motion synthesis", status: "pending" },
+                  { id: "captions", label: "Captions", status: "pending" },
+                  { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
+                  { id: "saving", label: "Finalizing media package", status: "pending" },
+                ],
+                updatedAt: new Date().toISOString(),
+              },
+            }
+          : p
       ),
     }));
 
