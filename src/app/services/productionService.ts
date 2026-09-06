@@ -19,6 +19,11 @@ import {
   assembleEditorialTimeline,
 } from "./production/editorial";
 import type { ProductionSpec } from "./production/specification/productionSpec";
+import {
+  runProductionLifecycle,
+  type ProductionLifecycleReport,
+  type RunProductionLifecycleOptions,
+} from "./production/execution";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -742,6 +747,81 @@ export class ProductionService implements IProductionService {
     const spec = (reasoning as any).productionSpec as ProductionSpec | undefined;
     if (!spec) return null;
     return assembleEditorialTimeline(spec, { allowPlannedWithoutAssets: true });
+  }
+
+  /**
+   * Phase 10 — run the full production lifecycle against an existing ProductionSpec.
+   * Conductor only: reuses executeProduction, QC repair loop, and editorial/mastering.
+   * Persists a structured lifecycle report on production.reasoning.lifecycle.
+   */
+  async runFullProductionLifecycle(params: {
+    production: Production;
+    brand?: Brand;
+    options?: RunProductionLifecycleOptions;
+  }): Promise<{
+    production: Production;
+    report: ProductionLifecycleReport;
+  }> {
+    const reasoning =
+      typeof params.production.reasoning === "object" && params.production.reasoning
+        ? params.production.reasoning
+        : {};
+    const spec = (reasoning as any).productionSpec as ProductionSpec | undefined;
+    if (!spec) {
+      throw new Error("ProductionSpec missing — run createProductionFromSpark / planning first");
+    }
+
+    const report = await runProductionLifecycle({
+      spec,
+      options: {
+        brandId: params.brand?.id || params.production.brandId,
+        automationMode: params.options?.automationMode || "balanced",
+        ...params.options,
+      },
+    });
+
+    const updated: Production = {
+      ...params.production,
+      reasoning: {
+        ...reasoning,
+        productionSpec: report.spec,
+        lifecycle: {
+          phase: report.phase,
+          ok: report.ok,
+          completed: report.completed,
+          deliverableReady: report.deliverableReady,
+          summary: report.summary,
+          errors: report.errors,
+          warnings: report.warnings,
+          eventCount: report.events.length,
+          cost: report.cost,
+          timing: report.timing,
+          preflightSummary: report.preflight?.summary,
+          qcVerdict: report.qcReport?.verdict,
+          editorialDecision: report.editorial?.decision?.action,
+          masterOk: report.editorial?.mastering?.ok,
+          masterUrl: report.editorial?.mastering?.output?.mediaUrl,
+          checkpointId: report.checkpoint?.id,
+        },
+      },
+      status: report.completed
+        ? "Ready for Review"
+        : report.phase === "failed" || report.phase === "blocked"
+          ? "Failed"
+          : report.phase === "awaiting_review"
+            ? "Needs Edit"
+            : params.production.status,
+    };
+
+    const state = this.getFullState();
+    const currentProds: Production[] = state.productions || [];
+    this.saveFullState({
+      productions: currentProds
+        .map((p) => (p.id === updated.id ? updated : p))
+        .concat(currentProds.some((p) => p.id === updated.id) ? [] : [updated]),
+    });
+
+    return { production: updated, report };
   }
 }
 

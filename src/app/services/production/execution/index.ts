@@ -77,3 +77,33 @@ export type {
   BridgeLogEvent,
   BridgeLogger,
 } from "./productionExecutionBridge";
+
+/** Phase 10 — end-to-end production lifecycle conductor */
+export { runProductionPreflight } from "./productionPreflight";
+export type { RunProductionPreflightOptions } from "./productionPreflight";
+export {
+  canTransitionLifecycle,
+  transitionLifecycle,
+  isTerminalLifecyclePhase,
+  projectStatusForPhase,
+} from "./lifecycleStateMachine";
+export {
+  runProductionLifecycle,
+  resumeProductionLifecycle,
+} from "./productionLifecycleRunner";
+export type {
+  ProductionLifecyclePhase,
+  ProductionLifecycleEventType,
+  ProductionLifecycleEvent,
+  PreflightSeverity,
+  PreflightIssue,
+  PreflightReport,
+  ProductionLifecycleCheckpoint,
+  ProductionCostRollup,
+  ProductionTimingRollup,
+  ProductionLifecycleReport,
+  RunProductionLifecycleOptions,
+  ProductionLifecycleDeps,
+  RunProductionLifecycleInput,
+} from "./lifecycleTypes";
+
