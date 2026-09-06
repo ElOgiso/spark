@@ -44,7 +44,9 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
+import { buildPreferredVideoAiPreferenceUpdate } from "../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "./ui/AIProviderLogos";
+import { PreferredVideoAiPreferenceDropdown } from "./ui/PreferredVideoAiPreferenceDropdown";
 import { SearchableSelect } from "./ui/SearchableSelect";
 import {
   BRAND_ARCHETYPES,
@@ -59,6 +61,7 @@ import {
   VIDEO_LENGTH_OPTIONS,
   CONTENT_FORMAT_OPTIONS,
   type ContentFormat,
+  type AIProviderId,
   getEffectiveFormatSettings,
 } from "../domain/types";
 
@@ -75,6 +78,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
     automationMode,
     productionMode,
     formatSettings,
+    aiSettings,
     memoryItems,
     researchSources = [],
     updateBrand,
@@ -84,6 +88,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
     updateAutomationMode,
     updateProductionMode,
     updateFormatSettings,
+    updateAISettings,
     addMemoryItem,
     removeMemoryItem,
     pinMemoryItem,
@@ -106,6 +111,19 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
   const [newRuleText, setNewRuleText] = useState("");
   const [showAddRule, setShowAddRule] = useState(false);
+
+  const applyPreferredVideoAiPreference = (providerId: AIProviderId | "auto", modelId?: string) => {
+    if (!updateFormatSettings) return;
+    const { formatPatch, aiSettings: nextAi } = buildPreferredVideoAiPreferenceUpdate({
+      providerId,
+      modelId,
+      currentAiSettings: aiSettings,
+    });
+    void updateFormatSettings(formatPatch);
+    if (typeof updateAISettings === "function") {
+      updateAISettings(nextAi);
+    }
+  };
   const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
   const [sourceUrlInput, setSourceUrlInput] = useState("");
   const [showAddSource, setShowAddSource] = useState(false);
@@ -1310,6 +1328,20 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     </span>
                   </div>
 
+                  <div className="mb-4 rounded-xl border border-border/60 bg-background/50 p-3.5">
+                    <PreferredVideoAiPreferenceDropdown
+                      preferredVideoProvider={formatSettings?.preferredVideoProvider}
+                      preferredVideoModel={formatSettings?.preferredVideoModel}
+                      onProviderChange={(providerId) => applyPreferredVideoAiPreference(providerId)}
+                      onModelChange={(modelId) =>
+                        applyPreferredVideoAiPreference(
+                          (formatSettings?.preferredVideoProvider || "auto") as AIProviderId | "auto",
+                          modelId
+                        )
+                      }
+                    />
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {(() => {
                       const activeVideo = resolveActiveVideoProvider({
@@ -1372,7 +1404,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                       return (
                         <>
                           <button
-                            onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: "auto" })}
+                            onClick={() => applyPreferredVideoAiPreference("auto")}
                             className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                               isAuto
                                 ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
@@ -1398,7 +1430,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                             return (
                               <button
                                 key={m.id}
-                                onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: m.id as any })}
+                                onClick={() => applyPreferredVideoAiPreference(m.id as AIProviderId)}
                                 className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                                   isSelected
                                     ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"

@@ -44,7 +44,9 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../../services/runtime/providerCapabilities";
+import { buildPreferredVideoAiPreferenceUpdate } from "../../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "../ui/AIProviderLogos";
+import { PreferredVideoAiPreferenceDropdown } from "../ui/PreferredVideoAiPreferenceDropdown";
 import { SearchableSelect } from "../ui/SearchableSelect";
 import {
   BRAND_ARCHETYPES,
@@ -56,7 +58,7 @@ import {
   seedDefaultAudience,
 } from "../../domain/brandOptions";
 import { normalizeHandle } from "../../domain/accountUtils";
-import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, type ContentFormat } from "../../domain/types";
+import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, type ContentFormat, type AIProviderId } from "../../domain/types";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -71,6 +73,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     automationMode,
     productionMode,
     formatSettings,
+    aiSettings,
     memoryItems,
     researchSources = [],
     updateBrand,
@@ -80,6 +83,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     updateAutomationMode,
     updateProductionMode,
     updateFormatSettings,
+    updateAISettings,
     addMemoryItem,
     removeMemoryItem,
     pinMemoryItem,
@@ -102,6 +106,19 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
   const [showLocationPlateStudio, setShowLocationPlateStudio] = useState(false);
   const [showSupportCharacterModal, setShowSupportCharacterModal] = useState(false);
+
+  const applyPreferredVideoAiPreference = (providerId: AIProviderId | "auto", modelId?: string) => {
+    if (!updateFormatSettings) return;
+    const { formatPatch, aiSettings: nextAi } = buildPreferredVideoAiPreferenceUpdate({
+      providerId,
+      modelId,
+      currentAiSettings: aiSettings,
+    });
+    void updateFormatSettings(formatPatch);
+    if (typeof updateAISettings === "function") {
+      updateAISettings(nextAi);
+    }
+  };
 
   // Content Pillar Add State
   const [showAddPillar, setShowAddPillar] = useState(false);
@@ -1022,6 +1039,21 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               <span className="text-[10px] font-mono text-muted-foreground">Max Native Clip</span>
             </div>
 
+            <div className="rounded-lg border border-border/60 bg-background/50 p-2.5">
+              <PreferredVideoAiPreferenceDropdown
+                compact
+                preferredVideoProvider={formatSettings?.preferredVideoProvider}
+                preferredVideoModel={formatSettings?.preferredVideoModel}
+                onProviderChange={(providerId) => applyPreferredVideoAiPreference(providerId)}
+                onModelChange={(modelId) =>
+                  applyPreferredVideoAiPreference(
+                    (formatSettings?.preferredVideoProvider || "auto") as AIProviderId | "auto",
+                    modelId
+                  )
+                }
+              />
+            </div>
+
             <div className="space-y-1.5">
               {(() => {
                 const activeVideo = resolveActiveVideoProvider({
@@ -1077,7 +1109,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 return (
                   <>
                     <button
-                      onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: "auto" })}
+                      onClick={() => applyPreferredVideoAiPreference("auto")}
                       className={`w-full p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
                         isAuto
                           ? "bg-purple-600/20 border-purple-500/60 shadow-sm ring-1 ring-purple-500/40"
@@ -1099,7 +1131,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                         return (
                           <button
                             key={m.id}
-                            onClick={() => updateFormatSettings && updateFormatSettings({ preferredVideoProvider: m.id as any })}
+                            onClick={() => applyPreferredVideoAiPreference(m.id as AIProviderId)}
                             className={`p-2 rounded-lg border text-left transition-all flex flex-col justify-between ${
                               isSelected
                                 ? "bg-purple-600/20 border-purple-500/60 ring-1 ring-purple-500/40"

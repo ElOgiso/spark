@@ -809,6 +809,12 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     localCacheSettings?.preferredVideoProvider ||
     DEFAULT_FORMAT_SETTINGS.preferredVideoProvider;
 
+  const rawPreferredModel =
+    direct?.preferredVideoModel ||
+    brandSettings?.preferredVideoModel ||
+    localCacheSettings?.preferredVideoModel ||
+    DEFAULT_FORMAT_SETTINGS.preferredVideoModel;
+
   return {
     ...DEFAULT_FORMAT_SETTINGS,
     ...(brandSettings || {}),
@@ -817,6 +823,7 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     targetDurationSec: rawTargetDuration,
     contentFormat: (rawContentFormat as ContentFormat) || "host",
     preferredVideoProvider: rawPreferredProvider,
+    preferredVideoModel: rawPreferredModel,
   };
 }
 
