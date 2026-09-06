@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
 import { useSpark } from "../../state/SparkContext";
+import { resolveCanonicalProductionMedia } from "../../services/production/canonicalProductionMedia";
 
 export interface ProductionSceneItem {
   id: string;
@@ -58,8 +59,15 @@ export function MobileProductionAssetsGallery({
   });
 
   // Map real storyboard scenes if available, else local fallback
+  const canonicalMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    brief,
+  });
   const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
-  const rawClips = brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
+  const rawClips =
+    canonicalMedia.sceneClips.length > 0
+      ? canonicalMedia.sceneClips
+      : brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
 
   const initialScenes: ProductionSceneItem[] =
     rawStoryboard.length > 0
@@ -95,9 +103,9 @@ export function MobileProductionAssetsGallery({
             index: 1,
             title: "Master Production",
             durationSec: 12,
-            status: activeProd?.videoUrl || brief?.videoUrl ? "Ready" : "Generating",
+            status: canonicalMedia.canonicalMasterUrl ? "Ready" : (canonicalMedia.sceneClips.length ? "Ready" : "Generating"),
             thumbUrl: brief?.thumbnailUrl || activeProd?.thumbnailUrl || undefined,
-            videoUrl: activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
+            videoUrl: canonicalMedia.canonicalMasterUrl,
             beatLine: brief?.hook || "Full production master video",
           },
         ];
@@ -109,6 +117,7 @@ export function MobileProductionAssetsGallery({
   const [fixNotes, setFixNotes] = useState("");
   const [approvedMaster, setApprovedMaster] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isMerging, setIsMerging] = useState(false);
 
   const isOneTake = scenes.length === 1;
   const readyCount = scenes.filter((s) => s.status === "Ready" || s.status === "Approved").length;
@@ -156,7 +165,6 @@ export function MobileProductionAssetsGallery({
     }
   };
 
-  const [isMerging, setIsMerging] = useState(false);
 
   const handleApproveMerge = async () => {
     if (isMerging) return;
@@ -453,9 +461,9 @@ export function MobileProductionAssetsGallery({
 
       {/* Sticky Footer */}
       <footer className="fixed bottom-0 left-0 right-0 p-4 bg-[#0B0F17]/95 border-t border-white/10 backdrop-blur-md z-40 space-y-2" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
-        {(activeProd?.videoUrl || brief?.videoUrl) && (
+        {(canonicalMedia.canonicalMasterUrl) && (
           <button
-            onClick={() => setActiveVideo({ url: (activeProd?.videoUrl || brief?.videoUrl)!, title: `Master Film · ${title}` })}
+            onClick={() => setActiveVideo({ url: canonicalMedia.canonicalMasterUrl!, title: `Master Film · ${title}` })}
             className="w-full py-2.5 rounded-xl border border-white/20 bg-white/5 text-xs font-semibold text-white flex items-center justify-center gap-1.5 active:scale-[0.99]"
           >
             <Play className="w-3.5 h-3.5 fill-current text-purple-300" />

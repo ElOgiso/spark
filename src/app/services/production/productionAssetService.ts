@@ -11,6 +11,11 @@ import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterS
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveProductionMode } from "./resolveProductionMode";
+import {
+  resolveGenerationSettings,
+  isCinematicMode,
+  readProductionSettingsSnapshot,
+} from "./productionSettingsSnapshot";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -105,14 +110,23 @@ export function buildLockedIdentityPack(params: {
   const characterReferenceImageUrl =
     character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl || undefined;
 
-  // Single source of mode truth — honors the user's production/brand/brief preference and legacy
-  // synonyms (narrator→express, hybrid→standard, cinematic→deep) instead of only production.mode.
-  const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
+  // Snapshot wins when present — live brand/brief must not silently rebind cinematic→narrator.
+  const generationSettings = resolveGenerationSettings({ production, brief, brand });
+  const mode: "express" | "standard" | "deep" =
+    generationSettings.source === "snapshot"
+      ? generationSettings.productionMode
+      : resolveProductionMode({ production, brief, brand });
 
-  const formatSettings = getEffectiveFormatSettings({
-    formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings || (params as any).formatSettings,
-    brand,
-  });
+  const formatSettings =
+    generationSettings.source === "snapshot"
+      ? generationSettings.formatSettings
+      : getEffectiveFormatSettings({
+          formatSettings:
+            (production as any)?.formatSettings ||
+            (brief as any)?.formatSettings ||
+            (params as any).formatSettings,
+          brand,
+        });
   const aspectMode = formatSettings?.aspectMode || "portrait";
 
   let aspectRatio = aspectMode === "landscape" ? "16:9" : "9:16";
@@ -231,6 +245,17 @@ export function isStorageVerifiedVideoUrl(val?: string | null): boolean {
 
 export function isDurableMasterVideoReady(val?: string | null): boolean {
   return isPlayableVideoUrl(val) && isStorageVerifiedVideoUrl(val);
+}
+
+/** Emergency narrator slideshow written after I2V failure — not a cinematic master. */
+export function isEmergencySlideshowFallbackUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes("master-fallback.") ||
+    lower.includes("/video/master-fallback") ||
+    lower.includes("master-fallback/")
+  );
 }
 
 export function isValidMediaData(val?: string | null): val is string {
@@ -638,14 +663,21 @@ export class ProductionAssetService {
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
-    const activeFormatSettings = getEffectiveFormatSettings({
-      formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
+    const generationSettings = resolveGenerationSettings({
+      production,
+      brief,
       brand,
+      creditSettings,
     });
-    const activeCreditSettings = getEffectiveCreditSettings({
-      creditSettings: creditSettings || (production as any)?.creditSettings,
-      brand,
-    });
+    const activeFormatSettings = generationSettings.formatSettings;
+    const activeCreditSettings = generationSettings.creditSettings;
+    const preferredVideoModel = generationSettings.preferredVideoModel;
+    const preferredVideoProvider = generationSettings.preferredVideoProvider;
+    if (generationSettings.source === "snapshot") {
+      console.log(
+        `[SPARK Pipeline] Using immutable production settings snapshot (mode=${generationSettings.productionMode}, format=${activeFormatSettings.contentFormat}, provider=${preferredVideoProvider || "auto"}, model=${preferredVideoModel || "default"})`
+      );
+    }
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
@@ -689,12 +721,22 @@ export class ProductionAssetService {
     checkAborted();
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
-    const { mode, aspectRatio } = identityPack;
+    // Authoritative mode from snapshot (when present) — never let live re-resolution drift the pipeline.
+    const mode: "express" | "standard" | "deep" = generationSettings.productionMode || identityPack.mode;
+    const aspectRatio = identityPack.aspectRatio;
+    if (generationSettings.source === "snapshot" && identityPack.mode !== mode) {
+      console.warn(
+        `[SPARK Pipeline] Identity pack mode (${identityPack.mode}) overridden by immutable snapshot mode (${mode})`
+      );
+    }
     // On-concept directive from the researched viral spark — injected into still + motion prompts
     // so generated visuals reflect the researched format/retention/niche, not generic templates.
     const viralConcept = buildViralConceptDirective(brief);
     (production as any).aspectRatio = aspectRatio;
+    (production as any).mode = mode;
+    (production as any).productionMode = mode;
     brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
+    (brief as any).productionMode = mode;
     const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
     const compileHeight = aspectRatio === "16:9" ? 1080 : 1920;
     const promptPack = getProductionPromptPack({
@@ -707,16 +749,25 @@ export class ProductionAssetService {
       memoryItems,
     });
 
+    const skipExternalVoice = mode === "deep";
+    const skipSfx = mode === "deep";
+    const targetThumbCountEarly =
+      typeof activeCreditSettings.thumbnailCount === "number"
+        ? Math.max(0, activeCreditSettings.thumbnailCount)
+        : 3;
+    const skipThumbnails = targetThumbCountEarly === 0;
+
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
-      { id: "voice", label: "Voiceover synthesis", status: "pending" },
+      { id: "voice", label: skipExternalVoice ? "Voiceover synthesis (skipped — cinematic)" : "Voiceover synthesis", status: skipExternalVoice ? "done" : "pending" },
       { id: "keyframes", label: "Scene stills", status: "pending" },
-      { id: "sfx", label: "Sound FX", status: "pending" },
+      { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "done" : "pending" },
       { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
-      { id: "captions", label: "Captions", status: "pending" },
-      { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
+      { id: "captions", label: mode === "express" ? "Captions" : "Captions (skipped)", status: mode === "express" ? "pending" : "done" },
+      { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "done" : "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
+
     const markStage = (id: string, status: import("../../domain/types").GenerationProgressStage["status"]) => {
       const stage = stages.find((s) => s.id === id);
       if (stage) stage.status = status;
@@ -766,6 +817,10 @@ export class ProductionAssetService {
         onProgress(latestProgressSnapshot);
       }
     };
+
+    // Seed Stage UI immediately — before any provider / LLM work — so Review never shows
+    // "Synthesizing" without a Stage while media credits are already burning.
+    emitProgress(1, "Initializing", `Initializing ${mode.toUpperCase()} production pipeline (single spine)...`);
 
     const persistCurrentStage = async (stageName: string) => {
       try {
@@ -1171,7 +1226,8 @@ Return valid JSON with this exact structure:
         checkAborted();
         try {
           const voiceScript = promptPack.voiceScript;
-          const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+          const snapshotVoiceId = generationSettings.snapshot?.voice?.voiceId;
+              const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await withTimeout(
             generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
@@ -1605,7 +1661,7 @@ CRITICAL PRODUCTION LAWS:
             // HYBRID (standard) & CINEMATIC (deep): Official Shot Method — 1 videoGeneration call per scene conditioned on THAT scene's still
             const { ModelRouter } = await import("../runtime/modelRouter");
             const activeVideo = resolveActiveVideoProvider({
-              preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
+              preferredVideoProvider: (preferredVideoProvider || activeFormatSettings?.preferredVideoProvider) as any,
             });
             const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
@@ -1807,6 +1863,7 @@ CRITICAL PRODUCTION LAWS:
                       referenceImageUrls: identityRefs,
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
+                      model: preferredVideoModel,
                       productionId: production.id,
                       brandId: (brand as any).id,
                     });
@@ -1845,7 +1902,8 @@ CRITICAL PRODUCTION LAWS:
                         durationSec: sceneTargetDuration,
                         lastFrameUrl: prevScene?.lastFrameUrl,
                         endFrameUrl: sceneEndFrame,
-                        preferredProvider: "gemini",
+                        preferredProvider: (preferredVideoProvider || "gemini") as any,
+                        model: preferredVideoModel,
                       });
                       return { url: routed, provider: "model_router_failover" };
                     }
@@ -1860,6 +1918,7 @@ CRITICAL PRODUCTION LAWS:
                     lastFrameUrl: prevScene?.lastFrameUrl,
                     endFrameUrl: sceneEndFrame,
                     preferredProvider: activeVideo.providerId,
+                    model: preferredVideoModel,
                   });
                   return { url: routed, provider: activeVideo.providerId };
                 };
@@ -2039,6 +2098,8 @@ CRITICAL PRODUCTION LAWS:
 
                 if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
                   realVideoUrl = mergeResult.publicUrl;
+                  (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
+                  (production as any).canonicalMasterUrl = mergeResult.publicUrl;
                   console.log(`[SPARK Pipeline] Autonomous Serverless Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                 } else if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
                   const ext = mergeResult.extension || "mp4";
@@ -2054,15 +2115,28 @@ CRITICAL PRODUCTION LAWS:
                   });
                   if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
                     realVideoUrl = storedMergedVid.publicUrl;
+                    (brief as any).canonicalMasterUrl = storedMergedVid.publicUrl;
+                    (production as any).canonicalMasterUrl = storedMergedVid.publicUrl;
                     console.log(`[SPARK Pipeline] Storage Upload: Autonomous Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                   }
                 }
               } catch (mergeErr: any) {
                 console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
               }
-            } else if (isAutonomous && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+            } else if (
+              isAutonomous &&
+              sceneClips.length === 1 &&
+              currentStoryboard.length <= 1 &&
+              isDurableMasterVideoReady(sceneClips[0])
+            ) {
+              // True one-take production: the single clip IS the master.
               realVideoUrl = sceneClips[0];
+              (brief as any).canonicalMasterUrl = sceneClips[0];
             } else if (sceneClips.length > 0) {
+              // Multi-scene: never promote a scene clip to production/review hero.
+              if (realVideoUrl && sceneClips.includes(realVideoUrl)) {
+                realVideoUrl = undefined as any;
+              }
               console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clip(s). Master video merge gated on executive 'Approve & merge'.`);
             }
           }
@@ -2080,10 +2154,11 @@ CRITICAL PRODUCTION LAWS:
         ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
         : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
 
-      // Provider I2V total failure: still deliver a reviewable master from stills + VO when available.
-      // Keeps motion error in lastError so executives can see the provider failure.
-      // Deep/cinematic normally skips the VO bed — synthesize an emergency bed so fallback can run.
-      if (!isVideoSuccess && sceneImages.length > 0) {
+      // Provider I2V total failure handling.
+      // Express/narrator may compile a slideshow master from stills + VO.
+      // Cinematic/deep/standard must NOT burn emergency VO or narrator slideshow credits —
+      // those assets are unused (quarantined) and must not be generated.
+      if (!isVideoSuccess && sceneImages.length > 0 && mode === "express") {
         try {
           if (!realVoiceUrl) {
             console.warn(
@@ -2091,7 +2166,8 @@ CRITICAL PRODUCTION LAWS:
             );
             try {
               const voiceScript = promptPack.voiceScript;
-              const targetVoiceId = character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+              const snapshotVoiceId = generationSettings.snapshot?.voice?.voiceId;
+              const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
               const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
               const emergencyVoice = await withTimeout(
                 generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
@@ -2152,10 +2228,21 @@ CRITICAL PRODUCTION LAWS:
                 provider: "NarratorSlideshowCompiler",
               });
               if (storedFallback?.publicUrl && isDurableMasterVideoReady(storedFallback.publicUrl)) {
-                realVideoUrl = storedFallback.publicUrl;
-                isVideoSuccess = true;
-                lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
-                console.log(`[SPARK Pipeline] Slideshow fallback master ready -> ${realVideoUrl}`);
+                if (mode === "express") {
+                  realVideoUrl = storedFallback.publicUrl;
+                  isVideoSuccess = true;
+                  lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
+                  console.log(`[SPARK Pipeline] Express slideshow master ready -> ${realVideoUrl}`);
+                } else {
+                  // Cinematic/deep/standard: quarantine only — never promote as canonical master/Review hero.
+                  (brief as any).emergencyFallbackVideoUrl = storedFallback.publicUrl;
+                  if (!(brief as any).generatedAssets) (brief as any).generatedAssets = {};
+                  ((brief as any).generatedAssets as any).emergencyFallbackVideoUrl = storedFallback.publicUrl;
+                  lastError = `${lastError || "Motion synthesis failed"} — cinematic clips missing; narrator slideshow quarantined (not promoted to Review hero).`;
+                  console.warn(
+                    `[SPARK Pipeline] Quarantined narrator slideshow for ${mode} mode (not canonical) -> ${storedFallback.publicUrl}`
+                  );
+                }
               }
             }
           } else {
@@ -2167,6 +2254,15 @@ CRITICAL PRODUCTION LAWS:
           if (fallbackErr?.name === "AbortError" || signal?.aborted) throw fallbackErr;
           console.warn("[SPARK Pipeline] Slideshow fallback after motion failure also failed:", fallbackErr);
         }
+      }
+
+      if (!isVideoSuccess && mode !== "express") {
+        lastError =
+          lastError ||
+          `Cinematic/hybrid motion synthesis failed — refusing narrator slideshow fallback (unused for ${mode}).`;
+        console.warn(
+          `[SPARK Pipeline] Skipping narrator slideshow fallback for mode=${mode} (do not generate unused assets). Original error: ${lastError}`
+        );
       }
 
       if (!isVideoSuccess && !lastError) {
@@ -2399,10 +2495,51 @@ Brand: ${brand.name}
       emitProgress(98, "Saving", "Finalizing verified media assets package...");
       void persistCurrentStage("Saving");
 
+      // Hero hygiene: never leave a quarantined narrator slideshow or a multi-scene
+      // scene clip on deep/standard hero fields. Canonical master is explicit.
+      if (
+        (mode === "deep" || mode === "standard") &&
+        realVideoUrl &&
+        isEmergencySlideshowFallbackUrl(realVideoUrl)
+      ) {
+        (brief as any).emergencyFallbackVideoUrl = realVideoUrl;
+        if (!(brief as any).generatedAssets) (brief as any).generatedAssets = {};
+        (brief as any).generatedAssets.emergencyFallbackVideoUrl = realVideoUrl;
+        realVideoUrl = undefined as any;
+      }
+      if (
+        (mode === "deep" || mode === "standard") &&
+        realVideoUrl &&
+        sceneClips.length > 1 &&
+        sceneClips.includes(realVideoUrl)
+      ) {
+        console.warn(
+          `[SPARK Pipeline] Refusing to promote scene clip to canonical master (${sceneClips.length} scene clips present).`
+        );
+        realVideoUrl = undefined as any;
+      }
+      if (realVideoUrl && isDurableMasterVideoReady(realVideoUrl) && !isEmergencySlideshowFallbackUrl(realVideoUrl)) {
+        if (!(sceneClips.length > 1 && sceneClips.includes(realVideoUrl))) {
+          (brief as any).canonicalMasterUrl = realVideoUrl;
+          (production as any).canonicalMasterUrl = realVideoUrl;
+        }
+      }
+
       brief.videoUrl = realVideoUrl;
       brief.audioUrl = realVoiceUrl;
       if (!brief.generatedAssets) brief.generatedAssets = {};
-      brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
+      brief.generatedAssets.generatedVideos =
+        sceneClips.length > 0
+          ? sceneClips
+          : realVideoUrl && !isEmergencySlideshowFallbackUrl(realVideoUrl)
+            ? [realVideoUrl]
+            : undefined;
+      if ((brief as any).emergencyFallbackVideoUrl) {
+        (brief.generatedAssets as any).emergencyFallbackVideoUrl = (brief as any).emergencyFallbackVideoUrl;
+      }
+      if ((brief as any).canonicalMasterUrl) {
+        (brief.generatedAssets as any).canonicalMasterUrl = (brief as any).canonicalMasterUrl;
+      }
       brief.generatedAssets.voiceoverUrl = realVoiceUrl;
       brief.generatedAssets.generatedFrames = sceneImages.length > 0 ? sceneImages : brief.generatedAssets.generatedFrames;
       brief.generatedAssets.generatedAudio = [realVoiceUrl, realSfxUrl].filter(Boolean) as string[];
@@ -3211,6 +3348,8 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
       if (isDurableMasterVideoReady(readyClips[0])) {
         production.videoUrl = readyClips[0];
         brief.videoUrl = readyClips[0];
+        (production as any).canonicalMasterUrl = readyClips[0];
+        (brief as any).canonicalMasterUrl = readyClips[0];
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [readyClips[0]];
         production.status = "Ready for Review";
@@ -3253,6 +3392,8 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
         const masterUrl = mergeResult.publicUrl;
         production.videoUrl = masterUrl;
         brief.videoUrl = masterUrl;
+      (production as any).canonicalMasterUrl = masterUrl;
+      (brief as any).canonicalMasterUrl = masterUrl;
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [masterUrl];
         production.status = "Ready for Review";

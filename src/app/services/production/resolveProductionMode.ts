@@ -10,12 +10,22 @@ export function normalizeModeString(rawMode?: string | null): ResolvedMode | und
   if (!rawMode || typeof rawMode !== "string") return undefined;
   const clean = rawMode.trim().toLowerCase();
 
+  // Do NOT treat bare content-format tokens (e.g. "faceless") or substring "vo" as mode —
+  // those leak from format settings and can silently flip cinematic → narrator.
+  // Explicit legacy *mode phrases* like "faceless vo" remain express.
   if (
+    clean === "express" ||
+    clean === "narrator" ||
+    clean === "slideshow" ||
+    clean === "shorts" ||
+    clean === "faceless vo" ||
+    clean === "faceless-vo" ||
+    clean === "faceless_vo" ||
     clean.includes("express") ||
     clean.includes("narrator") ||
     clean.includes("slideshow") ||
-    clean.includes("vo") ||
-    clean.includes("faceless")
+    clean.includes("faceless vo") ||
+    clean.includes("faceless-vo")
   ) {
     return "express";
   }

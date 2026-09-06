@@ -15,6 +15,8 @@ test("legacy synonyms normalize to the three canonical modes", () => {
   assert.equal(normalizeModeString("narrator"), "express");
   assert.equal(normalizeModeString("slideshow"), "express");
   assert.equal(normalizeModeString("faceless VO"), "express");
+  assert.equal(normalizeModeString("faceless"), undefined); // content-format token, not a mode
+  assert.equal(normalizeModeString("vo"), undefined); // bare substring must not flip cinematic
   assert.equal(normalizeModeString("hybrid"), "standard");
   assert.equal(normalizeModeString("talking-head host"), "standard");
   assert.equal(normalizeModeString("cinematic"), "deep");

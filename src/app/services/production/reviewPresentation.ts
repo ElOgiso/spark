@@ -1,3 +1,4 @@
+import { resolveReviewHeroVideoUrl } from "./canonicalProductionMedia";
 /**
  * Review presentation helpers — map canonical production/review state into
  * UI-ready view models. Does NOT introduce a second production system.
@@ -787,7 +788,10 @@ function resolvePrimaryMedia(
   production: AnyProd,
   shots: ReviewShotView[],
 ): { url: string | null; type: "video" | "image" | "none" } {
-  const productionVideo = pickMediaUrl(production.videoUrl, production.masterUrl);
+  const productionVideo = resolveReviewHeroVideoUrl({
+    production,
+    brief: production?.brief,
+  }) || pickMediaUrl((production as any).canonicalMasterUrl, (production as any).masterUrl);
   if (productionVideo) return { url: productionVideo, type: "video" };
   const selectedGenerated = shots.find((shot) => shot.generatedResultUrl)?.generatedResultUrl ?? null;
   if (selectedGenerated) {
