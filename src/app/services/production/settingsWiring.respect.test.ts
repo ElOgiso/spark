@@ -71,3 +71,50 @@ test("persistExecutiveModeUpdate accepts productionMode (wiring contract)", asyn
     productionMode: "deep",
   });
 });
+
+test("My Spark AI preference dropdown wires preferredVideoProvider + preferredVideoModel", async () => {
+  const { buildPreferredVideoAiPreferenceUpdate } = await import("../runtime/preferredVideoAiPreference");
+
+  const auto = buildPreferredVideoAiPreferenceUpdate({
+    providerId: "auto",
+    currentAiSettings: {
+      routing: { videoGeneration: "gemini" } as any,
+      models: { videoGeneration: "veo-3.1-generate-preview" } as any,
+    },
+  });
+  assert.equal(auto.formatPatch.preferredVideoProvider, "auto");
+  assert.equal(auto.formatPatch.preferredVideoModel, undefined);
+  assert.equal(auto.aiSettings.routing.videoGeneration, "auto");
+  assert.equal(auto.aiSettings.models.videoGeneration, "");
+
+  const pinned = buildPreferredVideoAiPreferenceUpdate({
+    providerId: "kling",
+    currentAiSettings: {
+      routing: { videoGeneration: "auto" } as any,
+      models: { videoGeneration: "" } as any,
+    },
+  });
+  assert.equal(pinned.formatPatch.preferredVideoProvider, "kling");
+  assert.ok(pinned.formatPatch.preferredVideoModel);
+  assert.equal(pinned.aiSettings.routing.videoGeneration, "kling");
+  assert.equal(pinned.aiSettings.models.videoGeneration, pinned.formatPatch.preferredVideoModel);
+
+  const explicitModel = buildPreferredVideoAiPreferenceUpdate({
+    providerId: "gemini",
+    modelId: "veo-2.0-generate-001",
+  });
+  assert.equal(explicitModel.formatPatch.preferredVideoProvider, "gemini");
+  assert.equal(explicitModel.formatPatch.preferredVideoModel, "veo-2.0-generate-001");
+
+  const fromMySpark = getEffectiveFormatSettings({
+    formatSettings: {
+      aspectMode: "portrait",
+      targetDurationSec: 60,
+      contentFormat: "host",
+      preferredVideoProvider: "grok",
+      preferredVideoModel: "grok-imagine-video",
+    },
+  });
+  assert.equal(fromMySpark.preferredVideoProvider, "grok");
+  assert.equal(fromMySpark.preferredVideoModel, "grok-imagine-video");
+});
