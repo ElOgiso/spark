@@ -14,10 +14,14 @@ import {
   type ExecutionEngineResult,
 } from "./executionEngine";
 import type { ProductionExecutionState } from "./types";
+import { ProductionGenerationGuard } from "../ProductionGenerationGuard";
 
 export interface ExecuteProductionOptions extends ExecutionEngineOptions {
   /** Use tasks already on the spec when present */
   preferExistingTasks?: boolean;
+  /** When true, skip live provider spend (tests / planning). Still allowed when Production Generation is OFF. */
+  dryRun?: boolean;
+  brandId?: string;
 }
 
 export interface ExecuteProductionResult extends ExecutionEngineResult {
@@ -33,6 +37,15 @@ export async function executeProduction(
   spec: ProductionSpec,
   options: ExecuteProductionOptions = {}
 ): Promise<ExecuteProductionResult> {
+  // Respect the app Production Generation ON/OFF switch for live spend.
+  // dryRun / mocked paths remain allowed so planning + tests still work when OFF.
+  if (options.dryRun !== true) {
+    ProductionGenerationGuard.assertEnabled(
+      "executeProduction",
+      options.brandId || spec.project?.brandId
+    );
+  }
+
   const validation = validateProductionSpec(spec);
   if (!validation.ok) {
     return {

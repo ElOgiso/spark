@@ -524,6 +524,7 @@ export class ProductionService implements IProductionService {
       throw new Error("Aborted");
     }
 
+    // Production Generation ON/OFF is enforced inside executeProduction for live runs.
     const result = await executeProduction(spec, {
       brandId: params.brand?.id || params.production.brandId,
       dryRun: params.dryRun === true,
