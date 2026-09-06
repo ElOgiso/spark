@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
+import {
+  resolveCanonicalProductionMedia,
+  resolveReviewHeroVideoUrl,
+} from "../../services/production/canonicalProductionMedia";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
 
@@ -79,9 +83,13 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
 
   const prodId = activeProd?.id || item?.productionId || (item?.id ? item.id.replace("rev-", "") : "");
   const reviewId = item?.id || (prodId ? `rev-${prodId}` : "");
-  const hasPlayableVideo = Boolean(
-    activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0]
-  );
+  const canonicalMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    review: item,
+    brief,
+  });
+  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
+  const hasPlayableVideo = Boolean(reviewHeroVideoUrl);
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
@@ -401,15 +409,8 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             id={item?.id || activeProd?.id || "p1"} 
             title={proposal.title} 
             scenes={proposal.storyboard} 
-            videoUrl={
-              isDurableMasterVideoReady(activeProd?.videoUrl)
-                ? activeProd?.videoUrl
-                : isDurableMasterVideoReady(item?.videoUrl)
-                ? item?.videoUrl
-                : isDurableMasterVideoReady(brief?.videoUrl)
-                ? brief?.videoUrl
-                : undefined
-            }
+            videoUrl={reviewHeroVideoUrl}
+            /* masterUnavailableReason surfaced below */
             audioUrl={
               !isDurableMasterVideoReady(activeProd?.videoUrl) && !isDurableMasterVideoReady(item?.videoUrl) && !isDurableMasterVideoReady(brief?.videoUrl)
                 ? (activeProd?.audioUrl || item?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.voiceoverUrl || brief?.generatedAssets?.generatedAudio?.[0])

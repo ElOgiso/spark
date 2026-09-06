@@ -11,6 +11,11 @@ import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterS
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveProductionMode } from "./resolveProductionMode";
+import {
+  resolveGenerationSettings,
+  isCinematicMode,
+  readProductionSettingsSnapshot,
+} from "./productionSettingsSnapshot";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -231,6 +236,17 @@ export function isStorageVerifiedVideoUrl(val?: string | null): boolean {
 
 export function isDurableMasterVideoReady(val?: string | null): boolean {
   return isPlayableVideoUrl(val) && isStorageVerifiedVideoUrl(val);
+}
+
+/** Emergency narrator slideshow written after I2V failure — not a cinematic master. */
+export function isEmergencySlideshowFallbackUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes("master-fallback.") ||
+    lower.includes("/video/master-fallback") ||
+    lower.includes("master-fallback/")
+  );
 }
 
 export function isValidMediaData(val?: string | null): val is string {
@@ -638,14 +654,21 @@ export class ProductionAssetService {
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
-    const activeFormatSettings = getEffectiveFormatSettings({
-      formatSettings: (production as any)?.formatSettings || (brief as any)?.formatSettings,
+    const generationSettings = resolveGenerationSettings({
+      production,
+      brief,
       brand,
+      creditSettings,
     });
-    const activeCreditSettings = getEffectiveCreditSettings({
-      creditSettings: creditSettings || (production as any)?.creditSettings,
-      brand,
-    });
+    const activeFormatSettings = generationSettings.formatSettings;
+    const activeCreditSettings = generationSettings.creditSettings;
+    const preferredVideoModel = generationSettings.preferredVideoModel;
+    const preferredVideoProvider = generationSettings.preferredVideoProvider;
+    if (generationSettings.source === "snapshot") {
+      console.log(
+        `[SPARK Pipeline] Using immutable production settings snapshot (mode=${generationSettings.productionMode}, format=${activeFormatSettings.contentFormat}, provider=${preferredVideoProvider || "auto"}, model=${preferredVideoModel || "default"})`
+      );
+    }
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
@@ -1605,7 +1628,7 @@ CRITICAL PRODUCTION LAWS:
             // HYBRID (standard) & CINEMATIC (deep): Official Shot Method — 1 videoGeneration call per scene conditioned on THAT scene's still
             const { ModelRouter } = await import("../runtime/modelRouter");
             const activeVideo = resolveActiveVideoProvider({
-              preferredVideoProvider: activeFormatSettings?.preferredVideoProvider,
+              preferredVideoProvider: (preferredVideoProvider || activeFormatSettings?.preferredVideoProvider) as any,
             });
             const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
             const targetSec = activeFormatSettings?.targetDurationSec || 60;
@@ -1807,6 +1830,7 @@ CRITICAL PRODUCTION LAWS:
                       referenceImageUrls: identityRefs,
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
+                      model: preferredVideoModel,
                       productionId: production.id,
                       brandId: (brand as any).id,
                     });
@@ -1845,7 +1869,8 @@ CRITICAL PRODUCTION LAWS:
                         durationSec: sceneTargetDuration,
                         lastFrameUrl: prevScene?.lastFrameUrl,
                         endFrameUrl: sceneEndFrame,
-                        preferredProvider: "gemini",
+                        preferredProvider: (preferredVideoProvider || "gemini") as any,
+                        model: preferredVideoModel,
                       });
                       return { url: routed, provider: "model_router_failover" };
                     }
@@ -1860,6 +1885,7 @@ CRITICAL PRODUCTION LAWS:
                     lastFrameUrl: prevScene?.lastFrameUrl,
                     endFrameUrl: sceneEndFrame,
                     preferredProvider: activeVideo.providerId,
+                    model: preferredVideoModel,
                   });
                   return { url: routed, provider: activeVideo.providerId };
                 };
@@ -2039,6 +2065,8 @@ CRITICAL PRODUCTION LAWS:
 
                 if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
                   realVideoUrl = mergeResult.publicUrl;
+                  (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
+                  (production as any).canonicalMasterUrl = mergeResult.publicUrl;
                   console.log(`[SPARK Pipeline] Autonomous Serverless Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                 } else if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
                   const ext = mergeResult.extension || "mp4";
@@ -2054,15 +2082,28 @@ CRITICAL PRODUCTION LAWS:
                   });
                   if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
                     realVideoUrl = storedMergedVid.publicUrl;
+                    (brief as any).canonicalMasterUrl = storedMergedVid.publicUrl;
+                    (production as any).canonicalMasterUrl = storedMergedVid.publicUrl;
                     console.log(`[SPARK Pipeline] Storage Upload: Autonomous Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                   }
                 }
               } catch (mergeErr: any) {
                 console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
               }
-            } else if (isAutonomous && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+            } else if (
+              isAutonomous &&
+              sceneClips.length === 1 &&
+              currentStoryboard.length <= 1 &&
+              isDurableMasterVideoReady(sceneClips[0])
+            ) {
+              // True one-take production: the single clip IS the master.
               realVideoUrl = sceneClips[0];
+              (brief as any).canonicalMasterUrl = sceneClips[0];
             } else if (sceneClips.length > 0) {
+              // Multi-scene: never promote a scene clip to production/review hero.
+              if (realVideoUrl && sceneClips.includes(realVideoUrl)) {
+                realVideoUrl = undefined as any;
+              }
               console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clip(s). Master video merge gated on executive 'Approve & merge'.`);
             }
           }
@@ -2152,10 +2193,21 @@ CRITICAL PRODUCTION LAWS:
                 provider: "NarratorSlideshowCompiler",
               });
               if (storedFallback?.publicUrl && isDurableMasterVideoReady(storedFallback.publicUrl)) {
-                realVideoUrl = storedFallback.publicUrl;
-                isVideoSuccess = true;
-                lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
-                console.log(`[SPARK Pipeline] Slideshow fallback master ready -> ${realVideoUrl}`);
+                if (mode === "express") {
+                  realVideoUrl = storedFallback.publicUrl;
+                  isVideoSuccess = true;
+                  lastError = `${lastError || "Motion synthesis failed"} — delivered slideshow fallback master (stills + voice).`;
+                  console.log(`[SPARK Pipeline] Express slideshow master ready -> ${realVideoUrl}`);
+                } else {
+                  // Cinematic/deep/standard: quarantine only — never promote as canonical master/Review hero.
+                  (brief as any).emergencyFallbackVideoUrl = storedFallback.publicUrl;
+                  if (!(brief as any).generatedAssets) (brief as any).generatedAssets = {};
+                  ((brief as any).generatedAssets as any).emergencyFallbackVideoUrl = storedFallback.publicUrl;
+                  lastError = `${lastError || "Motion synthesis failed"} — cinematic clips missing; narrator slideshow quarantined (not promoted to Review hero).`;
+                  console.warn(
+                    `[SPARK Pipeline] Quarantined narrator slideshow for ${mode} mode (not canonical) -> ${storedFallback.publicUrl}`
+                  );
+                }
               }
             }
           } else {
@@ -2399,10 +2451,51 @@ Brand: ${brand.name}
       emitProgress(98, "Saving", "Finalizing verified media assets package...");
       void persistCurrentStage("Saving");
 
+      // Hero hygiene: never leave a quarantined narrator slideshow or a multi-scene
+      // scene clip on deep/standard hero fields. Canonical master is explicit.
+      if (
+        (mode === "deep" || mode === "standard") &&
+        realVideoUrl &&
+        isEmergencySlideshowFallbackUrl(realVideoUrl)
+      ) {
+        (brief as any).emergencyFallbackVideoUrl = realVideoUrl;
+        if (!(brief as any).generatedAssets) (brief as any).generatedAssets = {};
+        (brief as any).generatedAssets.emergencyFallbackVideoUrl = realVideoUrl;
+        realVideoUrl = undefined as any;
+      }
+      if (
+        (mode === "deep" || mode === "standard") &&
+        realVideoUrl &&
+        sceneClips.length > 1 &&
+        sceneClips.includes(realVideoUrl)
+      ) {
+        console.warn(
+          `[SPARK Pipeline] Refusing to promote scene clip to canonical master (${sceneClips.length} scene clips present).`
+        );
+        realVideoUrl = undefined as any;
+      }
+      if (realVideoUrl && isDurableMasterVideoReady(realVideoUrl) && !isEmergencySlideshowFallbackUrl(realVideoUrl)) {
+        if (!(sceneClips.length > 1 && sceneClips.includes(realVideoUrl))) {
+          (brief as any).canonicalMasterUrl = realVideoUrl;
+          (production as any).canonicalMasterUrl = realVideoUrl;
+        }
+      }
+
       brief.videoUrl = realVideoUrl;
       brief.audioUrl = realVoiceUrl;
       if (!brief.generatedAssets) brief.generatedAssets = {};
-      brief.generatedAssets.generatedVideos = sceneClips.length > 0 ? sceneClips : (realVideoUrl ? [realVideoUrl] : undefined);
+      brief.generatedAssets.generatedVideos =
+        sceneClips.length > 0
+          ? sceneClips
+          : realVideoUrl && !isEmergencySlideshowFallbackUrl(realVideoUrl)
+            ? [realVideoUrl]
+            : undefined;
+      if ((brief as any).emergencyFallbackVideoUrl) {
+        (brief.generatedAssets as any).emergencyFallbackVideoUrl = (brief as any).emergencyFallbackVideoUrl;
+      }
+      if ((brief as any).canonicalMasterUrl) {
+        (brief.generatedAssets as any).canonicalMasterUrl = (brief as any).canonicalMasterUrl;
+      }
       brief.generatedAssets.voiceoverUrl = realVoiceUrl;
       brief.generatedAssets.generatedFrames = sceneImages.length > 0 ? sceneImages : brief.generatedAssets.generatedFrames;
       brief.generatedAssets.generatedAudio = [realVoiceUrl, realSfxUrl].filter(Boolean) as string[];
@@ -3211,6 +3304,8 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
       if (isDurableMasterVideoReady(readyClips[0])) {
         production.videoUrl = readyClips[0];
         brief.videoUrl = readyClips[0];
+        (production as any).canonicalMasterUrl = readyClips[0];
+        (brief as any).canonicalMasterUrl = readyClips[0];
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [readyClips[0]];
         production.status = "Ready for Review";
@@ -3253,6 +3348,8 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
         const masterUrl = mergeResult.publicUrl;
         production.videoUrl = masterUrl;
         brief.videoUrl = masterUrl;
+      (production as any).canonicalMasterUrl = masterUrl;
+      (brief as any).canonicalMasterUrl = masterUrl;
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [masterUrl];
         production.status = "Ready for Review";

@@ -6,6 +6,10 @@ import { ProductionAssetService, isDurableMasterVideoReady } from "./production/
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
+import {
+  buildProductionSettingsSnapshot,
+  attachProductionSettingsSnapshot,
+} from "./production/productionSettingsSnapshot";
 import { executeProduction } from "./production/execution/productionExecutor";
 import { executeProductionViaAssetBridge } from "./production/execution/productionExecutionBridge";
 import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
@@ -174,7 +178,7 @@ export class ProductionService implements IProductionService {
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
     const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
 
-    const production: Production = {
+    let production: Production = {
       id: prodId,
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
@@ -221,6 +225,20 @@ export class ProductionService implements IProductionService {
           : undefined,
       },
     };
+
+    
+    const settingsSnapshot = buildProductionSettingsSnapshot({
+      brand: params.brand,
+      spark: params.spark,
+      character: params.character || params.characters?.[0],
+      characters: params.characters,
+      memoryItems: params.memoryItems,
+      formatSettings: { ...effectiveFormat, targetDurationSec },
+      creditSettings: (params.brand as any)?.creditSettings,
+      productionMode: resolvedMode,
+      automationMode: params.brand?.automation_mode,
+    });
+    production = attachProductionSettingsSnapshot(production, settingsSnapshot);
 
     const reviewItem: ReviewItem = {
       id: reviewId,

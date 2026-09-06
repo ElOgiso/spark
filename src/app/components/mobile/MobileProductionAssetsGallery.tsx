@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
 import { useSpark } from "../../state/SparkContext";
+import { resolveCanonicalProductionMedia } from "../../services/production/canonicalProductionMedia";
 
 export interface ProductionSceneItem {
   id: string;
@@ -58,8 +59,15 @@ export function MobileProductionAssetsGallery({
   });
 
   // Map real storyboard scenes if available, else local fallback
+  const canonicalMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    brief,
+  });
   const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
-  const rawClips = brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
+  const rawClips =
+    canonicalMedia.sceneClips.length > 0
+      ? canonicalMedia.sceneClips
+      : brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
 
   const initialScenes: ProductionSceneItem[] =
     rawStoryboard.length > 0
@@ -97,7 +105,7 @@ export function MobileProductionAssetsGallery({
             durationSec: 12,
             status: activeProd?.videoUrl || brief?.videoUrl ? "Ready" : "Generating",
             thumbUrl: brief?.thumbnailUrl || activeProd?.thumbnailUrl || undefined,
-            videoUrl: activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
+            videoUrl: canonicalMedia.canonicalMasterUrl,
             beatLine: brief?.hook || "Full production master video",
           },
         ];

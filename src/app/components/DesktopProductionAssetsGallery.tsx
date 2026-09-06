@@ -1,3 +1,4 @@
+import { resolveCanonicalProductionMedia } from "../services/production/canonicalProductionMedia";
 import React, { useState, useEffect, useRef } from "react";
 import {
   ArrowLeft,
@@ -67,8 +68,15 @@ export function DesktopProductionAssetsGallery({
     pushImg(`thumb-${t.variant || idx + 1}`, `Thumbnail ${t.variant || idx + 1}`, t.image || t.url);
   });
 
+  const canonicalMedia = resolveCanonicalProductionMedia({
+    production: activeProd,
+    brief,
+  });
   const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
-  const rawClips = brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
+  const rawClips =
+    canonicalMedia.sceneClips.length > 0
+      ? canonicalMedia.sceneClips
+      : brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
 
   const initialScenes: DesktopSceneItem[] =
     rawStoryboard.length > 0
@@ -104,9 +112,9 @@ export function DesktopProductionAssetsGallery({
             index: 1,
             title: "Master Production",
             durationSec: 12,
-            status: activeProd?.videoUrl || brief?.videoUrl ? "Ready" : "Generating",
+            status: canonicalMedia.canonicalMasterUrl ? "Ready" : (canonicalMedia.sceneClips.length ? "Scenes Ready" : "Generating"),
             thumbUrl: brief?.thumbnailUrl || activeProd?.thumbnailUrl || undefined,
-            videoUrl: activeProd?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0],
+            videoUrl: canonicalMedia.canonicalMasterUrl,
             beatLine: brief?.hook || "Full production master video",
           },
         ];
@@ -611,7 +619,7 @@ export function DesktopProductionAssetsGallery({
         <div className="flex items-center gap-4">
           {(activeProd?.videoUrl || brief?.videoUrl) && (
             <button
-              onClick={() => setFullscreenVideo({ url: (activeProd?.videoUrl || brief?.videoUrl)!, title: `Master Film · ${title}` })}
+              onClick={() => setFullscreenVideo({ url: (canonicalMedia.canonicalMasterUrl)!, title: `Master Film · ${title}` })}
               className="px-4 py-2.5 rounded-xl border border-white/20 hover:border-white/40 bg-white/5 text-xs font-semibold text-white flex items-center gap-1.5 transition-all cursor-pointer hover:bg-white/10 active:scale-95"
             >
               <Play className="w-3.5 h-3.5 fill-current text-purple-300" />

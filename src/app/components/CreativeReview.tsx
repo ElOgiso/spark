@@ -32,6 +32,10 @@ import {
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
 import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
 import { getNotionModeLabel } from "../services/production/resolveProductionMode";
+import {
+  resolveCanonicalProductionMedia,
+  resolveReviewHeroVideoUrl,
+} from "../services/production/canonicalProductionMedia";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -270,6 +274,16 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const brief = activeProd?.brief || activeReview?.brief;
+  const canonicalMedia = useMemo(
+    () =>
+      resolveCanonicalProductionMedia({
+        production: activeProd,
+        review: activeReview,
+        brief,
+      }),
+    [activeProd, activeReview, brief]
+  );
+  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
   const isExpressMode = prodMode === "express" || prodMode === "narrator";
 
@@ -711,15 +725,18 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           {/* Interactive Media Preview Section */}
           <div className="space-y-6">
             <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">
+              {!reviewHeroVideoUrl && canonicalMedia.masterUnavailableReason && (
+                <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                  {canonicalMedia.modeMismatchMessage || canonicalMedia.masterUnavailableReason}
+                </div>
+              )}
               <InteractiveVideoPlayer 
                 id={activeReview?.id || "p1"} 
                 title={proposal.title} 
                 scenes={proposal.storyboard} 
-                videoUrl={
-                  [activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].find((u) => isDurableMasterVideoReady(u))
-                }
+                videoUrl={reviewHeroVideoUrl}
                 audioUrl={
-                  ![activeProd?.videoUrl, activeReview?.videoUrl, brief?.videoUrl].some((u) => isDurableMasterVideoReady(u))
+                  !reviewHeroVideoUrl
                     ? (activeProd?.audioUrl || activeReview?.audioUrl || brief?.audioUrl || brief?.generatedAssets?.generatedAudio?.[0])
                     : undefined
                 }
