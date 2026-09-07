@@ -44,6 +44,7 @@ import {
   collectSceneCaptionLines,
   assembleMasterFromClips,
 } from "./liveContinuityBridge";
+import { attachSceneMotionLock, bindMotionLockStillUrl } from "./sceneMotionLock";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 import {
   needsLocationPlateStorageUpload,
@@ -903,6 +904,12 @@ export class ProductionAssetService {
     });
     (production as any).frameLock = frameLock;
     (brief as any).frameLock = frameLock;
+    const effectiveContentFormat = getEffectiveContentFormat({
+      brand,
+      formatSettings: activeFormatSettings,
+      production,
+      brief,
+    });
     console.log(
       `[SPARK Pipeline] Frame Lock: ${frameLock.frameLockId} ${frameLock.aspectRatio} ${frameLock.targetWidth}×${frameLock.targetHeight} (${frameLock.platformHint})`
     );
@@ -1488,10 +1495,20 @@ export class ProductionAssetService {
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
               (s as any).sourceStill = "storyboard_panel";
+              attachSceneMotionLock(s, {
+                environment: identityPack.environmentString,
+                contentFormat: effectiveContentFormat,
+                sceneIndexZeroBased: pIdx,
+                sourceStill: "storyboard_panel",
+                stillUrl: finalStill,
+                beat: brief?.beats?.[pIdx],
+              });
               currentStoryboard[pIdx] = {
                 ...s,
                 image: finalStill,
                 keyframeImageUrl: finalStill,
+                motionLock: (s as any).motionLock,
+                physicalAction: (s as any).physicalAction,
               };
             }
             if (!brief.generatedAssets) brief.generatedAssets = {};
@@ -1547,10 +1564,23 @@ export class ProductionAssetService {
             sceneImages.push(panelStill as string);
             s.image = panelStill as string;
             s.keyframeImageUrl = panelStill as string;
+            // Creative spine must already be frozen at panel extract; re-attach only if missing
+            if (!(s as any).motionLock) {
+              attachSceneMotionLock(s, {
+                environment: identityPack.environmentString,
+                contentFormat: effectiveContentFormat,
+                sceneIndexZeroBased: sIdx,
+                sourceStill: "storyboard_panel",
+                stillUrl: panelStill as string,
+                beat: brief?.beats?.[sIdx],
+              });
+            }
             currentStoryboard[sIdx] = {
               ...s,
               image: panelStill as string,
               keyframeImageUrl: panelStill as string,
+              motionLock: (s as any).motionLock,
+              physicalAction: (s as any).physicalAction,
             };
             const currentPctPanel = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
             emitProgress(
@@ -1575,7 +1605,23 @@ export class ProductionAssetService {
             sceneImages.push(existingStill);
             s.image = existingStill;
             s.keyframeImageUrl = existingStill;
-            currentStoryboard[sIdx] = { ...s, image: existingStill, keyframeImageUrl: existingStill };
+            if (!(s as any).motionLock) {
+              attachSceneMotionLock(s, {
+                environment: identityPack.environmentString,
+                contentFormat: effectiveContentFormat,
+                sceneIndexZeroBased: sIdx,
+                sourceStill: "scene_still",
+                stillUrl: existingStill,
+                beat: brief?.beats?.[sIdx],
+              });
+            }
+            currentStoryboard[sIdx] = {
+              ...s,
+              image: existingStill,
+              keyframeImageUrl: existingStill,
+              motionLock: (s as any).motionLock,
+              physicalAction: (s as any).physicalAction,
+            };
             continue;
           }
 
@@ -1616,7 +1662,23 @@ export class ProductionAssetService {
             s.image = finalStill;
             s.keyframeImageUrl = finalStill;
             (s as any).subject = "set";
-            currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill, subject: "set" };
+            (s as any).sourceStill = "scene_still";
+            attachSceneMotionLock(s, {
+              environment: identityPack.environmentString,
+              contentFormat: contentFormat,
+              sceneIndexZeroBased: sIdx,
+              sourceStill: "scene_still",
+              stillUrl: finalStill,
+              beat: brief?.beats?.[sIdx],
+            });
+            currentStoryboard[sIdx] = {
+              ...s,
+              image: finalStill,
+              keyframeImageUrl: finalStill,
+              subject: "set",
+              motionLock: (s as any).motionLock,
+              physicalAction: (s as any).physicalAction,
+            };
             const currentPctSet = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
             emitProgress(currentPctSet, "Keyframes", `Locked set plate for Scene ${globalSceneNum} of ${currentStoryboard.length}...`);
             void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
@@ -1649,6 +1711,15 @@ export class ProductionAssetService {
           if (stillVisualLock.directorNotes.length && sIdx === 0) {
             console.log(`[SPARK Pipeline] Director refs (stills): ${stillVisualLock.directorNotes.join("; ")}`);
           }
+
+          // Creative compile ONCE here (storyboard still time) — motion will follow this lock
+          attachSceneMotionLock(s, {
+            environment: identityPack.environmentString,
+            contentFormat,
+            sceneIndexZeroBased: sIdx,
+            sourceStill: "scene_still",
+            beat: brief?.beats?.[sIdx],
+          });
 
           // OS spine still prompt — subject line + Spec/frame compiler (AssetService does not invent creative text)
           const stillSubjectLine = buildStillSubjectLine({
@@ -1713,7 +1784,16 @@ export class ProductionAssetService {
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
               (s as any).subject = resolvedSubject;
-              currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill, subject: resolvedSubject };
+              (s as any).sourceStill = "scene_still";
+              bindMotionLockStillUrl(s, finalStill);
+              currentStoryboard[sIdx] = {
+                ...s,
+                image: finalStill,
+                keyframeImageUrl: finalStill,
+                subject: resolvedSubject,
+                motionLock: (s as any).motionLock,
+                physicalAction: (s as any).physicalAction,
+              };
             } else {
               console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} returned empty/invalid image data:`, String(stillImgUrl || "").slice(0, 100));
               if (!lastError) lastError = `Scene ${globalSceneNum} Still: No image bytes returned by provider`;
@@ -2158,7 +2238,7 @@ export class ProductionAssetService {
                 }
               }
 
-              const sceneMotionPrompt = compileLiveMotionPrompt({
+              const sceneMotionCompiled = compileLiveMotionPrompt({
                 mode,
                 aspectRatio: identityPack.aspectRatio,
                 sceneIndex: globalSceneNum,
@@ -2172,7 +2252,18 @@ export class ProductionAssetService {
                 environment: identityPack.environmentString,
                 brief,
                 contentFormat: effectiveContentFormat,
-              }).prompt;
+                followStoryboardStill: true,
+              });
+              const sceneMotionPrompt = sceneMotionCompiled.prompt;
+              if (!sceneMotionCompiled.fromPersistedLock) {
+                console.warn(
+                  `[SPARK Pipeline] Scene ${globalSceneNum} motion lock was missing at I2V — rebuilt from scene (prefer still-time lock)`
+                );
+              } else {
+                console.log(
+                  `[SPARK Pipeline] Scene ${globalSceneNum} I2V follows storyboard motionLock (${sceneMotionCompiled.motionLock.sourceStill})`
+                );
+              }
 
               // Prefer continuity-plan identity refs + Director locks (never use sheet as first frame)
               for (const u of continuityPlan.referenceImageUrls) {
@@ -3502,6 +3593,23 @@ export class ProductionAssetService {
           sceneToFix.image = finalStill;
           sceneToFix.keyframeImageUrl = finalStill;
           sceneStill = finalStill;
+          (sceneToFix as any).sourceStill = "revised_still";
+          // Re-freeze creative spine from the revised still (force overwrite old lock)
+          delete (sceneToFix as any).motionLock;
+          attachSceneMotionLock(sceneToFix, {
+            scene: revisedScene,
+            environment: identityPack.environmentString,
+            contentFormat,
+            sceneIndexZeroBased: targetSceneIdx,
+            sourceStill: "revised_still",
+            stillUrl: finalStill,
+            beat: brief?.beats?.[targetSceneIdx],
+          });
+          revisedScene.image = finalStill;
+          revisedScene.keyframeImageUrl = finalStill;
+          (revisedScene as any).motionLock = (sceneToFix as any).motionLock;
+          (revisedScene as any).physicalAction = (sceneToFix as any).physicalAction;
+          (revisedScene as any).sourceStill = "revised_still";
         } else if (mode === "express") {
           sceneToFix.status = "needs_edit";
           sceneToFix.lastError = "Still regeneration returned no image.";
@@ -3583,13 +3691,28 @@ export class ProductionAssetService {
         }`,
       ].filter(Boolean) as string[];
 
+      // Ensure lock exists even if still regen was skipped (reuse path)
+      if (!(sceneToFix as any).motionLock) {
+        attachSceneMotionLock(sceneToFix, {
+          scene: revisedScene,
+          environment: identityPack.environmentString,
+          contentFormat,
+          sceneIndexZeroBased: targetSceneIdx,
+          sourceStill: "revised_still",
+          stillUrl: sceneStill,
+          beat: brief?.beats?.[targetSceneIdx],
+        });
+        (revisedScene as any).motionLock = (sceneToFix as any).motionLock;
+        (revisedScene as any).physicalAction = (sceneToFix as any).physicalAction;
+      }
+
       const motionPrompt = compileLiveMotionPrompt({
         mode,
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,
         durationSec: fixTargetDuration,
-        scene: revisedScene,
+        scene: { ...revisedScene, motionLock: (sceneToFix as any).motionLock },
         refLabels: fixRefLabels,
         isInsertOrSet: isFixInsert || isFixSet,
         characterName: character?.name,
@@ -3598,6 +3721,7 @@ export class ProductionAssetService {
         brief,
         revisionNotes: editNotes,
         contentFormat,
+        followStoryboardStill: true,
       }).prompt;
 
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;

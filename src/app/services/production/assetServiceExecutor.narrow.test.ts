@@ -48,15 +48,19 @@ test("compileLiveMotionPrompt includes first-frame lock law", () => {
     sceneIndex: 1,
     totalScenes: 3,
     durationSec: 5,
-    scene: { primaryChange: "Host gestures", cameraDirection: "Push-in" },
+    scene: {
+      physicalAction: "Host gestures toward camera with open palms",
+      cameraDirection: "Push-in",
+    },
     refLabels: ["INPUT REF [1]: Scene still"],
     isInsertOrSet: false,
     characterName: "Alex",
     environment: "Studio",
   });
   assert.equal(compiler, "scene_motion");
-  assert.match(prompt, /first frame/i);
-  assert.match(prompt, /Host gestures/);
+  assert.match(prompt, /first frame|IMAGE 1/i);
+  assert.match(prompt, /gestures toward camera/i);
+  assert.match(prompt, /STORYBOARD STILL AUTHORITY/i);
 });
 
 test("compileThumbnailPrompt emits variant formula", () => {

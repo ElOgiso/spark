@@ -356,6 +356,13 @@ export interface SceneMotionPromptParams {
   environment?: string;
   /** Compact researched-format directive from buildViralConceptDirective(brief). */
   viralConcept?: string;
+  /**
+   * When true (default for live I2V), IMAGE 1 owns look — character/env/props.
+   * Text only brings the locked storyboard still to life.
+   */
+  followStoryboardStill?: boolean;
+  /** Extra still-authority laws (from sceneMotionLock). */
+  stillAuthorityLaws?: string;
 }
 
 export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string {
@@ -375,6 +382,8 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     characterStyle = "Executive Presenter",
     environment = "Modern High-Contrast Production Studio",
     viralConcept,
+    followStoryboardStill = true,
+    stillAuthorityLaws,
   } = params;
 
   const physicalAction =
@@ -395,28 +404,45 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     ? "Clean visual motion leaving acoustic space for external voiceover bed; subtle diegetic foley."
     : "Synchronized on-camera speech performance with natural lip movement and diegetic acoustics.";
 
-  return `
-LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s) [${aspectRatio}]:
+  const characterLine = followStoryboardStill
+    ? `Character Consistency: Exact facial, hair, body, and wardrobe fidelity to IMAGE 1 (storyboard still of "${characterName}"). Optional sheet is identity backup only — never override IMAGE 1 wardrobe/props.`
+    : `Character Consistency: Strict facial, hair, and wardrobe fidelity to "${characterName}" (${characterStyle}).`;
 
-IMAGE 1 (First Frame Reference) = Single Scene Keyframe Still.
-IMAGE 2 (Optional Identity Ref) = Character Reference Sheet for "${characterName}".
+  const environmentLine = followStoryboardStill
+    ? `Environment: Exact set, props, products, architecture, lighting, textures, and depth of field as IMAGE 1. Do not relocate or redesign. (Locked board context: ${environment}.)`
+    : `Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.`;
 
-ANIMATION INSTRUCTION:
-- Begin precisely from the first frame image (IMAGE 1). Animate the continuous ${durationSec}s action seamlessly from that starting composition.
-- Camera Framing & Movement: ${shotFraming}. Smooth cinematic camera motion.
-- Subject Action (PHYSICAL ONLY): ${physicalAction}
-- ${speechBlock}
-- Character Consistency: Strict facial, hair, and wardrobe fidelity to "${characterName}" (${characterStyle}).
-- Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.
-- Resolving End Pose: Gracefully transition into "${endPose}".
-- Audio / Performance: ${audioDirectives}
-${viralConcept ? `\n${viralConcept}\n` : ""}
-CRITICAL PRODUCTION LAWS:
-- Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
+  const criticalLaws = followStoryboardStill
+    ? `- Bring IMAGE 1 to life — motion and camera only. Do NOT restyle, recompose, morph identity, change wardrobe, invent props, or reset the environment.
+- Character, environment, and props must match the storyboard still for the entire ${durationSec}s.
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
 - NO burned-in text, letters, captions, titles, subtitles, or dialogue glyphs on the frame.
-- Professional cinematic motion, natural motion blur, realistic physics.
+- Professional cinematic motion, natural motion blur, realistic physics.`
+    : `- Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
+- Single continuous camera shot. NO jump cuts. NO transitions within this shot.
+- NO multi-panel grids or split frames.
+- NO burned-in text, letters, captions, titles, subtitles, or dialogue glyphs on the frame.
+- Professional cinematic motion, natural motion blur, realistic physics.`;
+
+  return `
+LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s) [${aspectRatio}]:
+
+IMAGE 1 (First Frame Reference) = Locked storyboard / scene keyframe still — visual authority.
+IMAGE 2 (Optional Identity Ref) = Character Reference Sheet for "${characterName}" (identity backup only).
+
+${stillAuthorityLaws ? `${stillAuthorityLaws}\n` : ""}ANIMATION INSTRUCTION:
+- Begin precisely from the first frame image (IMAGE 1). Animate the continuous ${durationSec}s action seamlessly from that starting composition — bring the still to life.
+- Camera Framing & Movement: ${shotFraming}. Smooth cinematic camera motion motivated by the action.
+- Subject Action (PHYSICAL ONLY): ${physicalAction}
+- ${speechBlock}
+- ${characterLine}
+- ${environmentLine}
+- Resolving End Pose: Gracefully transition into "${endPose}" without changing look from IMAGE 1.
+- Audio / Performance: ${audioDirectives}
+${viralConcept ? `\n${viralConcept}\n` : ""}
+CRITICAL PRODUCTION LAWS:
+${criticalLaws}
 
 ${VIDEO_NEGATIVE_LAWS}
 `.trim();

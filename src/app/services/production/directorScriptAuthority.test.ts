@@ -125,6 +125,7 @@ test("compileLiveMotionPrompt uses physicalAction and audio-only speech law", ()
   assert.ok(/never draw|AUDIO ONLY|Performance \(AUDIO ONLY/i.test(prompt));
   assert.ok(!/Host presents key insight with authoritative gestures/i.test(prompt));
   assert.ok(directorScript.physicalAction.length > 10);
+  assert.match(prompt, /STORYBOARD STILL AUTHORITY|Bring IMAGE 1 to life/i);
 });
 
 test("directorVisualSpeechLaw forbids glyphs", () => {

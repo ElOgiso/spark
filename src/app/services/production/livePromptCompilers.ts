@@ -8,3 +8,12 @@ export { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
 export { compileThumbnailPrompt } from "./compileThumbnailPrompt";
 export { compileStoryboardPlanPrompt } from "./compileStoryboardPlanPrompt";
 export { compileLiveStoryboardSheetPrompt, isRealStoryboardSheetUrl } from "./compileLiveStoryboardSheetPrompt";
+export {
+  attachSceneMotionLock,
+  bindMotionLockStillUrl,
+  buildSceneMotionLock,
+  isSceneMotionLock,
+  resolveSceneMotionLock,
+  storyboardStillAnimateLaws,
+  type SceneMotionLock,
+} from "./sceneMotionLock";

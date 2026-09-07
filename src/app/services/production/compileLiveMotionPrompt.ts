@@ -1,6 +1,9 @@
 /**
  * Live motion prompt compiler — OS spine for I2V / scene motion.
- * Director script authority: physicalAction drives visuals; spokenLines are audio-only.
+ *
+ * Keeps the powerful LOCKED SPARK SHOT MOTION envelope, but follows the
+ * storyboard still: IMAGE 1 owns character / environment / props.
+ * Prefer SceneMotionLock frozen at still/panel time over free scene rewrite.
  */
 
 import { buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
@@ -15,6 +18,11 @@ import {
   directorVisualSpeechLaw,
   resolveDirectorSceneScript,
 } from "./directorScriptAuthority";
+import {
+  resolveSceneMotionLock,
+  storyboardStillAnimateLaws,
+  type SceneMotionLock,
+} from "./sceneMotionLock";
 
 export function compileLiveMotionPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -33,10 +41,17 @@ export function compileLiveMotionPrompt(params: {
   contentFormat?: ContentFormat | string | null;
   /** When true (default), refuse banned Host-presents fallbacks. */
   enforceDirectorGate?: boolean;
+  /**
+   * When true (default), I2V follows locked storyboard still —
+   * animate to life without redesigning look.
+   */
+  followStoryboardStill?: boolean;
 }): {
   prompt: string;
   compiler: "scene_motion";
   directorScript: ReturnType<typeof resolveDirectorSceneScript>;
+  motionLock: SceneMotionLock;
+  fromPersistedLock: boolean;
 } {
   const {
     mode,
@@ -52,6 +67,7 @@ export function compileLiveMotionPrompt(params: {
     revisionNotes,
   } = params;
 
+  const followStoryboardStill = params.followStoryboardStill !== false;
   const format = normalizeCanonicalContentFormat(params.contentFormat);
   const labels = formatSubjectRoleLabel(format, isInsertOrSet ? "insert" : "main");
   const characterName = isInsertOrSet
@@ -66,8 +82,26 @@ export function compileLiveMotionPrompt(params: {
       ? brief.beats[Math.max(0, sceneIndex - 1)] || brief.beats[sceneIndex]
       : undefined;
 
-  const directorScript = resolveDirectorSceneScript({
+  const { lock: motionLock, fromPersisted: fromPersistedLock } = resolveSceneMotionLock({
     scene,
+    beat,
+    environment,
+    contentFormat: format,
+    sceneIndexZeroBased: Math.max(0, sceneIndex - 1),
+    attachIfMissing: true,
+    sourceStill: scene?.sourceStill,
+    stillUrl: scene?.image || scene?.keyframeImageUrl,
+  });
+
+  // Director script for gate + speech law — prefer lock fields when present
+  const directorScript = resolveDirectorSceneScript({
+    scene: {
+      ...scene,
+      physicalAction: motionLock.physicalAction,
+      spokenLines: motionLock.spokenLines || scene?.spokenLines,
+      cameraDirection: motionLock.cameraDirection || scene?.cameraDirection,
+      endState: motionLock.endPose,
+    },
     beat,
     environment,
     contentFormat: format,
@@ -78,19 +112,24 @@ export function compileLiveMotionPrompt(params: {
     assertDirectorScriptReadyForMotion(directorScript, `Scene ${sceneIndex}`);
   }
 
-  const lockLaw = isInsertOrSet
-    ? "VISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. Text describes physical action and camera motion only."
-    : "VISUAL LOCK LAW: Character identity strictly lives in the model sheet reference. Scene still is the mandatory first frame composition.";
+  const lockLaw = followStoryboardStill
+    ? isInsertOrSet
+      ? "VISUAL LOCK LAW: IMAGE 1 is the mandatory storyboard still. Animate props/set motion only — never redesign the plate."
+      : "VISUAL LOCK LAW: IMAGE 1 (storyboard still) owns character, wardrobe, props, and environment. Sheet is identity backup only. Text = motion + camera only."
+    : isInsertOrSet
+      ? "VISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. Text describes physical action and camera motion only."
+      : "VISUAL LOCK LAW: Character identity strictly lives in the model sheet reference. Scene still is the mandatory first frame composition.";
 
   const revisionLine = revisionNotes
-    ? `EXECUTIVE REVISION: ${revisionNotes}\nVISUAL LOCK LAW: Animate from the scene still first frame. Sheet is identity only — never the first frame.`
+    ? `EXECUTIVE REVISION: ${revisionNotes}\nVISUAL LOCK LAW: Animate from the revised scene still first frame. Keep character, environment, and props locked to IMAGE 1 — change only the requested motion/action.`
     : lockLaw;
 
   const refHeader = [
     contentFormatDirective(format),
     ...refLabels,
     revisionLine,
-    directorVisualSpeechLaw(directorScript.spokenLines),
+    followStoryboardStill ? storyboardStillAnimateLaws() : "",
+    directorVisualSpeechLaw(directorScript.spokenLines || motionLock.spokenLines),
   ]
     .filter(Boolean)
     .join("\n");
@@ -101,21 +140,25 @@ export function compileLiveMotionPrompt(params: {
     sceneIndex,
     totalScenes,
     durationSec,
-    shotFraming: scene?.cameraDirection,
-    action: directorScript.physicalAction,
+    shotFraming: motionLock.cameraDirection || scene?.cameraDirection,
+    action: motionLock.physicalAction || directorScript.physicalAction,
     spokenLines: undefined,
-    performanceSpeech: directorScript.spokenLines,
+    performanceSpeech: motionLock.spokenLines || directorScript.spokenLines,
     onScreenText: undefined,
     audio: scene?.audio,
-    endPose:
-      !directorScript.wasMeta && scene?.endState && !/host presents/i.test(String(scene.endState))
-        ? scene.endState
-        : "Hold a clear, readable end pose matching the physical action",
+    endPose: motionLock.endPose,
     characterName,
     characterStyle,
     environment,
     viralConcept: brief ? buildViralConceptDirective(brief) : undefined,
+    followStoryboardStill,
   })}`;
 
-  return { prompt, compiler: "scene_motion", directorScript };
+  return {
+    prompt,
+    compiler: "scene_motion",
+    directorScript,
+    motionLock,
+    fromPersistedLock,
+  };
 }
