@@ -20,9 +20,11 @@ export const VIDEO_AI_PROVIDER_OPTIONS: Array<{
 ];
 
 /**
- * Builds format + AI routing patches for My Spark generator AI preference.
+ * Builds format + AI routing patches for My Spark Clip Engine selection.
  * Production reads preferredVideoProvider / preferredVideoModel from formatSettings
  * (and the production settings snapshot); ModelRouter videoGeneration stays aligned.
+ * Asset generators (Character / Supporting Cast / Location Plate) must NOT use this —
+ * they use generatorLocalAiPreference.ts instead.
  */
 export function buildPreferredVideoAiPreferenceUpdate(params: {
   providerId: AIProviderId | "auto";

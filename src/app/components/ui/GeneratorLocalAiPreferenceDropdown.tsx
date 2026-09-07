@@ -1,33 +1,31 @@
 import {
-  VIDEO_AI_PROVIDER_OPTIONS,
-  listVideoModelsForProvider,
-} from "../../services/runtime/preferredVideoAiPreference";
+  IMAGE_AI_PROVIDER_OPTIONS,
+  listImageModelsForProvider,
+  type GeneratorLocalAiPreference,
+} from "../../services/runtime/generatorLocalAiPreference";
 import type { AIProviderId } from "../../domain/types";
 
-interface PreferredVideoAiPreferenceDropdownProps {
-  preferredVideoProvider?: AIProviderId | "auto";
-  preferredVideoModel?: string;
-  onProviderChange: (providerId: AIProviderId | "auto") => void;
-  onModelChange: (modelId: string) => void;
-  /** Slightly tighter layout for mobile My Spark */
+interface GeneratorLocalAiPreferenceDropdownProps {
+  value: GeneratorLocalAiPreference;
+  onChange: (next: GeneratorLocalAiPreference) => void;
+  /** Label context for accessibility / helper copy */
+  generatorLabel?: string;
   compact?: boolean;
 }
 
 /**
- * Compact AI preference dropdowns for My Spark generator / clip-engine controls.
- * Matches More → AI Preferences select styling; writes through parent handlers
- * into formatSettings + aiSettings (same spine production already respects).
+ * Per-generator image AI preference. Writes only through the parent callback
+ * into generator-local storage — never formatSettings or aiSettings.
  */
-export function PreferredVideoAiPreferenceDropdown({
-  preferredVideoProvider,
-  preferredVideoModel,
-  onProviderChange,
-  onModelChange,
-  compact = false,
-}: PreferredVideoAiPreferenceDropdownProps) {
-  const provider = preferredVideoProvider || "auto";
+export function GeneratorLocalAiPreferenceDropdown({
+  value,
+  onChange,
+  generatorLabel = "this generator",
+  compact = true,
+}: GeneratorLocalAiPreferenceDropdownProps) {
+  const provider = value.providerId || "auto";
   const isAuto = provider === "auto";
-  const models = listVideoModelsForProvider(provider);
+  const models = listImageModelsForProvider(provider);
   const selectClass = compact
     ? "w-full bg-input-background border border-border text-xs text-foreground font-semibold px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer"
     : "bg-input-background border border-border text-xs text-foreground font-semibold px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer min-w-[180px]";
@@ -39,18 +37,23 @@ export function PreferredVideoAiPreferenceDropdown({
           AI Preference
         </p>
         <span className="text-[11px] font-mono text-muted-foreground">
-          Provider & Model
+          This generator only
         </span>
       </div>
 
       <div className={`flex ${compact ? "flex-col" : "flex-col sm:flex-row sm:flex-wrap"} gap-2`}>
         <select
-          aria-label="Preferred video AI provider"
+          aria-label={`Image AI provider for ${generatorLabel}`}
           value={provider}
-          onChange={(e) => onProviderChange(e.target.value as AIProviderId | "auto")}
+          onChange={(e) =>
+            onChange({
+              providerId: e.target.value as AIProviderId | "auto",
+              modelId: e.target.value === "auto" ? undefined : value.modelId,
+            })
+          }
           className={selectClass}
         >
-          {VIDEO_AI_PROVIDER_OPTIONS.map((opt) => (
+          {IMAGE_AI_PROVIDER_OPTIONS.map((opt) => (
             <option key={opt.id} value={opt.id}>
               {opt.label}
             </option>
@@ -65,9 +68,14 @@ export function PreferredVideoAiPreferenceDropdown({
           </div>
         ) : models.length > 0 ? (
           <select
-            aria-label="Preferred video AI model"
-            value={preferredVideoModel || ""}
-            onChange={(e) => onModelChange(e.target.value)}
+            aria-label={`Image AI model for ${generatorLabel}`}
+            value={value.modelId || ""}
+            onChange={(e) =>
+              onChange({
+                providerId: provider,
+                modelId: e.target.value || undefined,
+              })
+            }
             className={
               compact
                 ? "w-full bg-input-background border border-border text-xs text-foreground px-3 py-2 rounded-xl outline-none focus:border-purple-500 cursor-pointer"
@@ -92,7 +100,8 @@ export function PreferredVideoAiPreferenceDropdown({
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Pins the clip engine used for generation. Same setting as production format / snapshot.
+        Applies only to {generatorLabel} generate / regenerate. Does not change SPARK production AI
+        preference or the clip pipeline.
       </p>
     </div>
   );

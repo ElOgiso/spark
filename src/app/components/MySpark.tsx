@@ -46,7 +46,6 @@ import {
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
 import { buildPreferredVideoAiPreferenceUpdate } from "../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "./ui/AIProviderLogos";
-import { PreferredVideoAiPreferenceDropdown } from "./ui/PreferredVideoAiPreferenceDropdown";
 import { SearchableSelect } from "./ui/SearchableSelect";
 import {
   BRAND_ARCHETYPES,
@@ -1326,20 +1325,6 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     <span className="text-[11px] font-mono text-muted-foreground">
                       Provider Clip Physics
                     </span>
-                  </div>
-
-                  <div className="mb-4 rounded-xl border border-border/60 bg-background/50 p-3.5">
-                    <PreferredVideoAiPreferenceDropdown
-                      preferredVideoProvider={formatSettings?.preferredVideoProvider}
-                      preferredVideoModel={formatSettings?.preferredVideoModel}
-                      onProviderChange={(providerId) => applyPreferredVideoAiPreference(providerId)}
-                      onModelChange={(modelId) =>
-                        applyPreferredVideoAiPreference(
-                          (formatSettings?.preferredVideoProvider || "auto") as AIProviderId | "auto",
-                          modelId
-                        )
-                      }
-                    />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

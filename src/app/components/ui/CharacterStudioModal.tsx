@@ -5,6 +5,13 @@ import { useSpark } from "../../state/SparkContext";
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { getBrandWorkspaceId } from "../../services/socialIntegrationService";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
+import { GeneratorLocalAiPreferenceDropdown } from "./GeneratorLocalAiPreferenceDropdown";
+import {
+  loadGeneratorLocalAiPreference,
+  saveGeneratorLocalAiPreference,
+  toGeneratorExecutionOverrides,
+  type GeneratorLocalAiPreference,
+} from "../../services/runtime/generatorLocalAiPreference";
 
 interface CharacterStudioModalProps {
   isOpen: boolean;
@@ -31,6 +38,13 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
+  const [aiPreference, setAiPreference] = useState<GeneratorLocalAiPreference>(() =>
+    loadGeneratorLocalAiPreference("characterStudio", activeBrandId)
+  );
+
+  const handleAiPreferenceChange = (next: GeneratorLocalAiPreference) => {
+    setAiPreference(saveGeneratorLocalAiPreference("characterStudio", activeBrandId, next));
+  };
 
   const handleGenerateSheet = async () => {
     setIsGenerating(true);
@@ -51,11 +65,13 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
       const refUrl = sheetUrl || character?.characterSheetUrl || character?.imageUrl || undefined;
+      const overrides = toGeneratorExecutionOverrides(aiPreference);
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
         referenceImageUrl: refUrl,
         referenceImageUrls: refUrl ? [refUrl] : undefined,
         capability: "Image Generation",
+        ...overrides,
       });
 
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {
@@ -262,6 +278,14 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
                   <Upload className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Upload</span>
                 </button>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <GeneratorLocalAiPreferenceDropdown
+                  value={aiPreference}
+                  onChange={handleAiPreferenceChange}
+                  generatorLabel="Character & Voice"
+                />
               </div>
             </div>
 

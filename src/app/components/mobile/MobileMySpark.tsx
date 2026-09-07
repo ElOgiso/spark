@@ -46,7 +46,6 @@ import {
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../../services/runtime/providerCapabilities";
 import { buildPreferredVideoAiPreferenceUpdate } from "../../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "../ui/AIProviderLogos";
-import { PreferredVideoAiPreferenceDropdown } from "../ui/PreferredVideoAiPreferenceDropdown";
 import { SearchableSelect } from "../ui/SearchableSelect";
 import {
   BRAND_ARCHETYPES,
@@ -1037,21 +1036,6 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             <div className="flex items-center justify-between text-[11px]">
               <span className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Clip Engine</span>
               <span className="text-[10px] font-mono text-muted-foreground">Max Native Clip</span>
-            </div>
-
-            <div className="rounded-lg border border-border/60 bg-background/50 p-2.5">
-              <PreferredVideoAiPreferenceDropdown
-                compact
-                preferredVideoProvider={formatSettings?.preferredVideoProvider}
-                preferredVideoModel={formatSettings?.preferredVideoModel}
-                onProviderChange={(providerId) => applyPreferredVideoAiPreference(providerId)}
-                onModelChange={(modelId) =>
-                  applyPreferredVideoAiPreference(
-                    (formatSettings?.preferredVideoProvider || "auto") as AIProviderId | "auto",
-                    modelId
-                  )
-                }
-              />
             </div>
 
             <div className="space-y-1.5">

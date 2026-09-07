@@ -72,7 +72,7 @@ test("persistExecutiveModeUpdate accepts productionMode (wiring contract)", asyn
   });
 });
 
-test("My Spark AI preference dropdown wires preferredVideoProvider + preferredVideoModel", async () => {
+test("Clip Engine preferredVideo helper still wires production format + video routing", async () => {
   const { buildPreferredVideoAiPreferenceUpdate } = await import("../runtime/preferredVideoAiPreference");
 
   const auto = buildPreferredVideoAiPreferenceUpdate({

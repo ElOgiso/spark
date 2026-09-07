@@ -8,6 +8,13 @@ import { getEffectiveFormatSettings } from "../../domain/types";
 import { buildLocationPlatePrompt } from "../../services/production/locationPlatePrompt";
 import { getEffectiveContentFormat } from "../../services/production/characterSheetGate";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
+import { GeneratorLocalAiPreferenceDropdown } from "./GeneratorLocalAiPreferenceDropdown";
+import {
+  loadGeneratorLocalAiPreference,
+  saveGeneratorLocalAiPreference,
+  toGeneratorExecutionOverrides,
+  type GeneratorLocalAiPreference,
+} from "../../services/runtime/generatorLocalAiPreference";
 
 interface LocationPlateStudioModalProps {
   isOpen: boolean;
@@ -32,6 +39,13 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
+  const [aiPreference, setAiPreference] = useState<GeneratorLocalAiPreference>(() =>
+    loadGeneratorLocalAiPreference("locationPlate", activeBrandId)
+  );
+
+  const handleAiPreferenceChange = (next: GeneratorLocalAiPreference) => {
+    setAiPreference(saveGeneratorLocalAiPreference("locationPlate", activeBrandId, next));
+  };
 
   if (!isOpen) return null;
 
@@ -54,12 +68,14 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const overrides = toGeneratorExecutionOverrides(aiPreference);
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
         referenceImageUrl: plateUrl || undefined,
         referenceImageUrls: plateUrl ? [plateUrl] : undefined,
         aspectRatio,
         capability: "Image Generation",
+        ...overrides,
       });
 
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {
@@ -303,6 +319,14 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
               <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200/90 leading-relaxed">
                 <p className="font-semibold text-purple-300 mb-0.5">Environment Lock Law</p>
                 Set plates contain zero human characters. Stills with subject "set" reuse this plate directly; host beats use the plate as set reference while preserving identity from the character sheet.
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-background/50 p-3">
+                <GeneratorLocalAiPreferenceDropdown
+                  value={aiPreference}
+                  onChange={handleAiPreferenceChange}
+                  generatorLabel="Locked Set & Location Plate"
+                />
               </div>
 
               <button

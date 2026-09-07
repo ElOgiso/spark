@@ -8,6 +8,13 @@ import { getEffectiveFormatSettings, Character } from "../../domain/types";
 import { buildProductionCharacterSheetPrompt } from "../../services/production/characterSheetPrompt";
 import { getEffectiveContentFormat } from "../../services/production/characterSheetGate";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
+import { GeneratorLocalAiPreferenceDropdown } from "./GeneratorLocalAiPreferenceDropdown";
+import {
+  loadGeneratorLocalAiPreference,
+  saveGeneratorLocalAiPreference,
+  toGeneratorExecutionOverrides,
+  type GeneratorLocalAiPreference,
+} from "../../services/runtime/generatorLocalAiPreference";
 
 interface SupportCharacterModalProps {
   isOpen: boolean;
@@ -32,6 +39,13 @@ export const SupportCharacterModal: React.FC<SupportCharacterModalProps> = ({ is
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
+  const [aiPreference, setAiPreference] = useState<GeneratorLocalAiPreference>(() =>
+    loadGeneratorLocalAiPreference("supportingCast", activeBrandId)
+  );
+
+  const handleAiPreferenceChange = (next: GeneratorLocalAiPreference) => {
+    setAiPreference(saveGeneratorLocalAiPreference("supportingCast", activeBrandId, next));
+  };
 
   if (!isOpen) return null;
 
@@ -54,11 +68,13 @@ export const SupportCharacterModal: React.FC<SupportCharacterModalProps> = ({ is
 
     try {
       const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const overrides = toGeneratorExecutionOverrides(aiPreference);
       const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
         prompt,
         referenceImageUrl: sheetUrl || undefined,
         aspectRatio: "16:9",
         capability: "Image Generation",
+        ...overrides,
       });
 
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {
@@ -260,6 +276,14 @@ export const SupportCharacterModal: React.FC<SupportCharacterModalProps> = ({ is
               <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-200/90 leading-relaxed">
                 <p className="font-semibold text-indigo-300 mb-0.5">Cast Identity Rule</p>
                 Beats with <span className="font-mono text-white">subject: "support"</span> automatically use this turnaround sheet as IMAGE 1. If absent, production safely defaults to primary host.
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-background/50 p-3">
+                <GeneratorLocalAiPreferenceDropdown
+                  value={aiPreference}
+                  onChange={handleAiPreferenceChange}
+                  generatorLabel="Supporting Cast"
+                />
               </div>
 
               <button
