@@ -108,6 +108,11 @@ export interface ViralSpark {
   lastSyncedAt?: string;
   syncCount?: number;
   researchContext?: StructuredResearchContext;
+  /**
+   * Research sparks stay `draft` until Strengthen yields a spoken hook.
+   * Only `ready` sparks may enter create → Spec → generate.
+   */
+  status?: "draft" | "ready";
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";

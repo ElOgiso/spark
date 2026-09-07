@@ -23,6 +23,7 @@ interface MobileSpark {
   expectedRetention: string;
   difficulty: string;
   suggestedProductionMode: string;
+  status: "draft" | "ready";
 }
 
 const riskStyle: Record<string, string> = {
@@ -36,27 +37,40 @@ interface MobileViralSparksProps {
 }
 
 export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
-  const { createProductionFromSpark, productions, viralSparks } = useSpark();
+  const { createProductionFromSpark, strengthenSpark, productions, viralSparks } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   
-  const sparks: MobileSpark[] = (viralSparks || []).map((v) => ({
-    id: v.id,
-    title: v.title,
-    whyNow: v.whyNow,
-    hookAngle: v.angle,
-    suggestedHook: v.hook,
-    platforms: (v.platformFit || "").split(",").map((p) => p.trim()),
-    audienceEmotion: v.audienceEmotion || "Aspiration + Curiosity",
-    brandFitScore: v.brandFitScore,
-    riskLevel: (v.riskLevel as any) || "Low",
-    suggestedFormat: v.suggestedFormat || ((v.platformFit || "").includes("YouTube") ? "Long-form + 3 clips" : "Short-form (45–60 sec)"),
-    productionTime: v.productionTime,
-    category: v.category,
-    timeWindow: v.timeWindow,
-    expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
-    difficulty: v.difficulty || "Medium",
-    suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
-  }));
+  const sparks: MobileSpark[] = (viralSparks || []).map((v) => {
+    const status: "draft" | "ready" =
+      v.status === "ready"
+        ? "ready"
+        : v.status === "draft"
+          ? "draft"
+          : /curiosity opener|pattern interrupt|first-line curiosity|hook formula|high retention pattern/i.test(
+              String(v.hook || "")
+            )
+            ? "draft"
+            : "ready";
+    return {
+      id: v.id,
+      title: v.title,
+      whyNow: v.whyNow,
+      hookAngle: v.angle,
+      suggestedHook: v.hook,
+      platforms: (v.platformFit || "").split(",").map((p) => p.trim()),
+      audienceEmotion: v.audienceEmotion || "Aspiration + Curiosity",
+      brandFitScore: v.brandFitScore,
+      riskLevel: (v.riskLevel as any) || "Low",
+      suggestedFormat: v.suggestedFormat || ((v.platformFit || "").includes("YouTube") ? "Long-form + 3 clips" : "Short-form (45–60 sec)"),
+      productionTime: v.productionTime,
+      category: v.category,
+      timeWindow: v.timeWindow,
+      expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
+      difficulty: v.difficulty || "Medium",
+      suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
+      status,
+    };
+  });
   const [selectedSpark, setSelectedSpark] = useState<MobileSpark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
 
@@ -75,12 +89,21 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
   ];
 
   const handleCreate = (spark: MobileSpark) => {
+    if (spark.status === "draft") {
+      strengthenSpark?.(spark.id);
+      return;
+    }
     setSelectedSpark(spark);
     setDrawerState("idle");
   };
 
   const handleConfirm = () => {
     if (!selectedSpark) return;
+    if (selectedSpark.status === "draft") {
+      strengthenSpark?.(selectedSpark.id);
+      setDrawerState("idle");
+      return;
+    }
     setDrawerState("creating");
     try {
       const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
@@ -92,9 +115,14 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
         platformFit: selectedSpark.suggestedFormat,
         format: selectedSpark.suggestedFormat,
         retentionReason: selectedSpark.expectedRetention,
+        status: selectedSpark.status,
       };
 
-      createProductionFromSpark(matchingSpark as any);
+      const created = createProductionFromSpark(matchingSpark as any);
+      if (!created) {
+        setDrawerState("idle");
+        return;
+      }
 
       setTimeout(() => {
         setDrawerState("created");
@@ -238,6 +266,14 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                     <CheckCircle2 className="w-4 h-4" />
                     In Production
                   </div>
+                ) : spark.status === "draft" ? (
+                  <button
+                    onClick={() => handleCreate(spark)}
+                    className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Strengthen Spark
+                  </button>
                 ) : (
                   <button
                     onClick={() => handleCreate(spark)}

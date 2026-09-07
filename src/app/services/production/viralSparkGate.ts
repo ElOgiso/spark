@@ -13,6 +13,10 @@ const META_HOOK_PATTERNS = [
   "opener pattern",
   "first-line formula",
   "first-line curiosity",
+  "first-line curiosity opener",
+  "high retention pattern",
+  "title structure",
+  "organic value bridge",
   "this video will",
   "discusses",
   "pattern:",
@@ -21,11 +25,91 @@ const META_HOOK_PATTERNS = [
   "title structure",
 ];
 
+/** Exact ready-to-speak host line — not a research meta pattern. */
+export function isSpokenHook(hookStr?: string): boolean {
+  return !isMetaHook(hookStr);
+}
+
 export function isMetaHook(hookStr?: string): boolean {
   if (!hookStr || typeof hookStr !== "string") return true;
   const trimmed = hookStr.trim().toLowerCase();
   if (trimmed.length < 12) return true;
+  // Quoting a title inside a formula is still meta research text
+  if (/^(first-line|hook formula|pattern|title structure|high retention)/i.test(trimmed)) return true;
   return META_HOOK_PATTERNS.some((pat) => trimmed.includes(pat));
+}
+
+export function isSparkDraft(spark?: ViralSpark | null): boolean {
+  if (!spark) return true;
+  if (spark.status === "ready") return false;
+  if (spark.status === "draft") return true;
+  // Legacy sparks without status: treat meta hooks as draft
+  return isMetaHook(spark.hook);
+}
+
+/**
+ * Hard create gate — no silent repair. Meta hooks fail even when brandFit looks fine.
+ */
+export function assertSparkReadyForProduction(
+  spark: ViralSpark | null | undefined,
+  brand?: Brand
+): { ok: boolean; reasons: string[]; message?: string } {
+  if (!spark) {
+    return {
+      ok: false,
+      reasons: ["Spark data is completely missing"],
+      message: "Cannot start production: Viral Spark data is missing.",
+    };
+  }
+
+  const reasons: string[] = [];
+
+  if (spark.status === "draft" || (spark.status !== "ready" && isMetaHook(spark.hook))) {
+    reasons.push(
+      "Spark is still a research draft — Strengthen it into a spoken host hook before Create"
+    );
+  }
+
+  if (isMetaHook(spark.hook)) {
+    reasons.push(
+      "Hook is meta research text (not an exact ready-to-speak line). Brand fit cannot override this."
+    );
+  }
+
+  const ready = isProductionReadySpark(spark, brand);
+  for (const r of ready.reasons) {
+    if (!reasons.includes(r)) reasons.push(r);
+  }
+
+  if (reasons.length > 0) {
+    return {
+      ok: false,
+      reasons,
+      message: `Cannot start production: ${reasons[0]}. Click Strengthen Spark to upgrade.`,
+    };
+  }
+
+  return { ok: true, reasons: [] };
+}
+
+/**
+ * Mark a spark production-ready only when the hook is spoken and gates pass.
+ */
+export function markSparkReadyIfValid(
+  spark: ViralSpark,
+  brand?: Brand
+): { ok: boolean; spark: ViralSpark; reasons: string[] } {
+  const check = isProductionReadySpark(spark, brand);
+  if (!check.ok || isMetaHook(spark.hook)) {
+    return {
+      ok: false,
+      spark: { ...spark, status: "draft" },
+      reasons: check.ok
+        ? ["Hook is still meta — not a spoken host line"]
+        : check.reasons,
+    };
+  }
+  return { ok: true, spark: { ...spark, status: "ready" }, reasons: [] };
 }
 
 export function isTopicOnlyTitle(titleStr?: string): boolean {
@@ -150,6 +234,8 @@ export function autoRepairViralSparkDeterministic(
     brandFitScore: typeof spark.brandFitScore === "number" && spark.brandFitScore > 0 ? spark.brandFitScore : 60,
     whyNow: spark.whyNow || `High-retention strategic framework adapted for ${brandName}.`,
     researchContext: repairedResearchContext,
+    // Deterministic repair produces a spoken hook candidate — mark ready only if gates pass
+    status: isMetaHook(repairedHook) ? "draft" : "ready",
   };
 }
 
@@ -240,6 +326,7 @@ Return a valid JSON object matching this schema with NO extra text:
         ctaStyle: String(parsed.ctaStyle || spark.researchContext?.ctaStyle || `Follow ${brand.name} for daily insights`),
         format: String(parsed.suggestedFormat || spark.suggestedFormat || "Vertical 9:16 (Shorts)"),
       },
+      status: isMetaHook(cleanHook) ? "draft" : "ready",
     };
   } catch (err) {
     console.warn("[viralSparkGate] AI rewrite fallback triggered:", err);

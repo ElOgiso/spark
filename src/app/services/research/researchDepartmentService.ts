@@ -214,6 +214,8 @@ export class ResearchDepartmentService {
           lastSeenAt: now,
           lastSyncedAt: now,
           syncCount: 1,
+          // Research pattern text is not a spoken hook — stay draft until Strengthen
+          status: "draft",
           researchContext: {
             sourceName: source.displayName || source.username,
             platform: source.platform,
@@ -348,6 +350,7 @@ export class ResearchDepartmentService {
       suggestedProductionMode: videoResearch.durationSec && videoResearch.durationSec <= 60 ? "express" : "standard",
       origin: "SOURCE",
       sourceId: source.id,
+      status: "draft",
     };
     viralSparks.push(spark);
 

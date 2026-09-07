@@ -16,6 +16,7 @@ import { loadPersistedState } from "../../state/persistence";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
 import { getEffectiveContentFormat } from "./characterSheetGate";
+import { assertSparkReadyForProduction, isMetaHook } from "./viralSparkGate";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -267,9 +268,9 @@ export function resolveBeatBudget(durationSec: number): {
 }
 
 /**
- * Quality Gate & Spark Strengthening before entering Production.
- * Evaluates spark completeness. If missing hook AND format AND angle, attempts 1 automated rewrite;
- * if it still lacks substance, fails loud to prevent topic-only boards.
+ * Quality Gate before entering Production.
+ * Hard-fails meta / draft research sparks — does NOT silently promote hookPattern into a spoken hook.
+ * Use strengthen / rewriteSparkForProduction to upgrade drafts.
  */
 export function evaluateAndStrengthenSpark(
   spark?: ViralSpark | null,
@@ -279,95 +280,26 @@ export function evaluateAndStrengthenSpark(
     return { ok: false, spark: {} as ViralSpark, message: "Cannot create production: Viral Spark data is completely missing." };
   }
 
-  const rawHook = typeof spark.hook === "string" ? spark.hook.trim() : "";
-  const isUsableHook =
-    rawHook.length >= 8 &&
-    !/^hook:\s*$/i.test(rawHook) &&
-    !rawHook.toLowerCase().startsWith("hook: [") &&
-    !rawHook.toLowerCase().includes("curiosity opener") &&
-    !rawHook.toLowerCase().includes("pattern interrupt");
-
-  const hasSubstance = Boolean(
-    (typeof spark.whyNow === "string" && spark.whyNow.trim().length >= 8) ||
-    (typeof spark.angle === "string" && spark.angle.trim().length >= 5) ||
-    (spark.researchContext?.hookPattern && spark.researchContext.hookPattern.trim().length >= 8)
-  );
-
-  const hasFormat = Boolean(
-    spark.platformFit ||
-    spark.suggestedFormat ||
-    spark.suggestedProductionMode ||
-    spark.category ||
-    spark.researchContext?.format
-  );
-
-  if (isUsableHook && hasSubstance && hasFormat) {
-    return { ok: true, spark };
-  }
-
-  const brandName = brand?.name || "SPARK";
-  const brandNiche = brand?.niche || "this market";
-  const title = (spark.title || "Strategic Insight").trim();
-
-  // If title is missing or empty, fail loud
-  if (!title || title.length < 3) {
+  const gate = assertSparkReadyForProduction(spark, brand);
+  if (!gate.ok) {
     return {
       ok: false,
-      spark,
-      message: `Cannot start production: Spark is completely empty with no title, hook, format, or strategic angle. Click 'Strengthen Spark' to upgrade.`,
+      spark: { ...spark, status: spark.status === "ready" && !isMetaHook(spark.hook) ? "ready" : "draft" },
+      message: gate.message,
     };
   }
 
-  // Automated spark repair attempt
-  const healedHook = isUsableHook
-    ? rawHook
-    : spark.researchContext?.hookPattern && spark.researchContext.hookPattern.length >= 8
-    ? spark.researchContext.hookPattern
-    : `Here is the non-obvious reality about ${brandNiche} around ${title} that most operators in ${brandName}'s space ignore.`;
-
-  const healedAngle = spark.angle && spark.angle.trim().length >= 5
-    ? spark.angle.trim()
-    : spark.whyNow && spark.whyNow.trim().length >= 8
-    ? `Direct execution framework: ${spark.whyNow.trim()}`
-    : `Systematic high-signal execution architecture for ${title}`;
-
-  const healedWhyNow = spark.whyNow && spark.whyNow.trim().length >= 8
-    ? spark.whyNow.trim()
-    : `Recent changes in ${brandNiche} make outdated workflows obsolete, creating an immediate window for strategic differentiation.`;
-
-  const healedFormat = spark.platformFit || spark.suggestedFormat || (spark.suggestedProductionMode === "express" ? "Vertical Short-Form (Shorts)" : "Direct Presentation");
-
-  const upgradedSpark: ViralSpark = {
-    ...spark,
-    hook: healedHook,
-    angle: healedAngle,
-    whyNow: healedWhyNow,
-    platformFit: healedFormat,
-    suggestedFormat: healedFormat,
-  };
-
-  const isFinalOk = Boolean(
-    upgradedSpark.hook && upgradedSpark.hook.length >= 8 &&
-    upgradedSpark.angle && upgradedSpark.angle.length >= 5 &&
-    upgradedSpark.platformFit
-  );
-
-  if (!isFinalOk) {
-    return {
-      ok: false,
-      spark: upgradedSpark,
-      message: `Cannot start production for "${title}": Spark lacks verified hook, format, and angle after repair. Click 'Strengthen Spark' to upgrade.`,
-    };
-  }
-
-  return { ok: true, spark: upgradedSpark };
+  return { ok: true, spark: { ...spark, status: "ready" } };
 }
 
 /**
- * Backward compatibility alias
+ * Backward compatibility alias — hard create gate (no silent repair).
  */
-export function evaluateSparkForProduction(spark?: ViralSpark | null): { ok: boolean; message?: string } {
-  return evaluateAndStrengthenSpark(spark);
+export function evaluateSparkForProduction(
+  spark?: ViralSpark | null,
+  brand?: Brand
+): { ok: boolean; spark?: ViralSpark; message?: string } {
+  return evaluateAndStrengthenSpark(spark, brand);
 }
 
 /**
@@ -854,10 +786,13 @@ export class ProductionBriefService {
   }): Promise<ProductionBrief> {
     const { spark: rawSpark, brand, character, characters, niche, memoryItems = [], productionMode = "standard", researchContext = rawSpark.researchContext, targetDurationSec } = params;
 
-    // Quality gate & self-healing spark rewrite
+    // Quality gate — refuse to polish/plan from meta research drafts
     const sparkEvaluation = evaluateAndStrengthenSpark(rawSpark, brand);
     if (!sparkEvaluation.ok) {
-      console.warn(`[ProductionBriefService] Spark evaluation notice: ${sparkEvaluation.message}`);
+      throw new Error(
+        sparkEvaluation.message ||
+          "Cannot generate brief: Spark needs Strengthen (spoken host hook) before production."
+      );
     }
     const spark = sparkEvaluation.spark;
 

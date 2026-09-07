@@ -132,6 +132,8 @@ export function viralSparkRowToDomain(row: ViralSparkRow): ViralSpark {
     riskLevel: riskVal,
     suggestedFormat: String(evidence.suggestedFormat ?? "Short-form (45–60 sec)"),
     suggestedProductionMode: String(evidence.suggestedProductionMode ?? "Autonomous Draft"),
+    status: evidence.status === "ready" ? "ready" : evidence.status === "draft" ? "draft" : undefined,
+    researchContext: (evidence.researchContext as ViralSpark["researchContext"]) || undefined,
   };
 }
 
@@ -166,6 +168,8 @@ export function domainViralSparkToInsert(
       difficulty: spark.difficulty,
       suggestedFormat: spark.suggestedFormat,
       suggestedProductionMode: spark.suggestedProductionMode,
+      status: spark.status || "draft",
+      researchContext: spark.researchContext,
     } as Json,
     status: "new",
   };

@@ -36,6 +36,7 @@ interface Spark {
   expectedRetention: string;
   difficulty: string;
   suggestedProductionMode: string;
+  status: "draft" | "ready";
 }
 
 // Sparks are loaded dynamically from the SparkContext registry
@@ -299,29 +300,43 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export function ViralSparks({ onNavigate }: ViralSparksProps) {
-  const { createProductionFromSpark, productions, viralSparks, brand } = useSpark();
+  const { createProductionFromSpark, strengthenSpark, productions, viralSparks, brand } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<Spark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
 
-  const sparks: Spark[] = (viralSparks || []).map((v) => ({
-    id: v.id,
-    title: v.title,
-    whyNow: v.whyNow,
-    platforms: (v.platformFit || "").split(",").map((p) => p.trim()),
-    hookAngle: v.angle,
-    suggestedHook: v.hook,
-    audienceEmotion: v.audienceEmotion || "Aspiration + Curiosity",
-    brandFitScore: v.brandFitScore,
-    riskLevel: (v.riskLevel as any) || "Low",
-    suggestedFormat: v.suggestedFormat || ((v.platformFit || "").includes("YouTube") ? "Long-form + 3 clips" : "Short-form (45–60 sec)"),
-    productionTime: v.productionTime,
-    category: v.category,
-    timeWindow: v.timeWindow,
-    expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
-    difficulty: v.difficulty || "Medium",
-    suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
-  }));
+  const sparks: Spark[] = (viralSparks || []).map((v) => {
+    const status: "draft" | "ready" =
+      v.status === "ready"
+        ? "ready"
+        : v.status === "draft"
+          ? "draft"
+          : // legacy: meta hooks count as draft
+            /curiosity opener|pattern interrupt|first-line curiosity|hook formula|high retention pattern/i.test(
+              String(v.hook || "")
+            )
+            ? "draft"
+            : "ready";
+    return {
+      id: v.id,
+      title: v.title,
+      whyNow: v.whyNow,
+      platforms: (v.platformFit || "").split(",").map((p) => p.trim()),
+      hookAngle: v.angle,
+      suggestedHook: v.hook,
+      audienceEmotion: v.audienceEmotion || "Aspiration + Curiosity",
+      brandFitScore: v.brandFitScore,
+      riskLevel: (v.riskLevel as any) || "Low",
+      suggestedFormat: v.suggestedFormat || ((v.platformFit || "").includes("YouTube") ? "Long-form + 3 clips" : "Short-form (45–60 sec)"),
+      productionTime: v.productionTime,
+      category: v.category,
+      timeWindow: v.timeWindow,
+      expectedRetention: v.expectedRetention || "High retention due to rapid visual hook",
+      difficulty: v.difficulty || "Medium",
+      suggestedProductionMode: getNotionModeLabel(v.suggestedProductionMode || v.suggestedMode),
+      status,
+    };
+  });
 
   const createdSparks = new Set<string>(
     productions
@@ -350,6 +365,14 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
 
   const handleConfirm = () => {
     if (!selectedSpark) return;
+    if (selectedSpark.status === "draft") {
+      NotificationService.addNotification({
+        title: "Spark Needs Strengthening",
+        message: "Strengthen this research draft into a spoken host hook before Create.",
+        type: "warning",
+      });
+      return;
+    }
     setDrawerState("creating");
     try {
       const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
@@ -361,9 +384,14 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
         platformFit: selectedSpark.platforms.join(", "),
         format: selectedSpark.suggestedFormat,
         retentionReason: selectedSpark.expectedRetention,
+        status: selectedSpark.status,
       };
 
-      createProductionFromSpark(matchingSpark as any);
+      const created = createProductionFromSpark(matchingSpark as any);
+      if (!created) {
+        setDrawerState("idle");
+        return;
+      }
 
       NotificationService.addNotification({
         title: "Production Draft Started",
@@ -381,6 +409,11 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
       console.error("[ViralSparks] Failed to create production:", err);
       setDrawerState("idle");
     }
+  };
+
+  const handleStrengthen = (spark: Spark) => {
+    if (!strengthenSpark) return;
+    strengthenSpark(spark.id);
   };
 
   const handleGoToReview = () => {
@@ -483,6 +516,10 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
                         <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 border border-success/20 px-2 py-0.5 rounded-full">
                           <Loader2 className="w-3 h-3 animate-spin" /> Drafting
                         </span>
+                      ) : spark.status === "draft" ? (
+                        <span className="flex items-center gap-1 text-xs font-medium text-warning bg-warning/10 border border-warning/20 px-2 py-0.5 rounded-full">
+                          <AlertTriangle className="w-3 h-3" /> Research Draft
+                        </span>
                       ) : (
                         <span className="text-xs text-muted-foreground bg-muted/30 border border-border/50 px-2 py-0.5 rounded-full">
                           {spark.timeWindow}
@@ -568,6 +605,16 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
                       <CheckCircle2 className="w-4 h-4" />
                       In Production — View in Review
                     </button>
+                  ) : spark.status === "draft" ? (
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      fullWidth
+                      icon={<Sparkles className="w-4 h-4" />}
+                      onClick={() => handleStrengthen(spark)}
+                    >
+                      Strengthen Spark
+                    </Button>
                   ) : (
                     <Button
                       variant="primary"

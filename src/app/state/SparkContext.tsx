@@ -62,7 +62,7 @@ import {
   buildPublishAuditRecord,
   type PublishingPermission,
 } from "../services/production/publishing/publishPolicy";
-import { isProductionReadySpark, autoRepairViralSparkDeterministic } from "../services/production/viralSparkGate";
+import { isProductionReadySpark, autoRepairViralSparkDeterministic, markSparkReadyIfValid } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { hasCanonicalPlayableMedia } from "../services/production/canonicalProductionMedia";
@@ -1709,47 +1709,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Hard Quality Gate Evaluation
-    const hardGate = evaluateSparkForProduction(spark);
+    // Hard Quality Gate — no silent repair. Meta hooks / research drafts fail even if brandFit looks fine.
+    const hardGate = evaluateSparkForProduction(spark, state.brand);
     if (!hardGate.ok) {
       NotificationService.addNotification({
         title: "Spark Needs Strengthening",
-        message: hardGate.message || "Cannot start production: Spark lacks actionable hook or substance. Click 'Strengthen Spark' to upgrade.",
+        message: hardGate.message || "Cannot start production: Spark lacks a spoken host hook. Click Strengthen Spark to upgrade.",
         type: "warning",
       });
       return;
     }
 
-    // Extended Quality Gate Evaluation
-    const evalRes = isProductionReadySpark(spark, state.brand);
-    if (!evalRes.ok) {
-      console.log(`[SparkContext] Spark quality gate triggered auto-repair for "${spark.title}". Reasons:`, evalRes.reasons);
-      const repaired = autoRepairViralSparkDeterministic(spark, state.brand);
-      const secondEval = isProductionReadySpark(repaired, state.brand);
-
-      if (!secondEval.ok) {
-        const failureMsg = secondEval.reasons.join("; ");
-        NotificationService.addNotification({
-          title: "Spark Needs Strengthening",
-          message: `Cannot start production: ${failureMsg}. Click 'Strengthen Spark' on card to upgrade.`,
-          type: "warning",
-        });
-        return;
-      }
-
-      // Save repaired spark to state & persistence
-      spark = repaired;
-      setState((prev: any) => ({
-        ...prev,
-        viralSparks: prev.viralSparks.map((s: any) => (s.id === spark.id ? repaired : s)),
-      }));
-
-      const bId = getBrandWorkspaceId();
-      if (isSupabaseConfigured() && bId) {
-        void import("../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
-          void persistViralSparkCreate(bId, repaired);
-        });
-      }
+    // Prefer the gate-normalized ready spark (status stamped)
+    if (hardGate.spark) {
+      spark = hardGate.spark;
     }
 
     const prodId = generateUuid();
@@ -2406,25 +2379,42 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!targetSpark) return undefined;
 
       const repaired = autoRepairViralSparkDeterministic(targetSpark, state.brand);
+      const marked = markSparkReadyIfValid(repaired, state.brand);
+
+      if (!marked.ok) {
+        NotificationService.addNotification({
+          title: "Strengthen Incomplete",
+          message: marked.reasons[0] || "Could not produce a spoken host hook yet. Try again.",
+          type: "warning",
+        });
+        // Persist draft upgrade attempt (better hook/title) but keep status draft
+        setState((prev: any) => ({
+          ...prev,
+          viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? marked.spark : s)),
+        }));
+        return marked.spark;
+      }
+
+      const ready = marked.spark;
       setState((prev: any) => ({
         ...prev,
-        viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? repaired : s)),
+        viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? ready : s)),
       }));
 
       const bId = getBrandWorkspaceId();
       if (isSupabaseConfigured() && bId) {
         void import("../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
-          void persistViralSparkCreate(bId, repaired);
+          void persistViralSparkCreate(bId, ready);
         });
       }
 
       NotificationService.addNotification({
         title: "Spark Strengthened",
-        message: `Upgraded "${repaired.title}" with brand-spoken hook & CTA. Ready for production!`,
+        message: `Spoken hook ready: "${ready.hook.slice(0, 72)}${ready.hook.length > 72 ? "…" : ""}" — Create Production is unlocked.`,
         type: "success",
       });
 
-      return repaired;
+      return ready;
     },
     [state.viralSparks, state.brand]
   );

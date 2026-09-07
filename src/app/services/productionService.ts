@@ -108,14 +108,28 @@ export class ProductionService implements IProductionService {
     const resolvedMode = (params.productionMode as any) || "standard";
     const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
 
-    // Phase 2: Creative Director planning FIRST (no media generation).
-    // Phase 11: optional creativeLearnings influence soft strategy only.
+    // Brief polish FIRST so Spec shot prompts inherit cleaned beats (not raw research meta).
+    const llmBrief = await ProductionBriefService.generateBrief(params);
+
+    const polishedSpark: ViralSpark = {
+      ...params.spark,
+      title: llmBrief.title || params.spark.title,
+      hook: llmBrief.hook || params.spark.hook,
+      whyNow: llmBrief.whyThisWorks || params.spark.whyNow,
+      angle: params.spark.angle,
+      suggestedFormat: llmBrief.platformRecommendation || params.spark.suggestedFormat,
+      suggestedProductionMode:
+        (llmBrief.productionMode as string) || params.spark.suggestedProductionMode,
+      status: "ready",
+    };
+
+    // Phase 2: Creative Director planning uses polished brief/spark — never raw meta hooks.
     const plan = createProductionPlan({
-      idea: params.spark.hook || params.spark.title || params.spark.angle || "",
+      idea: polishedSpark.hook || polishedSpark.title || polishedSpark.angle || "",
       productionId: prodId,
       brand: params.brand,
       character: params.character || params.characters?.[0],
-      spark: params.spark,
+      spark: polishedSpark,
       memoryItems: params.memoryItems,
       productionMode: resolvedMode,
       automationMode: params.brand?.automation_mode,
@@ -123,12 +137,11 @@ export class ProductionService implements IProductionService {
       targetDurationSec:
         typeof params.targetDurationSec === "number"
           ? params.targetDurationSec
-          : params.brand.formatSettings?.targetDurationSec,
+          : typeof llmBrief.targetDurationSec === "number"
+            ? llmBrief.targetDurationSec
+            : params.brand.formatSettings?.targetDurationSec,
       creativeLearnings: params.creativeLearnings,
     });
-
-    // Existing brief service remains for script polish / brand-fit; intelligence owns structure.
-    const llmBrief = await ProductionBriefService.generateBrief(params);
 
     const targetDurationSec =
       typeof params.targetDurationSec === "number"
