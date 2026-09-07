@@ -10,7 +10,7 @@ import { compileShotPrompt } from "./generation/promptCompiler";
 import type { ProductionSpec, SceneSpec } from "./specification/productionSpec";
 import type { ShotSpec } from "./specification/shotSpec";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
-import type { MemoryItem } from "../../domain/types";
+import type { Character, MemoryItem } from "../../domain/types";
 import { buildViralConceptDirective } from "./productionPromptPacks";
 import { listSpecShots } from "./productionMediaLineage";
 
@@ -22,6 +22,25 @@ function emptyHandoff() {
     subjectPosition: "",
     notes: [] as string[],
   };
+}
+
+/** Subject lock line for stills — lives in the OS compiler, not AssetService. */
+export function buildStillSubjectLine(params: {
+  resolvedSubject: "main" | "support" | "insert" | "set" | string;
+  character?: Character | null;
+  activeChar?: Character | null;
+}): string {
+  const { resolvedSubject, character, activeChar } = params;
+  if (resolvedSubject === "set") {
+    return "SUBJECT & COMPOSITION: Empty or wide establishing architectural set / location environment. NO people, NO characters, NO faces. Room geometry, lighting, interior design, textures, and architecture only.";
+  }
+  if (resolvedSubject === "insert") {
+    return "SUBJECT & COMPOSITION: Cinematic B-roll / Detail insert. NO host face required. Focus on hands, product, screen interface, conceptual data visualization, chart, or contextual cinematic detail illustrating the spoken lines. NO random or unprompted faces.";
+  }
+  if (resolvedSubject === "support") {
+    return `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Character is clearly visible in frame performing this beat's action.`;
+  }
+  return `SUBJECT & IDENTITY: Primary host "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Host is clearly visible in frame performing this beat's action.`;
 }
 
 /** Map a live storyboard / production scene row into a panel spec for the OS frame compiler. */

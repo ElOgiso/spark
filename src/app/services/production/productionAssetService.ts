@@ -3,7 +3,7 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
-import { getProductionPromptPack, buildTakeMotionPrompt, buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
+import { getProductionPromptPack, buildTakeMotionPrompt } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
@@ -16,8 +16,17 @@ import {
   isCinematicMode,
   readProductionSettingsSnapshot,
 } from "./productionSettingsSnapshot";
-import { compileLiveStillPrompt } from "./compileLiveStillPrompt";
+import { compileLiveStillPrompt, buildStillSubjectLine } from "./compileLiveStillPrompt";
+import { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
+import { compileThumbnailPrompt } from "./compileThumbnailPrompt";
+import { compileStoryboardPlanPrompt, shouldReuseExistingStoryboard } from "./compileStoryboardPlanPrompt";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
+
+/**
+ * ProductionAssetService — EXECUTOR only.
+ * Creative text comes from OS compilers (compileLiveStill/Motion/Thumbnail/StoryboardPlan).
+ * This class: provider calls, Storage upload, credits, abort, media sync.
+ */
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -743,9 +752,7 @@ export class ProductionAssetService {
         `[SPARK Pipeline] Identity pack mode (${identityPack.mode}) overridden by immutable snapshot mode (${mode})`
       );
     }
-    // On-concept directive from the researched viral spark — injected into still + motion prompts
-    // so generated visuals reflect the researched format/retention/niche, not generic templates.
-    const viralConcept = buildViralConceptDirective(brief);
+    // Viral concept directive is injected by OS motion/still compilers — not here.
     (production as any).aspectRatio = aspectRatio;
     (production as any).mode = mode;
     (production as any).productionMode = mode;
@@ -912,204 +919,35 @@ export class ProductionAssetService {
     startHeartbeat("Storyboard");
 
     try {
-      // PART 2 — Mode-Specific Storyboard Generation Prompt
-    let systemInstruction = "";
-    let prompt = "";
-
-    const formattedBeatsBlock = brief.beats && brief.beats.length > 0
-      ? `
-STRUCTURED PRODUCTION BEATS (MANDATORY 1-TO-1 PANEL MAPPING):
-${brief.beats
-  .map(
-    (b, i) =>
-      `Beat ${i + 1} ${b.timecode} [${b.valueJob.toUpperCase()}]: "${b.spokenLines}" | ONSCREEN: "${b.onScreenText}" | CAMERA: ${b.cameraDirection || "Standard"}`
-  )
-  .join("\n")}
-`
-      : "";
-
-    if (mode === "deep") {
-      systemInstruction = `You are SPARK's Senior Film Director specializing in Continuous One-Take Cinematic Craft.
-Structure a seamless continuous one-take sequence matching the brief's duration and beats.
-CONTINUITY LAWS:
-1. Stage N's startState MUST open EXACTLY on Stage N-1's endState.
-2. Exactly ONE primary physical/story change per stage.
-3. Locked character identity, wardrobe, and studio set across all panels.
-4. Concrete camera direction required every panel.
-5. Forbid montage cuts, teleportation, or stock cutaways. Return valid JSON only.`;
-
-      prompt = `
-Create a continuous one-take cinematic storyboard (${aspectRatio}) for:
-
-TITLE: "${brief.title}"
-BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Director"})
-HOOK: "${brief.hook}"
-SCRIPT OUTLINE: "${brief.scriptOutline}"
-VISUAL DIRECTION: "${brief.visualDirection}"
-${formattedBeatsBlock}
-CONTINUITY LAWS FOR DEEP / CINEMATIC MODE:
-- Continuous one-take staging across all beats.
-- Every panel has:
-  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
-  * spokenLines: Complete substantive spoken line for host/VO
-  * onScreenText: <=6-8 uppercase words
-  * startState -> primaryChange -> endState (one change only)
-  * cameraDirection: Specific cinematic motion (e.g. slow push-in, motivated tracking)
-
-Return valid JSON with this exact structure:
-{
-  "storyboard": [
-    {
-      "scene": 1,
-      "duration": "0-8s",
-      "valueJob": "hook",
-      "shotList": "Presenter direct-to-camera ${aspectRatio} master shot establishing scene",
-      "cameraDirection": "Slow cinematic push-in with subtle lateral glide",
-      "transitions": "Continuous one-take flow",
-      "startState": "Host stands in studio, looking into lens, holding tablet with initial data",
-      "primaryChange": "Host turns slightly as ambient background lighting dims to emphasize key metric",
-      "endState": "Host centered in frame, gesturing right, backlight highlighting focused expression",
-      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
-      "pacing": "Deliberate and cinematic",
-      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "visualDescription": "High contrast executive opening shot with locked lighting and host presence"
-    }
-  ],
-  "thumbnails": [
-    { "id": "t1", "variant": "A", "concept": "High-contrast cinematic keyframe with host authority expression and curiosity hook" },
-    { "id": "t2", "variant": "B", "concept": "Cinematic split lighting with illuminated metric graphic breakdown" },
-    { "id": "t3", "variant": "C", "concept": "Minimalist premium typography overlay on sharp host portrait in studio" }
-  ]
-}
-`;
-    } else if (mode === "express") {
-      systemInstruction = `You are SPARK's Rapid Short-Form Creative Director.
-Structure an Express Narrator storyboard where high-impact visual stills support a FULL spoken VO script.
-EXPRESS LAWS:
-1. Every panel has a concrete valueJob, full substantive spokenLines, and <=6-8 word onScreenText.
-2. Clean sequential visual storytelling with crisp typography safe margins.
-3. Locked host identity and studio set. Return valid JSON only.`;
-
-      prompt = `
-Create an express narrator production storyboard (9:16 vertical) for:
-
-TITLE: "${brief.title}"
-BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
-HOOK: "${brief.hook}"
-SCRIPT OUTLINE: "${brief.scriptOutline}"
-${formattedBeatsBlock}
-EXPRESS NARRATOR RULES:
-- Every panel has:
-  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
-  * spokenLines: Full VO sentence(s) for that beat
-  * onScreenText: <=6-8 words, high-contrast lower-third ready
-  * visualDescription / startState / primaryChange / endState for continuity
-
-Return valid JSON with this exact structure:
-{
-  "storyboard": [
-    {
-      "scene": 1,
-      "duration": "0-6s",
-      "valueJob": "hook",
-      "shotList": "Presenter direct-to-camera dynamic hook",
-      "cameraDirection": "Quick snap push-in",
-      "transitions": "Continuous flow",
-      "startState": "Host centered looking directly into camera with intense hook expression",
-      "primaryChange": "Host gestures dynamically as bold headline appears",
-      "endState": "Host holding position pointing to key visual",
-      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 45)}",
-      "pacing": "Fast hook",
-      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "visualDescription": "High energy vertical framing with clean studio lighting"
-    }
-  ],
-  "thumbnails": [
-    { "id": "t1", "variant": "A", "concept": "High-energy face reaction with bold hook text overlay" },
-    { "id": "t2", "variant": "B", "concept": "Curiosity gap split graphic in dark mode" },
-    { "id": "t3", "variant": "C", "concept": "Clean bold typography card with brand accent" }
-  ]
-}
-`;
-    } else {
-      // standard mode
-      systemInstruction = `You are SPARK's Senior Production Producer.
-Structure a balanced Hybrid Presentation storyboard (host-on-camera + overlay text).
-HYBRID LAWS:
-1. Every panel has valueJob, exact host spokenLines, and onScreenText overlay.
-2. startState -> primaryChange -> endState with clear single action focus.
-3. Concrete camera direction per panel (no generic descriptors).
-4. Locked character identity, wardrobe, and studio set across all panels. Return valid JSON only.`;
-
-      prompt = `
-Create a hybrid presentation storyboard (${aspectRatio}) for:
-
-TITLE: "${brief.title}"
-BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
-HOOK: "${brief.hook}"
-SCRIPT OUTLINE: "${brief.scriptOutline}"
-VISUAL DIRECTION: "${brief.visualDirection}"
-${formattedBeatsBlock}
-HYBRID PRESENTATION RULES:
-- Every panel has:
-  * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
-  * spokenLines: Exact lines for host on camera
-  * onScreenText: <=6-8 words in uppercase
-  * startState -> primaryChange -> endState
-  * cameraDirection: Concrete camera framing
-
-Return valid JSON with this exact structure:
-{
-  "storyboard": [
-    {
-      "scene": 1,
-      "duration": "0-8s",
-      "valueJob": "hook",
-      "shotList": "Presenter direct-to-camera vertical framing",
-      "cameraDirection": "Push-in slow zoom",
-      "transitions": "Continuous flow",
-      "startState": "Host standing in executive studio addressing viewer",
-      "primaryChange": "Host raises tablet presenting the challenge",
-      "endState": "Host centered with focused expression holding visual aid",
-      "onScreenText": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 50)}",
-      "pacing": "Fast hook",
-      "spokenLines": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "scriptSnippet": "${(typeof brief.hook === 'string' ? brief.hook : '').slice(0, 80)}",
-      "visualDescription": "High contrast executive presenter opening frame"
-    }
-  ],
-  "thumbnails": [
-    { "id": "t1", "variant": "A", "concept": "High-contrast split screen with presenter expression and bold hook" },
-    { "id": "t2", "variant": "B", "concept": "Glowing metric dashboard with curiosity-gap text overlay" },
-    { "id": "t3", "variant": "C", "concept": "Minimalist dark mode typography card with brand accent highlight" }
-  ]
-}
-`;
-    }
+      // PART 2 — Storyboard structure via OS plan compiler (or reuse Spec/brief panels)
+    const planned = compileStoryboardPlanPrompt({
+      mode,
+      aspectRatio,
+      brief,
+      brand,
+      character,
+    });
+    const systemInstruction = planned.systemInstruction;
+    const prompt = planned.prompt;
 
     let parsedStoryboard: any[] = [];
     let thumbnails: any[] = [];
 
-    // Phase 2: when ProductionSpec already stamped stable shotIds onto the storyboard,
-    // do not regenerate structure via LLM (preserves ShotSpec identity into AssetService).
-    const specLinkedStoryboard =
-      !forceRegenerate &&
-      Array.isArray(brief.storyboard) &&
-      brief.storyboard.length > 0 &&
-      brief.storyboard.every(
-        (s: any) => typeof s?.shotId === "string" && s.shotId.length > 0
-      );
+    const hasProductionSpec = Boolean(
+      (production as any)?.reasoning?.productionSpec?.scenes?.length ||
+        (production as any)?.productionSpec?.scenes?.length
+    );
+    const reuseStoryboard = shouldReuseExistingStoryboard({
+      forceRegenerate,
+      brief,
+      hasProductionSpec,
+    });
 
     try {
       checkAborted();
-      if (specLinkedStoryboard) {
+      if (reuseStoryboard) {
         console.log(
-          `[SPARK Pipeline] Using ProductionSpec-linked storyboard (${brief.storyboard!.length} shot panels) — skipping LLM structure regen`
+          `[SPARK Pipeline] Reusing Spec/brief storyboard (${brief.storyboard!.length} panels) — AssetService skips creative structure invent`
         );
         parsedStoryboard = brief.storyboard as any[];
         thumbnails = Array.isArray((brief as any).thumbnails) ? (brief as any).thumbnails : [];
@@ -1405,19 +1243,12 @@ Return valid JSON with this exact structure:
             contentFormat,
           });
 
-          // 4. Branch table for still subject description
-          let stillSubjectLine = "";
-          if (resolvedSubject === "set") {
-            stillSubjectLine = "SUBJECT & COMPOSITION: Empty or wide establishing architectural set / location environment. NO people, NO characters, NO faces. Room geometry, lighting, interior design, textures, and architecture only.";
-          } else if (resolvedSubject === "insert") {
-            stillSubjectLine = "SUBJECT & COMPOSITION: Cinematic B-roll / Detail insert. NO host face required. Focus on hands, product, screen interface, conceptual data visualization, chart, or contextual cinematic detail illustrating the spoken lines. NO random or unprompted faces.";
-          } else if (resolvedSubject === "support") {
-            stillSubjectLine = `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Character is clearly visible in frame performing this beat's action.`;
-          } else {
-            stillSubjectLine = `SUBJECT & IDENTITY: Primary host "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Host is clearly visible in frame performing this beat's action.`;
-          }
-
-          // OS spine still prompt — Spec compiler / storyboard frame compiler (not inline AssetService brain)
+          // OS spine still prompt — subject line + Spec/frame compiler (AssetService does not invent creative text)
+          const stillSubjectLine = buildStillSubjectLine({
+            resolvedSubject,
+            character,
+            activeChar,
+          });
           const compiledStill = compileLiveStillPrompt({
             scene: s,
             sceneIndexZeroBased: sIdx,
@@ -1844,27 +1675,20 @@ Return valid JSON with this exact structure:
                 }
               }
 
-              const refHeader = isInsertOrSet
-                ? `${refLabels.join("\n")}\nVISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. Text describes physical action and camera motion only.\n`
-                : `${refLabels.join("\n")}\nVISUAL LOCK LAW: Character identity strictly lives in the model sheet reference. Scene still is the mandatory first frame composition.\n`;
-
-              const sceneMotionPrompt = `${refHeader}\n${buildSceneMotionPrompt({
+              const sceneMotionPrompt = compileLiveMotionPrompt({
                 mode,
                 aspectRatio: identityPack.aspectRatio,
                 sceneIndex: globalSceneNum,
                 totalScenes: currentStoryboard.length,
                 durationSec: sceneTargetDuration,
-                shotFraming: s.cameraDirection,
-                action: s.primaryChange || s.visualDescription || s.startState,
-                spokenLines: s.spokenLines || s.scriptSnippet,
-                onScreenText: s.onScreenText,
-                audio: s.audio,
-                endPose: s.endState,
-                characterName: isInsertOrSet ? undefined : (activeChar?.name || "Host"),
-                characterStyle: isInsertOrSet ? "B-Roll / Cinematic Visual" : (activeChar?.style || "Executive Presenter"),
+                scene: s,
+                refLabels,
+                isInsertOrSet,
+                characterName: activeChar?.name || "Host",
+                characterStyle: activeChar?.style || "Executive Presenter",
                 environment: identityPack.environmentString,
-                viralConcept,
-              })}`;
+                brief,
+              }).prompt;
 
               const identityRefs = orderedSceneRefs.filter(
                 (u) => u && u !== sceneFirstFrame && u !== sceneEndFrame
@@ -2419,38 +2243,22 @@ Return valid JSON with this exact structure:
               .join(" ")
               .toUpperCase();
 
-            const formulaDirectives: Record<string, string> = {
-              A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
-LAYOUT: Subject on left vertical third (Rule of Thirds grid), short bold 2-4 word headline on right third.
-TEXT OVERLAY: "${shortHookText}" (Short, bold, high-contrast typography, ≤4 words).
-COLOR PALETTE: Primary brand accent + high-contrast monochrome base (black/white) + neon magenta highlight glow.`,
-              B: `VIRAL FORMULA: Big Number Transformation + Character Scale Comparison.
-LAYOUT: Subject on right vertical third gesturing toward large metric graphic card on left vertical third.
-TEXT OVERLAY: "${shortHookText}" (Bold numerical highlight & metric callout, ≤4 words).
-COLOR PALETTE: Primary brand accent + dark obsidian base + electric amber per-video highlight.`,
-              C: `VIRAL FORMULA: Hero Object + Burning Question + Blurred Outcome.
-LAYOUT: Subject at Rule of Thirds focal intersection looking toward curiosity object with subtle depth-of-field blur.
-TEXT OVERLAY: "${shortHookText}" (Bold mystery question prompt, ≤4 words).
-COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight glow.`,
-            };
-
-            const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
-
             const thumbVisualLock = buildVisualLockRefs({
               character,
               storyboardGridUrl: realGridUrl || sceneImages[0],
             });
 
-            const thumbPrompt = `
-${thumbVisualLock.refPromptHeader}
-[${identityPack.aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
-CONCEPT: ${thumb.concept}
-${formulaSpec}
-RULE OF THIRDS LAW: Align character face and visual elements on rule-of-thirds grid intersections.
-CHARACTER LOCK: Primary subject "${character?.name || "Host"}" (${character?.style || "Executive"}). Facial structure, hair, and wardrobe strictly identical to character sheet reference.
-${identityPack.combinedPromptPrefix}
-Brand: ${brand.name}
-`.trim();
+            const thumbPrompt = compileThumbnailPrompt({
+              variantLetter,
+              concept: thumb.concept,
+              shortHookText,
+              aspectRatio: identityPack.aspectRatio,
+              characterName: character?.name || "Host",
+              characterStyle: character?.style || "Executive",
+              brandName: brand.name,
+              identityPrefix: identityPack.combinedPromptPrefix,
+              refPromptHeader: thumbVisualLock.refPromptHeader,
+            }).prompt;
 
             let thumbUrl: string | undefined = undefined;
 
@@ -3167,41 +2975,28 @@ Brand: ${brand.name}
         (u) => u && u !== sceneStill && u !== fixEndFrame
       );
 
-      const refHeader = [
+      const fixRefLabels = [
         charSheetUrl && isImgUrl(charSheetUrl)
           ? `INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`
           : "",
         `INPUT REF [${charSheetUrl && isImgUrl(charSheetUrl) ? 2 : 1}]: First Frame = Scene ${sceneIndex} Still (mandatory I2V start)`,
-        `EXECUTIVE REVISION: ${editNotes}`,
-        "VISUAL LOCK LAW: Animate from the scene still first frame. Sheet is identity only — never the first frame.",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      ].filter(Boolean) as string[];
 
-      const motionPrompt = `${refHeader}\n${buildSceneMotionPrompt({
+      const motionPrompt = compileLiveMotionPrompt({
         mode,
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,
         durationSec: fixTargetDuration,
-        shotFraming: sceneToFix.cameraDirection,
-        action:
-          revisedScene.primaryChange ||
-          sceneToFix.action ||
-          sceneToFix.visualDescription ||
-          sceneToFix.scriptBeat,
-        spokenLines: sceneToFix.spokenLines || sceneToFix.scriptSnippet,
-        onScreenText: sceneToFix.onScreenText,
-        audio: sceneToFix.audio,
-        endPose: sceneToFix.endState,
-        characterName: isFixInsert || isFixSet ? undefined : character?.name || "Host",
-        characterStyle:
-          isFixInsert || isFixSet
-            ? "B-Roll / Cinematic Visual"
-            : character?.style || "Executive Presenter",
+        scene: revisedScene,
+        refLabels: fixRefLabels,
+        isInsertOrSet: isFixInsert || isFixSet,
+        characterName: character?.name || "Host",
+        characterStyle: character?.style || "Executive Presenter",
         environment: identityPack.environmentString,
-        viralConcept: buildViralConceptDirective(brief),
-      })}`;
+        brief,
+        revisionNotes: editNotes,
+      }).prompt;
 
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
 
