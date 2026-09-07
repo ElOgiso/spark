@@ -37,7 +37,7 @@ interface MobileViralSparksProps {
 }
 
 export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
-  const { createProductionFromSpark, strengthenSpark, productions, viralSparks } = useSpark();
+  const { createProductionFromSpark, productions, viralSparks } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   
   const sparks: MobileSpark[] = (viralSparks || []).map((v) => {
@@ -89,21 +89,12 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
   ];
 
   const handleCreate = (spark: MobileSpark) => {
-    if (spark.status === "draft") {
-      strengthenSpark?.(spark.id);
-      return;
-    }
     setSelectedSpark(spark);
     setDrawerState("idle");
   };
 
   const handleConfirm = () => {
     if (!selectedSpark) return;
-    if (selectedSpark.status === "draft") {
-      strengthenSpark?.(selectedSpark.id);
-      setDrawerState("idle");
-      return;
-    }
     setDrawerState("creating");
     try {
       const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
@@ -266,14 +257,6 @@ export function MobileViralSparks({ onNavigate }: MobileViralSparksProps = {}) {
                     <CheckCircle2 className="w-4 h-4" />
                     In Production
                   </div>
-                ) : spark.status === "draft" ? (
-                  <button
-                    onClick={() => handleCreate(spark)}
-                    className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Strengthen Spark
-                  </button>
                 ) : (
                   <button
                     onClick={() => handleCreate(spark)}

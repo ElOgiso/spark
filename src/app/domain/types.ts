@@ -109,8 +109,9 @@ export interface ViralSpark {
   syncCount?: number;
   researchContext?: StructuredResearchContext;
   /**
-   * Research sparks stay `draft` until Strengthen yields a spoken hook.
-   * Only `ready` sparks may enter create → Spec → generate.
+   * Production readiness. Research auto-prepares spoken hooks at birth via
+   * `ensureViralSparkProductionReady`; Create re-ensures as a safety net.
+   * `draft` is transitional only if auto-prepare fails.
    */
   status?: "draft" | "ready";
 }

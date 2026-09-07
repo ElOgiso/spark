@@ -62,7 +62,7 @@ import {
   buildPublishAuditRecord,
   type PublishingPermission,
 } from "../services/production/publishing/publishPolicy";
-import { autoRepairViralSparkDeterministic, markSparkReadyIfValid } from "../services/production/viralSparkGate";
+import { ensureViralSparkProductionReady } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { hasCanonicalPlayableMedia } from "../services/production/canonicalProductionMedia";
@@ -1709,12 +1709,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Hard Quality Gate — no silent repair. Meta hooks / research drafts fail even if brandFit looks fine.
+    // Auto-prepare spoken hook / production shape (no Strengthen UI). Persist if repaired.
     const hardGate = evaluateSparkForProduction(spark, state.brand);
     if (!hardGate.ok) {
       NotificationService.addNotification({
-        title: "Spark Needs Strengthening",
-        message: hardGate.message || "Cannot start production: Spark lacks a spoken host hook. Click Strengthen Spark to upgrade.",
+        title: "Spark Not Ready",
+        message: hardGate.message || "Cannot start production: Spark could not be auto-prepared with a spoken host hook.",
         type: "warning",
       });
       return;
@@ -1723,6 +1723,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Prefer the gate-normalized ready spark (status stamped)
     if (hardGate.spark) {
       spark = hardGate.spark;
+      setState((prev: any) => ({
+        ...prev,
+        viralSparks: (prev.viralSparks || []).map((s: any) => (s.id === spark.id ? spark : s)),
+      }));
+      const bIdReady = getBrandWorkspaceId();
+      if (isSupabaseConfigured() && bIdReady) {
+        void persistViralSparkCreate(bIdReady, spark);
+      }
     }
 
     const prodId = generateUuid();
@@ -2373,48 +2381,26 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [state.productions, state.brand, state.reviewItems]
   );
 
+  /** @deprecated Prefer auto-prepare at research / Create. Kept for callers; no UI button. */
   const strengthenSpark = useCallback(
     (sparkId: string): ViralSpark | undefined => {
       const targetSpark = state.viralSparks?.find((s: any) => s.id === sparkId);
       if (!targetSpark) return undefined;
 
-      const repaired = autoRepairViralSparkDeterministic(targetSpark, state.brand);
-      const marked = markSparkReadyIfValid(repaired, state.brand);
-
-      if (!marked.ok) {
-        NotificationService.addNotification({
-          title: "Strengthen Incomplete",
-          message: marked.reasons[0] || "Could not produce a spoken host hook yet. Try again.",
-          type: "warning",
-        });
-        // Persist draft upgrade attempt (better hook/title) but keep status draft
-        setState((prev: any) => ({
-          ...prev,
-          viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? marked.spark : s)),
-        }));
-        return marked.spark;
-      }
-
-      const ready = marked.spark;
+      const ensured = ensureViralSparkProductionReady(targetSpark, state.brand);
       setState((prev: any) => ({
         ...prev,
-        viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? ready : s)),
+        viralSparks: prev.viralSparks.map((s: any) => (s.id === sparkId ? ensured.spark : s)),
       }));
 
       const bId = getBrandWorkspaceId();
       if (isSupabaseConfigured() && bId) {
         void import("../backend/workspaceSync").then(({ persistViralSparkCreate }) => {
-          void persistViralSparkCreate(bId, ready);
+          void persistViralSparkCreate(bId, ensured.spark);
         });
       }
 
-      NotificationService.addNotification({
-        title: "Spark Strengthened",
-        message: `Spoken hook ready: "${ready.hook.slice(0, 72)}${ready.hook.length > 72 ? "…" : ""}" — Create Production is unlocked.`,
-        type: "success",
-      });
-
-      return ready;
+      return ensured.spark;
     },
     [state.viralSparks, state.brand]
   );
@@ -3210,7 +3196,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           source,
           patterns,
           prev.viralSparks || [],
-          prev.memoryItems || []
+          prev.memoryItems || [],
+          prev.brand
         );
 
       const mergedSparks = (prev.viralSparks || []).map((s: any) => {
@@ -3278,7 +3265,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             source,
             patterns,
             prev.viralSparks || [],
-            prev.memoryItems || []
+            prev.memoryItems || [],
+            prev.brand
           );
 
         const mergedSparks = (prev.viralSparks || []).map((s: any) => {

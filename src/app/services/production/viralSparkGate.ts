@@ -48,7 +48,8 @@ export function isSparkDraft(spark?: ViralSpark | null): boolean {
 }
 
 /**
- * Hard create gate — no silent repair. Meta hooks fail even when brandFit looks fine.
+ * Validates a spark is already production-shaped (spoken hook + gates).
+ * Does not repair — use `ensureViralSparkProductionReady` to auto-upgrade research drafts.
  */
 export function assertSparkReadyForProduction(
   spark: ViralSpark | null | undefined,
@@ -65,9 +66,7 @@ export function assertSparkReadyForProduction(
   const reasons: string[] = [];
 
   if (spark.status === "draft" || (spark.status !== "ready" && isMetaHook(spark.hook))) {
-    reasons.push(
-      "Spark is still a research draft — Strengthen it into a spoken host hook before Create"
-    );
+    reasons.push("Spark is still a research draft — needs a spoken host hook before production");
   }
 
   if (isMetaHook(spark.hook)) {
@@ -85,11 +84,55 @@ export function assertSparkReadyForProduction(
     return {
       ok: false,
       reasons,
-      message: `Cannot start production: ${reasons[0]}. Click Strengthen Spark to upgrade.`,
+      message: `Cannot start production: ${reasons[0]}.`,
     };
   }
 
   return { ok: true, reasons: [] };
+}
+
+/**
+ * Auto-upgrade a research / meta spark into a spoken, production-ready spark.
+ * Research should call this when sparks are born; Create calls it as a safety net.
+ * No UI "Strengthen" step — the spoken hook / brief shape is filled automatically.
+ */
+export function ensureViralSparkProductionReady(
+  spark: ViralSpark | null | undefined,
+  brand?: Brand
+): { ok: boolean; spark: ViralSpark; repaired: boolean; reasons: string[]; message?: string } {
+  if (!spark) {
+    return {
+      ok: false,
+      spark: {} as ViralSpark,
+      repaired: false,
+      reasons: ["Spark data is completely missing"],
+      message: "Cannot start production: Viral Spark data is missing.",
+    };
+  }
+
+  const already = assertSparkReadyForProduction(spark, brand);
+  if (already.ok) {
+    return {
+      ok: true,
+      spark: { ...spark, status: "ready" },
+      repaired: false,
+      reasons: [],
+    };
+  }
+
+  const repaired = autoRepairViralSparkDeterministic(spark, brand);
+  const marked = markSparkReadyIfValid(repaired, brand);
+  if (marked.ok) {
+    return { ok: true, spark: marked.spark, repaired: true, reasons: [] };
+  }
+
+  return {
+    ok: false,
+    spark: marked.spark,
+    repaired: true,
+    reasons: marked.reasons,
+    message: `Cannot start production: ${marked.reasons[0] || "Spark could not be auto-prepared"}.`,
+  };
 }
 
 /**
@@ -377,6 +420,6 @@ export async function gateSparkForProduction(params: {
 
   return {
     ok: false,
-    errorReason: `Spark needs strengthening before production: ${finalCheck.reasons.join(", ")}`,
+    errorReason: `Spark could not be auto-prepared for production: ${finalCheck.reasons.join(", ")}`,
   };
 }

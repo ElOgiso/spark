@@ -1,5 +1,6 @@
-import type { ResearchSource, ResearchPattern, MemoryItem, ViralSpark, RecentVideo } from "../../domain/types";
+import type { ResearchSource, ResearchPattern, MemoryItem, ViralSpark, RecentVideo, Brand } from "../../domain/types";
 import { persistMemoryCreate, persistViralSparkCreate } from "../../backend/workspaceSync";
+import { ensureViralSparkProductionReady } from "../production/viralSparkGate";
 
 export function computeFingerprint(raw: string): string {
   const clean = raw.trim().toLowerCase().replace(/\s+/g, " ");
@@ -62,7 +63,8 @@ export class ResearchDepartmentService {
     source: ResearchSource,
     patterns: ResearchPattern[],
     existingSparks: ViralSpark[] = [],
-    existingMemories: MemoryItem[] = []
+    existingMemories: MemoryItem[] = [],
+    brand?: Brand
   ): {
     memoryItems: MemoryItem[];
     viralSparks: ViralSpark[];
@@ -187,7 +189,7 @@ export class ResearchDepartmentService {
         existingSpark.fingerprint = sparkFingerprint;
         updatedSparks.push(existingSpark);
       } else {
-        const spark: ViralSpark = {
+        const sparkDraft: ViralSpark = {
           id: `spk-src-${Date.now()}-${i}`,
           title: sparkTitle,
           hook: patternMetrics.hookPattern || p.description,
@@ -214,7 +216,6 @@ export class ResearchDepartmentService {
           lastSeenAt: now,
           lastSyncedAt: now,
           syncCount: 1,
-          // Research pattern text is not a spoken hook — stay draft until Strengthen
           status: "draft",
           researchContext: {
             sourceName: source.displayName || source.username,
@@ -228,6 +229,9 @@ export class ResearchDepartmentService {
             provenStructure: patternMetrics.format,
           },
         };
+        // Auto-prepare spoken hook / production shape at birth — no Strengthen UI step
+        const ensured = ensureViralSparkProductionReady(sparkDraft, brand);
+        const spark = ensured.ok ? ensured.spark : { ...ensured.spark, status: ensured.spark.status || "draft" };
         viralSparks.push(spark);
 
         if (brandId) {
@@ -294,7 +298,8 @@ export class ResearchDepartmentService {
     brandId: string,
     source: ResearchSource,
     videoResearch: import("../../domain/types").VideoResearch,
-    existingMemories: MemoryItem[] = []
+    existingMemories: MemoryItem[] = [],
+    brand?: Brand
   ): { memoryItems: MemoryItem[]; viralSparks: ViralSpark[] } {
     const now = new Date().toISOString();
     const dateStr = now.slice(0, 10);
@@ -328,8 +333,8 @@ export class ResearchDepartmentService {
       }
     });
 
-    // 2. Synthesize Viral Spark from video research
-    const spark: ViralSpark = {
+    // 2. Synthesize Viral Spark from video research — auto-prepare spoken hook at birth
+    const sparkDraft: ViralSpark = {
       id: `spk-vid-${Date.now()}`,
       title: `Adaptation: ${videoResearch.title}`,
       hook: videoResearch.hookAnalysis,
@@ -352,6 +357,8 @@ export class ResearchDepartmentService {
       sourceId: source.id,
       status: "draft",
     };
+    const ensured = ensureViralSparkProductionReady(sparkDraft, brand);
+    const spark = ensured.ok ? ensured.spark : { ...ensured.spark, status: ensured.spark.status || "draft" };
     viralSparks.push(spark);
 
     if (brandId) {

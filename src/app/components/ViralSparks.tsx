@@ -8,7 +8,7 @@ import {
 } from "./ds";
 import {
   Flame, Zap, TrendingUp, Users, Clock, X, CheckCircle2,
-  Loader2, AlertTriangle, ArrowRight, Shield, Sparkles,
+  Loader2, ArrowRight, Shield, Sparkles,
 } from "lucide-react";
 import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 
@@ -300,7 +300,7 @@ function ProductionDrawer({ spark, drawerState, onConfirm, onClose, onGoToReview
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export function ViralSparks({ onNavigate }: ViralSparksProps) {
-  const { createProductionFromSpark, strengthenSpark, productions, viralSparks, brand } = useSpark();
+  const { createProductionFromSpark, productions, viralSparks, brand } = useSpark();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [selectedSpark, setSelectedSpark] = useState<Spark | null>(null);
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
@@ -365,14 +365,6 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
 
   const handleConfirm = () => {
     if (!selectedSpark) return;
-    if (selectedSpark.status === "draft") {
-      NotificationService.addNotification({
-        title: "Spark Needs Strengthening",
-        message: "Strengthen this research draft into a spoken host hook before Create.",
-        type: "warning",
-      });
-      return;
-    }
     setDrawerState("creating");
     try {
       const matchingSpark = viralSparks.find((s) => s.id === selectedSpark.id) || {
@@ -409,11 +401,6 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
       console.error("[ViralSparks] Failed to create production:", err);
       setDrawerState("idle");
     }
-  };
-
-  const handleStrengthen = (spark: Spark) => {
-    if (!strengthenSpark) return;
-    strengthenSpark(spark.id);
   };
 
   const handleGoToReview = () => {
@@ -516,10 +503,6 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
                         <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 border border-success/20 px-2 py-0.5 rounded-full">
                           <Loader2 className="w-3 h-3 animate-spin" /> Drafting
                         </span>
-                      ) : spark.status === "draft" ? (
-                        <span className="flex items-center gap-1 text-xs font-medium text-warning bg-warning/10 border border-warning/20 px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="w-3 h-3" /> Research Draft
-                        </span>
                       ) : (
                         <span className="text-xs text-muted-foreground bg-muted/30 border border-border/50 px-2 py-0.5 rounded-full">
                           {spark.timeWindow}
@@ -605,16 +588,6 @@ export function ViralSparks({ onNavigate }: ViralSparksProps) {
                       <CheckCircle2 className="w-4 h-4" />
                       In Production — View in Review
                     </button>
-                  ) : spark.status === "draft" ? (
-                    <Button
-                      variant="secondary"
-                      size="lg"
-                      fullWidth
-                      icon={<Sparkles className="w-4 h-4" />}
-                      onClick={() => handleStrengthen(spark)}
-                    >
-                      Strengthen Spark
-                    </Button>
                   ) : (
                     <Button
                       variant="primary"

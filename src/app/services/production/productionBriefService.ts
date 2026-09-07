@@ -16,7 +16,7 @@ import { loadPersistedState } from "../../state/persistence";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
 import { getEffectiveContentFormat } from "./characterSheetGate";
-import { assertSparkReadyForProduction, isMetaHook } from "./viralSparkGate";
+import { ensureViralSparkProductionReady } from "./viralSparkGate";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -269,8 +269,7 @@ export function resolveBeatBudget(durationSec: number): {
 
 /**
  * Quality Gate before entering Production.
- * Hard-fails meta / draft research sparks — does NOT silently promote hookPattern into a spoken hook.
- * Use strengthen / rewriteSparkForProduction to upgrade drafts.
+ * Auto-upgrades research / meta sparks into spoken production-ready form (no Strengthen UI).
  */
 export function evaluateAndStrengthenSpark(
   spark?: ViralSpark | null,
@@ -280,20 +279,20 @@ export function evaluateAndStrengthenSpark(
     return { ok: false, spark: {} as ViralSpark, message: "Cannot create production: Viral Spark data is completely missing." };
   }
 
-  const gate = assertSparkReadyForProduction(spark, brand);
-  if (!gate.ok) {
+  const ensured = ensureViralSparkProductionReady(spark, brand);
+  if (!ensured.ok) {
     return {
       ok: false,
-      spark: { ...spark, status: spark.status === "ready" && !isMetaHook(spark.hook) ? "ready" : "draft" },
-      message: gate.message,
+      spark: ensured.spark,
+      message: ensured.message,
     };
   }
 
-  return { ok: true, spark: { ...spark, status: "ready" } };
+  return { ok: true, spark: ensured.spark };
 }
 
 /**
- * Backward compatibility alias — hard create gate (no silent repair).
+ * Create-path gate — auto-prepares spoken hook / brief shape when research left a draft.
  */
 export function evaluateSparkForProduction(
   spark?: ViralSpark | null,
@@ -791,7 +790,7 @@ export class ProductionBriefService {
     if (!sparkEvaluation.ok) {
       throw new Error(
         sparkEvaluation.message ||
-          "Cannot generate brief: Spark needs Strengthen (spoken host hook) before production."
+          "Cannot generate brief: Spark could not be auto-prepared with a spoken host hook."
       );
     }
     const spark = sparkEvaluation.spark;

@@ -1,11 +1,12 @@
 /**
- * Concept quality gates — research drafts, meta hooks, spoken strengthen.
+ * Concept quality gates — research auto-ready, meta hooks, spoken ensure.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertSparkReadyForProduction,
   autoRepairViralSparkDeterministic,
+  ensureViralSparkProductionReady,
   isMetaHook,
   isSpokenHook,
   isSparkDraft,
@@ -49,7 +50,7 @@ test("isMetaHook catches research first-line curiosity patterns", () => {
   assert.equal(isMetaHook("90% of AI ops teams still ship without a weekly kill list."), false);
 });
 
-test("high brandFit does not make a meta research spark production-ready", () => {
+test("high brandFit does not make a raw meta research spark already-ready", () => {
   const spark = baseSpark({
     brandFitScore: 99,
     status: "draft",
@@ -60,18 +61,33 @@ test("high brandFit does not make a meta research spark production-ready", () =>
   assert.ok(gate.reasons.some((r) => /meta|draft|spoken/i.test(r)));
 });
 
-test("evaluateSparkForProduction hard-fails drafts (no silent hookPattern promote)", () => {
+test("evaluateSparkForProduction auto-prepares drafts (no Strengthen UI)", () => {
   const spark = baseSpark({
     hook: "curiosity opener",
     status: "draft",
     researchContext: { hookPattern: "curiosity opener formula" } as any,
   });
   const res = evaluateSparkForProduction(spark, brand);
-  assert.equal(res.ok, false);
-  assert.ok(res.message);
+  assert.equal(res.ok, true, res.message);
+  assert.equal(res.spark?.status, "ready");
+  assert.equal(isMetaHook(res.spark?.hook), false);
 });
 
-test("strengthen path: deterministic repair yields spoken hook and ready status", () => {
+test("ensureViralSparkProductionReady yields spoken hook and ready status", () => {
+  const draft = baseSpark({
+    hook: "curiosity opener",
+    title: "AI",
+    status: "draft",
+  });
+  const ensured = ensureViralSparkProductionReady(draft, brand);
+  assert.equal(ensured.ok, true, ensured.message);
+  assert.equal(ensured.repaired, true);
+  assert.equal(isMetaHook(ensured.spark.hook), false);
+  assert.equal(ensured.spark.status, "ready");
+  assert.equal(isSparkDraft(ensured.spark), false);
+});
+
+test("deterministic repair + mark still works for spoken upgrade", () => {
   const draft = baseSpark({
     hook: "curiosity opener",
     title: "AI",
@@ -82,16 +98,18 @@ test("strengthen path: deterministic repair yields spoken hook and ready status"
   const marked = markSparkReadyIfValid(repaired, brand);
   assert.equal(marked.ok, true);
   assert.equal(marked.spark.status, "ready");
-  assert.equal(isSparkDraft(marked.spark), false);
 });
 
-test("ready spoken spark passes create gate", () => {
+test("ready spoken spark passes create gate without repair", () => {
   const spark = baseSpark({
     status: "ready",
     hook: "Here is the non-obvious reality about AI ops that most operators ignore — comment STRATEGY for the playbook.",
     title: "The AI Ops Playbook Shift Leaders Miss",
     researchContext: { ctaStyle: "Comment STRATEGY to get the blueprint", format: "Shorts" } as any,
   });
+  const ensured = ensureViralSparkProductionReady(spark, brand);
+  assert.equal(ensured.ok, true, ensured.reasons.join("; "));
+  assert.equal(ensured.repaired, false);
   const gate = assertSparkReadyForProduction(spark, brand);
   assert.equal(gate.ok, true, gate.reasons.join("; "));
 });
