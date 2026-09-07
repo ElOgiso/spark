@@ -20,6 +20,10 @@ import { compileLiveStillPrompt, buildStillSubjectLine } from "./compileLiveStil
 import { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
 import { compileThumbnailPrompt } from "./compileThumbnailPrompt";
 import { compileStoryboardPlanPrompt, shouldReuseExistingStoryboard } from "./compileStoryboardPlanPrompt";
+import {
+  compileLiveStoryboardSheetPrompt,
+  isRealStoryboardSheetUrl,
+} from "./compileLiveStoryboardSheetPrompt";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 import {
   needsLocationPlateStorageUpload,
@@ -350,13 +354,23 @@ export function buildVisualLockRefs(params: {
   const isSupport = !isFaceless && !isSetSubject && !isInsertSubject && (subjectType === "support" || subjectType === "supporting");
 
   const validPlate = locationPlateUrl && isValidMediaData(locationPlateUrl) ? locationPlateUrl : undefined;
+  const validGrid = storyboardGridUrl && isValidMediaData(storyboardGridUrl) ? storyboardGridUrl : undefined;
   const orderedRefs: string[] = [];
   const labelLines: string[] = [];
   const charSheetUrls: string[] = [];
   let refCounter = 1;
 
+  const pushGridRef = () => {
+    if (validGrid && !orderedRefs.includes(validGrid)) {
+      orderedRefs.push(validGrid);
+      labelLines.push(`INPUT REF [${refCounter}]: Master Storyboard Grid Reference Map`);
+      refCounter++;
+    }
+  };
+
   if (isInsertSubject) {
     // INSERT / B-ROLL / FACELESS: No host face required. Hands, product, screen, chart, B-roll that illustrates spokenLines.
+    pushGridRef();
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
@@ -374,6 +388,7 @@ export function buildVisualLockRefs(params: {
       labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Location Plate Reference`);
       refCounter++;
     }
+    pushGridRef();
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Set Continuity Reference`);
@@ -413,6 +428,9 @@ export function buildVisualLockRefs(params: {
       labelLines.push(`INPUT REF [${refCounter}]: ${charLabel}`);
       refCounter++;
     }
+
+    // Master storyboard sheet — chronological blueprint for all panels
+    pushGridRef();
 
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
@@ -1179,6 +1197,82 @@ export class ProductionAssetService {
         }
       }
 
+      // PART 0 — Multi-panel storyboard SHEET before per-scene stills (visual blueprint)
+      let hasRealStoryboardSheet = isRealStoryboardSheetUrl({
+        storyboardGridUrl: realGridUrl,
+        firstStillUrl: brief.generatedAssets?.generatedFrames?.[0],
+      });
+      if ((!hasRealStoryboardSheet || forceRegenerate) && currentStoryboard.length > 0) {
+        try {
+          checkAborted();
+          emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels)...`);
+          const sheetCompiled = compileLiveStoryboardSheetPrompt({
+            scenes: currentStoryboard,
+            aspectRatio: identityPack.aspectRatio,
+            productionId: production.id,
+            brandName: brand?.name,
+            environment: identityPack.environmentString || durableLocationPlateUrl,
+            styleLook: brief.visualDirection || brand?.niche,
+          });
+          const sheetLock = buildVisualLockRefs({
+            character,
+            locationPlateUrl: durableLocationPlateUrl,
+            subjectType: "main",
+            contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
+          });
+          console.log(
+            `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels) via ModelRouter ("storyboardImages")...`
+          );
+          const { ModelRouter: SheetRouter } = await import("../runtime/modelRouter");
+          const sheetImgUrl = await withTimeout(
+            SheetRouter.executeCategoryRequest("storyboardImages", {
+              prompt: sheetCompiled.prompt,
+              referenceImageUrl: sheetLock.primaryRefUrl,
+              referenceImageUrls: sheetLock.imageUrls,
+              aspectRatio: identityPack.aspectRatio,
+            }),
+            90000,
+            "Storyboard sheet generation timed out after 90s",
+            signal
+          );
+          checkAborted();
+          if (isValidMediaData(sheetImgUrl)) {
+            let finalSheet = sheetImgUrl;
+            try {
+              const storedSheet = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "storyboard",
+                storagePath: `${production.id}/storyboard/sheet-01.png`,
+                dataUrlOrBlob: sheetImgUrl,
+                mimeType: "image/png",
+                prompt: sheetCompiled.prompt,
+                provider: "ModelRouter",
+              });
+              if (storedSheet?.publicUrl) finalSheet = storedSheet.publicUrl;
+              console.log(`[SPARK Pipeline] Storage Upload: Storyboard sheet -> ${finalSheet}`);
+            } catch (sheetStoreErr) {
+              console.warn("[SPARK Pipeline] Storyboard sheet upload notice:", sheetStoreErr);
+            }
+            realGridUrl = finalSheet;
+            brief.storyboardGridUrl = finalSheet;
+            if (!brief.generatedAssets) brief.generatedAssets = {};
+            brief.generatedAssets.storyboardGridUrl = finalSheet;
+            (brief.generatedAssets as any).storyboardSheetLayout = sheetCompiled.layout;
+            (brief.generatedAssets as any).storyboardSheetPanelCount = sheetCompiled.panelCount;
+            hasRealStoryboardSheet = true;
+            emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}). Rendering scene stills...`);
+            void persistCurrentStage("Storyboard-Sheet");
+          } else {
+            console.warn("[SPARK Pipeline] Storyboard sheet returned empty/invalid image — continuing with per-scene stills");
+          }
+        } catch (sheetErr: any) {
+          if (sheetErr?.name === "AbortError" || signal?.aborted) throw sheetErr;
+          console.warn("[SPARK Pipeline] Storyboard sheet generation notice:", sheetErr);
+          if (!lastError) lastError = `Storyboard Sheet: ${sheetErr?.message || String(sheetErr)}`;
+        }
+      }
+
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
@@ -1264,7 +1358,7 @@ export class ProductionAssetService {
               console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} set-plate copy notice:`, storageErr);
             }
             sceneImages.push(finalStill);
-            if (sIdx === 0) realGridUrl = finalStill;
+            if (sIdx === 0 && !hasRealStoryboardSheet) realGridUrl = finalStill;
             s.image = finalStill;
             s.keyframeImageUrl = finalStill;
             (s as any).subject = "set";
@@ -1288,6 +1382,7 @@ export class ProductionAssetService {
           const stillVisualLock = buildVisualLockRefs({
             character,
             supportCharacter: hasSupportSheet ? supportChar : undefined,
+            storyboardGridUrl: realGridUrl,
             previousLastFrameUrl: prevStillUrl,
             locationPlateUrl: plateUrl,
             subjectType: resolvedSubject,
@@ -1351,7 +1446,7 @@ export class ProductionAssetService {
               }
 
               sceneImages.push(finalStill);
-              if (sIdx === 0) realGridUrl = finalStill;
+              if (sIdx === 0 && !hasRealStoryboardSheet) realGridUrl = finalStill;
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
               (s as any).subject = resolvedSubject;
@@ -1380,9 +1475,17 @@ export class ProductionAssetService {
       await persistCurrentStage("Keyframes");
 
       if (sceneImages.length > 0) {
-        brief.storyboardGridUrl = sceneImages[0];
+        // Keep real multi-panel sheet URL — do not overwrite with first still
+        if (!hasRealStoryboardSheet) {
+          brief.storyboardGridUrl = sceneImages[0];
+          if (!brief.generatedAssets) brief.generatedAssets = {};
+          brief.generatedAssets.storyboardGridUrl = sceneImages[0];
+        } else if (realGridUrl) {
+          brief.storyboardGridUrl = realGridUrl;
+          if (!brief.generatedAssets) brief.generatedAssets = {};
+          brief.generatedAssets.storyboardGridUrl = realGridUrl;
+        }
         if (!brief.generatedAssets) brief.generatedAssets = {};
-        brief.generatedAssets.storyboardGridUrl = sceneImages[0];
         brief.generatedAssets.generatedFrames = sceneImages;
         // One-write mirror: keep brief + productionScenes + Spec shelves aligned after stills
         const stillSynced = syncProductionMediaStores({

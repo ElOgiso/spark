@@ -287,6 +287,18 @@ export function syncProductionMediaStores(params: {
   const frames = normalized.map((s) => s.image).filter(Boolean) as string[];
   const sceneClips = normalized.map((s) => s.videoUrl).filter(Boolean) as string[];
 
+  // Preserve a real multi-panel sheet URL — never demote it to the first still
+  const existingGrid =
+    (typeof brief.storyboardGridUrl === "string" && brief.storyboardGridUrl) ||
+    (typeof brief.generatedAssets?.storyboardGridUrl === "string" &&
+      brief.generatedAssets.storyboardGridUrl) ||
+    undefined;
+  // Prefer existing grid when it is not merely the first still alias
+  const nextGridUrl =
+    existingGrid && (!frames[0] || existingGrid !== frames[0])
+      ? existingGrid
+      : existingGrid || frames[0];
+
   brief.storyboard = normalized.map((s) => ({
     ...(Array.isArray(brief.storyboard)
       ? brief.storyboard.find((b: any) => normalizeSceneIndex(b, -1) === s.scene) || {}
@@ -300,10 +312,10 @@ export function syncProductionMediaStores(params: {
     // Keep generatedVideos as scene clips when present; master is separate field
     generatedVideos:
       sceneClips.length > 0 ? sceneClips : brief.generatedAssets?.generatedVideos,
-    storyboardGridUrl: frames[0] || brief.generatedAssets?.storyboardGridUrl,
+    storyboardGridUrl: nextGridUrl || brief.generatedAssets?.storyboardGridUrl,
   };
-  if (frames[0]) {
-    brief.storyboardGridUrl = frames[0];
+  if (nextGridUrl) {
+    brief.storyboardGridUrl = nextGridUrl;
   }
   if (masterVideoUrl) {
     brief.videoUrl = masterVideoUrl;

@@ -535,7 +535,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             <div className="mt-4 space-y-3">
               {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                 <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1.5">
-                  <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Lead Storyboard Still (Scene 1)</p>
+                  <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Storyboard Sheet</p>
                   <div className="w-full max-h-56 rounded-md overflow-hidden bg-black/40 flex items-center justify-center">
                     <img
                       src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}

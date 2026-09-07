@@ -1003,7 +1003,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
               <div className="px-6 pb-6 space-y-4">
                 {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                   <div className="p-4 rounded-xl bg-background border border-border/70 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-accent">Lead Storyboard Still (Scene 1)</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-accent">Storyboard Sheet</p>
                     <div className="w-full max-h-64 overflow-hidden rounded-lg border border-border bg-black/40 flex items-center justify-center">
                       <img
                         src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}

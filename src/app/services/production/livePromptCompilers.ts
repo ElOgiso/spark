@@ -7,3 +7,4 @@ export { compileLiveStillPrompt, buildStillSubjectLine, panelSpecFromLiveScene }
 export { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
 export { compileThumbnailPrompt } from "./compileThumbnailPrompt";
 export { compileStoryboardPlanPrompt } from "./compileStoryboardPlanPrompt";
+export { compileLiveStoryboardSheetPrompt, isRealStoryboardSheetUrl } from "./compileLiveStoryboardSheetPrompt";
