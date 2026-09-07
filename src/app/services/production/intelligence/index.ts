@@ -4,6 +4,14 @@ export type { CreativeDirection, CreativeDirectorInput, CreativeDirectorResult }
 export { planNarrative, structureForGenre } from "./narrativePlanner";
 export { planProductionScenes } from "./productionPlanner";
 export {
+  directProductionAssets,
+  applyAssetDirectorToSpec,
+} from "./productionAssetDirector";
+export type {
+  ProductionAssetDirectorInput,
+  ProductionAssetDirectorResult,
+} from "./productionAssetDirector";
+export {
   createProductionPlan,
   orchestrateIdeaToProductionSpec,
   upgradeProductionWithSpec,

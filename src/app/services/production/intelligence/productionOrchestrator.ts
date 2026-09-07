@@ -7,6 +7,7 @@
  *   → Production Grammar
  *   → Narrative Planner
  *   → Production Planner
+ *   → Production Asset Director (visual world / master-asset requirements)
  *   → ProductionSpec
  *   → Cinematography / Continuity / Strategy / Routing / Prompt / Generation Tasks
  *   → validated ProductionSpec (+ ProductionBrief for existing UI)
@@ -54,6 +55,10 @@ import {
 } from "./stageValidation";
 import { applyVisualPlanningPipeline } from "../generation/visualPlanningPipeline";
 import type { ProductionDag } from "../dag/productionDag";
+import {
+  applyAssetDirectorToSpec,
+  directProductionAssets,
+} from "./productionAssetDirector";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -372,6 +377,35 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     },
   };
 
+  // Autonomous Production Asset Director — narrative-aware visual world before shot planning.
+  // Distinguishes REQUIRED vs GENERATE NOW; reuses approved masters; does not call media APIs.
+  const assetDirected = directProductionAssets({
+    productionId,
+    idea: [input.idea, directed.creative.intent].filter(Boolean).join("\n"),
+    creative: directed.creative,
+    beats,
+    scenes: planned.scenes,
+    characters: planned.characters,
+    world: planned.world,
+    visualStyle: planned.visualStyle,
+    productionMode: spec.project.productionMode,
+    contentFormat: directed.classification.primaryGenre,
+    brand: input.brand,
+    character: input.character,
+    existingMasters: input.existingMasters,
+    visualMedium: [
+      input.idea,
+      directed.creative.intent,
+      directed.creative.visualLanguage,
+      directed.creative.genre,
+      ...(directed.creative.grammarTags || []),
+      ...(directed.grammar?.tags || []),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  });
+  let plannedSpec = applyAssetDirectorToSpec(spec, assetDirected);
+
   // Phase 3: cinematography → continuity → strategy → routing → prompts → generation tasks
   // Still planning-only — no media API calls.
   let generationTasks: GenerationTask[] | undefined;
@@ -385,14 +419,29 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       }
     | undefined;
 
-  let plannedSpec = spec;
   if (input.applyVisualPlanning !== false) {
-    const visual = applyVisualPlanningPipeline(spec, {
+    const visual = applyVisualPlanningPipeline(plannedSpec, {
       grammar: directed.grammar,
       preferI2V,
       availableProviderIds: input.availableProviderIds,
     });
     plannedSpec = visual.spec;
+    // Preserve Asset Director meta/requirements if a later stage dropped them —
+    // do NOT re-apply director scenes (would wipe cinematography enrichment).
+    if (!plannedSpec.meta.assetDirector) {
+      plannedSpec = {
+        ...plannedSpec,
+        meta: {
+          ...plannedSpec.meta,
+          assetDirector: {
+            requirementCount: assetDirected.requirements.length,
+            stats: assetDirected.stats,
+            notes: assetDirected.notes.slice(0, 12),
+            requirements: assetDirected.requirements,
+          },
+        },
+      };
+    }
     generationTasks = visual.generationTasks;
     dag = visual.dag;
     visualStats = {
