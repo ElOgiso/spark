@@ -29,6 +29,11 @@ import {
   compileLiveStoryboardSheetPrompt,
   isRealStoryboardSheetUrl,
 } from "./compileLiveStoryboardSheetPrompt";
+import {
+  extractStoryboardSheetPanels,
+  storyboardLayoutToGrid,
+} from "./extractStoryboardSheetPanels";
+import { chooseStoryboardLayout } from "./preproduction/storyboardBlueprint";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 import {
   needsLocationPlateStorageUpload,
@@ -1301,11 +1306,13 @@ export class ProductionAssetService {
         }
       }
 
-      // PART 0 — Multi-panel storyboard SHEET before per-scene stills (visual blueprint)
+      // PART 0 — Multi-panel storyboard SHEET; panels ARE scene stills (crop → scene.image)
       let hasRealStoryboardSheet = isRealStoryboardSheetUrl({
         storyboardGridUrl: realGridUrl,
         firstStillUrl: brief.generatedAssets?.generatedFrames?.[0],
       });
+      /** Panel crops from the locked sheet — skip ModelRouter still regen when set. */
+      const sheetPanelSceneUrls: (string | undefined)[] = new Array(currentStoryboard.length);
       if ((!hasRealStoryboardSheet || forceRegenerate) && currentStoryboard.length > 0) {
         try {
           checkAborted();
@@ -1372,7 +1379,7 @@ export class ProductionAssetService {
             (brief.generatedAssets as any).storyboardSheetLayout = sheetCompiled.layout;
             (brief.generatedAssets as any).storyboardSheetPanelCount = sheetCompiled.panelCount;
             hasRealStoryboardSheet = true;
-            emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}). Rendering scene stills...`);
+            emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}). Extracting panel stills...`);
             void persistCurrentStage("Storyboard-Sheet");
           } else {
             console.warn("[SPARK Pipeline] Storyboard sheet returned empty/invalid image — continuing with per-scene stills");
@@ -1384,15 +1391,126 @@ export class ProductionAssetService {
         }
       }
 
+      // PART 0b — Crop sheet panels → scene.image (panels ARE scenes; do not re-invent stills)
+      if (hasRealStoryboardSheet && realGridUrl && currentStoryboard.length > 0) {
+        try {
+          checkAborted();
+          const layoutFromMeta = (brief.generatedAssets as any)?.storyboardSheetLayout as string | undefined;
+          const panelCountForSheet = Math.min(
+            currentStoryboard.length,
+            Number((brief.generatedAssets as any)?.storyboardSheetPanelCount) || currentStoryboard.length
+          );
+          const sheetLayout =
+            layoutFromMeta ||
+            chooseStoryboardLayout(Math.max(panelCountForSheet, 1), identityPack.aspectRatio || aspectRatio);
+          const grid = storyboardLayoutToGrid(sheetLayout, panelCountForSheet);
+          emitProgress(
+            21,
+            "Keyframes",
+            `Extracting ${panelCountForSheet} scene panels from storyboard sheet (${sheetLayout} ${grid.cols}×${grid.rows})...`
+          );
+          const cropped = await extractStoryboardSheetPanels({
+            sheetUrl: realGridUrl,
+            layout: sheetLayout,
+            panelCount: panelCountForSheet,
+          });
+          if (cropped.length > 0) {
+            console.log(
+              `[SPARK Pipeline] Extracted ${cropped.length}/${panelCountForSheet} panels from storyboard sheet — using as scene stills`
+            );
+            for (let pIdx = 0; pIdx < cropped.length && pIdx < currentStoryboard.length; pIdx++) {
+              checkAborted();
+              const globalSceneNum = currentStoryboard[pIdx].scene || pIdx + 1;
+              let finalStill = cropped[pIdx];
+              try {
+                const storedStill = await this.uploadAssetToStorage({
+                  productionId: production.id,
+                  brandId: (brand as any).id,
+                  assetType: "image",
+                  storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                  dataUrlOrBlob: finalStill,
+                  mimeType: "image/jpeg",
+                  prompt: `Cropped storyboard panel ${pIdx + 1} (${sheetLayout})`,
+                  provider: "storyboardPanelExtract",
+                });
+                if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+                console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} panel crop -> ${finalStill}`);
+              } catch (storageErr) {
+                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} panel crop upload notice:`, storageErr);
+              }
+              sheetPanelSceneUrls[pIdx] = finalStill;
+              const s = currentStoryboard[pIdx];
+              s.image = finalStill;
+              s.keyframeImageUrl = finalStill;
+              (s as any).sourceStill = "storyboard_panel";
+              currentStoryboard[pIdx] = {
+                ...s,
+                image: finalStill,
+                keyframeImageUrl: finalStill,
+              };
+            }
+            if (!brief.generatedAssets) brief.generatedAssets = {};
+            (brief.generatedAssets as any).storyboardPanelsExtracted = cropped.length;
+            emitProgress(
+              22,
+              "Keyframes",
+              `Locked ${cropped.length} scene stills from storyboard panels (skipping redundant still regen)...`
+            );
+            void persistCurrentStage("Storyboard-Panels");
+          } else {
+            console.warn(
+              "[SPARK Pipeline] Panel extract returned empty — falling back to per-scene still generation"
+            );
+          }
+        } catch (panelErr: any) {
+          if (panelErr?.name === "AbortError" || signal?.aborted) throw panelErr;
+          console.warn("[SPARK Pipeline] Storyboard panel extract notice:", panelErr);
+          if (!lastError) lastError = `Storyboard Panels: ${panelErr?.message || String(panelErr)}`;
+        }
+      }
+
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
-        emitProgress(20, "Keyframes", `Rendering ${currentStoryboard.length} full-bleed scene stills (${aspectRatio})...`);
+        const needStillRegen = currentStoryboard.some(
+          (_, i) => !isValidMediaData(sheetPanelSceneUrls[i])
+        );
+        if (needStillRegen) {
+          emitProgress(
+            23,
+            "Keyframes",
+            `Rendering remaining full-bleed scene stills where panel crop missing (${aspectRatio})...`
+          );
+        } else {
+          emitProgress(23, "Keyframes", `All scene stills sourced from storyboard panels — skipping still regen...`);
+        }
 
         for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
           checkAborted();
           const s = currentStoryboard[sIdx];
           const globalSceneNum = s.scene || sIdx + 1;
+
+          // Panels on the sheet ARE the scene images — never re-generate when crop succeeded
+          const panelStill = sheetPanelSceneUrls[sIdx];
+          if (isValidMediaData(panelStill)) {
+            console.log(`[SPARK Pipeline] Scene ${globalSceneNum} still = storyboard panel crop -> ${panelStill}`);
+            sceneImages.push(panelStill as string);
+            s.image = panelStill as string;
+            s.keyframeImageUrl = panelStill as string;
+            currentStoryboard[sIdx] = {
+              ...s,
+              image: panelStill as string,
+              keyframeImageUrl: panelStill as string,
+            };
+            const currentPctPanel = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
+            emitProgress(
+              currentPctPanel,
+              "Keyframes",
+              `Scene ${globalSceneNum} of ${currentStoryboard.length} locked from storyboard panel...`
+            );
+            void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
+            continue;
+          }
 
           // Reuse only when bound to same shotId / scene number — never by array index alone
           const existingStill = findReusableStill({

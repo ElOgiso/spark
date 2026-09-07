@@ -1,7 +1,8 @@
 /**
  * Live multi-panel storyboard sheet compiler.
- * Converts finalized text panels into ONE sequential storyboard sheet image prompt
- * before per-scene stills. Reuses OS layout packing + sheet image compiler.
+ * Converts finalized text panels into ONE sequential storyboard sheet image prompt.
+ * Each panel on the sheet IS the scene still (cropped for I2V) — not a throwaway blueprint.
+ * Reuses OS layout packing + sheet image compiler.
  */
 
 import {
@@ -124,7 +125,7 @@ export function compileLiveStoryboardSheetPrompt(params: {
       : "Maintain identical character appearance, wardrobe, props, and environment across panels when characters appear.",
     "Clear panel separation, sequential numbering when possible, readable action.",
     "Do not invent unrequested characters. Do not change locations without narrative justification.",
-    "Optimize the sheet as a visual blueprint for downstream AI stills and video.",
+    "Each panel IS the scene still — panels will be cropped 1:1 for motion/I2V. Fill every panel with a complete frame.",
     "NO burned-in marketing copy, NO subtitles, NO logos unless part of the set.",
     params.brandName ? `Brand / series context: ${params.brandName}.` : "",
     params.environment ? `Locked environment: ${params.environment}.` : "",
