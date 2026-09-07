@@ -27,8 +27,10 @@ test("compileLiveStoryboardSheetPrompt emits multi-panel sheet laws + layout", (
   });
   assert.equal(result.compiler, "live_storyboard_sheet");
   assert.equal(result.panelCount, 8);
-  assert.equal(result.layout, "2x4");
+  // Native panel geometry prefers square grids (3×3) over classic 2×4
+  assert.equal(result.layout, "3x3");
   assert.ok(/multi-panel storyboard SHEET/i.test(result.prompt));
+  assert.ok(/FRAME LOCK/i.test(result.prompt));
   assert.ok(/Panel 01/i.test(result.prompt));
   assert.ok(/Panel 08/i.test(result.prompt));
   assert.ok(!/SINGLE clean cinematic still/i.test(result.prompt));

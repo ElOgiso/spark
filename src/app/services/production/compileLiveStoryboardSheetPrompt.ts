@@ -1,8 +1,8 @@
 /**
  * Live multi-panel storyboard sheet compiler.
  * Converts finalized text panels into ONE sequential storyboard sheet image prompt.
- * Each panel on the sheet IS the scene still (cropped for I2V) — not a throwaway blueprint.
- * Reuses OS layout packing + sheet image compiler.
+ * Each panel must be a native Frame-Locked production frame (extractable for I2V).
+ * Sheet layout prefers square grids so equal cells inherit production AR.
  */
 
 import {
@@ -16,6 +16,12 @@ import {
   contentFormatDirective,
   normalizeCanonicalContentFormat,
 } from "./contentFormatDirectives";
+import {
+  chooseNativePanelStoryboardLayout,
+  createProductionFrameLock,
+  frameLockPanelPromptLaws,
+  type ProductionFrameLock,
+} from "./frameLock";
 
 /** Cap for a single overview sheet (4×4). Longer boards still pack chronologically. */
 export const LIVE_STORYBOARD_SHEET_MAX_PANELS = 16;
@@ -28,14 +34,24 @@ export function compileLiveStoryboardSheetPrompt(params: {
   environment?: string;
   styleLook?: string;
   contentFormat?: string | null;
+  frameLock?: ProductionFrameLock;
+  /** When true (default), prefer square grids so panel cells match production AR. */
+  preferNativePanelGeometry?: boolean;
 }): {
   prompt: string;
   layout: StoryboardLayout;
   panelCount: number;
   sheetLabel: string;
   compiler: "live_storyboard_sheet";
+  frameLock: ProductionFrameLock;
 } {
   const aspectRatio = params.aspectRatio || "9:16";
+  const frameLock =
+    params.frameLock ||
+    createProductionFrameLock({
+      aspectRatio,
+      contentFormat: params.contentFormat,
+    });
   const rawScenes = Array.isArray(params.scenes) ? params.scenes : [];
   const scenes = rawScenes.slice(0, LIVE_STORYBOARD_SHEET_MAX_PANELS);
   const format = normalizeCanonicalContentFormat(params.contentFormat);
@@ -51,7 +67,11 @@ export function compileLiveStoryboardSheetPrompt(params: {
     };
   });
 
-  const layout = chooseStoryboardLayout(Math.max(panels.length, 1), aspectRatio);
+  const preferNative = params.preferNativePanelGeometry !== false;
+  const layout = preferNative
+    ? chooseNativePanelStoryboardLayout(Math.max(panels.length, 1))
+    : chooseStoryboardLayout(Math.max(panels.length, 1), aspectRatio);
+
   const sheets = packStoryboardSheets({
     panels: panels.map((p) => ({
       panelId: p.panelId,
@@ -61,6 +81,10 @@ export function compileLiveStoryboardSheetPrompt(params: {
     aspectRatio,
     maxPanelsPerSheet: Math.max(panels.length, 1),
   });
+  // Force native layout onto the packed sheet metadata (pack may re-choose classic layout)
+  if (sheets[0]) {
+    sheets[0] = { ...sheets[0], layout };
+  }
 
   const panelToShotMap: Record<string, string> = {};
   for (const p of panels) panelToShotMap[p.panelId] = p.shotId;
@@ -70,12 +94,12 @@ export function compileLiveStoryboardSheetPrompt(params: {
     productionId: params.productionId || "live",
     sceneId: "live_sequence",
     sequenceId: "live_sequence",
-    aspectRatio,
+    aspectRatio: frameLock.panelAspectRatio,
     layout,
     sheets,
     panels,
     panelToShotMap,
-    coveragePlan: `Live overview sheet — ${panels.length} chronological story beats`,
+    coveragePlan: `Live overview sheet — ${panels.length} chronological ${frameLock.panelAspectRatio} frames`,
     continuityState: {
       handoffs: panels.map((p) => ({
         panelId: p.panelId,
@@ -117,15 +141,16 @@ export function compileLiveStoryboardSheetPrompt(params: {
   const laws = [
     "You are an expert storyboard director and visual continuity supervisor.",
     formatLaw,
+    frameLockPanelPromptLaws(frameLock),
     "Generate ONE multi-panel storyboard SHEET image (not a single hero still).",
-    `Layout: ${layout} with exactly ${panels.length} sequential panels in reading order.`,
+    `Layout: ${layout} with exactly ${panels.length} sequential panels in reading order (empty cells OK if grid capacity > panel count — do NOT distort panels to fill).`,
     "Preserve exact narrative chronology. Each panel is a meaningful story beat.",
     format === "faceless"
       ? "Prefer B-roll / product / environment panels. Do not invent a host face."
       : "Maintain identical character appearance, wardrobe, props, and environment across panels when characters appear.",
     "Clear panel separation, sequential numbering when possible, readable action.",
     "Do not invent unrequested characters. Do not change locations without narrative justification.",
-    "Each panel IS the scene still — panels will be cropped 1:1 for motion/I2V. Fill every panel with a complete frame.",
+    "Each panel is a native production frame — extractable for motion/I2V without corrective crop/stretch/letterbox.",
     "NO burned-in marketing copy, NO subtitles, NO logos unless part of the set.",
     params.brandName ? `Brand / series context: ${params.brandName}.` : "",
     params.environment ? `Locked environment: ${params.environment}.` : "",
@@ -143,6 +168,7 @@ export function compileLiveStoryboardSheetPrompt(params: {
     panelCount: panels.length,
     sheetLabel,
     compiler: "live_storyboard_sheet",
+    frameLock,
   };
 }
 
@@ -154,7 +180,6 @@ export function isRealStoryboardSheetUrl(params: {
   const grid = typeof params.storyboardGridUrl === "string" ? params.storyboardGridUrl.trim() : "";
   if (!grid || grid.length < 8) return false;
   const first = typeof params.firstStillUrl === "string" ? params.firstStillUrl.trim() : "";
-  // If grid equals first still, it was the old mislabel — treat as not a real sheet
   if (first && grid === first) return false;
   return true;
 }

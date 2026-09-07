@@ -30,10 +30,14 @@ import {
   isRealStoryboardSheetUrl,
 } from "./compileLiveStoryboardSheetPrompt";
 import {
-  extractStoryboardSheetPanels,
+  extractStoryboardSheetPanelsDetailed,
   storyboardLayoutToGrid,
 } from "./extractStoryboardSheetPanels";
-import { chooseStoryboardLayout } from "./preproduction/storyboardBlueprint";
+import {
+  createProductionFrameLock,
+  chooseNativePanelStoryboardLayout,
+  type ProductionFrameLock,
+} from "./frameLock";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 import {
   needsLocationPlateStorageUpload,
@@ -883,20 +887,41 @@ export class ProductionAssetService {
         `[SPARK Pipeline] Identity pack mode (${identityPack.mode}) overridden by immutable snapshot mode (${mode})`
       );
     }
+    // FRAME LOCK — before storyboard / sheet / stills (geometry spine)
+    const frameLock: ProductionFrameLock = createProductionFrameLock({
+      aspectRatio,
+      aspectMode: activeFormatSettings.aspectMode,
+      contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
+      platformFit: (brief as any).platformFit || (production as any).platformFit,
+      account: (brief as any).account,
+    });
+    (production as any).frameLock = frameLock;
+    (brief as any).frameLock = frameLock;
+    console.log(
+      `[SPARK Pipeline] Frame Lock: ${frameLock.frameLockId} ${frameLock.aspectRatio} ${frameLock.targetWidth}×${frameLock.targetHeight} (${frameLock.platformHint})`
+    );
     // Viral concept directive is injected by OS motion/still compilers — not here.
-    (production as any).aspectRatio = aspectRatio;
+    (production as any).aspectRatio = frameLock.aspectRatio;
     (production as any).mode = mode;
     (production as any).productionMode = mode;
-    brief.formatSettings = { ...activeFormatSettings, aspectMode: aspectRatio === "16:9" ? "landscape" : "portrait" };
+    brief.formatSettings = {
+      ...activeFormatSettings,
+      aspectMode:
+        frameLock.orientation === "landscape"
+          ? "landscape"
+          : frameLock.orientation === "portrait"
+            ? "portrait"
+            : activeFormatSettings.aspectMode,
+    };
     (brief as any).productionMode = mode;
-    const compileWidth = aspectRatio === "16:9" ? 1920 : 1080;
-    const compileHeight = aspectRatio === "16:9" ? 1080 : 1920;
+    const compileWidth = frameLock.targetWidth;
+    const compileHeight = frameLock.targetHeight;
     const promptPack = getProductionPromptPack({
       brand,
       character,
       brief,
       production,
-      aspectRatio,
+      aspectRatio: frameLock.aspectRatio,
       characterRefUrl: identityPack.characterReferenceImageUrl,
       memoryItems,
     });
@@ -1325,6 +1350,8 @@ export class ProductionAssetService {
             environment: identityPack.environmentString || durableLocationPlateUrl,
             styleLook: brief.visualDirection || brand?.niche,
             contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
+            frameLock,
+            preferNativePanelGeometry: true,
           });
           const sheetFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
           const sheetLock = buildVisualLockRefsFromDirector({
@@ -1378,8 +1405,9 @@ export class ProductionAssetService {
             brief.generatedAssets.storyboardGridUrl = finalSheet;
             (brief.generatedAssets as any).storyboardSheetLayout = sheetCompiled.layout;
             (brief.generatedAssets as any).storyboardSheetPanelCount = sheetCompiled.panelCount;
+            (brief.generatedAssets as any).frameLockId = frameLock.frameLockId;
             hasRealStoryboardSheet = true;
-            emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}). Extracting panel stills...`);
+            emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}, ${frameLock.aspectRatio}). Validating panel geometry...`);
             void persistCurrentStage("Storyboard-Sheet");
           } else {
             console.warn("[SPARK Pipeline] Storyboard sheet returned empty/invalid image — continuing with per-scene stills");
@@ -1391,7 +1419,7 @@ export class ProductionAssetService {
         }
       }
 
-      // PART 0b — Crop sheet panels → scene.image (panels ARE scenes; do not re-invent stills)
+      // PART 0b — Crop sheet panels → scene.image ONLY when cell AR matches Frame Lock
       if (hasRealStoryboardSheet && realGridUrl && currentStoryboard.length > 0) {
         try {
           checkAborted();
@@ -1402,26 +1430,37 @@ export class ProductionAssetService {
           );
           const sheetLayout =
             layoutFromMeta ||
-            chooseStoryboardLayout(Math.max(panelCountForSheet, 1), identityPack.aspectRatio || aspectRatio);
+            chooseNativePanelStoryboardLayout(Math.max(panelCountForSheet, 1));
           const grid = storyboardLayoutToGrid(sheetLayout, panelCountForSheet);
           emitProgress(
             21,
             "Keyframes",
-            `Extracting ${panelCountForSheet} scene panels from storyboard sheet (${sheetLayout} ${grid.cols}×${grid.rows})...`
+            `Extracting ${panelCountForSheet} scene panels (${sheetLayout} ${grid.cols}×${grid.rows}, lock ${frameLock.aspectRatio})...`
           );
-          const cropped = await extractStoryboardSheetPanels({
+          const extracted = await extractStoryboardSheetPanelsDetailed({
             sheetUrl: realGridUrl,
             layout: sheetLayout,
             panelCount: panelCountForSheet,
+            frameLock,
           });
-          if (cropped.length > 0) {
-            console.log(
-              `[SPARK Pipeline] Extracted ${cropped.length}/${panelCountForSheet} panels from storyboard sheet — using as scene stills`
+          if (!extracted.geometryOk) {
+            console.warn(
+              `[SPARK Pipeline] Panel geometry gate FAILED — ${extracted.geometryReason}. Regenerating native ${frameLock.aspectRatio} stills.`
             );
-            for (let pIdx = 0; pIdx < cropped.length && pIdx < currentStoryboard.length; pIdx++) {
+            if (!brief.generatedAssets) brief.generatedAssets = {};
+            (brief.generatedAssets as any).storyboardPanelGeometry = {
+              ok: false,
+              reason: extracted.geometryReason,
+              frameLockId: frameLock.frameLockId,
+            };
+          } else if (extracted.panels.length > 0) {
+            console.log(
+              `[SPARK Pipeline] Extracted ${extracted.panels.length}/${panelCountForSheet} Frame-Locked panels (${frameLock.aspectRatio}) — using as scene stills`
+            );
+            for (let pIdx = 0; pIdx < extracted.panels.length && pIdx < currentStoryboard.length; pIdx++) {
               checkAborted();
               const globalSceneNum = currentStoryboard[pIdx].scene || pIdx + 1;
-              let finalStill = cropped[pIdx];
+              let finalStill = extracted.panels[pIdx];
               try {
                 const storedStill = await this.uploadAssetToStorage({
                   productionId: production.id,
@@ -1430,7 +1469,7 @@ export class ProductionAssetService {
                   storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
                   dataUrlOrBlob: finalStill,
                   mimeType: "image/jpeg",
-                  prompt: `Cropped storyboard panel ${pIdx + 1} (${sheetLayout})`,
+                  prompt: `Frame-locked storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio})`,
                   provider: "storyboardPanelExtract",
                 });
                 if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
@@ -1450,16 +1489,21 @@ export class ProductionAssetService {
               };
             }
             if (!brief.generatedAssets) brief.generatedAssets = {};
-            (brief.generatedAssets as any).storyboardPanelsExtracted = cropped.length;
+            (brief.generatedAssets as any).storyboardPanelsExtracted = extracted.panels.length;
+            (brief.generatedAssets as any).storyboardPanelGeometry = {
+              ok: true,
+              reason: extracted.geometryReason,
+              frameLockId: frameLock.frameLockId,
+            };
             emitProgress(
               22,
               "Keyframes",
-              `Locked ${cropped.length} scene stills from storyboard panels (skipping redundant still regen)...`
+              `Locked ${extracted.panels.length} native ${frameLock.aspectRatio} panels (skipping redundant still regen)...`
             );
             void persistCurrentStage("Storyboard-Panels");
           } else {
             console.warn(
-              "[SPARK Pipeline] Panel extract returned empty — falling back to per-scene still generation"
+              "[SPARK Pipeline] Panel extract returned empty — falling back to per-scene native still generation"
             );
           }
         } catch (panelErr: any) {

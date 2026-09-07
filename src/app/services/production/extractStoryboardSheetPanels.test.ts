@@ -79,7 +79,7 @@ test("extractStoryboardSheetPanels returns [] without browser canvas", async () 
   assert.deepEqual(out, []);
 });
 
-test("sheet compiler law says panels ARE scene stills (crop for I2V)", () => {
+test("sheet compiler law requires native Frame-Locked panels", () => {
   const result = compileLiveStoryboardSheetPrompt({
     scenes: Array.from({ length: 4 }, (_, i) => ({
       scene: i + 1,
@@ -88,6 +88,8 @@ test("sheet compiler law says panels ARE scene stills (crop for I2V)", () => {
     })),
     aspectRatio: "9:16",
   });
-  assert.ok(/panels will be cropped/i.test(result.prompt));
+  assert.ok(/FRAME LOCK/i.test(result.prompt));
+  assert.ok(/native 9:16/i.test(result.prompt));
+  assert.ok(/extractable for motion\/I2V/i.test(result.prompt));
   assert.ok(!/blueprint for downstream AI stills/i.test(result.prompt));
 });

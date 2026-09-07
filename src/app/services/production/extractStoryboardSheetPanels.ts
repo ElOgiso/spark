@@ -1,11 +1,16 @@
 /**
  * Extract scene stills from a multi-panel storyboard SHEET.
  *
- * Law: panels on the sheet ARE the scene images — crop them; do not
- * re-generate full-bleed stills when extraction succeeds.
+ * Law: panels on the sheet MAY become scene images only when each cell
+ * already matches the Frame Lock panel aspect ratio (native production frame).
+ * Distorted grid cells must NOT be accepted — fall back to full-bleed regen.
  */
 
 import type { StoryboardLayout } from "./preproduction/types";
+import {
+  type ProductionFrameLock,
+  validateSheetPanelGeometry,
+} from "./frameLock";
 
 export interface PanelGrid {
   cols: number;
@@ -54,7 +59,6 @@ export function storyboardLayoutToGrid(
     case "vertical-sequence":
       return { cols: 1, rows: n };
     default: {
-      // Fallback: nearest square-ish grid that fits panelCount
       const cols = Math.ceil(Math.sqrt(n));
       const rows = Math.ceil(n / cols);
       return { cols, rows };
@@ -94,7 +98,6 @@ export function computePanelCropRects(params: {
     const y = Math.round(row * cellH + insetY);
     const width = Math.max(1, Math.round(cellW - insetX * 2));
     const height = Math.max(1, Math.round(cellH - insetY * 2));
-    // Clamp to image bounds
     const cx = Math.min(x, w - 1);
     const cy = Math.min(y, h - 1);
     const cw = Math.min(width, w - cx);
@@ -155,9 +158,19 @@ async function loadSheetImage(
   }
 }
 
+export interface ExtractStoryboardPanelsResult {
+  panels: string[];
+  geometryOk: boolean;
+  geometryReason: string;
+  sheetWidth?: number;
+  sheetHeight?: number;
+}
+
 /**
- * Crop each panel from the sheet into a JPEG data URL (row-major → scene order).
- * Returns [] when the environment cannot crop (SSR / no canvas) or load fails.
+ * Crop each panel from the sheet into JPEG data URLs (row-major → scene order).
+ *
+ * When `frameLock` is provided, equal-grid cell AR must match the locked panel AR
+ * or extraction returns empty panels (caller must regen native stills).
  */
 export async function extractStoryboardSheetPanels(params: {
   sheetUrl: string;
@@ -166,23 +179,62 @@ export async function extractStoryboardSheetPanels(params: {
   gutterRatio?: number;
   mimeType?: "image/jpeg" | "image/png";
   quality?: number;
+  frameLock?: ProductionFrameLock;
 }): Promise<string[]> {
+  const result = await extractStoryboardSheetPanelsDetailed(params);
+  return result.panels;
+}
+
+export async function extractStoryboardSheetPanelsDetailed(params: {
+  sheetUrl: string;
+  layout: StoryboardLayout | string;
+  panelCount: number;
+  gutterRatio?: number;
+  mimeType?: "image/jpeg" | "image/png";
+  quality?: number;
+  frameLock?: ProductionFrameLock;
+}): Promise<ExtractStoryboardPanelsResult> {
   const panelCount = Math.max(0, Math.floor(params.panelCount) || 0);
-  if (!params.sheetUrl || panelCount === 0) return [];
+  if (!params.sheetUrl || panelCount === 0) {
+    return { panels: [], geometryOk: false, geometryReason: "Missing sheet or panel count" };
+  }
 
   if (typeof document === "undefined") {
     console.warn("[SPARK Pipeline] Panel extract skipped — no document/canvas environment");
-    return [];
+    return { panels: [], geometryOk: false, geometryReason: "No document/canvas environment" };
   }
 
   const loaded = await loadSheetImage(params.sheetUrl);
   if (!loaded) {
     console.warn("[SPARK Pipeline] Panel extract failed — could not load storyboard sheet image");
-    return [];
+    return { panels: [], geometryOk: false, geometryReason: "Sheet image load failed" };
   }
 
   try {
     const { img, objectUrl } = loaded;
+    const { cols, rows } = storyboardLayoutToGrid(params.layout, panelCount);
+
+    if (params.frameLock) {
+      const geo = validateSheetPanelGeometry({
+        frameLock: params.frameLock,
+        sheetWidth: img.naturalWidth,
+        sheetHeight: img.naturalHeight,
+        cols,
+        rows,
+      });
+      if (!geo.ok) {
+        console.warn(`[SPARK Pipeline] ${geo.reason}`);
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        return {
+          panels: [],
+          geometryOk: false,
+          geometryReason: geo.reason,
+          sheetWidth: img.naturalWidth,
+          sheetHeight: img.naturalHeight,
+        };
+      }
+    }
+
     const rects = computePanelCropRects({
       imageWidth: img.naturalWidth,
       imageHeight: img.naturalHeight,
@@ -218,10 +270,16 @@ export async function extractStoryboardSheetPanels(params: {
     }
 
     if (objectUrl) URL.revokeObjectURL(objectUrl);
-    return out;
+    return {
+      panels: out,
+      geometryOk: true,
+      geometryReason: "Panel cells match Frame Lock (or lock not required)",
+      sheetWidth: img.naturalWidth,
+      sheetHeight: img.naturalHeight,
+    };
   } catch (err) {
     console.warn("[SPARK Pipeline] Panel extract notice:", err);
     if (loaded.objectUrl) URL.revokeObjectURL(loaded.objectUrl);
-    return [];
+    return { panels: [], geometryOk: false, geometryReason: String(err) };
   }
 }
