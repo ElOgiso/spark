@@ -87,14 +87,22 @@ export function brandRowToDomain(row: BrandRow): Brand {
     : {};
 
   const rawFormatSettings = settingsObj.format_settings;
+  const contentFormat =
+    rawFormatSettings?.contentFormat ||
+    settingsObj.contentFormat ||
+    settingsObj.content_format ||
+    undefined;
   const formatSettings = rawFormatSettings
     ? {
         aspectMode: rawFormatSettings.aspectMode || "portrait",
         targetDurationSec: typeof rawFormatSettings.targetDurationSec === "number" ? rawFormatSettings.targetDurationSec : 60,
         preferredVideoProvider: rawFormatSettings.preferredVideoProvider || "auto",
         preferredVideoModel: rawFormatSettings.preferredVideoModel,
+        contentFormat: contentFormat || rawFormatSettings.contentFormat,
       }
-    : undefined;
+    : contentFormat
+      ? { contentFormat }
+      : undefined;
 
   const creditSettings = settingsObj.credit_settings || (row.audience as any)?.credit_settings;
 
@@ -117,6 +125,7 @@ export function brandRowToDomain(row: BrandRow): Brand {
     language: (row as any).language || aud.language || "English (US)",
     website: (row as any).website || aud.website || "",
     locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
+    contentFormat: contentFormat || formatSettings?.contentFormat,
     formatSettings,
     creditSettings,
     settings: settingsObj,

@@ -11,6 +11,10 @@ import {
 } from "./preproduction/storyboardBlueprint";
 import type { StoryboardBlueprint, StoryboardLayout } from "./preproduction/types";
 import { panelSpecFromLiveScene } from "./compileLiveStillPrompt";
+import {
+  contentFormatDirective,
+  normalizeCanonicalContentFormat,
+} from "./contentFormatDirectives";
 
 /** Cap for a single overview sheet (4×4). Longer boards still pack chronologically. */
 export const LIVE_STORYBOARD_SHEET_MAX_PANELS = 16;
@@ -22,6 +26,7 @@ export function compileLiveStoryboardSheetPrompt(params: {
   brandName?: string;
   environment?: string;
   styleLook?: string;
+  contentFormat?: string | null;
 }): {
   prompt: string;
   layout: StoryboardLayout;
@@ -32,6 +37,8 @@ export function compileLiveStoryboardSheetPrompt(params: {
   const aspectRatio = params.aspectRatio || "9:16";
   const rawScenes = Array.isArray(params.scenes) ? params.scenes : [];
   const scenes = rawScenes.slice(0, LIVE_STORYBOARD_SHEET_MAX_PANELS);
+  const format = normalizeCanonicalContentFormat(params.contentFormat);
+  const formatLaw = contentFormatDirective(format);
 
   const panels = scenes.map((scene, i) => {
     const panel = panelSpecFromLiveScene(scene, i);
@@ -96,16 +103,25 @@ export function compileLiveStoryboardSheetPrompt(params: {
   };
 
   const core = compileStoryboardImagePrompt(blueprint, {
-    look: params.styleLook || "cinematic sequential storyboard",
+    look:
+      params.styleLook ||
+      (format === "anime"
+        ? "anime sequential storyboard sheet"
+        : format === "faceless"
+          ? "faceless VO B-roll sequential storyboard"
+          : "cinematic sequential storyboard"),
     colorLanguage: undefined,
   } as any);
 
   const laws = [
     "You are an expert storyboard director and visual continuity supervisor.",
+    formatLaw,
     "Generate ONE multi-panel storyboard SHEET image (not a single hero still).",
     `Layout: ${layout} with exactly ${panels.length} sequential panels in reading order.`,
     "Preserve exact narrative chronology. Each panel is a meaningful story beat.",
-    "Maintain identical character appearance, wardrobe, props, and environment across panels.",
+    format === "faceless"
+      ? "Prefer B-roll / product / environment panels. Do not invent a host face."
+      : "Maintain identical character appearance, wardrobe, props, and environment across panels when characters appear.",
     "Clear panel separation, sequential numbering when possible, readable action.",
     "Do not invent unrequested characters. Do not change locations without narrative justification.",
     "Optimize the sheet as a visual blueprint for downstream AI stills and video.",

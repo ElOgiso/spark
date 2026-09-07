@@ -190,7 +190,7 @@ export function anchorKindForRequirement(req: ProductionAssetRequirement): Ancho
 export function enrichMastersWithAnchorSemantics(spec: ProductionSpec): ProductionSpec {
   const mode = String(spec.project.productionMode || "");
   const cinematic = mode === "deep" || mode.includes("cinematic");
-  const format = String((spec.meta as any)?.assetDirector ? "" : "") || "";
+  const format = String(spec.meta?.contentFormat || "").toLowerCase();
 
   const characters = (spec.characters || []).map((c) => {
     const views = requiredCharacterSheetViews({

@@ -84,7 +84,15 @@ function modeBucket(raw?: string): ResolvedMode {
   return normalizeModeString(raw) || "standard";
 }
 
-function storyImpliesLead(ideaText: string, creative: CreativeSpec, mode: ResolvedMode): boolean {
+function storyImpliesLead(
+  ideaText: string,
+  creative: CreativeSpec,
+  mode: ResolvedMode,
+  contentFormat?: string
+): boolean {
+  const format = String(contentFormat || "").toLowerCase();
+  if (format === "faceless") return false;
+  if (format === "host" || format === "story" || format === "anime") return true;
   if (creative.requiresCharacters || creative.requiresHost) return true;
   if (
     /\b(founder|hero|host|protagonist|character|creator|rival|competitor|investor|narrator|woman|man|girl|boy)\b/.test(
@@ -97,7 +105,13 @@ function storyImpliesLead(ideaText: string, creative: CreativeSpec, mode: Resolv
   return mode === "deep" || mode === "standard";
 }
 
-function visualMediumFrom(creative: CreativeSpec, hint?: string, productionMode?: string): string {
+function visualMediumFrom(
+  creative: CreativeSpec,
+  hint?: string,
+  productionMode?: string,
+  contentFormat?: string
+): string {
+  const format = String(contentFormat || "").toLowerCase();
   const blob = [
     hint || "",
     creative.genre,
@@ -108,7 +122,7 @@ function visualMediumFrom(creative: CreativeSpec, hint?: string, productionMode?
     .toLowerCase();
   // Prefer explicit medium tokens over generic "cinematic" which often co-occurs
   if (/\bwuxia\b|martial.?art|kung.?fu/.test(blob)) return "wuxia";
-  if (/\banime\b/.test(blob)) return "anime";
+  if (format === "anime" || /\banime\b/.test(blob)) return "anime";
   if (/\b3d\b|\bcgi\b|\brender\b/.test(blob)) return "3d";
   if (/\bphotoreal|realistic|live.?action\b/.test(blob) && !/\bcinematic\b/.test(blob)) return "realistic";
   if (/\bcinematic\b|filmic/.test(blob)) return "cinematic";
@@ -120,13 +134,23 @@ function visualMediumFrom(creative: CreativeSpec, hint?: string, productionMode?
 }
 
 function contentFormatOf(creative: CreativeSpec, explicit?: string): string {
-  if (explicit) return explicit.toLowerCase();
+  if (explicit) {
+    const n = String(explicit).toLowerCase();
+    if (n.includes("faceless") || n.includes("slideshow") || n.includes("voiceover")) return "faceless";
+    if (n.includes("anime") || n.includes("manga") || n.includes("animation")) return "anime";
+    if (n.includes("story") || n.includes("film") || n.includes("narrative")) return "story";
+    if (n.includes("host") || n.includes("creator") || n.includes("presenter")) return "host";
+  }
   const g = creative.genre;
-  if (g === "narrative_film" || g === "anime" || g === "animation") return "story";
-  if (g === "educational" || g === "news_explainer") return "tutorial";
-  if (g === "documentary") return "documentary";
-  if (g === "product_demo" || g === "advertisement") return "product";
-  return "story";
+  if (g === "anime" || g === "animation") return "anime";
+  if (g === "narrative_film") return "story";
+  if (creative.requiresHost) return "host";
+  // Do not invent tutorial/documentary as contentFormat — default host for presenter-led genres
+  if (g === "educational" || g === "news_explainer" || g === "product_demo" || g === "advertisement") {
+    return creative.requiresCharacters ? "host" : "faceless";
+  }
+  if (g === "documentary") return "faceless";
+  return "host";
 }
 
 function findExisting(
@@ -529,10 +553,10 @@ export function directProductionAssets(
   // Precedence: locked snapshot → explicit input → creative inference
   const lockedModeRaw = snapshot?.productionMode || input.productionMode;
   const mode = modeBucket(lockedModeRaw);
-  const medium = visualMediumFrom(input.creative, input.visualMedium, lockedModeRaw);
   const contentFormat = String(
     snapshot?.contentFormat || input.contentFormat || contentFormatOf(input.creative, input.contentFormat)
   ).toLowerCase();
+  const medium = visualMediumFrom(input.creative, input.visualMedium, lockedModeRaw, contentFormat);
   const ideaText = ideaBlob(input.idea, input.creative, input.beats);
   const notes: string[] = [];
   const requirements: ProductionAssetRequirement[] = [];
@@ -604,7 +628,7 @@ export function directProductionAssets(
 
   // ── Characters ──────────────────────────────────────────────────────────
   const characters: CharacterMaster[] = [...input.characters];
-  const needsLead = storyImpliesLead(ideaText, input.creative, mode);
+  const needsLead = storyImpliesLead(ideaText, input.creative, mode, contentFormat);
   const leadExisting =
     findExisting(existing, "character", (a) => a.kind === "character" && (a.role === "host" || a.role === "primary")) ||
     findExisting(existing, "character");

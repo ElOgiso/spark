@@ -10,9 +10,15 @@ import { compileShotPrompt } from "./generation/promptCompiler";
 import type { ProductionSpec, SceneSpec } from "./specification/productionSpec";
 import type { ShotSpec } from "./specification/shotSpec";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
-import type { Character, MemoryItem } from "../../domain/types";
+import type { Character, ContentFormat, MemoryItem } from "../../domain/types";
 import { buildViralConceptDirective } from "./productionPromptPacks";
 import { listSpecShots } from "./productionMediaLineage";
+import {
+  contentFormatDirective,
+  formatSubjectRoleLabel,
+  normalizeCanonicalContentFormat,
+  resolveProductionContentFormat,
+} from "./contentFormatDirectives";
 
 function emptyHandoff() {
   return {
@@ -29,8 +35,10 @@ export function buildStillSubjectLine(params: {
   resolvedSubject: "main" | "support" | "insert" | "set" | string;
   character?: Character | null;
   activeChar?: Character | null;
+  contentFormat?: ContentFormat | string | null;
 }): string {
   const { resolvedSubject, character, activeChar } = params;
+  const format = normalizeCanonicalContentFormat(params.contentFormat);
   if (resolvedSubject === "set") {
     return "SUBJECT & COMPOSITION: Empty or wide establishing architectural set / location environment. NO people, NO characters, NO faces. Room geometry, lighting, interior design, textures, and architecture only.";
   }
@@ -40,7 +48,14 @@ export function buildStillSubjectLine(params: {
   if (resolvedSubject === "support") {
     return `SUBJECT & IDENTITY: Supporting subject "${activeChar?.name || "Support Character"}" (${activeChar?.style || "Supporting Role"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Character is clearly visible in frame performing this beat's action.`;
   }
-  return `SUBJECT & IDENTITY: Primary host "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Host is clearly visible in frame performing this beat's action.`;
+  const labels = formatSubjectRoleLabel(format, "main");
+  const name = character?.name || labels.nameFallback;
+  const style = character?.style || labels.styleFallback;
+  const medium =
+    format === "anime"
+      ? " Anime medium lock: cel shading / anime line art — not photoreal."
+      : "";
+  return `SUBJECT & IDENTITY: ${labels.roleLine} "${name}" (${style}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Subject is clearly visible in frame performing this beat's action.${medium}`;
 }
 
 /** Map a live storyboard / production scene row into a panel spec for the OS frame compiler. */
@@ -113,6 +128,7 @@ export function compileLiveStillPrompt(params: {
   memoryItems?: MemoryItem[];
   refPromptHeader?: string;
   subjectLine?: string;
+  contentFormat?: ContentFormat | string | null;
 }): { prompt: string; shotId?: string; compiler: "spec_shot" | "storyboard_frame" } {
   const {
     scene,
@@ -125,9 +141,21 @@ export function compileLiveStillPrompt(params: {
     subjectLine = "",
   } = params;
 
+  const format = resolveProductionContentFormat({
+    production,
+    brief,
+    formatSettings: params.contentFormat
+      ? { contentFormat: params.contentFormat }
+      : production?.formatSettings || brief?.formatSettings,
+    settingsSnapshot: production?.reasoning?.settingsSnapshot,
+    specMeta: production?.reasoning?.productionSpec?.meta,
+  });
+  const formatLaw = contentFormatDirective(format);
+
   const laws = buildRankedBrandLaws(memoryItems).lawsBlock;
   const viral = brief ? buildViralConceptDirective(brief) : "";
   const styleSummary = [
+    formatLaw,
     laws ? `BRAND LAWS:\n${laws}` : "",
     viral || "",
     subjectLine || "",

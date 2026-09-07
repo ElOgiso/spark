@@ -2,6 +2,13 @@
  * Thumbnail prompt compiler — OS spine for viral thumbnail variants.
  */
 
+import type { ContentFormat } from "../../domain/types";
+import {
+  contentFormatDirective,
+  normalizeCanonicalContentFormat,
+  thumbnailSubjectLock,
+} from "./contentFormatDirectives";
+
 export function compileThumbnailPrompt(params: {
   variantLetter: "A" | "B" | "C" | string;
   concept: string;
@@ -12,18 +19,21 @@ export function compileThumbnailPrompt(params: {
   brandName: string;
   identityPrefix?: string;
   refPromptHeader?: string;
+  contentFormat?: ContentFormat | string | null;
 }): { prompt: string; compiler: "thumbnail" } {
   const {
     variantLetter,
     concept,
     shortHookText,
     aspectRatio,
-    characterName = "Host",
-    characterStyle = "Executive",
+    characterName,
+    characterStyle,
     brandName,
     identityPrefix = "",
     refPromptHeader = "",
   } = params;
+
+  const format = normalizeCanonicalContentFormat(params.contentFormat);
 
   const formulaDirectives: Record<string, string> = {
     A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
@@ -41,17 +51,23 @@ COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight gl
   };
 
   const formulaSpec = formulaDirectives[variantLetter] || formulaDirectives.A;
+  const subjectLock = thumbnailSubjectLock({
+    contentFormat: format,
+    characterName,
+    characterStyle,
+  });
 
   const prompt = `
 ${refPromptHeader}
+${contentFormatDirective(format)}
 [${aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
 CONCEPT: ${concept}
 ${formulaSpec}
-RULE OF THIRDS LAW: Align character face and visual elements on rule-of-thirds grid intersections.
-CHARACTER LOCK: Primary subject "${characterName}" (${characterStyle}). Facial structure, hair, and wardrobe strictly identical to character sheet reference.
+RULE OF THIRTHS LAW: Align primary visual elements on rule-of-thirds grid intersections.
+${subjectLock}
 ${identityPrefix}
 Brand: ${brandName}
-`.trim();
+`.trim().replace("RULE OF THIRTHS", "RULE OF THIRDS");
 
   return { prompt, compiler: "thumbnail" };
 }

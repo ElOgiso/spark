@@ -4,6 +4,12 @@
  */
 
 import type { Brand, Character, ProductionBrief } from "../../domain/types";
+import {
+  contentFormatDirective,
+  formatSubjectRoleLabel,
+  normalizeCanonicalContentFormat,
+} from "./contentFormatDirectives";
+import { getEffectiveContentFormat } from "./characterSheetGate";
 
 export function compileStoryboardPlanPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -11,8 +17,21 @@ export function compileStoryboardPlanPrompt(params: {
   brief: ProductionBrief;
   brand: Brand;
   character?: Character | null;
+  contentFormat?: string | null;
 }): { systemInstruction: string; prompt: string; compiler: "storyboard_plan" } {
   const { mode, aspectRatio, brief, brand, character } = params;
+  const format = normalizeCanonicalContentFormat(
+    params.contentFormat ||
+      getEffectiveContentFormat({ brand, brief, character, formatSettings: brief.formatSettings })
+  );
+  const labels = formatSubjectRoleLabel(format, "main");
+  const subjectName = character?.name || labels.nameFallback;
+  const subjectStyle = character?.style || labels.styleFallback;
+  const formatLaw = contentFormatDirective(format);
+  const subjectLine =
+    format === "faceless"
+      ? `FORMAT SUBJECT: Faceless / VO-led — prefer B-roll and environment panels (no invented host).`
+      : `LEAD: "${subjectName}" (${subjectStyle})`;
   const hook = typeof brief.hook === "string" ? brief.hook : "";
 
   const formattedBeatsBlock =
@@ -44,7 +63,8 @@ Create a continuous one-take cinematic storyboard (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Director"})
+${subjectLine}
+FORMAT LAW: ${formatLaw}
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
@@ -96,13 +116,14 @@ Structure an Express Narrator storyboard where high-impact visual stills support
 EXPRESS LAWS:
 1. Every panel has a concrete valueJob, full substantive spokenLines, and <=6-8 word onScreenText.
 2. Clean sequential visual storytelling with crisp typography safe margins.
-3. Locked host identity and studio set. Return valid JSON only.`,
+3. ${format === "faceless" ? "Faceless visuals — no invented host face." : "Locked lead identity and studio set."} Return valid JSON only.`,
       prompt: `
 Create an express narrator production storyboard (9:16 vertical) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
+${subjectLine}
+FORMAT LAW: ${formatLaw}
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 ${formattedBeatsBlock}
@@ -157,7 +178,8 @@ Create a hybrid presentation storyboard (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
-HOST: "${character?.name || "Host"}" (${character?.style || "Executive Presenter"})
+${subjectLine}
+FORMAT LAW: ${formatLaw}
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"

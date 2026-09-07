@@ -191,6 +191,8 @@ export interface ProductionSpec {
     createdFrom: "spark" | "idea" | "legacy_brief" | "migration";
     legacyProductionId?: string;
     grammarIds: string[];
+    /** Locked ContentFormat for this Spec (snapshot authority — not genre). */
+    contentFormat?: import("../../../domain/types").ContentFormat;
     /** Autonomous Production Asset Director output (planning only — not media) */
     assetDirector?: {
       requirementCount: number;

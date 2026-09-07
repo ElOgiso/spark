@@ -60,6 +60,8 @@ import {
   bindAssetRequirementsToShots,
   directProductionAssets,
 } from "./productionAssetDirector";
+import { normalizeCanonicalContentFormat } from "../contentFormatDirectives";
+import { getEffectiveContentFormat } from "../characterSheetGate";
 import {
   buildProductionSettingsSnapshot,
   type ProductionSettingsSnapshot,
@@ -336,6 +338,16 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     normalizeModeString(input.brand?.productionMode) ||
     "standard";
 
+  // Snapshot / brand formatSettings only — never genre-as-format
+  const lockedContentFormat = normalizeCanonicalContentFormat(
+    settingsSnapshot?.contentFormat ||
+      getEffectiveContentFormat({
+        brand: input.brand,
+        formatSettings: input.brand?.formatSettings,
+        character: input.character,
+      })
+  );
+
   const preferI2V = lockedMode !== "express";
   const optProfile = directed.strategy?.optimizationProfile || "balanced";
   const preferCost = optProfile === "cost_sensitive" || optProfile === "speed_first";
@@ -412,6 +424,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       createdFrom: input.spark ? "spark" : "idea",
       legacyProductionId: productionId,
       grammarIds: directed.grammar.sources,
+      contentFormat: lockedContentFormat,
     },
   };
 
@@ -427,7 +440,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     world: planned.world,
     visualStyle: planned.visualStyle,
     productionMode: lockedMode,
-    contentFormat: settingsSnapshot?.contentFormat || directed.classification.primaryGenre,
+    contentFormat: lockedContentFormat,
     brand: input.brand,
     character: input.character,
     existingMasters: input.existingMasters,
@@ -437,6 +450,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       directed.creative.intent,
       directed.creative.visualLanguage,
       directed.creative.genre,
+      lockedContentFormat,
       ...(directed.creative.grammarTags || []),
       ...(directed.grammar?.tags || []),
       ...(settingsSnapshot?.creative.tones || []),

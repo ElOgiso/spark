@@ -7,6 +7,8 @@
 import type { Brand, Character, ProductionBrief, Production, MemoryItem } from "../../domain/types";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
+import { getEffectiveContentFormat } from "./characterSheetGate";
+import { voiceIdentityLockBlock } from "./contentFormatDirectives";
 
 export const ANTI_SLOP_RULES = `
 ANTI-SLOP & CONTINUITY LAWS:
@@ -135,15 +137,13 @@ export function getProductionPromptPack(options: PromptPackOptions): ModePromptP
   const { brand, character, brief, production, aspectRatio, characterRefUrl, memoryItems = [] } = options;
   // Single source of mode truth — honors production/brand/brief preference + legacy synonyms.
   const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
+  const contentFormat = getEffectiveContentFormat({ production, brief, brand, character });
 
-  const charName = character?.name || "Host";
-  const charStyle = character?.style || "Executive Presenter";
-  const charTraits = (character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ");
   const environmentStr = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
   const rankedLaws = buildRankedBrandLaws(memoryItems).lawsBlock;
 
   const globalLockBlock = `
-CHARACTER (LOCKED): Primary subject is "${charName}" (Style: ${charStyle}, Traits: ${charTraits}).${characterRefUrl ? ` Reference Sheet: ${characterRefUrl}` : ""}
+${voiceIdentityLockBlock({ contentFormat, character, characterRefUrl })}
 ENVIRONMENT (LOCKED SET): Location is "${environmentStr}".
 BRAND IDENTITY: ${brand.name} (${brand.niche || "Media OS"}).
 ASPECT RATIO: ${aspectRatio}.

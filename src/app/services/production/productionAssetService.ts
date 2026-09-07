@@ -8,6 +8,7 @@ import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDurat
 import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
+import { resolveLiveBeatSubject } from "./contentFormatDirectives";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveProductionMode } from "./resolveProductionMode";
@@ -949,6 +950,7 @@ export class ProductionAssetService {
       brief,
       brand,
       character,
+      contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
     });
     const systemInstruction = planned.systemInstruction;
     const prompt = planned.prompt;
@@ -1213,12 +1215,14 @@ export class ProductionAssetService {
             brandName: brand?.name,
             environment: identityPack.environmentString || durableLocationPlateUrl,
             styleLook: brief.visualDirection || brand?.niche,
+            contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
           });
+          const sheetFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
           const sheetLock = buildVisualLockRefs({
             character,
             locationPlateUrl: durableLocationPlateUrl,
-            subjectType: "main",
-            contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
+            subjectType: sheetFormat === "faceless" ? "insert" : "main",
+            contentFormat: sheetFormat,
           });
           console.log(
             `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels) via ModelRouter ("storyboardImages")...`
@@ -1300,40 +1304,15 @@ export class ProductionAssetService {
             continue;
           }
 
-          // 1. Read contentFormat & beat subject
+          // 1. Read contentFormat & beat subject (honor stamped subjects — no blanket faceless override)
           const contentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
-          const isFaceless = contentFormat === "faceless";
-
           const rawSubject = ((s as any).subject || (s as any).subjectType || brief.beats?.[sIdx]?.subject || "").toLowerCase();
-          const cam = (s.cameraDirection || "").toLowerCase();
-          const desc = (s.visualDescription || (s as any).description || "").toLowerCase();
-
-          const isSetShot =
-            rawSubject === "set" ||
-            rawSubject === "environment" ||
-            cam.includes("establishing shot") ||
-            desc.includes("empty set") ||
-            desc.includes("empty room") ||
-            desc.includes("establishing shot of the studio") ||
-            desc.includes("wide shot of the set");
-
-          const isInsertShot =
-            isFaceless ||
-            rawSubject === "insert" ||
-            rawSubject === "product" ||
-            cam.includes("close up on hands") ||
-            cam.includes("insert shot") ||
-            desc.includes("close-up of the screen") ||
-            desc.includes("product display");
-
-          const isSupportShot =
-            !isFaceless &&
-            !isSetShot &&
-            !isInsertShot &&
-            (rawSubject === "support" || rawSubject === "supporting" || rawSubject.includes("support"));
-
-          const resolvedSubject: "main" | "support" | "insert" | "set" =
-            isFaceless ? "insert" : isSetShot ? "set" : isInsertShot ? "insert" : isSupportShot ? "support" : "main";
+          const resolvedSubject = resolveLiveBeatSubject({
+            contentFormat,
+            rawSubject,
+            cameraDirection: s.cameraDirection,
+            visualDescription: s.visualDescription || (s as any).description,
+          });
 
           // Snapshot / durable plate is law — no live-brand improvisation mid-run
           const plateUrl = durableLocationPlateUrl;
@@ -1394,6 +1373,7 @@ export class ProductionAssetService {
             resolvedSubject,
             character,
             activeChar,
+            contentFormat,
           });
           const compiledStill = compileLiveStillPrompt({
             scene: s,
@@ -1404,6 +1384,7 @@ export class ProductionAssetService {
             memoryItems,
             refPromptHeader: stillVisualLock.refPromptHeader,
             subjectLine: stillSubjectLine,
+            contentFormat,
           });
           const stillPrompt = compiledStill.prompt;
           if (compiledStill.shotId && !s.shotId) {
@@ -1748,34 +1729,20 @@ export class ProductionAssetService {
               const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
               const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
 
-              // 1. Resolve content format & subject rules
+              // 1. Resolve content format & subject rules (honor stamped beat subjects)
               const effectiveContentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings });
-              const isFaceless = effectiveContentFormat === "faceless";
-
               const rawSubject = ((s as any).subject || (s as any).subjectType || "").toLowerCase();
-              const cam = (s.cameraDirection || "").toLowerCase();
-              const desc = (s.visualDescription || (s as any).description || "").toLowerCase();
+              const resolvedMotionSubject = resolveLiveBeatSubject({
+                contentFormat: effectiveContentFormat,
+                rawSubject,
+                cameraDirection: s.cameraDirection,
+                visualDescription: s.visualDescription || (s as any).description,
+              });
+              const isInsertOrSet =
+                resolvedMotionSubject === "insert" || resolvedMotionSubject === "set";
+              const isSupportSubject = resolvedMotionSubject === "support";
 
-              const isSetSubject =
-                rawSubject === "set" ||
-                rawSubject === "environment" ||
-                cam.includes("establishing shot") ||
-                desc.includes("empty set") ||
-                desc.includes("empty room");
-
-              const isInsertSubject =
-                rawSubject === "insert" ||
-                rawSubject === "product" ||
-                cam.includes("insert shot") ||
-                desc.includes("product display");
-
-              const isSupportSubject =
-                !isFaceless &&
-                (rawSubject === "support" || rawSubject === "supporting" || rawSubject.includes("support"));
-
-              const isInsertOrSet = isFaceless || isSetSubject || isInsertSubject;
-
-              // 2. Resolve character sheet reference (never used for faceless or insert/set)
+              // 2. Resolve character sheet reference (never used for insert/set)
               const supportChar = !isInsertOrSet && isSupportSubject
                 ? (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1]
                 : undefined;
@@ -1838,10 +1805,11 @@ export class ProductionAssetService {
                 scene: s,
                 refLabels,
                 isInsertOrSet,
-                characterName: activeChar?.name || "Host",
-                characterStyle: activeChar?.style || "Executive Presenter",
+                characterName: activeChar?.name,
+                characterStyle: activeChar?.style,
                 environment: identityPack.environmentString,
                 brief,
+                contentFormat: effectiveContentFormat,
               }).prompt;
 
               const identityRefs = orderedSceneRefs.filter(
@@ -2397,9 +2365,17 @@ export class ProductionAssetService {
               .join(" ")
               .toUpperCase();
 
+            const thumbFormat = getEffectiveContentFormat({
+              brand,
+              formatSettings: activeFormatSettings,
+              production,
+              brief,
+            });
             const thumbVisualLock = buildVisualLockRefs({
               character,
               storyboardGridUrl: realGridUrl || sceneImages[0],
+              subjectType: thumbFormat === "faceless" ? "insert" : "main",
+              contentFormat: thumbFormat,
             });
 
             const thumbPrompt = compileThumbnailPrompt({
@@ -2407,11 +2383,12 @@ export class ProductionAssetService {
               concept: thumb.concept,
               shortHookText,
               aspectRatio: identityPack.aspectRatio,
-              characterName: character?.name || "Host",
-              characterStyle: character?.style || "Executive",
+              characterName: character?.name,
+              characterStyle: character?.style,
               brandName: brand.name,
               identityPrefix: identityPack.combinedPromptPrefix,
               refPromptHeader: thumbVisualLock.refPromptHeader,
+              contentFormat: thumbFormat,
             }).prompt;
 
             let thumbUrl: string | undefined = undefined;
@@ -3010,10 +2987,14 @@ export class ProductionAssetService {
         }
       }
       const rawFixSubject = ((sceneToFix as any).subject || (sceneToFix as any).subjectType || "").toLowerCase();
-      const isFixInsert = contentFormat === "faceless" || rawFixSubject === "insert" || rawFixSubject === "product";
-      const isFixSet = rawFixSubject === "set" || rawFixSubject === "environment";
-      const isFixSupport = !isFixInsert && !isFixSet && (rawFixSubject === "support" || rawFixSubject === "supporting");
-      const resolvedFixSubject = isFixInsert ? "insert" : isFixSet ? "set" : isFixSupport ? "support" : "main";
+      const resolvedFixSubject = resolveLiveBeatSubject({
+        contentFormat,
+        rawSubject: rawFixSubject,
+        cameraDirection: (sceneToFix as any).cameraDirection,
+        visualDescription: sceneToFix.visualDescription || (sceneToFix as any).description,
+      });
+      const isFixInsert = resolvedFixSubject === "insert";
+      const isFixSet = resolvedFixSubject === "set";
 
       // Scene still is the I2V first frame — never the character sheet
       let sceneStill =
@@ -3056,6 +3037,7 @@ export class ProductionAssetService {
         memoryItems,
         refPromptHeader: fixVisualLock.refPromptHeader,
         subjectLine: `EXECUTIVE REVISION: ${editNotes}. Maintain locked identity and set continuity.`,
+        contentFormat,
       });
       if (compiledStill.shotId && !(sceneToFix as any).shotId) {
         (sceneToFix as any).shotId = compiledStill.shotId;
@@ -3158,11 +3140,12 @@ export class ProductionAssetService {
         scene: revisedScene,
         refLabels: fixRefLabels,
         isInsertOrSet: isFixInsert || isFixSet,
-        characterName: character?.name || "Host",
-        characterStyle: character?.style || "Executive Presenter",
+        characterName: character?.name,
+        characterStyle: character?.style,
         environment: identityPack.environmentString,
         brief,
         revisionNotes: editNotes,
+        contentFormat,
       }).prompt;
 
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;

@@ -4,7 +4,12 @@
  */
 
 import { buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
-import type { ProductionBrief } from "../../domain/types";
+import type { ContentFormat, ProductionBrief } from "../../domain/types";
+import {
+  contentFormatDirective,
+  formatSubjectRoleLabel,
+  normalizeCanonicalContentFormat,
+} from "./contentFormatDirectives";
 
 export function compileLiveMotionPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -20,6 +25,7 @@ export function compileLiveMotionPrompt(params: {
   environment: string;
   brief?: ProductionBrief;
   revisionNotes?: string;
+  contentFormat?: ContentFormat | string | null;
 }): { prompt: string; compiler: "scene_motion" } {
   const {
     mode,
@@ -30,12 +36,19 @@ export function compileLiveMotionPrompt(params: {
     scene,
     refLabels,
     isInsertOrSet,
-    characterName,
-    characterStyle,
     environment,
     brief,
     revisionNotes,
   } = params;
+
+  const format = normalizeCanonicalContentFormat(params.contentFormat);
+  const labels = formatSubjectRoleLabel(format, isInsertOrSet ? "insert" : "main");
+  const characterName = isInsertOrSet
+    ? undefined
+    : params.characterName || labels.nameFallback;
+  const characterStyle = isInsertOrSet
+    ? "B-Roll / Cinematic Visual"
+    : params.characterStyle || labels.styleFallback;
 
   const lockLaw = isInsertOrSet
     ? "VISUAL LOCK LAW: IMAGE 1 is the mandatory first frame composition. Text describes physical action and camera motion only."
@@ -45,7 +58,13 @@ export function compileLiveMotionPrompt(params: {
     ? `EXECUTIVE REVISION: ${revisionNotes}\nVISUAL LOCK LAW: Animate from the scene still first frame. Sheet is identity only — never the first frame.`
     : lockLaw;
 
-  const refHeader = [...refLabels, revisionLine].filter(Boolean).join("\n");
+  const refHeader = [
+    contentFormatDirective(format),
+    ...refLabels,
+    revisionLine,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const prompt = `${refHeader}\n${buildSceneMotionPrompt({
     mode,
@@ -64,10 +83,8 @@ export function compileLiveMotionPrompt(params: {
     onScreenText: scene?.onScreenText,
     audio: scene?.audio,
     endPose: scene?.endState,
-    characterName: isInsertOrSet ? undefined : characterName || "Host",
-    characterStyle: isInsertOrSet
-      ? "B-Roll / Cinematic Visual"
-      : characterStyle || "Executive Presenter",
+    characterName,
+    characterStyle,
     environment,
     viralConcept: brief ? buildViralConceptDirective(brief) : undefined,
   })}`;
