@@ -62,7 +62,7 @@ import {
   buildPublishAuditRecord,
   type PublishingPermission,
 } from "../services/production/publishing/publishPolicy";
-import { isProductionReadySpark, autoRepairViralSparkDeterministic, markSparkReadyIfValid } from "../services/production/viralSparkGate";
+import { autoRepairViralSparkDeterministic, markSparkReadyIfValid } from "../services/production/viralSparkGate";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { hasCanonicalPlayableMedia } from "../services/production/canonicalProductionMedia";
