@@ -19,6 +19,7 @@ import {
   normalizeCanonicalContentFormat,
   resolveProductionContentFormat,
 } from "./contentFormatDirectives";
+import { resolveDirectorSceneScript } from "./directorScriptAuthority";
 
 function emptyHandoff() {
   return {
@@ -61,21 +62,22 @@ export function buildStillSubjectLine(params: {
 /** Map a live storyboard / production scene row into a panel spec for the OS frame compiler. */
 export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanelSpec {
   const sceneNum = Number(scene?.scene || scene?.index || idx + 1) || idx + 1;
-  const action =
-    scene?.visualDescription ||
-    scene?.primaryChange ||
-    scene?.startState ||
-    scene?.action ||
-    scene?.description ||
-    "Host presents key insight";
-  const spoken = scene?.spokenLines || scene?.scriptSnippet || "";
+  const director = resolveDirectorSceneScript({
+    scene,
+    sceneIndexZeroBased: idx,
+  });
+  // Visual objective = physical action only — never spoken dialogue as the picture
+  const action = director.physicalAction;
+  const spoken = director.spokenLines;
   const camera = scene?.cameraDirection || "Medium cinematic framing";
   return {
     panelId: scene?.panelId || `panel-${sceneNum}`,
     shotId: scene?.shotId || scene?.id || `shot-${sceneNum}`,
     sequenceIndex: sceneNum,
-    purpose: scene?.purpose || spoken || action,
-    dramaticBeat: spoken || action,
+    purpose: scene?.purpose && !/host presents|open with a strong hook/i.test(String(scene.purpose))
+      ? scene.purpose
+      : action,
+    dramaticBeat: action,
     visualObjective: action,
     editorialRole: scene?.editorialRole || "beat",
     composition: camera,
@@ -100,8 +102,12 @@ export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanel
       endSec: Number(scene?.durationSec) || 5,
       pace: "medium",
     },
-    startState: scene?.startState || action,
-    endState: scene?.endState || action,
+    startState: (!scene?.startState || /host presents/i.test(String(scene.startState))
+      ? action
+      : scene.startState),
+    endState: (!scene?.endState || /host presents/i.test(String(scene.endState))
+      ? action
+      : scene.endState),
     incomingState: emptyHandoff(),
     outgoingState: emptyHandoff(),
     referenceRequirements: [],
@@ -113,8 +119,8 @@ export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanel
       motionFromShotSpec: true,
       mode: "final",
     },
-    rationale: [],
-    confidence: 0.7,
+    rationale: spoken ? [`Spoken (audio only): ${spoken}`] : [],
+    confidence: director.repaired ? 0.55 : 0.75,
     validationIssues: [],
   };
 }

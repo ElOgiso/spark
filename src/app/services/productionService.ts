@@ -38,6 +38,10 @@ import {
   type LearningUpdateInput,
   type PerformanceSnapshot,
 } from "./production/intelligence";
+import {
+  mergeSpecBeatsWithBriefBeats,
+  mergeSpecStoryboardWithBriefScript,
+} from "./production/directorScriptAuthority";
 
 const defaultProductions: Production[] = [];
 const defaultAssets: Asset[] = [];
@@ -158,8 +162,18 @@ export class ProductionService implements IProductionService {
       ...llmBrief,
       ...(plan.ok && plan.brief
         ? {
-            storyboard: plan.brief.storyboard,
-            beats: plan.brief.beats,
+            // Spec owns structure/camera; LLM brief owns spoken script authority
+            storyboard: mergeSpecStoryboardWithBriefScript({
+              specStoryboard: plan.brief.storyboard,
+              briefStoryboard: llmBrief.storyboard,
+              briefBeats: llmBrief.beats,
+              hook: llmBrief.hook || params.spark.hook,
+            }),
+            beats: mergeSpecBeatsWithBriefBeats({
+              specBeats: plan.brief.beats,
+              briefBeats: llmBrief.beats,
+              hook: llmBrief.hook || params.spark.hook,
+            }),
             visualDirection: plan.brief.visualDirection || llmBrief.visualDirection,
             platformRecommendation: plan.brief.platformRecommendation || llmBrief.platformRecommendation,
             suggestedDuration: plan.brief.suggestedDuration || llmBrief.suggestedDuration,

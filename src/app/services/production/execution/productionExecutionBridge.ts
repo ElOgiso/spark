@@ -32,6 +32,10 @@ import {
   ProductionAssetService,
   type ProductionAssetGenerationResult,
 } from "../productionAssetService";
+import {
+  mergeSpecBeatsWithBriefBeats,
+  mergeSpecStoryboardWithBriefScript,
+} from "../directorScriptAuthority";
 
 export interface BridgeLogEvent {
   at: string;
@@ -158,6 +162,17 @@ export function buildSpecDrivenBrief(
   existing?: ProductionBrief
 ): ProductionBrief {
   const fromSpec = productionSpecToBrief(spec, existing);
+  const mergedStoryboard = mergeSpecStoryboardWithBriefScript({
+    specStoryboard: buildSpecLinkedStoryboard(spec),
+    briefStoryboard: existing?.storyboard,
+    briefBeats: existing?.beats || fromSpec.beats,
+    hook: existing?.hook || fromSpec.hook,
+  });
+  const mergedBeats = mergeSpecBeatsWithBriefBeats({
+    specBeats: fromSpec.beats,
+    briefBeats: existing?.beats,
+    hook: existing?.hook || fromSpec.hook,
+  });
   return {
     ...fromSpec,
     storyboardGridUrl: existing?.storyboardGridUrl || fromSpec.storyboardGridUrl,
@@ -166,7 +181,11 @@ export function buildSpecDrivenBrief(
     videoUrl: existing?.videoUrl || fromSpec.videoUrl,
     thumbnailUrl: existing?.thumbnailUrl || fromSpec.thumbnailUrl,
     generationProgress: existing?.generationProgress || fromSpec.generationProgress,
-    storyboard: buildSpecLinkedStoryboard(spec),
+    hook: existing?.hook || fromSpec.hook,
+    spokenCta: existing?.spokenCta || fromSpec.spokenCta,
+    scriptOutline: existing?.scriptOutline || fromSpec.scriptOutline,
+    beats: mergedBeats.length ? mergedBeats : fromSpec.beats,
+    storyboard: mergedStoryboard,
   };
 }
 

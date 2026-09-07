@@ -285,9 +285,13 @@ export function buildTakeMotionPrompt(params: TakeMotionPromptParams): string {
   const panelListText = panels.map((p) => {
     const pNum = p.panelIndex + 1;
     const framing = p.shotFraming || (p.panelIndex === 0 ? "Wide/Medium establishing shot" : "Medium dynamic action shot");
-    const act = p.action || "Host presents key core insight";
-    const spoken = p.spokenLines ? ` Dialogue: "${p.spokenLines.replace(/"/g, "'")}"` : "";
-    const onScreen = p.onScreenText ? ` [On-Screen: "${p.onScreenText.slice(0, 40)}"]` : "";
+    const act = p.action && !/host presents key/i.test(p.action)
+      ? p.action
+      : "Subject performs a clear continuous physical action";
+    const spoken = p.spokenLines
+      ? ` Performance audio only (never draw text): «${p.spokenLines.replace(/"/g, "'")}»`
+      : "";
+    const onScreen = ""; // captions are a later overlay stage — never bake into motion take grid
     return `- PANEL ${pNum}: [${framing}] ${act}.${spoken}${onScreen}`;
   }).join("\n");
 
@@ -340,7 +344,10 @@ export interface SceneMotionPromptParams {
   durationSec: number;
   shotFraming?: string;
   action?: string;
+  /** @deprecated Do not pass dialogue here — use performanceSpeech (audio-only). */
   spokenLines?: string;
+  /** Spoken performance intent — never rendered as on-frame glyphs. */
+  performanceSpeech?: string;
   onScreenText?: string;
   audio?: string;
   endPose?: string;
@@ -359,19 +366,28 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     totalScenes,
     durationSec,
     shotFraming = "Medium dynamic shot",
-    action = "Host presents key insight with authoritative gestures",
+    action,
     spokenLines,
-    onScreenText,
+    performanceSpeech,
     audio,
-    endPose = "Resolving poised posture holding frame",
+    endPose = "Hold a clear, readable end pose matching the physical action",
     characterName = "Host",
     characterStyle = "Executive Presenter",
     environment = "Modern High-Contrast Production Studio",
     viralConcept,
   } = params;
 
+  const physicalAction =
+    action && !/host presents key/i.test(action)
+      ? action
+      : "On-camera subject performs a clear continuous physical action with motivated camera motion";
+
   const isDeep = mode === "deep";
-  const spoken = spokenLines ? ` Dialogue: "${spokenLines.replace(/"/g, "'")}"` : "";
+  const speech = String(performanceSpeech || spokenLines || "").trim();
+  // Never emit `Dialogue: "..."` glyph bait — performance is audio-only instruction
+  const speechBlock = speech
+    ? `Performance (AUDIO ONLY — never draw text): natural lip/body sync for intent «${speech.replace(/"/g, "'")}».`
+    : "Performance: no spoken line required; diegetic ambience only.";
 
   const audioDirectives = isDeep
     ? "Diegetic natural sound, room acoustic ambience, subtle foley. No voiceover narration."
@@ -380,7 +396,7 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     : "Synchronized on-camera speech performance with natural lip movement and diegetic acoustics.";
 
   return `
-LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s):
+LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s) [${aspectRatio}]:
 
 IMAGE 1 (First Frame Reference) = Single Scene Keyframe Still.
 IMAGE 2 (Optional Identity Ref) = Character Reference Sheet for "${characterName}".
@@ -388,7 +404,8 @@ IMAGE 2 (Optional Identity Ref) = Character Reference Sheet for "${characterName
 ANIMATION INSTRUCTION:
 - Begin precisely from the first frame image (IMAGE 1). Animate the continuous ${durationSec}s action seamlessly from that starting composition.
 - Camera Framing & Movement: ${shotFraming}. Smooth cinematic camera motion.
-- Subject Action: ${action}.${spoken}
+- Subject Action (PHYSICAL ONLY): ${physicalAction}
+- ${speechBlock}
 - Character Consistency: Strict facial, hair, and wardrobe fidelity to "${characterName}" (${characterStyle}).
 - Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.
 - Resolving End Pose: Gracefully transition into "${endPose}".
@@ -398,7 +415,7 @@ CRITICAL PRODUCTION LAWS:
 - Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
-- NO burned-in text, letters, captions, or subtitles on the frame.
+- NO burned-in text, letters, captions, titles, subtitles, or dialogue glyphs on the frame.
 - Professional cinematic motion, natural motion blur, realistic physics.
 
 ${VIDEO_NEGATIVE_LAWS}
