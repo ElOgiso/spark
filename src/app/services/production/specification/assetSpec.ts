@@ -251,3 +251,94 @@ export function resolveMasterByRef(
 ): MasterAssetRef | undefined {
   return assets.find((a) => a.identity.ref === ref || a.identity.baseId === ref);
 }
+
+
+export function createWardrobeMaster(params: {
+  baseId: string;
+  version?: number;
+  name: string;
+  description: string;
+  characterId?: string;
+  colors?: string[];
+  accessories?: string[];
+  referenceUrls?: string[];
+}): WardrobeMaster {
+  const version = params.version ?? 1;
+  const now = new Date().toISOString();
+  return {
+    identity: {
+      baseId: params.baseId,
+      version,
+      ref: makeAssetRef(params.baseId, version),
+    },
+    kind: "wardrobe",
+    name: params.name,
+    description: params.description,
+    approvedReferenceUrls: params.referenceUrls ?? [],
+    tags: [],
+    status: "draft",
+    createdAt: now,
+    updatedAt: now,
+    characterId: params.characterId,
+    colors: params.colors ?? [],
+    accessories: params.accessories,
+  };
+}
+
+export function createStyleMaster(params: {
+  baseId: string;
+  version?: number;
+  name: string;
+  description: string;
+  look: string;
+  colorLanguage: string;
+  cameraLanguage?: string;
+  referenceUrls?: string[];
+}): StyleMaster {
+  const version = params.version ?? 1;
+  const now = new Date().toISOString();
+  return {
+    identity: {
+      baseId: params.baseId,
+      version,
+      ref: makeAssetRef(params.baseId, version),
+    },
+    kind: "style",
+    name: params.name,
+    description: params.description,
+    approvedReferenceUrls: params.referenceUrls ?? [],
+    tags: [],
+    status: "approved",
+    createdAt: now,
+    updatedAt: now,
+    look: params.look,
+    colorLanguage: params.colorLanguage,
+    cameraLanguage: params.cameraLanguage,
+  };
+}
+
+/** Narrative-aware asset requirement — planning only; does not generate media. */
+export type AssetRequirementOrigin = "ai_inferred" | "user_confirmed" | "user_overridden" | "system_required";
+
+export interface ProductionAssetRequirement {
+  id: string;
+  kind: MasterAssetKind;
+  name: string;
+  role?: string;
+  narrativePurpose: string;
+  required: boolean;
+  /** Existing approved master to reuse when present */
+  existingAssetRef?: string;
+  masterAssetRef?: string;
+  sourceSceneIds: string[];
+  sourceShotIds: string[];
+  visualContract: Record<string, unknown>;
+  generationRequired: boolean;
+  generationReason: string;
+  prompt?: string;
+  referenceUrls: string[];
+  dependencies: string[];
+  continuityGroup?: string;
+  state?: string;
+  origin: AssetRequirementOrigin;
+}
