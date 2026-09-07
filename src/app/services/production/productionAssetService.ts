@@ -38,6 +38,12 @@ import {
   chooseNativePanelStoryboardLayout,
   type ProductionFrameLock,
 } from "./frameLock";
+import {
+  resolveLiveSceneContinuity,
+  stampSceneGeneratedStateFrame,
+  collectSceneCaptionLines,
+  assembleMasterFromClips,
+} from "./liveContinuityBridge";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 import {
   needsLocationPlateStorageUpload,
@@ -940,7 +946,7 @@ export class ProductionAssetService {
       { id: "keyframes", label: "Scene stills", status: "pending" },
       { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "done" : "pending" },
       { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
-      { id: "captions", label: mode === "express" ? "Captions" : "Captions (skipped)", status: mode === "express" ? "pending" : "done" },
+      { id: "captions", label: mode === "express" ? "Captions" : "Captions (master assemble)", status: "pending" },
       { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "done" : "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
@@ -1949,16 +1955,9 @@ export class ProductionAssetService {
               const s = currentStoryboard[sIdx];
               const globalSceneNum = s.scene || sIdx + 1;
               const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
-
-              // Scene N+1 continuity: first_frame = previous clip's extracted last frame, else this scene still.
-              // Independent T2V is the slop path — Hybrid and Deep both emit I2V-continuous clips, then mux.
-              const sceneFirstFrame = (sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl))
-                ? prevScene.lastFrameUrl
-                : (s.image || sceneImages[sIdx]);
-              const nextSceneStill = currentStoryboard[sIdx + 1]?.image || sceneImages[sIdx + 1];
-              const sceneEndFrame = nextSceneStill && isValidMediaData(nextSceneStill) && nextSceneStill !== sceneFirstFrame
-                ? nextSceneStill
-                : undefined;
+              const shotIdForScene = (s as any).shotId || (s as any).id || `shot_${globalSceneNum}`;
+              const prevShotId =
+                (prevScene as any)?.shotId || (prevScene as any)?.id || (sIdx > 0 ? `shot_${sIdx}` : undefined);
 
               // Check if existing durable clip exists for this scene
               if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
@@ -1983,6 +1982,14 @@ export class ProductionAssetService {
                       });
                       if (storedLast?.publicUrl) {
                         s.lastFrameUrl = storedLast.publicUrl;
+                        const gsf = stampSceneGeneratedStateFrame({
+                          productionId: production.id,
+                          shotId: shotIdForScene,
+                          videoUrl: s.videoUrl,
+                          lastFrameUrl: storedLast.publicUrl,
+                          sceneIndexZeroBased: sIdx,
+                        });
+                        (s as any).generatedStateFrame = gsf;
                         currentStoryboard[sIdx] = { ...s, lastFrameUrl: storedLast.publicUrl };
                         console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame (reused) -> ${s.lastFrameUrl}`);
                       }
@@ -1993,6 +2000,57 @@ export class ProductionAssetService {
                 }
                 continue;
               }
+
+              // Ensure prev last frame exists before CONTINUATION (extract from prev clip if needed)
+              if (sIdx > 0 && prevScene?.videoUrl && !isValidMediaData(prevScene.lastFrameUrl)) {
+                try {
+                  const extractedPrev = await extractVideoLastFrame(prevScene.videoUrl);
+                  if (extractedPrev?.blob) {
+                    const storedPrevLast = await this.uploadAssetToStorage({
+                      productionId: production.id,
+                      brandId: (brand as any).id,
+                      assetType: "image",
+                      storagePath: `${production.id}/scenes/scene-0${sIdx}-last.jpg`,
+                      dataUrlOrBlob: extractedPrev.blob,
+                      mimeType: "image/jpeg",
+                      prompt: `Last frame of Scene ${sIdx} (pre-continuation extract)`,
+                      provider: "VideoFrameExtractor",
+                    });
+                    if (storedPrevLast?.publicUrl) {
+                      prevScene.lastFrameUrl = storedPrevLast.publicUrl;
+                      currentStoryboard[sIdx - 1] = { ...prevScene, lastFrameUrl: storedPrevLast.publicUrl };
+                      console.log(
+                        `[SPARK Pipeline] Pre-continuation extract: Scene ${sIdx} LAST -> ${storedPrevLast.publicUrl}`
+                      );
+                    }
+                  }
+                } catch (preExtErr) {
+                  console.warn(`[SPARK Pipeline] Pre-continuation last-frame extract notice Scene ${sIdx}:`, preExtErr);
+                }
+              }
+
+              const nextScene = currentStoryboard[sIdx + 1];
+              const continuityPlan = resolveLiveSceneContinuity({
+                productionId: production.id,
+                sceneIndexZeroBased: sIdx,
+                shotId: shotIdForScene,
+                sceneStillUrl: s.image || sceneImages[sIdx],
+                previousLastFrameUrl: prevScene?.lastFrameUrl,
+                previousShotId: prevShotId,
+                nextSceneStillUrl: nextScene?.image || sceneImages[sIdx + 1],
+                nextShotId: (nextScene as any)?.shotId || (nextScene as any)?.id,
+                preferContinuation: sIdx > 0,
+              });
+              const sceneFirstFrame = continuityPlan.firstFrameUrl;
+              const sceneEndFrame = continuityPlan.endFrameUrl;
+              if (continuityPlan.continuityGap) {
+                console.warn(
+                  `[SPARK Pipeline] Continuity GAP Scene ${globalSceneNum}: ${continuityPlan.gapReason}`
+                );
+              }
+              console.log(
+                `[SPARK Pipeline] Frame strategy Scene ${globalSceneNum}: mode=${continuityPlan.mode} chained=${continuityPlan.chained} — ${continuityPlan.rationale.slice(-1)[0] || ""}`
+              );
 
               // Consistency Gate: scene image must exist
               if (!sceneFirstFrame || !isValidMediaData(sceneFirstFrame)) {
@@ -2058,7 +2116,7 @@ export class ProductionAssetService {
               // 4. Construct Reference List for Prompt and ModelRouter:
               // - primaryRef for i2v = THAT scene's still / continuity keyframe (sceneFirstFrame)
               // - Identity sheets from Spec Director masters when present
-              const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl);
+              const isChainingLastFrame = continuityPlan.chained;
               const orderedSceneRefs: string[] = [];
               const refLabels: string[] = [];
 
@@ -2067,7 +2125,7 @@ export class ProductionAssetService {
                 orderedSceneRefs.push(sceneFirstFrame);
                 refLabels.push(
                   isChainingLastFrame
-                    ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame Continuity Resolution)`
+                    ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame CONTINUATION)`
                     : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
                 );
 
@@ -2091,7 +2149,7 @@ export class ProductionAssetService {
 
                 orderedSceneRefs.push(sceneFirstFrame);
                 refLabels.push(
-                  `INPUT REF [${orderedSceneRefs.length}]: First Frame Keyframe (${isChainingLastFrame ? "Scene " + sIdx + " Last Frame Continuity" : "Scene " + globalSceneNum + " Single Still"})`
+                  `INPUT REF [${orderedSceneRefs.length}]: First Frame Keyframe (${isChainingLastFrame ? "Scene " + sIdx + " LAST → CONTINUATION" : "Scene " + globalSceneNum + " Single Still"})`
                 );
 
                 if (validPlate && !orderedSceneRefs.includes(validPlate)) {
@@ -2116,6 +2174,13 @@ export class ProductionAssetService {
                 contentFormat: effectiveContentFormat,
               }).prompt;
 
+              // Prefer continuity-plan identity refs + Director locks (never use sheet as first frame)
+              for (const u of continuityPlan.referenceImageUrls) {
+                if (u && !orderedSceneRefs.includes(u) && u !== sceneFirstFrame) {
+                  orderedSceneRefs.push(u);
+                }
+              }
+
               const identityRefs = orderedSceneRefs.filter(
                 (u) => u && u !== sceneFirstFrame && u !== sceneEndFrame
               );
@@ -2127,10 +2192,13 @@ export class ProductionAssetService {
               });
               const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
               console.log(
-                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "prev last-frame" : "scene still"}), EndFrame: ${Boolean(sceneEndFrame)}, IdentityRefs: ${identityRefs.length}, Chained: ${continuity.chained}, Duration: ${sceneTargetDuration}s]...`
+                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Strategy: ${continuityPlan.mode}, FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "prev LAST" : "scene still"}), EndFrame: ${Boolean(sceneEndFrame)}, IdentityRefs: ${identityRefs.length}, Chained: ${continuity.chained}, Duration: ${sceneTargetDuration}s]...`
               );
-              if (!continuity.ok) {
-                console.warn(`[SPARK Pipeline] Visual continuity notice Scene ${globalSceneNum}:`, continuity.reasons.join("; "));
+              if (!continuity.ok || continuityPlan.continuityGap) {
+                console.warn(
+                  `[SPARK Pipeline] Visual continuity notice Scene ${globalSceneNum}:`,
+                  [...continuity.reasons, continuityPlan.gapReason].filter(Boolean).join("; ")
+                );
               }
 
               try {
@@ -2257,7 +2325,21 @@ export class ProductionAssetService {
                       });
                       if (storedLastFrame?.publicUrl) {
                         s.lastFrameUrl = storedLastFrame.publicUrl;
-                        console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame -> ${s.lastFrameUrl}`);
+                        const gsf = stampSceneGeneratedStateFrame({
+                          productionId: production.id,
+                          shotId: shotIdForScene,
+                          videoUrl: finalClip,
+                          lastFrameUrl: storedLastFrame.publicUrl,
+                          sceneIndexZeroBased: sIdx,
+                        });
+                        (s as any).generatedStateFrame = gsf;
+                        (s as any).generatedStateFrameId = gsf.id;
+                        if (!brief.generatedAssets) brief.generatedAssets = {};
+                        const registry = ((brief.generatedAssets as any).generatedStateFrames ||
+                          {}) as Record<string, unknown>;
+                        registry[gsf.id] = gsf;
+                        (brief.generatedAssets as any).generatedStateFrames = registry;
+                        console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame -> ${s.lastFrameUrl} (${gsf.id})`);
                       }
                     }
                   } catch (extractErr) {
@@ -2347,30 +2429,20 @@ export class ProductionAssetService {
               try {
                 const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
                 const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
-                const targetMergeTexts = currentStoryboard.map((s, idx) => {
-                  const primaryOnScreen = s.onScreenText;
-                  if (primaryOnScreen) {
-                    const formatted = formatBurnedOnScreenText(primaryOnScreen);
-                    if (formatted) return formatted;
-                  }
-                  const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-                  if (beatOnScreen) {
-                    const formatted = formatBurnedOnScreenText(beatOnScreen);
-                    if (formatted) return formatted;
-                  }
-                  if (idx === 0 && brief.hook) {
-                    return formatBurnedOnScreenText(brief.hook);
-                  }
-                  return "";
-                });
+                const targetMergeTexts = collectSceneCaptionLines(
+                  currentStoryboard,
+                  brief.beats,
+                  brief.hook,
+                  formatBurnedOnScreenText
+                );
 
-                const { mergeSceneVideos } = await import("./sceneVideoMerger");
                 const mergeResult = await withTimeout(
-                  mergeSceneVideos({
+                  assembleMasterFromClips({
                     productionId: production.id,
                     brandId: (brand as any)?.id,
                     videoUrls: sceneClips,
                     audioUrl: mergeAudioUrl,
+                    sfxUrl: realSfxUrl,
                     onScreenTexts: targetMergeTexts,
                     width: compileWidth,
                     height: compileHeight,
@@ -2563,19 +2635,12 @@ export class ProductionAssetService {
       emitProgress(84, "Captions", "Applying captions overlay on compiled video...");
       void persistCurrentStage("Captions");
       startHeartbeat("Captions");
-      const captionLines = currentStoryboard.map((s, idx) => {
-        const primaryOnScreen = s.onScreenText;
-        if (primaryOnScreen) {
-          const formatted = formatBurnedOnScreenText(primaryOnScreen);
-          if (formatted) return formatted;
-        }
-        const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-        if (beatOnScreen) {
-          const formatted = formatBurnedOnScreenText(beatOnScreen);
-          if (formatted) return formatted;
-        }
-        return "";
-      });
+      const captionLines = collectSceneCaptionLines(
+        currentStoryboard,
+        brief.beats,
+        brief.hook,
+        formatBurnedOnScreenText
+      );
       const hasCaptions = captionLines.some((t) => t && t.trim().length > 0);
       if (mode === "express" && isVideoSuccess && hasCaptions && realVoiceUrl) {
         try {
@@ -2617,6 +2682,19 @@ export class ProductionAssetService {
           console.warn("[SPARK Pipeline] Caption overlay notice:", capErr);
           markStage("captions", "done");
         }
+      } else if ((mode === "standard" || mode === "deep") && isVideoSuccess && hasCaptions) {
+        // Cinematic/hybrid: captions burned at assembleMaster (onScreenTexts). Record lineage.
+        if (!brief.generatedAssets) brief.generatedAssets = {};
+        (brief.generatedAssets as any).captionsAppliedAt = realVideoUrl ? "master_assemble" : "pending_merge";
+        (brief.generatedAssets as any).captionMode = "on_screen_burn";
+        console.log(
+          `[SPARK Pipeline] Captions for ${mode}: ${
+            realVideoUrl
+              ? "applied via master assemble onScreenTexts"
+              : "queued for Approve & merge (same assembleMaster spine)"
+          }`
+        );
+        markStage("captions", "done");
       } else {
         markStage("captions", "done");
       }
@@ -3273,8 +3351,36 @@ export class ProductionAssetService {
         !u.endsWith(".mp4") &&
         !u.endsWith(".webm") &&
         !u.includes("video/");
+      // Temporal CONTINUATION only from observed LAST — not prev still (still is narrative, not seam)
+      let prevLastForContinuation = isImgUrl(prevScene?.lastFrameUrl) ? prevScene!.lastFrameUrl : undefined;
+      if (!prevLastForContinuation && prevScene?.videoUrl && isPlayableVideoUrl(prevScene.videoUrl)) {
+        try {
+          const extractedPrev = await extractVideoLastFrame(prevScene.videoUrl);
+          if (extractedPrev?.blob) {
+            const storedPrevLast = await ProductionAssetService.uploadAssetToStorage({
+              productionId,
+              brandId: (brand as any).id,
+              assetType: "image",
+              storagePath: `${productionId}/scenes/scene-0${targetSceneIdx}-last.jpg`,
+              dataUrlOrBlob: extractedPrev.blob,
+              mimeType: "image/jpeg",
+              prompt: `Last frame of Scene ${targetSceneIdx} (fix-path pre-continuation)`,
+              provider: "VideoFrameExtractor",
+            });
+            if (storedPrevLast?.publicUrl) {
+              prevLastForContinuation = storedPrevLast.publicUrl;
+              existingScenes[targetSceneIdx - 1] = {
+                ...prevScene,
+                lastFrameUrl: storedPrevLast.publicUrl,
+              };
+            }
+          }
+        } catch (fixPrevExt) {
+          console.warn("[fixProductionScene] Prev last-frame extract notice:", fixPrevExt);
+        }
+      }
       const prevFrameCandidate = [
-        prevScene?.lastFrameUrl,
+        prevLastForContinuation,
         prevScene?.keyframeImageUrl,
         prevScene?.image,
       ].find((u) => isImgUrl(u));
@@ -3413,33 +3519,56 @@ export class ProductionAssetService {
         snapToAllowedDuration(Math.min(rawFixDur, nativeMaxClipSec), activeVideo.providerId) ||
         Math.min(rawFixDur, 8);
 
-      const nextFixStill =
-        existingScenes[targetSceneIdx + 1]?.image ||
-        existingScenes[targetSceneIdx + 1]?.keyframeImageUrl;
-      const fixEndFrame =
-        nextFixStill && isImgUrl(nextFixStill) && nextFixStill !== sceneStill
-          ? nextFixStill
-          : undefined;
+      const nextFixScene = existingScenes[targetSceneIdx + 1];
+      const fixContinuity = resolveLiveSceneContinuity({
+        productionId,
+        sceneIndexZeroBased: targetSceneIdx,
+        shotId,
+        sceneStillUrl: sceneStill,
+        previousLastFrameUrl: prevLastForContinuation,
+        previousShotId: (prevScene as any)?.shotId || (prevScene as any)?.id,
+        nextSceneStillUrl: nextFixScene?.image || nextFixScene?.keyframeImageUrl,
+        nextShotId: (nextFixScene as any)?.shotId || (nextFixScene as any)?.id,
+        preferContinuation: targetSceneIdx > 0,
+      });
+      const fixFirstFrame = fixContinuity.firstFrameUrl;
+      const fixEndFrame = fixContinuity.endFrameUrl;
+      if (fixContinuity.continuityGap) {
+        console.warn(`[fixProductionScene] Continuity GAP: ${fixContinuity.gapReason}`);
+      }
+      console.log(
+        `[fixProductionScene] Frame strategy: mode=${fixContinuity.mode} chained=${fixContinuity.chained}`
+      );
 
       const charSheetUrl =
         character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
       const orderedFixRefs: string[] = [];
-      if (charSheetUrl && isImgUrl(charSheetUrl) && charSheetUrl !== sceneStill) {
+      if (charSheetUrl && isImgUrl(charSheetUrl) && charSheetUrl !== fixFirstFrame) {
         orderedFixRefs.push(charSheetUrl);
       }
-      orderedFixRefs.push(sceneStill);
+      orderedFixRefs.push(fixFirstFrame);
+      if (sceneStill && sceneStill !== fixFirstFrame && !orderedFixRefs.includes(sceneStill)) {
+        orderedFixRefs.push(sceneStill);
+      }
       if (plateUrl && isImgUrl(plateUrl) && !orderedFixRefs.includes(plateUrl)) {
         orderedFixRefs.push(plateUrl);
       }
+      for (const u of fixContinuity.referenceImageUrls) {
+        if (u && !orderedFixRefs.includes(u)) orderedFixRefs.push(u);
+      }
       const fixIdentityRefs = orderedFixRefs.filter(
-        (u) => u && u !== sceneStill && u !== fixEndFrame
+        (u) => u && u !== fixFirstFrame && u !== fixEndFrame
       );
 
       const fixRefLabels = [
         charSheetUrl && isImgUrl(charSheetUrl)
           ? `INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`
           : "",
-        `INPUT REF [${charSheetUrl && isImgUrl(charSheetUrl) ? 2 : 1}]: First Frame = Scene ${sceneIndex} Still (mandatory I2V start)`,
+        `INPUT REF [${charSheetUrl && isImgUrl(charSheetUrl) ? 2 : 1}]: First Frame = ${
+          fixContinuity.chained
+            ? `Scene ${targetSceneIdx} LAST (CONTINUATION)`
+            : `Scene ${sceneIndex} Still`
+        }`,
       ].filter(Boolean) as string[];
 
       const motionPrompt = compileLiveMotionPrompt({
@@ -3463,12 +3592,12 @@ export class ProductionAssetService {
 
       let generatedClip = "";
       let generatedLastFrameDataUrl: string | undefined;
-      if (isI2vApiProvider(activeVideo.providerId) && sceneStill) {
+      if (isI2vApiProvider(activeVideo.providerId) && fixFirstFrame) {
         const apiClip = await withTimeout(
           requestProductionVideoClip({
             provider: activeVideo.providerId,
             prompt: motionPrompt,
-            firstFrameUrl: sceneStill,
+            firstFrameUrl: fixFirstFrame,
             endFrameUrl: fixEndFrame,
             referenceImageUrls: fixIdentityRefs,
             aspectRatio: identityPack.aspectRatio,
@@ -3485,11 +3614,11 @@ export class ProductionAssetService {
         generatedClip = await withTimeout(
           ModelRouter.executeCategoryRequest("videoGeneration", {
             prompt: motionPrompt,
-            referenceImageUrl: sceneStill,
+            referenceImageUrl: fixFirstFrame,
             referenceImageUrls: orderedFixRefs,
             aspectRatio: identityPack.aspectRatio,
             durationSec: fixTargetDuration,
-            lastFrameUrl: prevFrameCandidate,
+            lastFrameUrl: prevLastForContinuation || prevFrameCandidate,
             endFrameUrl: fixEndFrame,
             preferredProvider: activeVideo.providerId,
           }),
@@ -3530,6 +3659,15 @@ export class ProductionAssetService {
             });
             if (storedRevLast?.publicUrl) {
               sceneToFix.lastFrameUrl = storedRevLast.publicUrl;
+              const gsf = stampSceneGeneratedStateFrame({
+                productionId,
+                shotId,
+                videoUrl: finalClipUrl,
+                lastFrameUrl: storedRevLast.publicUrl,
+                sceneIndexZeroBased: targetSceneIdx,
+              });
+              (sceneToFix as any).generatedStateFrame = gsf;
+              (sceneToFix as any).generatedStateFrameId = gsf.id;
             }
           }
         } catch (revLastErr) {
@@ -3619,22 +3757,16 @@ export class ProductionAssetService {
 
     const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
     const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
-    const targetMergeTexts = scenes.map((s, idx) => {
-      const primaryOnScreen = s.onScreenText;
-      if (primaryOnScreen) {
-        const formatted = formatBurnedOnScreenText(primaryOnScreen);
-        if (formatted) return formatted;
-      }
-      const beatOnScreen = brief.beats?.[idx]?.onScreenText;
-      if (beatOnScreen) {
-        const formatted = formatBurnedOnScreenText(beatOnScreen);
-        if (formatted) return formatted;
-      }
-      if (idx === 0 && brief.hook) {
-        return formatBurnedOnScreenText(brief.hook);
-      }
-      return "";
-    });
+    const targetMergeTexts = collectSceneCaptionLines(
+      scenes,
+      brief.beats,
+      brief.hook,
+      formatBurnedOnScreenText
+    );
+    const mergeSfxUrl =
+      (brief.generatedAssets as any)?.sfxUrl ||
+      (brief as any).sfxUrl ||
+      undefined;
 
     if (readyClips.length === 0) {
       const allStills = scenes
@@ -3776,12 +3908,12 @@ export class ProductionAssetService {
     }
 
     try {
-      const { mergeSceneVideos } = await import("./sceneVideoMerger");
-      const mergeResult = await mergeSceneVideos({
+      const mergeResult = await assembleMasterFromClips({
         productionId,
         brandId: (brand as any)?.id,
         videoUrls: readyClips,
         audioUrl: mergeAudioUrl,
+        sfxUrl: mergeSfxUrl,
         onScreenTexts: targetMergeTexts,
         timeoutMs: 120000,
       });
