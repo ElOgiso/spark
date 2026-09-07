@@ -14,6 +14,7 @@ import {
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
 import { useSpark } from "../../state/SparkContext";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
+import { resolveReviewAspectMode, reviewMediaFrameClass, reviewMediaImgClass } from "../../services/production/reviewHonesty";
 
 export interface ProductionSceneItem {
   id: string;
@@ -50,6 +51,14 @@ export function MobileProductionAssetsGallery({
     generatedImages.push({ id, label, url });
   };
   pushImg("sheet", "Character sheet", character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl);
+
+  const reviewAspect = resolveReviewAspectMode({
+    aspectRatio: activeProd?.aspectRatio || brief?.aspectRatio,
+    formatSettings: activeProd?.formatSettings || brief?.formatSettings,
+    brief,
+  });
+  const mediaFrameClass = reviewMediaFrameClass(reviewAspect, { dense: true });
+  const mediaImgClass = reviewMediaImgClass();
 
   const mediaView = resolveProductionMediaView({
     production: activeProd,
@@ -256,7 +265,7 @@ export function MobileProductionAssetsGallery({
                   onClick={() => setFullscreenImage({ url: img.url, title: img.label })}
                   className="shrink-0 w-20 rounded-xl overflow-hidden border border-white/10"
                 >
-                  <img src={img.url} alt={img.label} className="w-full aspect-[9/16] object-cover" />
+                  <div className={mediaFrameClass}><img src={img.url} alt={img.label} className={mediaImgClass} /></div>
                   <p className="text-[8px] text-white/70 px-1 py-0.5 truncate">{img.label}</p>
                 </button>
               ))}
@@ -277,7 +286,7 @@ export function MobileProductionAssetsGallery({
               >
                 {/* Media Container */}
                 <div
-                  className="relative aspect-[9/16] bg-black/60 flex items-center justify-center overflow-hidden cursor-pointer group"
+                  className={`relative ${mediaFrameClass} cursor-pointer group`}
                   onClick={() => {
                     if (hasVideo) {
                       setActiveVideo({ url: scene.videoUrl!, title: `Scene ${scene.index} · ${title}` });
@@ -290,7 +299,7 @@ export function MobileProductionAssetsGallery({
                     <img
                       src={scene.thumbUrl}
                       alt={scene.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className={`${mediaImgClass} group-hover:scale-105 transition-transform duration-300`}
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-purple-950/40 via-background to-black flex flex-col items-center justify-center p-3 text-center">

@@ -22,6 +22,14 @@ import { isDurableMasterVideoReady } from "../../services/production/productionA
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
+import {
+  buildHonestNarrativeBlueprint,
+  buildHonestPlatformStrategy,
+  buildHonestThumbnails,
+  resolveReviewAspectMode,
+  reviewMediaFrameClass,
+  reviewMediaImgClass,
+} from "../../services/production/reviewHonesty";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -45,11 +53,6 @@ function asText(value: unknown, fallback = ""): string {
     }
   }
   return String(value);
-}
-
-function clip(value: unknown, n: number, fallback: string): string {
-  const t = asText(value, fallback);
-  return t ? t.slice(0, n) : fallback;
 }
 
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
@@ -179,35 +182,21 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const isExpress = prodMode === "express" || prodMode === "narrator";
 
   const proposal = {
-    title: asText(brief?.title || activeProd?.title || item?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
+    title: asText(brief?.title || activeProd?.title || item?.title, "Untitled production"),
     opportunityScore: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
     aiConfidence: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
-    concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || item?.conceptText, "Reveal proven marketing tactics adapted to brand rules"),
+    concept: asText(
+      brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || item?.conceptText,
+      "No concept rationale stored on this production."
+    ),
     expectedReach: "Unavailable",
-    platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
-    hook: asText(brief?.hook || item?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
-    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment, "Vertical 9:16 presenter with text overlays"),
-    captionDirection: asText(brief?.caption, "Lead with curiosity hook and clear call to action."),
+    platforms: buildHonestPlatformStrategy({ production: activeProd, brief }).map((p) => p.label),
+    hook: asText(brief?.hook || item?.scriptSnippet, ""),
+    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || item?.openingMoment, ""),
+    captionDirection: asText(brief?.caption, ""),
     offerCta: brief?.offerCta || activeProd?.brief?.offerCta || item?.brief?.offerCta,
-    thumbnails: brief?.generatedAssets?.thumbnails?.length
-      ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
-          id: t.id || String(idx + 1),
-          concept: asText(t.concept, `Variant ${t.variant || ["A", "B", "C"][idx] || "A"} optimized for CTR`),
-          variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-        }))
-      : [
-          { id: "1", variant: "A", concept: "Cinematic Split hook preview", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image },
-          { id: "2", variant: "B", concept: "Bold Reaction Accent curiosity card", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image },
-          { id: "3", variant: "C", concept: "Focal Curiosity Loop end screen", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
-        ],
-    narrative: {
-      hook: asText(brief?.hook || item?.scriptSnippet, "Failed marketing campaigns waste billions annually"),
-      buildUp: clip(brief?.scriptOutline, 100, "Modern strategy breakdown"),
-      conflict: "Most creators don't know these AI strategies exist",
-      reveal: "Here's exactly what works in 2026",
-      payoff: "Implement these tactics to 10x your results",
-    },
+    thumbnails: buildHonestThumbnails(brief),
+    narrativeRows: buildHonestNarrativeBlueprint({ brief, production: activeProd }),
     storyboard: mediaView.scenes.length
       ? mediaView.scenes.map((s) => ({
           scene: s.scene,
@@ -217,19 +206,17 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           videoUrl: s.videoUrl,
           shotId: s.shotId,
         }))
-      : mediaView.isGenerating
-        ? []
-        : [
-          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: undefined },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: undefined },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: undefined },
-        ],
-    platformStrategy: {
-      youtube: "12-15 min deep dive, SEO optimized",
-      tiktok: "60s version highlighting primary hook",
-      reels: "45s version with native text overlays",
-    },
+      : [],
+    platformStrategyRows: buildHonestPlatformStrategy({ production: activeProd, brief }),
   };
+
+  const reviewAspect = resolveReviewAspectMode({
+    aspectRatio: activeProd?.aspectRatio || brief?.aspectRatio,
+    formatSettings: activeProd?.formatSettings || brief?.formatSettings,
+    brief,
+  });
+  const mediaFrameClass = reviewMediaFrameClass(reviewAspect, { dense: true });
+  const mediaImgClass = reviewMediaImgClass();
 
   const reviewView = activeProd
     ? buildReviewProductionView(activeProd as any, {
@@ -480,19 +467,26 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
             <Sparkles className="w-3.5 h-3.5 text-accent" />
             <span>Proposed Thumbnails (Tap to select)</span>
           </h3>
-          <div className="grid grid-cols-1 gap-3.5">
-            {proposal.thumbnails.map((thumbnail: any) => (
-              <ThumbnailVariantCard 
-                key={thumbnail.id}
-                id={item?.id || "p1"}
-                variant={thumbnail.variant as "A" | "B" | "C"}
-                concept={thumbnail.concept || `Variant ${thumbnail.variant} design customized for High Click-Through Rates across all platforms.`}
-                image={thumbnail.image}
-                isSelected={selectedVariant === thumbnail.variant}
-                onClick={() => setSelectedVariant(thumbnail.variant as "A" | "B" | "C")}
-              />
-            ))}
-          </div>
+          {proposal.thumbnails.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-3 rounded-xl border border-border bg-card">
+              No generated thumbnail images on this production yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3.5">
+              {proposal.thumbnails.map((thumbnail: any) => (
+                <ThumbnailVariantCard
+                  key={thumbnail.id}
+                  id={item?.id || "p1"}
+                  variant={thumbnail.variant as "A" | "B" | "C"}
+                  concept={thumbnail.concept}
+                  image={thumbnail.image}
+                  aspectMode={reviewAspect}
+                  isSelected={selectedVariant === thumbnail.variant}
+                  onClick={() => setSelectedVariant(thumbnail.variant as "A" | "B" | "C")}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -509,12 +503,16 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           </div>
           {expandedSections.has("narrative") && (
             <div className="mt-4 space-y-3">
-              {Object.entries(proposal.narrative).map(([key, value]) => (
-                <div key={key} className="p-3 rounded-lg bg-background">
-                  <p className="text-xs text-muted-foreground mb-1 capitalize">{key}</p>
-                  <p className="text-sm">{value}</p>
-                </div>
-              ))}
+              {proposal.narrativeRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hook, beats, or CTA stored on this brief yet.</p>
+              ) : (
+                proposal.narrativeRows.map((row) => (
+                  <div key={row.key} className="p-3 rounded-lg bg-background">
+                    <p className="text-xs text-muted-foreground mb-1">{row.label}</p>
+                    <p className="text-sm whitespace-pre-wrap">{row.value}</p>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </button>
@@ -536,31 +534,39 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
               {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                 <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1.5">
                   <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Storyboard Sheet</p>
-                  <div className="w-full max-h-56 rounded-md overflow-hidden bg-black/40 flex items-center justify-center">
+                  <div className={mediaFrameClass}>
                     <img
                       src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
-                      alt="Lead storyboard still"
-                      className="w-full h-full object-contain"
+                      alt="Storyboard sheet"
+                      className={mediaImgClass}
                     />
                   </div>
                 </div>
               )}
-              {proposal.storyboard.map((scene: any) => (
-                <div key={scene.scene} className="p-3 rounded-lg bg-background flex flex-col gap-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">
-                      Scene {scene.scene}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{scene.duration}</span>
-                  </div>
-                  {scene.image && (
-                    <div className="w-full h-28 rounded-md overflow-hidden border border-border/40 bg-black/30">
-                      <img src={scene.image} alt={`Scene ${scene.scene}`} className="w-full h-full object-cover" />
+              {proposal.storyboard.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {mediaView.isGenerating
+                    ? "Scenes are still generating — stills will appear here when ready."
+                    : "No scene stills on this production yet."}
+                </p>
+              ) : (
+                proposal.storyboard.map((scene: any) => (
+                  <div key={scene.scene} className="p-3 rounded-lg bg-background flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">
+                        Scene {scene.scene}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{scene.duration}</span>
                     </div>
-                  )}
-                  <p className="text-sm">{scene.description}</p>
-                </div>
-              ))}
+                    {scene.image && (
+                      <div className={mediaFrameClass}>
+                        <img src={scene.image} alt={`Scene ${scene.scene}`} className={mediaImgClass} />
+                      </div>
+                    )}
+                    <p className="text-sm">{scene.description}</p>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </button>
@@ -579,10 +585,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           </div>
           {expandedSections.has("platform") && (
             <div className="mt-4 space-y-3">
-              {Object.entries(proposal.platformStrategy).map(([platform, strategy]) => (
-                <div key={platform} className="p-3 rounded-lg bg-background">
-                  <p className="text-sm font-medium mb-1 capitalize">{platform}</p>
-                  <p className="text-sm text-muted-foreground">{strategy}</p>
+              {proposal.platformStrategyRows.map((row) => (
+                <div key={row.key} className="p-3 rounded-lg bg-background">
+                  <p className="text-sm font-medium mb-1">{row.label}</p>
+                  <p className="text-sm text-muted-foreground">{row.value}</p>
                 </div>
               ))}
             </div>

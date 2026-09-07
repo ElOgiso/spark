@@ -154,11 +154,21 @@ interface ThumbnailVariantCardProps {
   variant: "A" | "B" | "C";
   concept: string;
   image?: string;
+  /** Production aspect — full image visible (contain), never forced 16:9 crop. */
+  aspectMode?: "landscape" | "portrait";
   isSelected: boolean;
   onClick: () => void;
 }
 
-export function ThumbnailVariantCard({ id, variant, concept, image, isSelected, onClick }: ThumbnailVariantCardProps) {
+export function ThumbnailVariantCard({
+  id,
+  variant,
+  concept,
+  image,
+  aspectMode = "portrait",
+  isSelected,
+  onClick,
+}: ThumbnailVariantCardProps) {
   const theme = getMediaTheme(id);
   
   // Custom design configurations per variant
@@ -201,16 +211,20 @@ export function ThumbnailVariantCard({ id, variant, concept, image, isSelected, 
           : "border-border hover:border-accent/40 hover:shadow-md"
       }`}
     >
-      {/* Design Poster Preview */}
-      <div className="aspect-video relative overflow-hidden bg-background">
+      {/* Design Poster Preview — production aspect + contain so full image is visible */}
+      <div
+        className={`relative overflow-hidden bg-black/40 ${
+          aspectMode === "landscape" ? "aspect-video" : "aspect-[9/16] max-h-80 mx-auto"
+        }`}
+      >
         {hasRealImage ? (
           <>
             <img
               src={image}
               alt={`Thumbnail Variant ${variant}`}
-              className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
           </>
         ) : (
           <>

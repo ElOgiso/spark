@@ -16,8 +16,6 @@ import {
   Edit,
   RotateCw,
   XCircle,
-  Youtube,
-  Instagram,
   Video,
   Shield,
   AlertTriangle,
@@ -40,6 +38,17 @@ import {
   resolveProductionMediaView,
   toOneBasedSceneIndex,
 } from "../services/production/productionMediaLineage";
+import {
+  buildHonestBrandConsistency,
+  buildHonestNarrativeBlueprint,
+  buildHonestPlatformStrategy,
+  buildHonestQualityChecks,
+  buildHonestThumbnails,
+  buildHonestWhyThisWorks,
+  resolveReviewAspectMode,
+  reviewMediaFrameClass,
+  reviewMediaImgClass,
+} from "../services/production/reviewHonesty";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -63,11 +72,6 @@ function asText(value: unknown, fallback = ""): string {
     }
   }
   return String(value);
-}
-
-function clip(value: unknown, n: number, fallback: string): string {
-  const t = asText(value, fallback);
-  return t ? t.slice(0, n) : fallback;
 }
 
 export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
@@ -320,41 +324,30 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
 
   const proposal = {
-    title: asText(brief?.title || activeProd?.title || activeReview?.title, "5 Viral Marketing Tactics That Actually Work in 2026"),
+    title: asText(brief?.title || activeProd?.title || activeReview?.title, "Untitled production"),
     contentType: `${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)} Production`,
-    series: asText(activeReview?.series, "Viral Concept Series"),
-    account: asText(brief?.platformRecommendation || activeReview?.account, "YouTube Shorts"),
+    series: asText(activeReview?.series, brand?.name || "Brand series"),
+    account: asText(brief?.platformRecommendation || activeReview?.account, asText(activeProd?.formats?.[0], "Primary format")),
     opportunityScore: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
     aiConfidence: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
-    concept: asText(brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText, "Reveal proven viral tactics adapted to brand identity"),
-    targetAudience: asText(activeProd?.reasoning?.research?.audience, "Target Audience & Brand Followers"),
+    concept: asText(
+      brief?.whyThisWorks || activeProd?.reasoning?.planning?.outline || activeProd?.reasoning?.research?.notes || activeReview?.conceptText,
+      "No concept rationale stored on this production."
+    ),
+    targetAudience: asText(activeProd?.reasoning?.research?.audience, "Audience not stored on this production"),
     expectedReach: "Unavailable",
-    format: `${asText(brief?.suggestedDuration, "30–60s")} Vertical (${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)})`,
-    platforms: [asText(brief?.platformRecommendation, "YouTube Shorts"), "TikTok", "Instagram Reels"],
-    hook: asText(brief?.hook || activeReview?.scriptSnippet, "Stop wasting money on marketing that doesn't work"),
-    hookType: "High-curiosity gap angle",
-    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment, "Vertical 9:16 presenter with text overlays"),
-    captionDirection: asText(brief?.caption, "Lead with stat. Use em-dash rhythm. End with open loop question. 3-line max mobile preview."),
+    format: `${asText(brief?.suggestedDuration, activeProd?.targetDurationSec ? `${activeProd.targetDurationSec}s` : "Duration unset")} · ${asText(activeProd?.aspectRatio || brief?.aspectRatio, "9:16")} · ${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)}`,
+    platforms: (() => {
+      const honest = buildHonestPlatformStrategy({ production: activeProd, brief });
+      return honest.map((p) => p.label);
+    })(),
+    hook: asText(brief?.hook || activeReview?.scriptSnippet, ""),
+    hookType: brief?.hook ? "Spoken host hook from brief" : "Hook missing",
+    openingMoment: asText(brief?.visualDirection || activeProd?.reasoning?.storyboard?.narration || activeReview?.openingMoment, ""),
+    captionDirection: asText(brief?.caption, ""),
     offerCta: brief?.offerCta || activeProd?.brief?.offerCta,
-    thumbnails: brief?.generatedAssets?.thumbnails?.length
-      ? brief.generatedAssets.thumbnails.map((t: any, idx: number) => ({
-          id: t.id || String(idx + 1),
-          concept: asText(t.concept, `Thumbnail Variant ${t.variant || ["A", "B", "C"][idx] || "A"}`),
-          variant: (t.variant || ["A", "B", "C"][idx] || "A") as "A" | "B" | "C",
-          image: t.image || brief?.generatedAssets?.generatedFrames?.[idx] || brief?.storyboard?.[idx]?.image,
-        }))
-      : [
-          { id: "1", concept: "Split screen contrast lighting with face reaction", variant: "A", image: brief?.generatedAssets?.generatedFrames?.[0] || brief?.storyboard?.[0]?.image },
-          { id: "2", concept: "Bold text overlay, high contrast, presenter reaction", variant: "B", image: brief?.generatedAssets?.generatedFrames?.[1] || brief?.storyboard?.[1]?.image },
-          { id: "3", concept: "Glowing screen preview, text reads 'This Changed Everything'", variant: "C", image: brief?.generatedAssets?.generatedFrames?.[2] || brief?.storyboard?.[2]?.image },
-        ],
-    narrative: {
-      hook: asText(brief?.hook || activeReview?.scriptSnippet, "Failed marketing campaigns waste time and energy"),
-      buildUp: clip(brief?.scriptOutline, 100, "Modern strategy breakdown"),
-      conflict: "Most creators don't know these AI strategies exist",
-      reveal: "Here's exactly what works",
-      payoff: "Implement these and 10× your organic reach",
-    },
+    thumbnails: buildHonestThumbnails(brief),
+    narrativeRows: buildHonestNarrativeBlueprint({ brief, production: activeProd }),
     storyboard: mediaView.scenes.length
       ? mediaView.scenes.map((s) => ({
           scene: s.scene,
@@ -364,47 +357,30 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           videoUrl: s.videoUrl,
           shotId: s.shotId,
         }))
-      : mediaView.isGenerating
-        ? []
-        : [
-          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: undefined },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: undefined },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: undefined },
-        ],
-    platformStrategy: {
-      youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
-      tiktok: "60s cut with CTA to bio link",
-      shorts: "30s teaser — first 8s hook cliffhanger",
-      reels: "45s cut with native text overlays",
-    },
-    whyThisWorks: [
-      brief?.whyThisWorks || "Hook directly addresses most-searched pain point in your target segment",
-      "Numbered list & curiosity gap format averages 2.3× completion",
-      "Mode framing triggers high engagement loop",
-      "Brand memory rules enforced for maximum audience fit",
-    ],
-    brandConsistency: {
-      score: typeof brief?.brandFitScore === "number" ? brief.brandFitScore : null,
-      checks: [
-        { label: "Tone matches brand voice profile", pass: true },
-        { label: "Hook style consistent with top performers", pass: true },
-        { label: "Production mode rules enforced", pass: true },
-        { label: "Format aligns with content pillars", pass: true },
-        { label: "Executive quality gates cleared", pass: true },
-      ],
-    },
-    riskFlags: [
-      { level: "low", text: "Ensure script pacing matches target platform duration" },
-    ],
-    qualityChecks: [
-      { label: "Hook clarity", pass: true, note: "Curiosity gap validated" },
-      { label: "Narrative arc complete", pass: true, note: "Hook -> Body -> CTA" },
-      { label: "CTA present", pass: true, note: "Brand conversion CTA" },
-      { label: "Platform-specific versions planned", pass: true, note: "9:16 vertical layout" },
-      { label: "Thumbnail concepts reviewed", pass: true, note: "Visual variants active" },
-      { label: "Caption direction complete", pass: true, note: "Formatted for engagement" },
-    ],
+      : [],
+    platformStrategyRows: buildHonestPlatformStrategy({ production: activeProd, brief }),
+    whyThisWorks: buildHonestWhyThisWorks({ brief, production: activeProd }),
+    brandConsistency: buildHonestBrandConsistency({ brief, brand }),
+    riskFlags: mediaView.isGenerating
+      ? [{ level: "low", text: "Assets still generating — Review will update as media lands." }]
+      : !mediaView.scenes.some((s) => s.imageUrl || s.videoUrl) && !mediaView.canonical?.canonicalMasterUrl
+        ? [{ level: "medium", text: "No deliverable stills or master video on this production yet." }]
+        : [],
+    qualityChecks: buildHonestQualityChecks({
+      reviewView,
+      mediaView,
+      brief,
+      production: activeProd,
+    }),
   };
+
+  const reviewAspect = resolveReviewAspectMode({
+    aspectRatio: activeProd?.aspectRatio || brief?.aspectRatio,
+    formatSettings: activeProd?.formatSettings || brief?.formatSettings,
+    brief,
+  });
+  const mediaFrameClass = reviewMediaFrameClass(reviewAspect);
+  const mediaImgClass = reviewMediaImgClass();
 
 
   const SectionToggle = ({ id, title }: { id: string; title: string }) => (
@@ -420,9 +396,6 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       )}
     </button>
   );
-
-
-  const statusNote = (status: string) => status === "not_evaluated" ? "Not evaluated" : status === "not_analyzed" ? "Not analyzed" : status;
 
 
   const handleStructuredEditRequest = async (payload: {
@@ -747,19 +720,26 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 <Sparkles className="w-4 h-4 text-accent" />
                 <span>Proposed Thumbnail Variants</span>
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {proposal.thumbnails.map((t: any) => (
-                  <ThumbnailVariantCard 
-                    key={t.id}
-                    id={activeReview?.id || "p1"}
-                    variant={t.variant as "A" | "B" | "C"}
-                    concept={t.concept}
-                    image={t.image}
-                    isSelected={selectedVariant === t.variant}
-                    onClick={() => setSelectedVariant(t.variant as "A" | "B" | "C")}
-                  />
-                ))}
-              </div>
+              {proposal.thumbnails.length === 0 ? (
+                <p className="text-sm text-muted-foreground p-4 rounded-xl border border-border bg-card">
+                  No generated thumbnail images on this production yet.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {proposal.thumbnails.map((t: any) => (
+                    <ThumbnailVariantCard
+                      key={t.id}
+                      id={activeReview?.id || "p1"}
+                      variant={t.variant as "A" | "B" | "C"}
+                      concept={t.concept}
+                      image={t.image}
+                      aspectMode={reviewAspect}
+                      isSelected={selectedVariant === t.variant}
+                      onClick={() => setSelectedVariant(t.variant as "A" | "B" | "C")}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -897,19 +877,23 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
           <div className="space-y-3">
             <WhySparkRecommends
               details={{
-                reason: "This storyboard bridges the gap between raw data and audience aspiration. Numbered tactics keep watch-time high while cultural triggers spark high community engagement.",
-                evidence: [
-                  "Matches your brand rule 'Actionable value for tech founders'.",
-                  "Numbered tactics average 2.3x higher completion rates in your niche.",
-                  "Opening challenged pain point reduces immediate drop-off by 37%.",
-                  "Tactic #4 incorporates real historical data from Nigerian creators."
-                ],
-                confidence: "Very High",
+                reason: proposal.whyThisWorks[0] || "No stored rationale on this brief.",
+                evidence: proposal.whyThisWorks.slice(1).length
+                  ? proposal.whyThisWorks.slice(1)
+                  : ["Only facts stored on the production brief/Spec are shown here."],
+                confidence: proposal.aiConfidence != null ? "Stored brand-fit score" : "Unavailable",
                 confidencePercent: proposal.aiConfidence,
                 expectedOutcome: "Reach unavailable — live analytics connector not configured.",
-                risk: "Low",
-                nextBestAction: "Approve and Publish Production",
-                brandRules: ["Brand Voice Pillar 2: Professional", "Creator Authority Rules"]
+                risk: proposal.riskFlags.some((f) => f.level === "medium") ? "Medium" : "Low",
+                nextBestAction: mediaView.reviewReady
+                  ? "Approve when the deliverable matches intent"
+                  : mediaView.isGenerating
+                    ? "Wait for generation to finish"
+                    : "Generate or regenerate assets if media is missing",
+                brandRules: [
+                  brand?.name ? `Brand: ${brand.name}` : "Brand unset",
+                  asText(brief?.formatSettings?.contentFormat || brand?.contentFormat, "contentFormat default host"),
+                ],
               }}
               defaultExpanded={true}
             />
@@ -920,17 +904,30 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="brand" title="Brand Consistency" />
             {expandedSections.has("brand") && (
               <div className="px-6 pb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-success" style={{ width: `${proposal.brandConsistency.score}%` }} />
+                {proposal.brandConsistency.score != null ? (
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-success" style={{ width: `${proposal.brandConsistency.score}%` }} />
+                    </div>
+                    <span className="text-sm font-medium text-success">{proposal.brandConsistency.score}% brand fit</span>
                   </div>
-                  <span className="text-sm font-medium text-success">{proposal.brandConsistency.score}% consistent</span>
-                </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground mb-4">No brand-fit score stored on this brief.</p>
+                )}
                 <div className="space-y-2">
                   {proposal.brandConsistency.checks.map((check, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <CheckCircle2 className={`w-4 h-4 ${check.pass ? "text-success" : "text-muted-foreground/30"}`} />
-                      <span className={`text-sm ${check.pass ? "" : "text-muted-foreground"}`}>{check.label}</span>
+                    <div key={i} className="flex items-start gap-3">
+                      {check.status === "pass" ? (
+                        <CheckCircle2 className="w-4 h-4 text-success mt-0.5" />
+                      ) : check.status === "fail" ? (
+                        <AlertTriangle className="w-4 h-4 text-warning mt-0.5" />
+                      ) : (
+                        <Shield className="w-4 h-4 text-muted-foreground mt-0.5" />
+                      )}
+                      <div>
+                        <span className="text-sm">{check.label}</span>
+                        <p className="text-xs text-muted-foreground">{check.note}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -963,13 +960,30 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="quality" title="Quality Checks" />
             {expandedSections.has("quality") && (
               <div className="px-6 pb-6">
+                <p className="text-xs text-muted-foreground mb-3">
+                  Factual package checks from this production. Pipeline critic/QC only appears when it actually ran.
+                </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {((reviewView?.qcSummary?.length ? reviewView.qcSummary.map((c) => ({ label: c.label, pass: c.status === "pass", note: c.detail || statusNote(c.status) })) : proposal.qualityChecks)).map((check: any, i: number) => (
-                    <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${check.pass ? "bg-success/5 border border-success/10" : "bg-warning/5 border border-warning/20"}`}>
-                      {check.pass
-                        ? <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />
-                        : <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
-                      }
+                  {proposal.qualityChecks.map((check, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-3 p-3 rounded-lg border ${
+                        check.status === "pass"
+                          ? "bg-success/5 border-success/10"
+                          : check.status === "fail"
+                            ? "bg-destructive/5 border-destructive/20"
+                            : check.status === "pending"
+                              ? "bg-warning/5 border-warning/20"
+                              : "bg-muted/20 border-border/50"
+                      }`}
+                    >
+                      {check.status === "pass" ? (
+                        <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
+                      ) : check.status === "fail" ? (
+                        <XCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      )}
                       <div>
                         <p className="text-sm">{check.label}</p>
                         {check.note && <p className="text-xs text-muted-foreground">{check.note}</p>}
@@ -986,12 +1000,16 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="narrative" title="Narrative Blueprint" />
             {expandedSections.has("narrative") && (
               <div className="px-6 pb-6 space-y-3">
-                {Object.entries(proposal.narrative).map(([key, value]) => (
-                  <div key={key} className="p-4 rounded-lg bg-background border border-border">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5 capitalize">{key}</p>
-                    <p className="text-sm">{value}</p>
-                  </div>
-                ))}
+                {proposal.narrativeRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hook, beats, or CTA stored on this brief yet.</p>
+                ) : (
+                  proposal.narrativeRows.map((row) => (
+                    <div key={row.key} className="p-4 rounded-lg bg-background border border-border">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">{row.label}</p>
+                      <p className="text-sm whitespace-pre-wrap">{row.value}</p>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
@@ -1004,31 +1022,39 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                 {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                   <div className="p-4 rounded-xl bg-background border border-border/70 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-accent">Storyboard Sheet</p>
-                    <div className="w-full max-h-64 overflow-hidden rounded-lg border border-border bg-black/40 flex items-center justify-center">
+                    <div className={mediaFrameClass}>
                       <img
                         src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
-                        alt="Lead storyboard still"
-                        className="w-full h-full object-contain"
+                        alt="Storyboard sheet"
+                        className={mediaImgClass}
                       />
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {proposal.storyboard.map((scene: any) => (
-                    <div key={scene.scene} className="p-4 rounded-xl bg-background border border-border flex flex-col gap-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">Scene {scene.scene}</span>
-                        <span className="text-xs text-muted-foreground">{scene.duration}</span>
-                      </div>
-                      {scene.image && (
-                        <div className="w-full h-32 rounded-lg overflow-hidden border border-border/50 bg-black/30 mb-1">
-                          <img src={scene.image} alt={`Scene ${scene.scene} Still`} className="w-full h-full object-cover" />
+                {proposal.storyboard.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {mediaView.isGenerating
+                      ? "Scenes are still generating — stills will appear here when ready."
+                      : "No scene stills on this production yet."}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {proposal.storyboard.map((scene: any) => (
+                      <div key={scene.scene} className="p-4 rounded-xl bg-background border border-border flex flex-col gap-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="px-2 py-0.5 rounded bg-accent/30 text-xs font-medium">Scene {scene.scene}</span>
+                          <span className="text-xs text-muted-foreground">{scene.duration}</span>
                         </div>
-                      )}
-                      <p className="text-sm">{scene.description}</p>
-                    </div>
-                  ))}
-                </div>
+                        {scene.image && (
+                          <div className={mediaFrameClass}>
+                            <img src={scene.image} alt={`Scene ${scene.scene} Still`} className={mediaImgClass} />
+                          </div>
+                        )}
+                        <p className="text-sm">{scene.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1038,18 +1064,13 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="platform" title="Platform Strategy" />
             {expandedSections.has("platform") && (
               <div className="px-6 pb-6 space-y-3">
-                {[
-                  { key: "youtube", label: "YouTube", icon: Youtube, color: "text-destructive" },
-                  { key: "tiktok", label: "TikTok", icon: Video, color: "text-muted-foreground" },
-                  { key: "shorts", label: "YouTube Shorts", icon: Youtube, color: "text-destructive" },
-                  { key: "reels", label: "Instagram Reels", icon: Instagram, color: "text-warning" },
-                ].map(({ key, label, icon: Icon, color }) => (
-                  <div key={key} className="p-4 rounded-xl bg-background border border-border">
+                {proposal.platformStrategyRows.map((row) => (
+                  <div key={row.key} className="p-4 rounded-xl bg-background border border-border">
                     <div className="flex items-center gap-2 mb-2">
-                      <Icon className={`w-4 h-4 ${color}`} />
-                      <p className="text-sm font-medium">{label}</p>
+                      <Video className="w-4 h-4 text-muted-foreground" />
+                      <p className="text-sm font-medium">{row.label}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{proposal.platformStrategy[key as keyof typeof proposal.platformStrategy]}</p>
+                    <p className="text-sm text-muted-foreground">{row.value}</p>
                   </div>
                 ))}
               </div>

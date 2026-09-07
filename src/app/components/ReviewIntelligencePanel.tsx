@@ -189,11 +189,11 @@ export function ReviewIntelligencePanel({
           ) : null}
         </div>
         {reviewView.storyboardSheetUrl ? (
-          <div className="rounded-lg border border-border/70 bg-black/30 overflow-hidden max-h-48 flex items-center justify-center">
+          <div className="rounded-lg border border-border/70 bg-black/30 overflow-hidden aspect-video max-h-72 flex items-center justify-center">
             <img
               src={reviewView.storyboardSheetUrl}
               alt="Storyboard sheet"
-              className="w-full h-full object-contain"
+              className="max-w-full max-h-full w-auto h-auto object-contain"
             />
           </div>
         ) : null}
@@ -211,12 +211,12 @@ export function ReviewIntelligencePanel({
                     : "border-border bg-background hover:border-accent/40"
                 }`}
               >
-                <div className="w-full h-24 rounded-lg overflow-hidden bg-black/40 border border-border/50 mb-2">
+                <div className="w-full aspect-[9/16] max-h-40 rounded-lg overflow-hidden bg-black/40 border border-border/50 mb-2 flex items-center justify-center">
                   {shot.storyboardFrameUrl || shot.generatedResultUrl ? (
                     <img
                       src={shot.storyboardFrameUrl || shot.generatedResultUrl || ""}
                       alt={shot.title}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
@@ -250,12 +250,12 @@ export function ReviewIntelligencePanel({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="p-3 rounded-lg bg-background border border-border/70 space-y-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Storyboard frame</p>
-                <div className="h-36 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
+                <div className="aspect-[9/16] max-h-48 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
                   {selectedShot.storyboardFrameUrl ? (
                     <img
                       src={selectedShot.storyboardFrameUrl}
                       alt="Storyboard frame"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain"
                     />
                   ) : (
                     <span className="text-xs text-muted-foreground">No storyboard frame</span>
@@ -264,12 +264,12 @@ export function ReviewIntelligencePanel({
               </div>
               <div className="p-3 rounded-lg bg-background border border-border/70 space-y-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Generated result</p>
-                <div className="h-36 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
+                <div className="aspect-[9/16] max-h-48 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
                   {selectedShot.generatedResultUrl ? (
                     <img
                       src={selectedShot.generatedResultUrl}
                       alt="Generated result"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain"
                     />
                   ) : (
                     <span className="text-xs text-muted-foreground">No generated result</span>
@@ -280,12 +280,12 @@ export function ReviewIntelligencePanel({
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   Generated state frame
                 </p>
-                <div className="h-36 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
+                <div className="aspect-[9/16] max-h-48 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center">
                   {selectedShot.generatedStateFrameUrl ? (
                     <img
                       src={selectedShot.generatedStateFrameUrl}
                       alt="Generated state frame"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain"
                     />
                   ) : (
                     <span className="text-xs text-muted-foreground">No state frame</span>
@@ -331,7 +331,7 @@ export function ReviewIntelligencePanel({
                         <img
                           src={candidate.mediaUrl}
                           alt={candidate.label}
-                          className="w-full h-full object-cover"
+                          className="max-w-full max-h-full w-auto h-auto object-contain"
                         />
                       ) : (
                         <span className="text-[10px] text-muted-foreground">No media</span>
@@ -372,7 +372,7 @@ export function ReviewIntelligencePanel({
                   >
                     <div className="w-14 h-14 rounded-md overflow-hidden bg-black/30 border border-border/50 flex items-center justify-center shrink-0">
                       {ref.url ? (
-                        <img src={ref.url} alt={ref.label} className="w-full h-full object-cover" />
+                        <img src={ref.url} alt={ref.label} className="max-w-full max-h-full w-auto h-auto object-contain" />
                       ) : (
                         <span className="text-[9px] text-muted-foreground">N/A</span>
                       )}

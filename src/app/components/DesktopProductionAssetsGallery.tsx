@@ -50,6 +50,8 @@ export function DesktopProductionAssetsGallery({
   const isLandscape =
     activeProd?.aspectRatio === "16:9" || brief?.formatSettings?.aspectMode === "landscape";
   const cardAspectClass = isLandscape ? "aspect-video" : "aspect-[9/16]";
+  const cardMediaClass = `${cardAspectClass} w-full bg-black/40 flex items-center justify-center overflow-hidden`;
+  const cardImgClass = "max-w-full max-h-full w-auto h-auto object-contain";
 
   const generatedImages: { id: string; label: string; url: string }[] = [];
   const pushImg = (id: string, label: string, url?: string) => {
@@ -293,7 +295,7 @@ export function DesktopProductionAssetsGallery({
                       className="shrink-0 w-24 rounded-xl overflow-hidden border border-white/10 hover:border-purple-400/60 bg-black/40"
                       title={img.label}
                     >
-                      <img src={img.url} alt={img.label} className={`w-full ${cardAspectClass} object-cover`} />
+                      <div className={cardMediaClass}><img src={img.url} alt={img.label} className={cardImgClass} /></div>
                       <p className="text-[9px] text-white/70 px-1.5 py-1 truncate">{img.label}</p>
                     </button>
                   ))}
@@ -324,7 +326,7 @@ export function DesktopProductionAssetsGallery({
                         <img
                           src={scene.thumbUrl}
                           alt={scene.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="max-w-full max-h-full w-auto h-auto object-contain group-hover:scale-105 transition-transform duration-300"
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-purple-950/40 via-background to-black flex flex-col items-center justify-center p-3 text-center">
