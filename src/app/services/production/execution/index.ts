@@ -77,6 +77,11 @@ export type {
   BridgeLogEvent,
   BridgeLogger,
 } from "./productionExecutionBridge";
+export {
+  createLiveAssetExecuteAdapter,
+  type LiveAssetExecuteContext,
+  type LiveAssetExecuteAdapter,
+} from "./liveAssetExecuteAdapter";
 
 /** Phase 10 — end-to-end production lifecycle conductor */
 export { runProductionPreflight } from "./productionPreflight";

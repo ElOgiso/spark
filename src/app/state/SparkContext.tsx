@@ -2312,6 +2312,33 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }))
             : p.scenes;
           const shots = Array.isArray(p.shots) ? p.shots.map(patchShot) : p.shots;
+
+          // Persist selection onto ProductionSpec when present (OS candidate record)
+          let reasoning = p.reasoning;
+          const spec = reasoning?.productionSpec;
+          if (spec?.scenes) {
+            const nextSpec = {
+              ...spec,
+              scenes: spec.scenes.map((scene: any) => ({
+                ...scene,
+                shots: (scene.shots || []).map((shot: any) =>
+                  shot.id === shotId
+                    ? {
+                        ...shot,
+                        selectedCandidateId: candidateId,
+                        meta: {
+                          ...(shot.meta || {}),
+                          selectedCandidateId: candidateId,
+                          selectedAt: new Date().toISOString(),
+                        },
+                      }
+                    : shot
+                ),
+              })),
+            };
+            reasoning = { ...reasoning, productionSpec: nextSpec };
+          }
+
           return {
             ...p,
             selectedCandidateId: candidateId,
@@ -2319,6 +2346,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             productionScenes,
             scenes,
             shots,
+            reasoning,
           };
         });
         const updated = productions.find((p: any) => p.id === productionId);

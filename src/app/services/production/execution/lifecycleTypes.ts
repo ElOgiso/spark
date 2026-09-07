@@ -157,6 +157,11 @@ export interface RunProductionLifecycleOptions {
   signal?: AbortSignal;
   onEvent?: (event: ProductionLifecycleEvent) => void;
   deps?: ProductionLifecycleDeps;
+  /**
+   * Live path: pass AssetService master passthrough (or FFmpeg) so editorial
+   * does not invent mock CDN masters. Tests may omit — mock adapter is used.
+   */
+  masteringAdapter?: import("../editorial/mastering/types").MasteringRuntimeAdapter;
 }
 
 export interface ProductionLifecycleDeps {

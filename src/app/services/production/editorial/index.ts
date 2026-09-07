@@ -108,6 +108,7 @@ export {
 export {
   createFfmpegAdapter,
   createMockMasteringAdapter,
+  createExistingMasterPassthroughAdapter,
   buildFfmpegRenderPlan,
   type FfmpegRenderPlan,
   type FfmpegExecutor,

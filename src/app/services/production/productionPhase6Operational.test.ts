@@ -591,10 +591,18 @@ describe("Phase 6 — regression: planGenerationTasks still works", () => {
       grammar: composeGrammars("product_demo", [], ["cinematic"]),
       preferI2V: true,
       maxShotsPerScene: 2,
-      // operational flag OFF by default
+      // Explicit opt-out — full pipeline defaults ON elsewhere
+      enableOperationalGeneration: false,
     });
     assert.ok(visual.generationTasks.length >= 1);
     assert.equal(visual.stats.operationalShots, undefined);
+
+    const visualOps = applyVisualPlanningPipeline(plan.spec, {
+      grammar: composeGrammars("product_demo", [], ["cinematic"]),
+      preferI2V: true,
+      maxShotsPerScene: 2,
+    });
+    assert.ok((visualOps.stats.operationalShots || 0) >= 1);
   });
 
   it("compileGenerationIntentToTasks blocks cleanly when resolution fails", () => {

@@ -148,6 +148,46 @@ export function createFfmpegAdapter(options?: {
 }
 
 /**
+ * Live mastering port: reuse AssetService (or prior) master URL — do not invent CDN masters.
+ * Editorial still assembles timeline; this adapter only certifies the existing deliverable.
+ */
+export function createExistingMasterPassthroughAdapter(
+  getMasterUrl: () => string | undefined | null
+): MasteringRuntimeAdapter {
+  return {
+    id: "existing_master_passthrough",
+    async available() {
+      return Boolean(String(getMasterUrl() || "").trim());
+    },
+    async render({ job, variant }) {
+      const mediaUrl = String(getMasterUrl() || "").trim();
+      if (!mediaUrl) {
+        return {
+          ok: false,
+          deferred: true,
+          error: {
+            code: "no_existing_master",
+            message: "No AssetService master URL available for passthrough mastering",
+            retryable: true,
+          },
+        };
+      }
+      return {
+        ok: true,
+        mediaUrl,
+        mimeType: "video/mp4",
+        codec: variant.codec,
+        container: variant.container,
+        diagnostics: {
+          source: "asset_service_master",
+          jobId: job.id,
+        },
+      };
+    },
+  };
+}
+
+/**
  * Mock adapter for unit tests — deterministic success without FFmpeg.
  */
 export function createMockMasteringAdapter(overrides?: {

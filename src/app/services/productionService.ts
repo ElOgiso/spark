@@ -12,7 +12,13 @@ import {
   attachProductionSettingsSnapshot,
 } from "./production/productionSettingsSnapshot";
 import { executeProduction } from "./production/execution/productionExecutor";
-import { executeProductionViaAssetBridge } from "./production/execution/productionExecutionBridge";
+import {
+  resolveProductionSpec,
+  createLiveAssetExecuteAdapter,
+  runProductionLifecycle,
+  type ProductionLifecycleReport,
+  type RunProductionLifecycleOptions,
+} from "./production/execution";
 import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
 import {
   runQcWithRepairLoop,
@@ -22,13 +28,9 @@ import type { SparkAutomationMode } from "./production/qc/types";
 import {
   runEditorialPipeline,
   assembleEditorialTimeline,
+  createExistingMasterPassthroughAdapter,
 } from "./production/editorial";
 import type { ProductionSpec } from "./production/specification/productionSpec";
-import {
-  runProductionLifecycle,
-  type ProductionLifecycleReport,
-  type RunProductionLifecycleOptions,
-} from "./production/execution";
 import {
   runLearningUpdatePipeline,
   buildOutcomeFromLifecycle,
@@ -280,7 +282,9 @@ export class ProductionService implements IProductionService {
   }
 
   /**
-   * Executive Trigger: Generates complete multi-scene storyboard, voiceover, and thumbnail assets
+   * Executive Trigger: full Production OS lifecycle for live generate.
+   * Conductor: preflight → AssetService (via Spec bridge) → QC → editorial.
+   * AssetService remains the sole media executor — no dual spenders.
    */
   async generateAssetsForProduction(params: {
     production: Production;
@@ -292,8 +296,20 @@ export class ProductionService implements IProductionService {
     onProgress?: (progress: import("../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
+    automationMode?: AutomationMode | SparkAutomationMode;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
-    const { production, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
+    const {
+      production,
+      brand,
+      character,
+      characters,
+      memoryItems = [],
+      creditSettings,
+      onProgress,
+      forceRegenerate,
+      signal,
+      automationMode,
+    } = params;
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -355,79 +371,156 @@ export class ProductionService implements IProductionService {
       });
     };
 
-    const hasProductionSpec = Boolean(
-      (production.reasoning as any)?.productionSpec?.scenes?.length
-    );
+    // Always resolve a ProductionSpec (legacy rows rebuild via adapter).
+    const resolvedSpec = resolveProductionSpec(production, brand, character);
+    const liveExecute = createLiveAssetExecuteAdapter({
+      production,
+      brand,
+      character,
+      characters,
+      memoryItems,
+      creditSettings,
+      onProgress: handleProgress,
+      forceRegenerate,
+      signal,
+    });
 
-    // Phase 2: Spec-first live spine when ProductionSpec is present.
-    // Legacy productions without a Spec keep the prior AssetService-only path.
-    const bridgeOrDirect = hasProductionSpec
-      ? await executeProductionViaAssetBridge({
-          production,
-          brand,
-          character,
-          characters,
-          memoryItems,
-          creditSettings,
-          onProgress: handleProgress,
-          forceRegenerate,
-          signal,
-        })
-      : null;
+    const report = await runProductionLifecycle({
+      spec: resolvedSpec,
+      options: {
+        brandId: brand.id || production.brandId,
+        automationMode: (automationMode as SparkAutomationMode) || "balanced",
+        enableQc: true,
+        enableEditorial: true,
+        enableMaster: true,
+        // AssetService already produces the durable master; editorial reuses it.
+        allowCompleteWithoutMaster: true,
+        signal,
+        masteringAdapter: createExistingMasterPassthroughAdapter(
+          () =>
+            liveExecute.getLastBridgeResult()?.assetResult.videoUrl ||
+            liveExecute.getLastBridgeResult()?.production.videoUrl ||
+            production.videoUrl
+        ),
+        deps: {
+          executeProduction: liveExecute.executeProduction,
+        },
+      },
+    });
 
-    const result = bridgeOrDirect
-      ? bridgeOrDirect.assetResult
-      : await ProductionAssetService.generateAssets({
-          production,
-          brief: production.brief,
-          brand,
-          character,
-          characters,
-          memoryItems,
-          creditSettings,
-          onProgress: handleProgress,
-          forceRegenerate,
-          signal,
-        });
+    const bridge = liveExecute.getLastBridgeResult();
+    const result = bridge?.assetResult;
+    const briefFromBridge = result?.brief || production.brief;
+    const videoUrl =
+      report.editorial?.mastering?.output?.mediaUrl ||
+      result?.videoUrl ||
+      production.videoUrl;
+    const audioUrl = result?.audioUrl || production.audioUrl;
+    const isVideoSuccess = Boolean(videoUrl && isDurableMasterVideoReady(videoUrl));
+    const generationFailed =
+      report.phase === "blocked" ||
+      report.phase === "failed" ||
+      report.phase === "cancelled" ||
+      (bridge && !result?.videoUrl && report.execution && !report.execution.ok);
 
+    // Review is the human surface: generation success → Ready for Review even when QC wants eyes.
+    const finalProdStatus = generationFailed
+      ? "Failed"
+      : isVideoSuccess || report.completed || report.phase === "awaiting_review"
+        ? report.phase === "awaiting_review" && !isVideoSuccess
+          ? "Needs Edit"
+          : "Ready for Review"
+        : "Failed";
 
-    const isVideoSuccess = Boolean(result.videoUrl && isDurableMasterVideoReady(result.videoUrl));
-    const finalProdStatus = isVideoSuccess ? "Ready for Review" : "Failed";
+    const priorReasoning =
+      typeof production.reasoning === "object" && production.reasoning
+        ? (production.reasoning as Record<string, unknown>)
+        : {};
 
-    const updatedProd: Production = {
-      ...production,
+    const updatedWithSpine: Production = {
+      ...(bridge?.production || production),
       id: production.id,
       status: finalProdStatus,
-      targetDurationSec: result.brief.targetDurationSec || (production as any).targetDurationSec || 60,
-      productionMode: (result.brief.productionMode || production.productionMode || production.mode || "standard") as any,
-      formatSettings: result.brief.formatSettings || production.formatSettings,
-      brief: result.brief,
-      scenes: result.scenes,
-      productionScenes: result.productionScenes || production.productionScenes,
-      audioUrl: result.audioUrl,
-      videoUrl: result.videoUrl,
+      brief: briefFromBridge,
+      scenes: result?.scenes || bridge?.production.scenes || production.scenes,
+      productionScenes:
+        result?.productionScenes ||
+        bridge?.production.productionScenes ||
+        production.productionScenes,
+      audioUrl,
+      videoUrl,
       isGeneratingAssets: false,
-      generationProgress: result.brief.generatedAssets?.generationProgress,
-      reasoning: (result as any).reasoning || production.reasoning,
-      lastError:
-        result.brief.lastError ||
-        result.brief.generatedAssets?.generationProgress?.partialAssets?.lastError ||
-        (finalProdStatus === "Failed"
-          ? result.brief.generatedAssets?.generationProgress?.message || "Asset generation failed"
-          : undefined),
+      generationProgress:
+        briefFromBridge.generationProgress ||
+        bridge?.production.generationProgress ||
+        production.generationProgress,
+      targetDurationSec:
+        briefFromBridge.targetDurationSec ||
+        production.targetDurationSec ||
+        resolvedSpec.project.targetDurationSec,
+      productionMode: (briefFromBridge.productionMode ||
+        production.productionMode ||
+        production.mode ||
+        "standard") as any,
+      formatSettings: briefFromBridge.formatSettings || production.formatSettings,
+      lastError: generationFailed
+        ? report.summary ||
+          briefFromBridge.lastError ||
+          report.errors.join("; ") ||
+          "Production lifecycle failed"
+        : undefined,
+      reasoning: {
+        ...priorReasoning,
+        ...(typeof bridge?.production.reasoning === "object" && bridge.production.reasoning
+          ? bridge.production.reasoning
+          : {}),
+        productionSpec: report.spec,
+        generationSpine: {
+          bridge: "productionExecutionBridge",
+          conductor: "runProductionLifecycle",
+          usedSpecBridge: Boolean(bridge),
+          usedFullPipeline: true,
+          taskStatuses:
+            bridge?.tasks.map((t) => ({
+              id: t.id,
+              kind: t.kind,
+              shotId: t.shotId,
+              sceneId: t.sceneId,
+              status: t.status,
+              lastError: t.lastError,
+            })) || [],
+          shotCount: report.spec.scenes.reduce((n, s) => n + s.shots.length, 0),
+          masterVideo: Boolean(videoUrl),
+        },
+        lifecycle: {
+          phase: report.phase,
+          ok: report.ok,
+          completed: report.completed,
+          deliverableReady: report.deliverableReady,
+          summary: report.summary,
+          errors: report.errors,
+          warnings: report.warnings,
+          eventCount: report.events.length,
+          cost: report.cost,
+          timing: report.timing,
+          preflightSummary: report.preflight?.summary,
+          qcVerdict: report.qcReport?.verdict,
+          editorialDecision: report.editorial?.decision?.action,
+          masterOk: report.editorial?.mastering?.ok,
+          masterUrl: report.editorial?.mastering?.output?.mediaUrl || videoUrl,
+          checkpointId: report.checkpoint?.id,
+        },
+        productionQc: report.qcReport
+          ? {
+              verdict: report.qcReport.verdict,
+              status: report.qcReport.productionResult?.status,
+              score: report.qcReport.productionResult?.score,
+              stoppedReason: report.qc?.stoppedReason,
+              userMessage: report.qcReport.productionResult?.userMessage,
+            }
+          : undefined,
+      },
     };
-
-    
-
-    const updatedWithSpine: Production = bridgeOrDirect
-      ? {
-          ...bridgeOrDirect.production,
-          // Keep persistence/progress fields from this service path
-          isGeneratingAssets: false,
-          generationProgress:
-            result.brief.generationProgress || bridgeOrDirect.production.generationProgress,
-        }
-      : updatedProd;
 
     const state = this.getFullState();
     const currentProds: Production[] = state.productions || [];
@@ -439,15 +532,15 @@ export class ProductionService implements IProductionService {
         r.productionId === production.id
           ? {
               ...r,
-              brief: result.brief,
-              videoUrl: result.videoUrl || r.videoUrl,
-              openingMoment: result.brief.storyboard?.[0]?.visualDescription || r.openingMoment,
+              brief: briefFromBridge,
+              videoUrl: videoUrl || r.videoUrl,
+              openingMoment: briefFromBridge.storyboard?.[0]?.visualDescription || r.openingMoment,
             }
           : r
       ),
     });
 
-    return { production: updatedWithSpine, brief: result.brief };
+    return { production: updatedWithSpine, brief: briefFromBridge };
   }
 
   /**

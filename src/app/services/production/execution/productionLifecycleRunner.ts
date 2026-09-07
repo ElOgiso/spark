@@ -530,7 +530,9 @@ export async function runProductionLifecycle(
       automationMode: mapAutomationMode(options.automationMode),
       master: enableMaster,
       brandId: options.brandId,
-      mastering: enableMaster ? { adapter: createMockMasteringAdapter() } : undefined,
+      mastering: enableMaster
+        ? { adapter: options.masteringAdapter || createMockMasteringAdapter() }
+        : undefined,
     });
 
     emit("assembly_completed", `Editorial decision=${editorial.decision.action}`, {

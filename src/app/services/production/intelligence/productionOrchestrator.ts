@@ -88,6 +88,11 @@ export interface OrchestrateIdeaInput {
   availableProviderIds?: string[];
   /** When false, skip Phase 3 cinematography/routing (blueprint stubs only) */
   applyVisualPlanning?: boolean;
+  /**
+   * Phase 6 operational GenerationIntent path. Default ON for full live pipeline.
+   * Pass false only for explicit legacy/test opt-out.
+   */
+  enableOperationalGeneration?: boolean;
   optimizationProfile?: import("./strategy").OptimizationProfile;
   explicitObjective?: string;
   existingMasters?: import("../specification/assetSpec").MasterAssetRef[];
@@ -460,6 +465,8 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       grammar: directed.grammar,
       preferI2V,
       availableProviderIds: input.availableProviderIds,
+      // Full pipeline: operational GenerationIntent → tasks ON (opt-out via enableOperationalGeneration: false)
+      enableOperationalGeneration: input.enableOperationalGeneration !== false,
     });
     plannedSpec = visual.spec;
     // Preserve Asset Director meta/requirements if a later stage dropped them —

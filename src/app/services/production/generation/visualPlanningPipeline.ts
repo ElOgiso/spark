@@ -22,6 +22,7 @@ import type { GenerationTask } from "../specification/generationTask";
 import { buildProductionDag, type ProductionDag } from "../dag/productionDag";
 import {
   developVisualTreatment as developPreproductionVisualTreatment,
+  buildStoryboardPanelFromShot,
   type StoryboardBlueprint,
   type StoryboardPanelSpec,
   type VisualTreatment,
@@ -42,9 +43,10 @@ export interface VisualPlanningOptions {
   /** Optional: attach visual treatment enrichment (no new orchestrator) */
   enrichVisualTreatment?: boolean;
   /**
-   * Phase 6 — when true, enrich/replace per-shot video(+keyframe) tasks via
-   * operational storyboard → GenerationIntent → GenerationTask path for shots
-   * that have storyboard panels (provided via options). Default OFF.
+   * Phase 6 — when true (default), enrich/replace per-shot video(+keyframe) tasks via
+   * operational storyboard → GenerationIntent → GenerationTask path.
+   * Panels are auto-built from ShotSpecs when not provided.
+   * Pass false only for explicit legacy/test opt-out.
    */
   enableOperationalGeneration?: boolean;
   storyboard?: StoryboardBlueprint | null;
@@ -172,19 +174,36 @@ export function applyVisualPlanningPipeline(
   // 6) Generation task graph + attach to shots
   let generationTasks = planGenerationTasks(next);
 
-  // 6b) Optional Phase 6 operational enrichment (default OFF — backward compatible)
+  // 6b) Phase 6 operational enrichment — ON by default for full live pipeline
   let operationalShots = 0;
-  if (opts.enableOperationalGeneration === true) {
+  if (opts.enableOperationalGeneration !== false) {
     const panelByShot = new Map<string, StoryboardPanelSpec>();
     for (const p of opts.storyboard?.panels || []) panelByShot.set(p.shotId, p);
     for (const p of opts.storyboardPanels || []) panelByShot.set(p.shotId, p);
 
+    const orderedShots: ShotSpec[] = [];
+    for (const scene of next.scenes) {
+      for (const shot of scene.shots) orderedShots.push(shot);
+    }
+
+    // Auto-build panels from ShotSpecs when callers did not supply storyboard panels
+    if (panelByShot.size === 0 && orderedShots.length > 0) {
+      orderedShots.forEach((shot, i) => {
+        panelByShot.set(
+          shot.id,
+          buildStoryboardPanelFromShot({
+            shot,
+            sequenceIndex: i,
+            characterContracts: opts.characters,
+            locationContract: opts.location,
+            productContracts: opts.products,
+          })
+        );
+      });
+    }
+
     if (panelByShot.size > 0) {
       const kept: GenerationTask[] = [];
-      const orderedShots: ShotSpec[] = [];
-      for (const scene of next.scenes) {
-        for (const shot of scene.shots) orderedShots.push(shot);
-      }
 
       for (let i = 0; i < orderedShots.length; i++) {
         const shot = orderedShots[i];

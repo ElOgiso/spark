@@ -119,17 +119,19 @@ export function runProductionPreflight(
     }
   }
 
-  // Asset Intelligence v2 readiness — missing anchors block generation (not compensated by prompts)
+  // Asset Intelligence v2 readiness — missing anchors are warnings here.
+  // Hard identity gating for live generate remains canStartAssetGeneration / characterSheetGate.
+  // Invented Spec characters without sheets must not bench the full OS pipeline.
   if (options.includeAssetWorldGate !== false && spec.meta?.assetIntelligence?.readiness) {
     const readiness = spec.meta.assetIntelligence.readiness;
     if (!readiness.ok) {
       for (const blocker of readiness.blockers.slice(0, 12)) {
         issues.push({
           code: "ASSET_ANCHOR_NOT_READY",
-          severity: "blocker",
+          severity: "warning",
           message: blocker,
           remediation:
-            "Create/approve the missing Anchor Asset (Character Sheet / Locked Set / Location Plate) before shot generation.",
+            "Create/approve Anchor Assets (Character Sheet / Locked Set / Location Plate) when the live format requires them — characterSheetGate enforces host identity before spend.",
         });
       }
     }
