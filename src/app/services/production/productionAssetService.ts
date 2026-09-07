@@ -21,6 +21,11 @@ import { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
 import { compileThumbnailPrompt } from "./compileThumbnailPrompt";
 import { compileStoryboardPlanPrompt, shouldReuseExistingStoryboard } from "./compileStoryboardPlanPrompt";
 import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
+import {
+  needsLocationPlateStorageUpload,
+  resolveLocationPlateUrl,
+  shouldReuseLocationPlateAsStill,
+} from "./locationPlatePersistence";
 
 /**
  * ProductionAssetService — EXECUTOR only.
@@ -1155,6 +1160,25 @@ export class ProductionAssetService {
       const sceneImages: string[] = [];
       const renderStartedAt = new Date().toISOString();
 
+      // Durable location plate once per run — ephemeral fal/data URLs are re-hosted to Spark Storage
+      let durableLocationPlateUrl = resolveLocationPlateUrl({
+        snapshotPlateUrl: generationSettings.snapshot?.character?.locationPlateUrl,
+        brandPlateUrl: brand.locationPlateUrl,
+        brandSettings: (brand as any).settings,
+      });
+      if (durableLocationPlateUrl && needsLocationPlateStorageUpload(durableLocationPlateUrl)) {
+        try {
+          const brandIdForPlate = (brand as any)?.id;
+          if (brandIdForPlate) {
+            const { uploadLocationPlateToStorage } = await import("../../backend/workspaceSync");
+            durableLocationPlateUrl = await uploadLocationPlateToStorage(brandIdForPlate, durableLocationPlateUrl);
+            console.log(`[SPARK Pipeline] Location plate re-hosted to Storage -> ${durableLocationPlateUrl}`);
+          }
+        } catch (plateErr) {
+          console.warn("[SPARK Pipeline] Location plate Storage upload notice:", plateErr);
+        }
+      }
+
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
@@ -1217,12 +1241,39 @@ export class ProductionAssetService {
           const resolvedSubject: "main" | "support" | "insert" | "set" =
             isFaceless ? "insert" : isSetShot ? "set" : isInsertShot ? "insert" : isSupportShot ? "support" : "main";
 
-          // Snapshot plate is law when present — no live-brand improvisation mid-run
-          const plateUrl =
-            generationSettings.snapshot?.character?.locationPlateUrl ||
-            brand.locationPlateUrl ||
-            (brand as any).settings?.locationPlateUrl ||
-            (brand as any).settings?.location_plate_url;
+          // Snapshot / durable plate is law — no live-brand improvisation mid-run
+          const plateUrl = durableLocationPlateUrl;
+
+          // SET shots: reuse locked plate as the still (do not invent a new empty room)
+          if (shouldReuseLocationPlateAsStill({ resolvedSubject, locationPlateUrl: plateUrl })) {
+            let finalStill = plateUrl as string;
+            try {
+              const storedStill = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "image",
+                storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                dataUrlOrBlob: finalStill,
+                mimeType: "image/png",
+                prompt: "Locked set plate reuse (subject=set)",
+                provider: "locationPlate",
+              });
+              if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+              console.log(`[SPARK Pipeline] Set still reuses location plate Scene ${globalSceneNum} -> ${finalStill}`);
+            } catch (storageErr) {
+              console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} set-plate copy notice:`, storageErr);
+            }
+            sceneImages.push(finalStill);
+            if (sIdx === 0) realGridUrl = finalStill;
+            s.image = finalStill;
+            s.keyframeImageUrl = finalStill;
+            (s as any).subject = "set";
+            currentStoryboard[sIdx] = { ...s, image: finalStill, keyframeImageUrl: finalStill, subject: "set" };
+            const currentPctSet = 20 + Math.round(((sIdx + 1) / currentStoryboard.length) * 35);
+            emitProgress(currentPctSet, "Keyframes", `Locked set plate for Scene ${globalSceneNum} of ${currentStoryboard.length}...`);
+            void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
+            continue;
+          }
 
           // 2. Resolve target character (if support has no sheet, fallback to main - no invented face!)
           const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
@@ -1266,7 +1317,7 @@ export class ProductionAssetService {
 
           try {
             checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}]...`);
+            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}, Plate: ${plateUrl ? "yes" : "no"}]...`);
             const stillImgUrl = await withTimeout(
               ModelRouter.executeCategoryRequest("storyboardImages", {
                 prompt: stillPrompt,
@@ -2842,11 +2893,19 @@ export class ProductionAssetService {
       ].find((u) => isImgUrl(u));
 
       const contentFormat = getEffectiveContentFormat({ brand, production, brief });
-      const plateUrl =
-        generationSettings.snapshot?.character?.locationPlateUrl ||
-        brand.locationPlateUrl ||
-        (brand as any).settings?.locationPlateUrl ||
-        (brand as any).settings?.location_plate_url;
+      let plateUrl = resolveLocationPlateUrl({
+        snapshotPlateUrl: generationSettings.snapshot?.character?.locationPlateUrl,
+        brandPlateUrl: brand.locationPlateUrl,
+        brandSettings: (brand as any).settings,
+      });
+      if (plateUrl && needsLocationPlateStorageUpload(plateUrl) && (brand as any)?.id) {
+        try {
+          const { uploadLocationPlateToStorage } = await import("../../backend/workspaceSync");
+          plateUrl = await uploadLocationPlateToStorage((brand as any).id, plateUrl);
+        } catch (plateErr) {
+          console.warn("[fixProductionScene] Location plate Storage notice:", plateErr);
+        }
+      }
       const rawFixSubject = ((sceneToFix as any).subject || (sceneToFix as any).subjectType || "").toLowerCase();
       const isFixInsert = contentFormat === "faceless" || rawFixSubject === "insert" || rawFixSubject === "product";
       const isFixSet = rawFixSubject === "set" || rawFixSubject === "environment";
@@ -2863,6 +2922,11 @@ export class ProductionAssetService {
           productionScenes: existingScenes,
           generatedFrames: brief.generatedAssets?.generatedFrames,
         });
+
+      // Set subjects: reuse locked plate as the still when regenerating
+      if (shouldReuseLocationPlateAsStill({ resolvedSubject: resolvedFixSubject, locationPlateUrl: plateUrl })) {
+        sceneStill = plateUrl;
+      }
 
       const fixVisualLock = buildVisualLockRefs({
         character,

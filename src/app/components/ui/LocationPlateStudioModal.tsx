@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { X, Sparkles, Upload, RefreshCw, CheckCircle2, AlertCircle, Trash2, Eye } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 import { useSpark } from "../../state/SparkContext";
@@ -6,6 +6,7 @@ import { isUuid } from "../../backend/mappers/workspaceMappers";
 import { getBrandWorkspaceId } from "../../services/socialIntegrationService";
 import { getEffectiveFormatSettings } from "../../domain/types";
 import { buildLocationPlatePrompt } from "../../services/production/locationPlatePrompt";
+import { needsLocationPlateStorageUpload } from "../../services/production/locationPlatePersistence";
 import { getEffectiveContentFormat } from "../../services/production/characterSheetGate";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
 import { GeneratorLocalAiPreferenceDropdown } from "./GeneratorLocalAiPreferenceDropdown";
@@ -43,6 +44,11 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
     loadGeneratorLocalAiPreference("locationPlate", activeBrandId)
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setPlateUrl(brand?.locationPlateUrl || (brand as any)?.settings?.locationPlateUrl || "");
+  }, [isOpen, brand?.locationPlateUrl]);
+
   const handleAiPreferenceChange = (next: GeneratorLocalAiPreference) => {
     setAiPreference(saveGeneratorLocalAiPreference("locationPlate", activeBrandId, next));
   };
@@ -52,6 +58,29 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
   const effectiveFormat = getEffectiveFormatSettings({ formatSettings, brand });
   const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
   const contentFormat = getEffectiveContentFormat({ brand, formatSettings: effectiveFormat });
+
+  /** Upload ephemeral provider URLs to Spark Storage and persist on brand. */
+  const persistPlateToStorage = async (rawUrl: string): Promise<string> => {
+    if (!activeBrandId || !isUuid(activeBrandId)) {
+      throw new Error("No valid UUID brand workspace ID found.");
+    }
+    const { uploadLocationPlateToStorage, persistBrandUpdate } = await import("../../backend/workspaceSync");
+    let durableUrl = rawUrl;
+    if (needsLocationPlateStorageUpload(rawUrl)) {
+      durableUrl = await uploadLocationPlateToStorage(activeBrandId, rawUrl);
+    }
+    if (updateBrand) {
+      updateBrand({ locationPlateUrl: durableUrl });
+    }
+    await persistBrandUpdate(activeBrandId, {
+      locationPlateUrl: durableUrl,
+      settings: {
+        locationPlateUrl: durableUrl,
+        location_plate_url: durableUrl,
+      },
+    });
+    return durableUrl;
+  };
 
   const handleGeneratePlate = async () => {
     setIsGenerating(true);
@@ -80,7 +109,19 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
 
       if (imgUrl && typeof imgUrl === "string" && imgUrl.trim().length > 0) {
         setPlateUrl(imgUrl);
-        setSuccessMsg("Establishing set plate generated! Review and click Save to lock this environment.");
+        setSuccessMsg("Set plate generated — saving to Storage…");
+        try {
+          const durable = await persistPlateToStorage(imgUrl);
+          setPlateUrl(durable);
+          setSuccessMsg("Set plate generated and locked in Storage. Host stills will use it as environment lock; set shots reuse it directly.");
+        } catch (persistErr: any) {
+          console.warn("[LocationPlateStudio] Auto-persist notice:", persistErr);
+          setErrorMsg(
+            persistErr?.message ||
+              "Generated, but Storage save failed. Click Save Set Plate to retry upload."
+          );
+          setSuccessMsg(null);
+        }
       } else {
         setErrorMsg("Set plate generation returned no image. Please retry.");
       }
@@ -99,21 +140,24 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
     setSuccessMsg(null);
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       if (ev.target?.result && typeof ev.target.result === "string") {
         setPlateUrl(ev.target.result);
-        setSuccessMsg("Image loaded. Click Save Set Plate to upload to Cloud Storage.");
+        setSuccessMsg("Image loaded — saving to Storage…");
+        try {
+          const durable = await persistPlateToStorage(ev.target.result);
+          setPlateUrl(durable);
+          setSuccessMsg("Set plate uploaded and locked in Storage.");
+        } catch (persistErr: any) {
+          setErrorMsg(persistErr?.message || "Upload loaded locally but Storage save failed. Click Save Set Plate to retry.");
+          setSuccessMsg(null);
+        }
       }
     };
     reader.readAsDataURL(file);
   };
 
   const handleSave = async () => {
-    if (!activeBrandId || !isUuid(activeBrandId)) {
-      setErrorMsg("Save failed: No valid UUID brand workspace ID found.");
-      return;
-    }
-
     if (!plateUrl) {
       setErrorMsg("Please generate or upload a set plate image before saving.");
       return;
@@ -122,25 +166,8 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
     setIsSaving(true);
     setErrorMsg(null);
     try {
-      const { uploadLocationPlateToStorage, persistBrandUpdate } = await import("../../backend/workspaceSync");
-      let durableUrl = plateUrl;
-
-      if (plateUrl.startsWith("data:") || plateUrl.startsWith("blob:")) {
-        durableUrl = await uploadLocationPlateToStorage(activeBrandId, plateUrl);
-      }
-
-      if (updateBrand) {
-        updateBrand({ locationPlateUrl: durableUrl });
-      }
-
-      await persistBrandUpdate(activeBrandId, {
-        locationPlateUrl: durableUrl,
-        settings: {
-          locationPlateUrl: durableUrl,
-          location_plate_url: durableUrl,
-        },
-      });
-
+      const durableUrl = await persistPlateToStorage(plateUrl);
+      setPlateUrl(durableUrl);
       setSuccessMsg("Locked set plate saved to workspace!");
       setTimeout(() => {
         onClose();
@@ -181,6 +208,10 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
       setIsSaving(false);
     }
   };
+
+  const plateNeedsSave =
+    Boolean(plateUrl) &&
+    (plateUrl !== currentPlateUrl || needsLocationPlateStorageUpload(plateUrl));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -229,7 +260,8 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
                 <span>Set Plate Preview ({aspectRatio})</span>
                 {plateUrl && (
                   <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Active
+                    <CheckCircle2 className="w-3 h-3" />{" "}
+                    {needsLocationPlateStorageUpload(plateUrl) ? "Local / ephemeral" : "Storage locked"}
                   </span>
                 )}
               </label>
@@ -318,7 +350,7 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
 
               <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200/90 leading-relaxed">
                 <p className="font-semibold text-purple-300 mb-0.5">Environment Lock Law</p>
-                Set plates contain zero human characters. Stills with subject "set" reuse this plate directly; host beats use the plate as set reference while preserving identity from the character sheet.
+                Generate auto-saves the plate to Storage. Stills with subject &quot;set&quot; reuse this plate directly; host beats use the plate as set reference while preserving identity from the character sheet.
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/50 p-3">
@@ -355,11 +387,11 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
             onClick={onClose}
             className="px-4 py-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
           >
-            Cancel
+            Done
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || !plateUrl || plateUrl === currentPlateUrl}
+            disabled={isSaving || !plateNeedsSave}
             className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-2 shadow-md shadow-purple-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           >
             {isSaving ? (
