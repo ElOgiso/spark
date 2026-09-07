@@ -65,6 +65,15 @@ export interface CharacterMaster extends MasterAssetBase {
   };
   voiceId?: string;
   performanceNotes?: string;
+  /**
+   * Identity attributes that must not drift across shots.
+   * Distinct from wardrobeState / expression / lighting (variable state).
+   */
+  identityLocks?: string[];
+  /** Attributes allowed to vary without identity drift (expression, dirt, wetness, etc.) */
+  variableAttributes?: string[];
+  /** Character sheet view requirements (complexity-driven) */
+  requiredSheetViews?: string[];
 }
 
 export interface LocationMaster extends MasterAssetBase {
@@ -74,6 +83,15 @@ export interface LocationMaster extends MasterAssetBase {
   environment: string;
   defaultLighting?: string;
   defaultTimeOfDay?: string;
+  /** Locked Set = what the location is (architecture/layout/landmarks) */
+  lockedSet?: boolean;
+  /** Location Plate = visual production reference for geography/camera */
+  plateRequired?: boolean;
+  spatialLandmarks?: string[];
+  entryExitPoints?: string[];
+  /** Location identity vs state (day/night/damaged) */
+  identityLocks?: string[];
+  variableAttributes?: string[];
 }
 
 export interface WardrobeMaster extends MasterAssetBase {

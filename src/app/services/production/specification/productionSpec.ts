@@ -206,6 +206,24 @@ export interface ProductionSpec {
       notes: string[];
       requirements: import("./assetSpec").ProductionAssetRequirement[];
     };
+    /** Asset Intelligence v2 — anchors, supporting cast, readiness, manifests */
+    assetIntelligence?: {
+      supportingCast: import("../assets/types").SupportingCastPlan;
+      manifest: import("../assets/types").ProductionAssetManifest;
+      readiness: {
+        ok: boolean;
+        blockerCount: number;
+        blockers: string[];
+        shotCount: number;
+        readyShotCount: number;
+      };
+      identityModel: {
+        characterIdentity: string[];
+        characterState: string[];
+        locationIdentity: string[];
+        locationState: string[];
+      };
+    };
   };
 }
 

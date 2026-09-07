@@ -9,6 +9,8 @@
 import type { ProductionAsset } from "../../../domain/types";
 import type { MasterAssetKind } from "../specification/assetSpec";
 
+export type { MasterAssetKind };
+
 /** Extends media taxonomy without replacing ProductionAsset.assetType. */
 export type AssetCategory =
   | ProductionAsset["assetType"]
@@ -309,3 +311,186 @@ export interface ReferenceResolutionOptions {
   /** Include global-scope assets in resolution (default false). */
   allowGlobal?: boolean;
 }
+
+/**
+ * Semantic reference role — production-truth meaning of a reference input.
+ * Maps onto existing ReferenceRole without inventing a second registry.
+ */
+export type SemanticReferenceRole =
+  | "CHARACTER_IDENTITY"
+  | "SUPPORTING_CHARACTER_IDENTITY"
+  | "ENVIRONMENT_IDENTITY"
+  | "LOCATION_GEOGRAPHY"
+  | "PROP_IDENTITY"
+  | "WARDROBE_IDENTITY"
+  | "STYLE"
+  | "COMPOSITION"
+  | "TEMPORAL_START_STATE"
+  | "TEMPORAL_END_STATE"
+  | "VOICE_IDENTITY"
+  | "MOTION_REFERENCE";
+
+/** Anchor kinds — stable entities created before dependent generation. */
+export type AnchorAssetKind =
+  | "character_sheet"
+  | "supporting_character_sheet"
+  | "locked_set"
+  | "location_plate"
+  | "prop_reference"
+  | "wardrobe_reference"
+  | "style_reference"
+  | "voice_reference"
+  | "product_reference"
+  | "creature_reference";
+
+export type SupportingCastClass =
+  | "recurring_supporting"
+  | "one_scene"
+  | "background"
+  | "crowd_group"
+  | "population_archetype";
+
+export interface SupportingCastMember {
+  characterRef: string;
+  name: string;
+  castClass: SupportingCastClass;
+  narrativePurpose: string;
+  sceneIds: string[];
+  requiresCharacterSheet: boolean;
+  generationRequired: boolean;
+  existingMasterRef?: string;
+}
+
+export interface SupportingCastPlan {
+  productionId: string;
+  members: SupportingCastMember[];
+  resolvedAt: string;
+}
+
+/**
+ * Reference Package — minimum sufficient approved inputs for one generation op.
+ * Composes existing ReferenceBundle; does not replace it.
+ */
+export interface ReferencePackage {
+  productionId: string;
+  shotId: string;
+  sceneId?: string;
+  /** Semantic slots → resolved refs (authority already applied) */
+  slots: Array<{
+    semantic: SemanticReferenceRole;
+    required: boolean;
+    included: boolean;
+    reason: string;
+    resolved?: ResolvedReference;
+    registryRole?: ReferenceRole;
+  }>;
+  bundle: ReferenceBundle;
+  conflicts: ReferenceIssue[];
+  minimumSufficient: boolean;
+  builtAt: string;
+}
+
+export interface AssetReadinessItem {
+  kind: AnchorAssetKind | MasterAssetKind | string;
+  name: string;
+  masterRef?: string;
+  required: boolean;
+  ready: boolean;
+  reason: string;
+  generationRequired?: boolean;
+}
+
+export interface ShotAssetReadiness {
+  shotId: string;
+  sceneId: string;
+  generationReady: boolean;
+  items: AssetReadinessItem[];
+  blockers: string[];
+}
+
+export interface ProductionAssetManifestEntry {
+  kind: MasterAssetKind | AnchorAssetKind | string;
+  name: string;
+  masterRef?: string;
+  status: string;
+  lock?: boolean;
+  sceneIds: string[];
+  shotIds: string[];
+  dependencies: string[];
+  generationRequired: boolean;
+  semanticRole?: SemanticReferenceRole;
+  isAnchor: boolean;
+}
+
+export interface ProductionAssetManifest {
+  productionId: string;
+  characters: ProductionAssetManifestEntry[];
+  supportingCast: SupportingCastMember[];
+  locations: ProductionAssetManifestEntry[];
+  props: ProductionAssetManifestEntry[];
+  wardrobe: ProductionAssetManifestEntry[];
+  style: ProductionAssetManifestEntry[];
+  anchors: ProductionAssetManifestEntry[];
+  builtAt: string;
+}
+
+export interface ShotAssetManifest {
+  shotId: string;
+  sceneId: string;
+  bindings: Array<{
+    semantic: SemanticReferenceRole;
+    masterRef?: string;
+    assetId?: string;
+    authority?: ReferenceAuthority;
+  }>;
+  referencePackage?: ReferencePackage;
+  generationReady: boolean;
+  builtAt: string;
+}
+
+/** Identity vs state — never treat intentional state as identity drift. */
+export const CHARACTER_IDENTITY_ATTRIBUTES = [
+  "face",
+  "body",
+  "ageAppearance",
+  "hairIdentity",
+  "distinctiveFeatures",
+  "coreCostumeIdentity",
+  "voiceIdentity",
+] as const;
+
+export const CHARACTER_STATE_ATTRIBUTES = [
+  "expression",
+  "pose",
+  "emotion",
+  "action",
+  "lighting",
+  "weatherExposure",
+  "dirt",
+  "blood",
+  "damage",
+  "wetness",
+  "wardrobeState",
+  "props",
+] as const;
+
+export const LOCATION_IDENTITY_ATTRIBUTES = [
+  "architecture",
+  "spatialLayout",
+  "permanentObjects",
+  "landmarks",
+  "materials",
+  "scale",
+  "geography",
+  "entryExitPoints",
+] as const;
+
+export const LOCATION_STATE_ATTRIBUTES = [
+  "lighting",
+  "timeOfDay",
+  "weather",
+  "crowdDensity",
+  "damage",
+  "season",
+] as const;
+

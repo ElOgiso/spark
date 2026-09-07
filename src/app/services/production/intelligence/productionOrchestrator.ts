@@ -65,6 +65,7 @@ import {
   type ProductionSettingsSnapshot,
 } from "../productionSettingsSnapshot";
 import { normalizeModeString } from "../resolveProductionMode";
+import { applyProductionAssetIntelligence } from "../assets/anchorIntelligence";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -504,6 +505,9 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       };
     }
   }
+
+  // Asset Intelligence v2 — anchors, supporting cast, readiness, manifests (no media)
+  plannedSpec = applyProductionAssetIntelligence(plannedSpec);
 
   const shotCount = plannedSpec.scenes.reduce((n, s) => n + s.shots.length, 0);
   plannedSpec = {
