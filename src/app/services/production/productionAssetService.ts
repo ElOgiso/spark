@@ -9,6 +9,10 @@ import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { resolveLiveBeatSubject } from "./contentFormatDirectives";
+import {
+  mergeDirectorIdentityForLock,
+  resolveDirectorPixelRefs,
+} from "./resolveLiveDirectorRefs";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveProductionMode } from "./resolveProductionMode";
@@ -323,10 +327,11 @@ export async function withTimeout<T>(
 
 /**
  * Builds a deterministic, positional visual reference list for image/video models:
- * 1. Character Sheet URL(s) (always top priority)
+ * 1. Character Sheet URL(s) (always top priority) — Spec Director masters preferred when provided
  * 2. Master Storyboard Grid Reference Map
  * 3. Current Scene Keyframe Still
  * 4. Preceding Scene End-State Continuity Reference
+ * 5. Location plate / optional prop from Asset Director
  */
 export function buildVisualLockRefs(params: {
   character?: Character;
@@ -337,6 +342,11 @@ export function buildVisualLockRefs(params: {
   locationPlateUrl?: string;
   subjectType?: "main" | "support" | "set" | "insert" | string;
   contentFormat?: string;
+  /** Spec Asset Director / master identity URLs (preferred over domain when present) */
+  directorIdentityUrls?: string[];
+  directorSupportUrls?: string[];
+  /** Optional prop/product master URL for insert beats */
+  directorPropUrl?: string;
 }): VisualLockRefsResult {
   const {
     character,
@@ -347,12 +357,22 @@ export function buildVisualLockRefs(params: {
     locationPlateUrl,
     subjectType = "main",
     contentFormat,
+    directorIdentityUrls,
+    directorSupportUrls,
+    directorPropUrl,
   } = params;
 
   const isFaceless = contentFormat === "faceless";
-  const isSetSubject = subjectType === "set" || subjectType === "establishing" || subjectType === "environment";
-  const isInsertSubject = isFaceless || subjectType === "insert" || subjectType === "product" || subjectType === "b-roll";
-  const isSupport = !isFaceless && !isSetSubject && !isInsertSubject && (subjectType === "support" || subjectType === "supporting");
+  const isSetSubject =
+    subjectType === "set" || subjectType === "establishing" || subjectType === "environment";
+  // Trust stamped subject — faceless defaults to insert only when subject is not explicit main/support/set
+  const isSupport =
+    !isSetSubject && (subjectType === "support" || subjectType === "supporting");
+  const isInsertSubject =
+    subjectType === "insert" ||
+    subjectType === "product" ||
+    subjectType === "b-roll" ||
+    (isFaceless && subjectType !== "main" && subjectType !== "support" && subjectType !== "supporting" && !isSetSubject);
 
   const validPlate = locationPlateUrl && isValidMediaData(locationPlateUrl) ? locationPlateUrl : undefined;
   const validGrid = storyboardGridUrl && isValidMediaData(storyboardGridUrl) ? storyboardGridUrl : undefined;
@@ -369,13 +389,23 @@ export function buildVisualLockRefs(params: {
     }
   };
 
+  const pushUnique = (url: string | undefined, label: string) => {
+    if (!url || !isValidMediaData(url) || orderedRefs.includes(url)) return;
+    orderedRefs.push(url);
+    labelLines.push(`INPUT REF [${refCounter}]: ${label}`);
+    refCounter++;
+  };
+
   if (isInsertSubject) {
-    // INSERT / B-ROLL / FACELESS: No host face required. Hands, product, screen, chart, B-roll that illustrates spokenLines.
+    // INSERT / B-ROLL / FACELESS (non-main): No host face required.
     pushGridRef();
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
       refCounter++;
+    }
+    if (directorPropUrl) {
+      pushUnique(directorPropUrl, "Asset Director Prop / Product Reference");
     }
     if (validPlate && !orderedRefs.includes(validPlate)) {
       orderedRefs.push(validPlate);
@@ -383,7 +413,7 @@ export function buildVisualLockRefs(params: {
       refCounter++;
     }
   } else if (isSetSubject) {
-    // SET: Empty or wide set. Location only. No new people. Optional locationPlateUrl as ref.
+    // SET: Empty or wide set. Location only.
     if (validPlate) {
       orderedRefs.push(validPlate);
       labelLines.push(`INPUT REF [${refCounter}]: Locked Set / Location Plate Reference`);
@@ -396,12 +426,35 @@ export function buildVisualLockRefs(params: {
       refCounter++;
     }
   } else {
-    // MAIN / SUPPORT (Host / Story / Anime):
-    // If subject is support and no support sheet exists → treat as main (no invented face)
-    const targetChar = isSupport && (supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl)
-      ? supportCharacter
-      : character;
-    if (targetChar) {
+    // MAIN / SUPPORT (Host / Story / Anime / faceless explicit main):
+    // Prefer Spec Director master sheets, then domain Character sheets.
+    if (isSupport) {
+      for (const url of directorSupportUrls || []) {
+        if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) charSheetUrls.push(url);
+      }
+      const supportSheet = supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl;
+      if (supportSheet && isValidMediaData(supportSheet) && !charSheetUrls.includes(supportSheet)) {
+        charSheetUrls.push(supportSheet);
+      }
+      // Soft fallback: lead Spec / domain if support has no sheet
+      if (!charSheetUrls.length) {
+        for (const url of directorIdentityUrls || []) {
+          if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) charSheetUrls.push(url);
+        }
+      }
+    }
+
+    if (!isSupport || !charSheetUrls.length) {
+      for (const url of directorIdentityUrls || []) {
+        if (url && isValidMediaData(url) && !charSheetUrls.includes(url)) charSheetUrls.push(url);
+      }
+    }
+
+    const targetChar =
+      isSupport && (supportCharacter?.characterSheetUrl || supportCharacter?.imageUrl)
+        ? supportCharacter
+        : character;
+    if (targetChar && !charSheetUrls.length) {
       const directSheet = targetChar.characterSheetUrl;
       if (directSheet && isValidMediaData(directSheet)) charSheetUrls.push(directSheet);
 
@@ -418,19 +471,25 @@ export function buildVisualLockRefs(params: {
       if (imgUrl && isValidMediaData(imgUrl) && !charSheetUrls.includes(imgUrl)) {
         charSheetUrls.push(imgUrl);
       }
+    } else if (targetChar) {
+      // Fill remaining slots from domain after Spec masters (cap later)
+      const directSheet = targetChar.characterSheetUrl;
+      if (directSheet && isValidMediaData(directSheet) && !charSheetUrls.includes(directSheet)) {
+        charSheetUrls.push(directSheet);
+      }
     }
 
     const charLabel = isSupport
-      ? `Supporting Character Reference Sheet (${targetChar?.name || "Support Character"})`
-      : `Character Reference Sheet (${targetChar?.name || "Host"})`;
+      ? `Supporting Character Reference Sheet (${targetChar?.name || supportCharacter?.name || "Support Character"})`
+      : `Character Reference Sheet (${targetChar?.name || character?.name || "Host"})`;
 
-    for (const sheetUrl of charSheetUrls) {
+    // Cap identity sheets to avoid multimodal over-stack
+    for (const sheetUrl of charSheetUrls.slice(0, 2)) {
       orderedRefs.push(sheetUrl);
       labelLines.push(`INPUT REF [${refCounter}]: ${charLabel}`);
       refCounter++;
     }
 
-    // Master storyboard sheet — chronological blueprint for all panels
     pushGridRef();
 
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
@@ -463,9 +522,52 @@ export function buildVisualLockRefs(params: {
   return {
     imageUrls: orderedRefs,
     primaryRefUrl: orderedRefs[0],
-    charSheetUrls: (isInsertSubject || isSetSubject) ? [] : (charSheetUrls || []),
+    charSheetUrls: (isInsertSubject || isSetSubject) ? [] : (charSheetUrls || []).slice(0, 2),
     refPromptHeader,
   };
+}
+
+/** Spec Asset Director masters → buildVisualLockRefs (one media spine). */
+export function buildVisualLockRefsFromDirector(params: {
+  production?: any;
+  brand?: Brand;
+  character?: Character;
+  supportCharacter?: Character;
+  storyboardGridUrl?: string;
+  sceneKeyframeUrl?: string;
+  previousLastFrameUrl?: string;
+  locationPlateUrl?: string;
+  subjectType?: "main" | "support" | "set" | "insert" | string;
+  contentFormat?: string;
+  sceneId?: string | null;
+  shotId?: string | null;
+}): VisualLockRefsResult & { directorNotes: string[] } {
+  const director = resolveDirectorPixelRefs({
+    production: params.production,
+    subjectType: params.subjectType,
+    contentFormat: params.contentFormat,
+    sceneId: params.sceneId,
+    shotId: params.shotId,
+    brand: params.brand,
+    character: params.character,
+    supportCharacter: params.supportCharacter,
+    runtimeLocationPlateUrl: params.locationPlateUrl,
+  });
+  const merged = mergeDirectorIdentityForLock({ director });
+  const lock = buildVisualLockRefs({
+    character: params.character,
+    supportCharacter: params.supportCharacter,
+    storyboardGridUrl: params.storyboardGridUrl,
+    sceneKeyframeUrl: params.sceneKeyframeUrl,
+    previousLastFrameUrl: params.previousLastFrameUrl,
+    locationPlateUrl: merged.locationPlateUrl || params.locationPlateUrl,
+    subjectType: params.subjectType,
+    contentFormat: params.contentFormat,
+    directorIdentityUrls: merged.identityUrls,
+    directorSupportUrls: merged.supportUrls,
+    directorPropUrl: merged.propUrl,
+  });
+  return { ...lock, directorNotes: director.notes };
 }
 
 /**
@@ -1218,12 +1320,17 @@ export class ProductionAssetService {
             contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
           });
           const sheetFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
-          const sheetLock = buildVisualLockRefs({
+          const sheetLock = buildVisualLockRefsFromDirector({
+            production,
+            brand,
             character,
             locationPlateUrl: durableLocationPlateUrl,
             subjectType: sheetFormat === "faceless" ? "insert" : "main",
             contentFormat: sheetFormat,
           });
+          if (sheetLock.directorNotes.length) {
+            console.log(`[SPARK Pipeline] Director refs (sheet): ${sheetLock.directorNotes.join("; ")}`);
+          }
           console.log(
             `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels) via ModelRouter ("storyboardImages")...`
           );
@@ -1358,7 +1465,9 @@ export class ProductionAssetService {
           const isSameSubjectChain = sIdx > 0 && prevSceneSubject === resolvedSubject;
           const prevStillUrl = (isSameSubjectChain && sceneImages[sIdx - 1]) ? sceneImages[sIdx - 1] : undefined;
 
-          const stillVisualLock = buildVisualLockRefs({
+          const stillVisualLock = buildVisualLockRefsFromDirector({
+            production,
+            brand,
             character,
             supportCharacter: hasSupportSheet ? supportChar : undefined,
             storyboardGridUrl: realGridUrl,
@@ -1366,7 +1475,12 @@ export class ProductionAssetService {
             locationPlateUrl: plateUrl,
             subjectType: resolvedSubject,
             contentFormat,
+            sceneId: (s as any).sceneId || (s as any).id,
+            shotId: (s as any).shotId || (s as any).id,
           });
+          if (stillVisualLock.directorNotes.length && sIdx === 0) {
+            console.log(`[SPARK Pipeline] Director refs (stills): ${stillVisualLock.directorNotes.join("; ")}`);
+          }
 
           // OS spine still prompt — subject line + Spec/frame compiler (AssetService does not invent creative text)
           const stillSubjectLine = buildStillSubjectLine({
@@ -1749,22 +1863,45 @@ export class ProductionAssetService {
               const activeChar = isSupportSubject
                 ? ((supportChar?.characterSheetUrl || supportChar?.imageUrl) ? supportChar : character)
                 : (!isInsertOrSet ? character : undefined);
-              const sceneCharSheetUrl = activeChar?.characterSheetUrl || activeChar?.imageUrl || activeChar?.avatarUrl;
 
-              // 3. Location Plate Reference
-              const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
-              const validPlate = plateUrl && isValidMediaData(plateUrl) ? plateUrl : undefined;
+              // 3. Asset Director Spec masters → pixel refs (identity + location)
+              const motionDirector = resolveDirectorPixelRefs({
+                production,
+                subjectType: resolvedMotionSubject,
+                contentFormat: effectiveContentFormat,
+                sceneId: (s as any).sceneId || (s as any).id,
+                shotId: (s as any).shotId || (s as any).id,
+                brand,
+                character,
+                supportCharacter: supportChar,
+                runtimeLocationPlateUrl:
+                  durableLocationPlateUrl ||
+                  brand.locationPlateUrl ||
+                  (brand as any).settings?.locationPlateUrl ||
+                  (brand as any).settings?.location_plate_url,
+              });
+              const motionMerged = mergeDirectorIdentityForLock({ director: motionDirector });
+              const sceneCharSheetUrl =
+                (isSupportSubject
+                  ? motionMerged.supportUrls[0] || motionMerged.identityUrls[0]
+                  : motionMerged.identityUrls[0]) ||
+                activeChar?.characterSheetUrl ||
+                activeChar?.imageUrl ||
+                activeChar?.avatarUrl;
+              const validPlate =
+                motionMerged.locationPlateUrl && isValidMediaData(motionMerged.locationPlateUrl)
+                  ? motionMerged.locationPlateUrl
+                  : undefined;
 
               // 4. Construct Reference List for Prompt and ModelRouter:
               // - primaryRef for i2v = THAT scene's still / continuity keyframe (sceneFirstFrame)
-              // - If insert/set or faceless: refs = [sceneFirstFrame] (+ locationPlate if available). Do NOT force host sheet as image 1 or in refs!
-              // - If main: refs = [characterSheet, scene.image] sheet first for identity, still is the frame (primaryRef for i2v = scene.image).
+              // - Identity sheets from Spec Director masters when present
               const isChainingLastFrame = sIdx > 0 && prevScene?.lastFrameUrl && isValidMediaData(prevScene.lastFrameUrl);
               const orderedSceneRefs: string[] = [];
               const refLabels: string[] = [];
 
               if (isInsertOrSet) {
-                // INSERT / SET / FACELESS: Still is the only primary composition frame
+                // INSERT / SET: Still is the only primary composition frame
                 orderedSceneRefs.push(sceneFirstFrame);
                 refLabels.push(
                   isChainingLastFrame
@@ -1772,12 +1909,17 @@ export class ProductionAssetService {
                     : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
                 );
 
+                if (motionMerged.propUrl && !orderedSceneRefs.includes(motionMerged.propUrl)) {
+                  orderedSceneRefs.push(motionMerged.propUrl);
+                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Asset Director Prop / Product Reference`);
+                }
+
                 if (validPlate && validPlate !== sceneFirstFrame) {
                   orderedSceneRefs.push(validPlate);
                   refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Locked Set / Location Plate Reference`);
                 }
               } else {
-                // MAIN / SUPPORT (Host / Story / Anime): Sheet first for identity, still is the frame (primaryRef = sceneFirstFrame)
+                // MAIN / SUPPORT: Sheet first for identity, still is the frame (primaryRef = sceneFirstFrame)
                 if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl)) {
                   orderedSceneRefs.push(sceneCharSheetUrl);
                   refLabels.push(
@@ -2371,11 +2513,14 @@ export class ProductionAssetService {
               production,
               brief,
             });
-            const thumbVisualLock = buildVisualLockRefs({
+            const thumbVisualLock = buildVisualLockRefsFromDirector({
+              production,
+              brand,
               character,
               storyboardGridUrl: realGridUrl || sceneImages[0],
               subjectType: thumbFormat === "faceless" ? "insert" : "main",
               contentFormat: thumbFormat,
+              locationPlateUrl: durableLocationPlateUrl,
             });
 
             const thumbPrompt = compileThumbnailPrompt({
@@ -3012,13 +3157,17 @@ export class ProductionAssetService {
         sceneStill = plateUrl;
       }
 
-      const fixVisualLock = buildVisualLockRefs({
+      const fixVisualLock = buildVisualLockRefsFromDirector({
+        production,
+        brand,
         character,
         previousLastFrameUrl: prevFrameCandidate,
         locationPlateUrl: plateUrl,
         subjectType: resolvedFixSubject,
         contentFormat,
         sceneKeyframeUrl: sceneStill,
+        sceneId: (sceneToFix as any).sceneId,
+        shotId,
       });
 
       const revisedScene = {
