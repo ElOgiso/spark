@@ -568,6 +568,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(activeBrandId)).catch(() => null),
       ]).then(([snap, execContext]) => {
         if (isCancelled) return;
+
+        // Cloud brand.settings is source of truth for Production Generation; localStorage is cache.
+        const cloudToggle =
+          typeof snap.brand?.productionGenerationEnabled === "boolean"
+            ? snap.brand.productionGenerationEnabled
+            : typeof snap.brand?.settings?.production_generation_enabled === "boolean"
+              ? snap.brand.settings.production_generation_enabled
+              : typeof snap.brand?.settings?.productionGenerationEnabled === "boolean"
+                ? snap.brand.settings.productionGenerationEnabled
+                : undefined;
+        ProductionGenerationGuard.applyCloudPreference(cloudToggle, activeBrandId);
+
         setState((prev: any) => {
           const byPlatform = new Map<string, Account>();
           // Hydrate with Supabase accounts for THIS brand only (listByBrand)
@@ -699,6 +711,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   creditSettings: mergedCreditSettings,
                   productionMode: cloudProductionMode || snap.brand.productionMode || prev.brand?.productionMode,
                   automation_mode: cloudAutomationMode || snap.brand.automation_mode || prev.brand?.automation_mode,
+                  productionGenerationEnabled:
+                    typeof snap.brand.productionGenerationEnabled === "boolean"
+                      ? snap.brand.productionGenerationEnabled
+                      : prev.brand?.productionGenerationEnabled,
+                  settings: {
+                    ...(prev.brand?.settings || {}),
+                    ...(snap.brand.settings || {}),
+                    ...(typeof snap.brand.productionGenerationEnabled === "boolean"
+                      ? {
+                          production_generation_enabled: snap.brand.productionGenerationEnabled,
+                          productionGenerationEnabled: snap.brand.productionGenerationEnabled,
+                        }
+                      : {}),
+                  },
                 }
               : (prev.brand
                   ? {
@@ -2364,19 +2390,85 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return ProductionGenerationGuard.isEnabled();
   });
 
+  // Keep React toggle in sync after cloud hydrate writes brand.settings → localStorage cache.
+  useEffect(() => {
+    const cloud = state.brand?.productionGenerationEnabled;
+    if (typeof cloud === "boolean") {
+      const resolved = ProductionGenerationGuard.applyCloudPreference(cloud, activeBrandId || undefined);
+      setProductionGenerationEnabledState(resolved);
+      return;
+    }
+    setProductionGenerationEnabledState(ProductionGenerationGuard.isEnabled(activeBrandId || undefined));
+  }, [state.brand?.productionGenerationEnabled, activeBrandId]);
+
   const toggleProductionGeneration = (enabled?: boolean) => {
     const next = enabled !== undefined ? enabled : !productionGenerationEnabled;
+    const brandId = getBrandWorkspaceId();
     setProductionGenerationEnabledState(next);
-    ProductionGenerationGuard.setEnabled(next);
+    ProductionGenerationGuard.setEnabled(next, brandId || undefined);
 
-    // If turning OFF, immediately cancel active asset generations and pause queues
+    // If turning OFF, abort in-flight generation AbortControllers AND clear UI flags.
     if (!next) {
+      for (const [, controller] of activeGenerationControllers.current.entries()) {
+        try {
+          controller.abort();
+        } catch {
+          // ignore
+        }
+      }
+      activeGenerationControllers.current.clear();
+
       setState((prev: any) => ({
         ...prev,
         productions: (prev.productions || []).map((p: any) =>
-          p.isGeneratingAssets ? { ...p, isGeneratingAssets: false } : p
+          p.isGeneratingAssets
+            ? {
+                ...p,
+                isGeneratingAssets: false,
+                lastError: p.lastError || "Production Generation turned OFF — generation aborted.",
+              }
+            : p
         ),
+        brand: prev.brand
+          ? {
+              ...prev.brand,
+              productionGenerationEnabled: false,
+              settings: {
+                ...(prev.brand.settings || {}),
+                production_generation_enabled: false,
+                productionGenerationEnabled: false,
+              },
+            }
+          : prev.brand,
       }));
+    } else {
+      setState((prev: any) => ({
+        ...prev,
+        brand: prev.brand
+          ? {
+              ...prev.brand,
+              productionGenerationEnabled: true,
+              settings: {
+                ...(prev.brand.settings || {}),
+                production_generation_enabled: true,
+                productionGenerationEnabled: true,
+              },
+            }
+          : prev.brand,
+      }));
+    }
+
+    // Persist to brand.settings (cloud source of truth). localStorage remains cache only.
+    if (brandId && isUuid(brandId) && isSupabaseConfigured()) {
+      void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+        void persistBrandUpdate(brandId, {
+          productionGenerationEnabled: next,
+          settings: {
+            production_generation_enabled: next,
+            productionGenerationEnabled: next,
+          },
+        });
+      });
     }
   };
 

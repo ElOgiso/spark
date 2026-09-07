@@ -126,6 +126,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
   // Assets states — loaded dynamically from Supabase Storage, Character & Production assets
   const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; date: string; url?: string }[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
@@ -133,22 +134,27 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     const brandId = auth.brand?.id || getBrandWorkspaceId();
 
     async function loadAssets() {
+      setAssetsLoading(true);
       const items: { id: string; name: string; type: string; size: string; date: string; url?: string }[] = [];
+      const seenUrls = new Set<string>();
 
-      // 1. Character Sheet
+      // 1. Character Sheet (domain ref — not a Storage listing row)
       if (character?.characterSheetUrl || character?.imageUrl) {
+        const url = character.characterSheetUrl || character.imageUrl;
+        if (url) seenUrls.add(url);
         items.push({
           id: "char-sheet-asset",
           name: `${character?.name || "Host"}_Character_Sheet.png`,
           type: "Character Image",
           size: "Cloud Persisted",
           date: "Current Persona",
-          url: character.characterSheetUrl || character.imageUrl,
+          url,
         });
       }
 
       // 2. Voice Preview MP3
       if (character?.voice?.previewUrl) {
+        seenUrls.add(character.voice.previewUrl);
         items.push({
           id: "voice-preview-asset",
           name: `${character?.voice?.name || "Host"}_Voice_Preview.mp3`,
@@ -159,40 +165,59 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
         });
       }
 
-      // 3. Rendered Productions / Review Items
+      // 3. Rendered Productions / Review Items (canonical URLs when present)
       const prodList = Array.isArray(productions) && productions.length > 0 ? productions : reviewItems || [];
       if (Array.isArray(prodList)) {
         prodList.forEach((p: any) => {
           if (p.videoUrl || p.video_url) {
-            items.push({
-              id: `prod-vid-${p.id}`,
-              name: `${p.title || "Production"}_Video.mp4`,
-              type: "Production Video (MP4)",
-              size: "Rendered Media",
-              date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
-              url: p.videoUrl || p.video_url,
-            });
+            const url = p.videoUrl || p.video_url;
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-vid-${p.id}`,
+                name: `${p.title || "Production"}_Video.mp4`,
+                type: "Production Video (MP4)",
+                size: "Rendered Media",
+                date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+                url,
+              });
+            }
           }
           if (p.audioUrl || p.voice_url) {
-            items.push({
-              id: `prod-aud-${p.id}`,
-              name: `${p.title || "Production"}_Voice.mp3`,
-              type: "Production Audio (MP3)",
-              size: "Rendered Voice",
-              date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
-              url: p.audioUrl || p.voice_url,
-            });
+            const url = p.audioUrl || p.voice_url;
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-aud-${p.id}`,
+                name: `${p.title || "Production"}_Voice.mp3`,
+                type: "Production Audio (MP3)",
+                size: "Rendered Voice",
+                date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+                url,
+              });
+            }
           }
         });
       }
 
-      // 4. Supabase Storage Uploaded Files
+      // 4. Brand Storage listing (source of truth for uploaded / generated brand files)
       if (brandId && isUuid(brandId)) {
-        const storageItems = await fetchBrandStorageAssets(brandId);
-        storageItems.forEach((st) => items.push(st));
+        try {
+          const storageItems = await fetchBrandStorageAssets(brandId);
+          storageItems.forEach((st) => {
+            if (st.url && seenUrls.has(st.url)) return;
+            if (st.url) seenUrls.add(st.url);
+            items.push(st);
+          });
+        } catch (err) {
+          console.warn("[MoreSubPages] Brand storage listing notice:", err);
+        }
       }
 
-      if (isMounted) setAssets(items);
+      if (isMounted) {
+        setAssets(items);
+        setAssetsLoading(false);
+      }
     }
 
     loadAssets();
@@ -785,10 +810,16 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
 
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 <div className="px-5 py-4 border-b border-border/50 bg-muted/20">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Brand Assets ({assets.length})</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Brand Assets {assetsLoading ? "(Loading…)" : `(${assets.length})`}
+                  </h3>
                 </div>
                 <div className="divide-y divide-border/50">
-                  {assets.length === 0 ? (
+                  {assetsLoading ? (
+                    <div className="p-8 text-center text-muted-foreground text-xs">
+                      Loading brand Storage files for this workspace…
+                    </div>
+                  ) : assets.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground text-xs">
                       No assets found for this workspace. Drag & drop files above or generate persona character sheets and voice profiles.
                     </div>
@@ -828,6 +859,18 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           <button
                             onClick={() => {
                               const id = asset.id;
+                              // Synthetic domain refs are not Storage paths — delete would be a no-op / resurrect.
+                              if (
+                                id === "char-sheet-asset" ||
+                                id === "voice-preview-asset" ||
+                                id.startsWith("prod-vid-") ||
+                                id.startsWith("prod-aud-")
+                              ) {
+                                window.alert(
+                                  "This entry is linked from Character / Production. Remove or replace it from Character Studio, Location Plate, or by deleting the production — not here."
+                                );
+                                return;
+                              }
                               const referenceIds = (productions || []).flatMap((p: any) => {
                                 const refs: string[] = [];
                                 if (p?.masterAssetId) refs.push(p.masterAssetId);

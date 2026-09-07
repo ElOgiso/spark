@@ -153,6 +153,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
     [activeProd, activeReview, brief]
   );
   const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
+  // Live path: Review player binds canonical master only — never Asset Intelligence v2 packages.
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
   const isExpressMode = prodMode === "express" || prodMode === "narrator";
   const reviewView = useMemo(() => {

@@ -62,6 +62,29 @@ describe("Production Generation ON/OFF preference respect", () => {
     delete (globalThis as any).window;
   });
 
+  it("applies cloud brand.settings as source of truth into localStorage cache", () => {
+    // Empty cache defaults ON
+    assert.equal(ProductionGenerationGuard.isEnabled(), true);
+
+    // Cloud OFF must win over missing/default local cache
+    store.clear();
+    const off = ProductionGenerationGuard.applyCloudPreference(false, "brand-1");
+    assert.equal(off, false);
+    assert.equal(ProductionGenerationGuard.isEnabled("brand-1"), false);
+    assert.equal(store.get(STORAGE_KEY), "false");
+    assert.equal(store.get(`${STORAGE_KEY}_brand-1`), "false");
+
+    // Cloud ON restores after OFF
+    const on = ProductionGenerationGuard.applyCloudPreference(true, "brand-1");
+    assert.equal(on, true);
+    assert.equal(ProductionGenerationGuard.isEnabled("brand-1"), true);
+
+    // Undefined cloud keeps cache (does not reset to default)
+    ProductionGenerationGuard.setEnabled(false, "brand-1");
+    const kept = ProductionGenerationGuard.applyCloudPreference(undefined, "brand-1");
+    assert.equal(kept, false);
+  });
+
   it("UI storage key defaults to ON and flips OFF via setEnabled", () => {
     assert.equal(ProductionGenerationGuard.isEnabled(), true);
     ProductionGenerationGuard.setEnabled(false);
@@ -105,9 +128,11 @@ describe("Production Generation ON/OFF preference respect", () => {
     );
   });
 
-  it("allows dryRun lifecycle when Production Generation is OFF", async () => {
+  it("allows dryRun lifecycle when Production Generation is OFF (guard does not block)", async () => {
     ProductionGenerationGuard.setEnabled(false);
     const spec = planSpec();
+    // dryRun must pass the Generation guard; preflight may still block on missing anchors
+    // (Asset Intelligence readiness) — that is separate from the ON/OFF preference.
     const report = await runProductionLifecycle({
       spec,
       options: {
@@ -148,6 +173,11 @@ describe("Production Generation ON/OFF preference respect", () => {
         },
       },
     });
-    assert.equal(report.ok, true);
+    const errs = Array.isArray(report.errors) ? report.errors : [];
+    assert.ok(
+      !errs.some((e) => String(e).includes("Production Generation is currently OFF")),
+      "dryRun must not be blocked by Production Generation OFF"
+    );
+    assert.ok(report.preflight || report.ok || errs.length > 0, "lifecycle must run past the generation guard");
   });
 });

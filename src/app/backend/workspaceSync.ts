@@ -62,6 +62,7 @@ import {
   domainReviewToInsert,
   domainViralSparkToInsert,
   memoryRowToDomain,
+  normalizeMemoryCategoryForDb,
   productionRowToDomain,
   publishJobRowToDomain,
   reviewRowToDomain,
@@ -124,6 +125,15 @@ function brandRowToDomain(row: BrandRow): Brand {
 
   const creditSettings = settingsObj.credit_settings || audienceObj.credit_settings;
 
+  const rawProductionGeneration =
+    settingsObj.production_generation_enabled ?? settingsObj.productionGenerationEnabled;
+  const productionGenerationEnabled =
+    typeof rawProductionGeneration === "boolean"
+      ? rawProductionGeneration
+      : typeof rawProductionGeneration === "string"
+        ? rawProductionGeneration !== "false"
+        : undefined;
+
   return {
     id: row.id,
     name: row.name || "My Brand",
@@ -138,6 +148,7 @@ function brandRowToDomain(row: BrandRow): Brand {
     formatSettings,
     productionMode: settingsObj.production_mode || undefined,
     settings: settingsObj,
+    productionGenerationEnabled,
     creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
@@ -419,7 +430,7 @@ export async function persistMemoryUpdate(
     updateData.source = patch.type;
   }
   if (patch.category !== undefined) {
-    updateData.category = patch.category;
+    updateData.category = normalizeMemoryCategoryForDb(patch.category);
   }
   if (patch.archived !== undefined) {
     updateData.archived = patch.archived;
@@ -877,6 +888,10 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
     if (patch.creditSettings !== undefined) {
       newSettings.credit_settings = patch.creditSettings;
     }
+    if (patch.productionGenerationEnabled !== undefined) {
+      newSettings.production_generation_enabled = Boolean(patch.productionGenerationEnabled);
+      newSettings.productionGenerationEnabled = Boolean(patch.productionGenerationEnabled);
+    }
 
     if (Object.keys(newSettings).length > 0) {
       rowPatch.settings = newSettings;
@@ -1129,7 +1144,9 @@ export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: st
           : `${folderPath.replace(`brands/${brandId}/`, "")}/${f.name}`;
 
         results.push({
-          id: f.id || currentPath,
+          // Always use the storage path as id so deleteBrandStorageAsset can remove the blob.
+          // Storage object UUIDs are not media_assets ids and caused "deleted" files to reappear.
+          id: currentPath,
           name: displayName,
           type: mimeType,
           size: sizeFormatted,

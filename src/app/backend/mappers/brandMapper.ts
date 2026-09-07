@@ -98,6 +98,15 @@ export function brandRowToDomain(row: BrandRow): Brand {
 
   const creditSettings = settingsObj.credit_settings || (row.audience as any)?.credit_settings;
 
+  const rawProductionGeneration =
+    settingsObj.production_generation_enabled ?? settingsObj.productionGenerationEnabled;
+  const productionGenerationEnabled =
+    typeof rawProductionGeneration === "boolean"
+      ? rawProductionGeneration
+      : typeof rawProductionGeneration === "string"
+        ? rawProductionGeneration !== "false"
+        : undefined;
+
   return {
     id: row.id,
     name: row.name,
@@ -110,6 +119,8 @@ export function brandRowToDomain(row: BrandRow): Brand {
     locationPlateUrl: settingsObj.locationPlateUrl || settingsObj.location_plate_url || null,
     formatSettings,
     creditSettings,
+    settings: settingsObj,
+    productionGenerationEnabled,
     contentPillars: asPillars(row.content_pillars),
     audience: {
       primary: aud.primary,

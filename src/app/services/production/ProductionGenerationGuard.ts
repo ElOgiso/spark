@@ -1,6 +1,9 @@
 /**
  * System-Wide Production Generation Guard for SPARK Media OS.
  * Enforces zero credit consumption and zero background generation when Production Generation is OFF.
+ *
+ * Source of truth: brand.settings.production_generation_enabled (cloud).
+ * localStorage is a cache so offline/guards stay fast — hydrate overwrites it on login.
  */
 export class ProductionGenerationGuard {
   private static STORAGE_KEY = "spark_production_generation_enabled";
@@ -19,6 +22,21 @@ export class ProductionGenerationGuard {
     }
   }
 
+  /**
+   * Apply cloud brand.settings truth into the localStorage cache.
+   * Returns the resolved enabled flag. When cloud is undefined, keeps cache / default ON.
+   */
+  static applyCloudPreference(
+    cloudEnabled: boolean | null | undefined,
+    brandId?: string
+  ): boolean {
+    if (typeof cloudEnabled === "boolean") {
+      this.setEnabled(cloudEnabled, brandId);
+      return cloudEnabled;
+    }
+    return this.isEnabled(brandId);
+  }
+
   static setEnabled(enabled: boolean, brandId?: string): void {
     if (typeof localStorage === "undefined") return;
     try {
@@ -26,9 +44,11 @@ export class ProductionGenerationGuard {
       if (brandId) {
         localStorage.setItem(`${this.STORAGE_KEY}_${brandId}`, String(enabled));
       }
-      window.dispatchEvent(
-        new CustomEvent("spark-production-toggle-changed", { detail: { enabled, brandId } })
-      );
+      if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          new CustomEvent("spark-production-toggle-changed", { detail: { enabled, brandId } })
+        );
+      }
     } catch (err) {
       console.warn("[ProductionGenerationGuard] Storage update notice:", err);
     }

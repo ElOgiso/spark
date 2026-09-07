@@ -24,6 +24,8 @@ export interface Brand {
   locationPlateUrl?: string | null;
   formatSettings?: ProductionFormatSettings;
   settings?: Record<string, any>;
+  /** Cloud source of truth for Production Generation ON/OFF (brand.settings). */
+  productionGenerationEnabled?: boolean;
   creditSettings?: GenerationCreditSettings;
   review_required?: boolean;
   publish_requires_approval?: boolean;

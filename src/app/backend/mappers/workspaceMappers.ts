@@ -52,6 +52,16 @@ const memoryCategoryFromDb: Record<string, NonNullable<MemoryItem["category"]>> 
   publishing_behavior: "Publishing behavior",
 };
 
+export function normalizeMemoryCategoryForDb(category?: string | null): string {
+  if (!category) return "brand";
+  if (memoryCategoryToDb[category]) return memoryCategoryToDb[category];
+  const lower = category.trim().toLowerCase().replace(/\s+/g, "_");
+  const allowed = new Set(Object.values(memoryCategoryToDb));
+  if (allowed.has(lower)) return lower;
+  // Unknown UI labels (e.g. Strategy) map to brand so CHECK constraint never rejects writes.
+  return "brand";
+}
+
 export function memoryRowToDomain(row: MemoryItemRow): MemoryItem {
   const ev = (row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence) ? row.evidence : {}) as Record<string, any>;
   return {
@@ -62,6 +72,9 @@ export function memoryRowToDomain(row: MemoryItemRow): MemoryItem {
     category: memoryCategoryFromDb[String(row.category)] ?? "Brand",
     pinned: Boolean(ev.pinned),
     archived: Boolean(row.archived),
+    fingerprint: typeof ev.fingerprint === "string" ? ev.fingerprint : undefined,
+    syncCount: typeof ev.syncCount === "number" ? ev.syncCount : undefined,
+    lastSeenAt: typeof ev.lastSeenAt === "string" ? ev.lastSeenAt : undefined,
   };
 }
 
@@ -70,7 +83,11 @@ export function domainMemoryToInsert(
   item: MemoryItem,
 ): Partial<MemoryItemRow> {
   // Map to a DB-allowed (CHECK-constrained) category; default to "brand" for unknown labels.
-  const category = (item.category && memoryCategoryToDb[item.category]) || "brand";
+  const category = normalizeMemoryCategoryForDb(item.category);
+  const evidence: Record<string, unknown> = { pinned: Boolean(item.pinned) };
+  if (item.fingerprint) evidence.fingerprint = item.fingerprint;
+  if (typeof item.syncCount === "number") evidence.syncCount = item.syncCount;
+  if (item.lastSeenAt) evidence.lastSeenAt = item.lastSeenAt;
   return {
     brand_id: brandId,
     category: category as any,
@@ -78,7 +95,7 @@ export function domainMemoryToInsert(
     description: item.text,
     source: item.type,
     confidence: "medium",
-    evidence: { pinned: Boolean(item.pinned) },
+    evidence,
     affected_systems: [],
     archived: Boolean(item.archived),
   };

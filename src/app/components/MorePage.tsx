@@ -94,7 +94,6 @@ export function MorePage({ onNavigate }: MorePageProps) {
   const connectedCount = liveConnected.length;
   const memoryCount = Array.isArray(spark?.memoryItems) ? spark.memoryItems.length : 0;
   const productionCount = Array.isArray(spark?.productions) ? spark.productions.length : 0;
-  const assetCount = Array.isArray(spark?.assets) ? spark.assets.length : 0;
   const offersList = Array.isArray(spark?.offers) ? spark.offers : [];
   const defaultOffer = offersList.find((o: any) => o.active && o.isDefault) || offersList.find((o: any) => o.active);
   const marketerMeta = offersList.length === 0 ? "No Offers" : defaultOffer ? `${defaultOffer.title}` : `${offersList.length} active`;
@@ -114,7 +113,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
           icon: Archive,
           label: "Assets",
           description: "Brand media, templates, approved files",
-          meta: assetCount === 0 ? "Empty" : `${assetCount} file${assetCount === 1 ? "" : "s"}`,
+          meta: "Storage",
           action: () => onNavigate("/more/assets"),
         },
         {

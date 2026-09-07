@@ -4,6 +4,7 @@ import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
+import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
 import {
@@ -50,22 +51,11 @@ export class ProductionService implements IProductionService {
   }
 
   isProductionGenerationEnabled(): boolean {
-    if (typeof localStorage === "undefined") return true;
-    try {
-      const val = localStorage.getItem("spark_production_generation_enabled");
-      return val !== "false";
-    } catch {
-      return true;
-    }
+    return ProductionGenerationGuard.isEnabled();
   }
 
   setProductionGenerationEnabled(enabled: boolean): void {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem("spark_production_generation_enabled", String(enabled));
-    } catch (err) {
-      console.warn("[ProductionService] Toggle save notice:", err);
-    }
+    ProductionGenerationGuard.setEnabled(enabled);
   }
 
   async getProductions(): Promise<Production[]> {

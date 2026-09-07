@@ -119,6 +119,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   const [showAddKey, setShowAddKey] = useState(false);
 
   const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; url?: string }[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(false);
 
   const { productions, reviewItems } = useSpark() as any;
 
@@ -127,19 +128,24 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     const brandId = auth.brand?.id || getBrandWorkspaceId();
 
     async function loadMobileAssets() {
+      setAssetsLoading(true);
       const items: { id: string; name: string; type: string; size: string; url?: string }[] = [];
+      const seenUrls = new Set<string>();
 
       if (character?.characterSheetUrl || character?.imageUrl) {
+        const url = character.characterSheetUrl || character.imageUrl;
+        if (url) seenUrls.add(url);
         items.push({
           id: "char-sheet-asset-m",
           name: `${character?.name || "Host"}_Character_Sheet.png`,
           type: "Character Image",
           size: "Cloud Persisted",
-          url: character.characterSheetUrl || character.imageUrl,
+          url,
         });
       }
 
       if (character?.voice?.previewUrl) {
+        seenUrls.add(character.voice.previewUrl);
         items.push({
           id: "voice-preview-asset-m",
           name: `${character?.voice?.name || "Host"}_Voice_Preview.mp3`,
@@ -153,32 +159,51 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       if (Array.isArray(prodList)) {
         prodList.forEach((p: any) => {
           if (p.videoUrl || p.video_url) {
-            items.push({
-              id: `prod-vid-m-${p.id}`,
-              name: `${p.title || "Production"}_Video.mp4`,
-              type: "Production Video (MP4)",
-              size: "Rendered Media",
-              url: p.videoUrl || p.video_url,
-            });
+            const url = p.videoUrl || p.video_url;
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-vid-m-${p.id}`,
+                name: `${p.title || "Production"}_Video.mp4`,
+                type: "Production Video (MP4)",
+                size: "Rendered Media",
+                url,
+              });
+            }
           }
           if (p.audioUrl || p.voice_url) {
-            items.push({
-              id: `prod-aud-m-${p.id}`,
-              name: `${p.title || "Production"}_Voice.mp3`,
-              type: "Production Audio (MP3)",
-              size: "Rendered Voice",
-              url: p.audioUrl || p.voice_url,
-            });
+            const url = p.audioUrl || p.voice_url;
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-aud-m-${p.id}`,
+                name: `${p.title || "Production"}_Voice.mp3`,
+                type: "Production Audio (MP3)",
+                size: "Rendered Voice",
+                url,
+              });
+            }
           }
         });
       }
 
       if (brandId && isUuid(brandId)) {
-        const storageItems = await fetchBrandStorageAssets(brandId);
-        storageItems.forEach((st) => items.push(st));
+        try {
+          const storageItems = await fetchBrandStorageAssets(brandId);
+          storageItems.forEach((st) => {
+            if (st.url && seenUrls.has(st.url)) return;
+            if (st.url) seenUrls.add(st.url);
+            items.push(st);
+          });
+        } catch (err) {
+          console.warn("[MobileMore] Brand storage listing notice:", err);
+        }
       }
 
-      if (isMounted) setAssets(items);
+      if (isMounted) {
+        setAssets(items);
+        setAssetsLoading(false);
+      }
     }
 
     loadMobileAssets();
@@ -472,7 +497,9 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                 <Plus className="w-4 h-4 mr-1" /> Upload Asset File to Storage
               </Button>
               <div className="rounded-xl border border-border bg-card divide-y divide-border/50">
-                {assets.length === 0 ? (
+                {assetsLoading ? (
+                  <p className="p-5 text-center text-xs text-muted-foreground">Loading brand Storage files…</p>
+                ) : assets.length === 0 ? (
                   <p className="p-5 text-center text-xs text-muted-foreground">No assets found in workspace storage.</p>
                 ) : (
                   assets.map((asset) => (
@@ -493,10 +520,28 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                         <button
                           onClick={() => {
                             const id = asset.id;
-                            setAssets(assets.filter((a) => a.id !== id));
-                            void import("../../backend/repositories/productionAssetRepository").then(({ safeDeleteProductionAsset }) => {
-                              void safeDeleteProductionAsset(id);
-                            }).catch(() => {});
+                            if (
+                              id === "char-sheet-asset-m" ||
+                              id === "voice-preview-asset-m" ||
+                              id.startsWith("prod-vid-m-") ||
+                              id.startsWith("prod-aud-m-")
+                            ) {
+                              window.alert(
+                                "This entry is linked from Character / Production. Remove it from Character Studio or by deleting the production."
+                              );
+                              return;
+                            }
+                            void import("../../backend/workspaceSync").then(async ({ deleteBrandStorageAsset }) => {
+                              const brandId = auth.brand?.id || getBrandWorkspaceId() || "";
+                              const result = await deleteBrandStorageAsset(brandId, id);
+                              if (!result.ok) {
+                                window.alert(result.reason || "Delete failed — asset kept.");
+                                return;
+                              }
+                              setAssets((prev) => prev.filter((a) => a.id !== id));
+                            }).catch(() => {
+                              window.alert("Delete unavailable — asset kept.");
+                            });
                           }}
                           className="text-muted-foreground hover:text-destructive p-1.5 rounded-lg hover:bg-destructive/10"
                         >
