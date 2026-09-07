@@ -1759,7 +1759,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const effectiveCredit = getEffectiveCreditSettings(state);
     const resolvedMode = resolveProductionMode({ modeOverride: state.productionMode, brand: state.brand, spark });
     const hostStyle = state.character?.style || "Executive Creator";
-    const status = state.automationMode === "autonomous" ? "Ready for Review" : "Drafting";
+    // Phase C: Generating while assets run; Drafting when Generation is OFF (no fake Review film).
+    const genEnabled = ProductionGenerationGuard.isEnabled();
+    const status: Production["status"] = genEnabled ? "Generating" : "Drafting";
     const platformFit = spark.platformFit || (resolvedMode === "deep" ? "YouTube Long-form" : "YouTube Shorts");
     const formats = platformFit.split(" + ").map((s: string) => s.trim()).filter(Boolean);
 
@@ -1988,6 +1990,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   p.id === effectiveProdId
                     ? {
                         ...p,
+                        status: "Generating",
                         isGeneratingAssets: true,
                         generationProgress: {
                           percent: 1,
@@ -2231,9 +2234,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!prod) return null;
 
       const { ProductionAssetService } = await import("../services/production/productionAssetService");
+      const { syncProductionMediaStores, toOneBasedSceneIndex, resolveProductionMediaView } = await import(
+        "../services/production/productionMediaLineage"
+      );
+      const view = resolveProductionMediaView({ production: prod, brief: prod.brief });
+      const oneBased = toOneBasedSceneIndex(sceneIndex, view.scenes.length || 1);
+
       const updatedScene = await ProductionAssetService.fixProductionScene({
         productionId,
-        sceneIndex,
+        sceneIndex: oneBased,
         editNotes,
         brand: state.brand,
         character: state.character,
@@ -2246,9 +2255,42 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...prev,
           productions: prev.productions.map((p: any) => {
             if (p.id !== productionId) return p;
-            const currentScenes = p.productionScenes || [];
-            const updatedScenes = currentScenes.map((s: any) => (s.index === sceneIndex ? updatedScene : s));
-            return { ...p, productionScenes: updatedScenes };
+            const currentScenes =
+              Array.isArray(p.productionScenes) && p.productionScenes.length
+                ? p.productionScenes
+                : Array.isArray(p.brief?.storyboard)
+                  ? p.brief.storyboard
+                  : view.scenes.map((s) => ({
+                      scene: s.scene,
+                      index: s.scene,
+                      image: s.imageUrl,
+                      videoUrl: s.videoUrl,
+                      shotId: s.shotId,
+                    }));
+            const updatedScenes = currentScenes.map((s: any, idx: number) => {
+              const n = Number(s.index || s.scene || idx + 1);
+              if (n === oneBased) {
+                return {
+                  ...s,
+                  ...updatedScene,
+                  scene: oneBased,
+                  index: oneBased,
+                  image: updatedScene.image || updatedScene.keyframeImageUrl || s.image,
+                  keyframeImageUrl:
+                    updatedScene.keyframeImageUrl || updatedScene.image || s.keyframeImageUrl,
+                  videoUrl: updatedScene.videoUrl || s.videoUrl,
+                  lastFrameUrl: updatedScene.lastFrameUrl || s.lastFrameUrl,
+                  shotId: updatedScene.shotId || s.shotId,
+                };
+              }
+              return s;
+            });
+            return syncProductionMediaStores({
+              production: p,
+              scenes: updatedScenes,
+              masterVideoUrl: p.canonicalMasterUrl || p.videoUrl,
+              audioUrl: p.audioUrl || p.brief?.audioUrl,
+            });
           }),
         }));
       }
@@ -2321,19 +2363,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       if (masterUrl) {
-        const updatedProd = {
-          ...prod,
-          videoUrl: masterUrl,
-          status: "Ready for Review",
-          brief: {
-            ...(prod.brief || {}),
-            videoUrl: masterUrl,
-            generatedAssets: {
-              ...(prod.brief?.generatedAssets || {}),
-              generatedVideos: [masterUrl],
-            },
+        const { syncProductionMediaStores } = await import("../services/production/productionMediaLineage");
+        const scenes =
+          Array.isArray(prod.productionScenes) && prod.productionScenes.length
+            ? prod.productionScenes
+            : prod.brief?.storyboard || [];
+        const updatedProd = syncProductionMediaStores({
+          production: {
+            ...prod,
+            status: "Ready for Review",
           },
-        };
+          scenes,
+          masterVideoUrl: masterUrl,
+          audioUrl: prod.audioUrl || prod.brief?.audioUrl,
+        });
 
         setState((prev: any) => ({
           ...prev,

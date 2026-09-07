@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
+import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 
 type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "scheduled";
 
@@ -60,18 +61,15 @@ function clipText(str: any, n = 35, fallback = ""): string {
 function getPreviewMediaUrl(prod?: any, review?: any): string | undefined {
   if (!prod && !review) return undefined;
   const brief = prod?.brief || review?.brief;
-  const scenes = prod?.scenes?.length ? prod.scenes : brief?.storyboard;
-  const genAssets = brief?.generatedAssets;
-
-  if (scenes?.[0]?.image) return scenes[0].image;
-  if (genAssets?.generatedFrames?.[0]) return genAssets.generatedFrames[0];
-  if (genAssets?.thumbnails?.[0]?.image) return genAssets.thumbnails[0].image;
-  if (brief?.storyboard?.[0]?.image) return brief.storyboard[0].image;
-
-  if (prod?.videoUrl && (prod.videoUrl.startsWith("http") || prod.videoUrl.startsWith("data:"))) {
-    return prod.videoUrl;
+  const view = resolveProductionMediaView({ production: prod, review, brief });
+  if (view.isGenerating) {
+    return view.stillByScene[1] || view.scenes.find((s) => s.imageUrl)?.imageUrl;
   }
-  return undefined;
+  return (
+    view.stillByScene[1] ||
+    view.scenes.find((s) => s.imageUrl)?.imageUrl ||
+    brief?.generatedAssets?.thumbnails?.[0]?.image
+  );
 }
 
 function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
@@ -311,20 +309,22 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
   const reviews: ReviewItem[] = productions.map((p) => {
     const rev = reviewItems.find((r) => r.productionId === p.id || r.id === p.id);
     
+    const brief = p.brief || rev?.brief;
+    const mediaView = resolveProductionMediaView({ production: p, review: rev, brief });
+    const videoUrl = mediaView.canonical.canonicalMasterUrl;
+    const audioUrl = p.audioUrl || p.brief?.audioUrl || rev?.audioUrl || p.brief?.generatedAssets?.voiceoverUrl;
+    const scenes = mediaView.scenes;
+    const generationProgress = p.generationProgress || p.brief?.generationProgress || rev?.brief?.generationProgress;
+
     let stage: "drafting" | "ready" | "needs_edit" | "approved" | "scheduled" = "drafting";
-    if (["Ready for Review", "Awaiting Review", "Research Complete", "Planning Complete", "Storyboard Complete"].includes(p.status)) stage = "ready";
+    if (mediaView.isGenerating || p.status === "Generating") stage = "drafting";
+    else if (["Ready for Review", "Awaiting Review", "Research Complete", "Planning Complete", "Storyboard Complete"].includes(p.status)) stage = "ready";
     else if (["Needs Edit", "Failed", "Generation Failed", "Editing Failed"].includes(p.status)) stage = "needs_edit";
     else if (p.status === "Approved") {
       if (p.id === "p7" || p.id.includes("scheduled")) stage = "scheduled";
       else stage = "approved";
     } else if (p.status === "Published") stage = "scheduled";
     else stage = "drafting";
-
-    const videoUrl = p.videoUrl || p.brief?.videoUrl || rev?.videoUrl || p.brief?.generatedAssets?.generatedVideos?.[0];
-    const audioUrl = p.audioUrl || p.brief?.audioUrl || rev?.audioUrl || p.brief?.generatedAssets?.voiceoverUrl;
-    const brief = p.brief || rev?.brief;
-    const scenes = p.scenes?.length ? p.scenes : p.brief?.storyboard;
-    const generationProgress = p.generationProgress || p.brief?.generationProgress || rev?.brief?.generationProgress;
 
     return {
       id: rev?.id || `rev-${p.id}`,

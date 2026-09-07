@@ -19,10 +19,7 @@ import {
 } from "lucide-react";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
-import {
-  resolveCanonicalProductionMedia,
-  resolveReviewHeroVideoUrl,
-} from "../../services/production/canonicalProductionMedia";
+import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
 
@@ -75,21 +72,18 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   );
   const brief = activeProd?.brief || item?.brief;
   const genProgress = activeProd?.generationProgress || item?.generationProgress || brief?.generationProgress;
-  const isGenerating = Boolean(
-    activeProd?.isGeneratingAssets ||
-    item?.isGeneratingAssets ||
-    (genProgress && genProgress.stage !== "Complete" && genProgress.stage !== "Failed" && (genProgress.percent || 0) < 100)
-  );
 
   const prodId = activeProd?.id || item?.productionId || (item?.id ? item.id.replace("rev-", "") : "");
   const reviewId = item?.id || (prodId ? `rev-${prodId}` : "");
-  const canonicalMedia = resolveCanonicalProductionMedia({
+  const mediaView = resolveProductionMediaView({
     production: activeProd,
     review: item,
     brief,
   });
+  const canonicalMedia = mediaView.canonical;
   const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
   const hasPlayableVideo = Boolean(reviewHeroVideoUrl);
+  const isGenerating = mediaView.isGenerating;
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
@@ -214,34 +208,21 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
       reveal: "Here's exactly what works in 2026",
       payoff: "Implement these tactics to 10x your results",
     },
-    storyboard: activeProd?.productionScenes?.length
-      ? activeProd.productionScenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : activeProd?.scenes?.length
-      ? activeProd.scenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
+    storyboard: mediaView.scenes.length
+      ? mediaView.scenes.map((s) => ({
+          scene: s.scene,
           description: s.description,
-          duration: s.duration || "0–10s",
-          image: s.image || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
+          duration: s.duration,
+          image: s.imageUrl,
+          videoUrl: s.videoUrl,
+          shotId: s.shotId,
         }))
-      : brief?.storyboard?.length
-      ? brief.storyboard.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : [
-          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
+      : mediaView.isGenerating
+        ? []
+        : [
+          { scene: 1, description: `Hook: ${brief?.hook || item?.openingMoment || "Opening hook"}`, duration: "0-5s", image: undefined },
+          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5-25s", image: undefined },
+          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25-30s", image: undefined },
         ],
     platformStrategy: {
       youtube: "12-15 min deep dive, SEO optimized",
@@ -552,13 +533,13 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           </div>
           {expandedSections.has("storyboard") && (
             <div className="mt-4 space-y-3">
-              {(brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
+              {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                 <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1.5">
-                  <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Master Storyboard Map</p>
+                  <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">Lead Storyboard Still (Scene 1)</p>
                   <div className="w-full max-h-56 rounded-md overflow-hidden bg-black/40 flex items-center justify-center">
                     <img
-                      src={brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
-                      alt="Master Storyboard Grid Map"
+                      src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
+                      alt="Lead storyboard still"
                       className="w-full h-full object-contain"
                     />
                   </div>

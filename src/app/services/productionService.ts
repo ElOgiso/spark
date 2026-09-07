@@ -168,11 +168,18 @@ export class ProductionService implements IProductionService {
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";
     const formats = platformRec.split(" + ").map((s) => s.trim()).filter(Boolean);
 
+    // Phase C: never mark Ready for Review before media truth exists.
+    // Generation ON → Generating; Generation OFF → Drafting (brief/plan only).
+    const createStatus: Production["status"] = ProductionGenerationGuard.isEnabled()
+      ? "Generating"
+      : "Drafting";
+
     let production: Production = {
       id: prodId,
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
-      status: "Ready for Review",
+      status: createStatus,
+      isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
       mode: resolvedMode,
       productionMode: resolvedMode,
       targetDurationSec,
@@ -388,6 +395,7 @@ export class ProductionService implements IProductionService {
       videoUrl: result.videoUrl,
       isGeneratingAssets: false,
       generationProgress: result.brief.generatedAssets?.generationProgress,
+      reasoning: (result as any).reasoning || production.reasoning,
       lastError:
         result.brief.lastError ||
         result.brief.generatedAssets?.generationProgress?.partialAssets?.lastError ||

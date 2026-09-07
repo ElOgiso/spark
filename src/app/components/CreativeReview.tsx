@@ -36,6 +36,10 @@ import {
   resolveCanonicalProductionMedia,
   resolveReviewHeroVideoUrl,
 } from "../services/production/canonicalProductionMedia";
+import {
+  resolveProductionMediaView,
+  toOneBasedSceneIndex,
+} from "../services/production/productionMediaLineage";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -143,15 +147,16 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   }, [activeReview?.status, activeProd?.status]);
 
   const brief = activeProd?.brief || activeReview?.brief;
-  const canonicalMedia = useMemo(
+  const mediaView = useMemo(
     () =>
-      resolveCanonicalProductionMedia({
+      resolveProductionMediaView({
         production: activeProd,
         review: activeReview,
         brief,
       }),
     [activeProd, activeReview, brief]
   );
+  const canonicalMedia = mediaView.canonical;
   const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
   // Live path: Review player binds canonical master only — never Asset Intelligence v2 packages.
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
@@ -350,34 +355,21 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       reveal: "Here's exactly what works",
       payoff: "Implement these and 10× your organic reach",
     },
-    storyboard: activeProd?.productionScenes?.length
-      ? activeProd.productionScenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || s.description || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image || s.keyframeImageUrl || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : activeProd?.scenes?.length
-      ? activeProd.scenes.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
+    storyboard: mediaView.scenes.length
+      ? mediaView.scenes.map((s) => ({
+          scene: s.scene,
           description: s.description,
-          duration: s.duration || "0–10s",
-          image: s.image || brief?.storyboard?.[idx]?.image,
-          videoUrl: s.videoUrl || undefined,
+          duration: s.duration,
+          image: s.imageUrl,
+          videoUrl: s.videoUrl,
+          shotId: s.shotId,
         }))
-      : brief?.storyboard?.length
-      ? brief.storyboard.map((s: any, idx: number) => ({
-          scene: s.scene || idx + 1,
-          description: s.visualDescription || s.shotList || s.onScreenText || `Scene ${idx + 1}`,
-          duration: s.duration || "0–10s",
-          image: s.image,
-          videoUrl: s.videoUrl || undefined,
-        }))
-      : [
-          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: brief?.generatedAssets?.generatedFrames?.[0] },
-          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: brief?.generatedAssets?.generatedFrames?.[1] },
-          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: brief?.generatedAssets?.generatedFrames?.[2] },
+      : mediaView.isGenerating
+        ? []
+        : [
+          { scene: 1, description: `Hook: ${brief?.hook || activeReview?.openingMoment || "Opening hook"}`, duration: "0–5s", image: undefined },
+          { scene: 2, description: `Body: ${brief?.visualDirection || "Script body breakdown"}`, duration: "5–25s", image: undefined },
+          { scene: 3, description: `CTA: ${brief?.caption || "Call to Action"}`, duration: "25–30s", image: undefined },
         ],
     platformStrategy: {
       youtube: `${brief?.suggestedDuration || "30–60s"} Short, SEO optimized — chaptered`,
@@ -447,19 +439,18 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
       rejectOrRequestEditReviewItem(reviewId, note);
       const prodId = activeProd?.id || activeReview?.productionId;
       if (prodId && fixProductionScene && payload.shotId) {
-        const scenes = activeProd?.productionScenes || activeProd?.scenes || [];
-        let sceneIndex = 0;
+        const scenes = mediaView.scenes;
+        let sceneIndex = 1;
         if (payload.sceneId) {
-          const idx = scenes.findIndex((s: any) => s?.id === payload.sceneId || s?.sceneId === payload.sceneId);
-          if (idx >= 0) sceneIndex = idx;
-        } else {
-          const idx = scenes.findIndex((s: any) =>
-            Array.isArray(s?.shots)
-              ? s.shots.some((sh: any) => sh?.id === payload.shotId || sh?.shotId === payload.shotId)
-              : s?.id === payload.shotId,
+          const idx = scenes.findIndex(
+            (s) => s.sceneId === payload.sceneId || String(s.scene) === String(payload.sceneId)
           );
-          if (idx >= 0) sceneIndex = idx;
+          if (idx >= 0) sceneIndex = scenes[idx].scene;
+        } else {
+          const idx = scenes.findIndex((s) => s.shotId === payload.shotId);
+          if (idx >= 0) sceneIndex = scenes[idx].scene;
         }
+        sceneIndex = toOneBasedSceneIndex(sceneIndex, scenes.length || 1);
         await fixProductionScene(prodId, sceneIndex, note);
       }
       setActionSuccess("Needs Edit");
@@ -510,20 +501,14 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                   const rev = reviewItems.find((r: any) => r.productionId === p.id || r.id === p.id);
                   const brief = p.brief || rev?.brief;
 
-                  const queueCanonical = resolveCanonicalProductionMedia({
+                  const queueView = resolveProductionMediaView({
                     production: p,
                     review: rev,
                     brief,
                   });
-                  const videoUrl = queueCanonical.canonicalMasterUrl;
+                  const videoUrl = queueView.canonical.canonicalMasterUrl;
 
-                  const sceneStill =
-                    p.scenes?.[0]?.image ||
-                    p.productionScenes?.[0]?.image ||
-                    brief?.storyboard?.[0]?.image ||
-                    p.scenes?.find((s: any) => s.image)?.image ||
-                    brief?.storyboard?.find((s: any) => s.image)?.image ||
-                    brief?.generatedAssets?.generatedFrames?.[0];
+                  const sceneStill = queueView.stillByScene[1] || queueView.scenes.find((s) => s.imageUrl)?.imageUrl;
 
                   const thumbImage =
                     p.thumbnails?.find((t: any) => t.image || t.url)?.image ||
@@ -533,14 +518,12 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
 
                   const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || undefined;
 
-                  const realMediaUrl = sceneStill || thumbImage || fallbackImage;
+                  // While generating, don't pretend avatar/logo is production media
+                  const realMediaUrl = queueView.isGenerating
+                    ? sceneStill || thumbImage
+                    : sceneStill || thumbImage || fallbackImage;
 
-                  const isGenerating =
-                    Boolean(p.isGeneratingAssets) &&
-                    p.generationProgress?.stage !== "Complete" &&
-                    p.generationProgress?.stage !== "Cancelled" &&
-                    p.generationProgress?.stage !== "Failed" &&
-                    (p.generationProgress?.percent === undefined || p.generationProgress?.percent < 100);
+                  const isGenerating = queueView.isGenerating;
 
                   const stageLabel = p.generationProgress?.stage || (isGenerating ? "Synthesizing" : "Ready");
                   const percent = typeof p.generationProgress?.percent === "number" && p.generationProgress.percent >= 0
@@ -1018,13 +1001,13 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
             <SectionToggle id="storyboard" title="Storyboard Preview & Sequential Visual Map" />
             {expandedSections.has("storyboard") && (
               <div className="px-6 pb-6 space-y-4">
-                {(brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
+                {(mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl) && (
                   <div className="p-4 rounded-xl bg-background border border-border/70 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-accent">Master Multi-Panel Storyboard Map</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-accent">Lead Storyboard Still (Scene 1)</p>
                     <div className="w-full max-h-64 overflow-hidden rounded-lg border border-border bg-black/40 flex items-center justify-center">
                       <img
-                        src={brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
-                        alt="Master Storyboard Grid Map"
+                        src={mediaView.storyboardGridUrl || brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl}
+                        alt="Lead storyboard still"
                         className="w-full h-full object-contain"
                       />
                     </div>

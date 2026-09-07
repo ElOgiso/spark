@@ -66,6 +66,7 @@ export interface ProductionSettingsSnapshot {
     primaryCharacterName?: string;
     characterSheetUrl?: string;
     hasLockedCharacterSheet: boolean;
+    locationPlateUrl?: string;
   };
   voice: {
     voiceProvider?: string;
@@ -167,6 +168,11 @@ export function buildProductionSettingsSnapshot(params: {
     primaryCharacter?.imageUrl ||
     primaryCharacter?.avatarUrl ||
     undefined;
+  const locationPlateUrl =
+    (brand as any).locationPlateUrl ||
+    (brand as any).settings?.locationPlateUrl ||
+    (brand as any).settings?.location_plate_url ||
+    undefined;
 
   const pillars = brand.contentPillars || [];
   const activePillars = pillars.filter((p) => p.active !== false);
@@ -211,6 +217,7 @@ export function buildProductionSettingsSnapshot(params: {
       primaryCharacterName: primaryCharacter?.name,
       characterSheetUrl: characterSheetUrl || undefined,
       hasLockedCharacterSheet: Boolean(characterSheetUrl),
+      locationPlateUrl: locationPlateUrl || undefined,
     },
     voice: {
       voiceProvider: "elevenlabs",

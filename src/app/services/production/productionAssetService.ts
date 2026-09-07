@@ -16,6 +16,8 @@ import {
   isCinematicMode,
   readProductionSettingsSnapshot,
 } from "./productionSettingsSnapshot";
+import { compileLiveStillPrompt } from "./compileLiveStillPrompt";
+import { findReusableStill, syncProductionMediaStores } from "./productionMediaLineage";
 
 export const SPARK_STORAGE_BUCKET = "Spark";
 
@@ -25,6 +27,8 @@ export interface ProductionAssetGenerationResult {
   productionScenes?: ProductionScene[];
   audioUrl?: string;
   videoUrl?: string;
+  /** Spec + reasoning after syncProductionMediaStores projection */
+  reasoning?: any;
 }
 
 export interface LockedIdentityPack {
@@ -399,6 +403,16 @@ export function buildVisualLockRefs(params: {
     if (previousLastFrameUrl && isValidMediaData(previousLastFrameUrl) && !orderedRefs.includes(previousLastFrameUrl)) {
       orderedRefs.push(previousLastFrameUrl);
       labelLines.push(`INPUT REF [${refCounter}]: Preceding Scene Continuity Reference`);
+      refCounter++;
+    }
+
+    if (
+      sceneKeyframeUrl &&
+      isValidMediaData(sceneKeyframeUrl) &&
+      !orderedRefs.includes(sceneKeyframeUrl)
+    ) {
+      orderedRefs.push(sceneKeyframeUrl);
+      labelLines.push(`INPUT REF [${refCounter}]: Current Scene Keyframe Still`);
       refCounter++;
     }
 
@@ -1313,20 +1327,22 @@ Return valid JSON with this exact structure:
           const s = currentStoryboard[sIdx];
           const globalSceneNum = s.scene || sIdx + 1;
 
-          // Check if existing still is already stored / durable
-          const existingStill = s.image || (brief.beats?.[sIdx] as any)?.image || brief.generatedAssets?.generatedFrames?.[sIdx];
+          // Reuse only when bound to same shotId / scene number — never by array index alone
+          const existingStill = findReusableStill({
+            shotId: s.shotId || s.id,
+            scene: globalSceneNum,
+            storyboard: currentStoryboard,
+            productionScenes: production.productionScenes,
+            generatedFrames: brief.generatedAssets?.generatedFrames,
+          });
           if (!forceRegenerate && isValidMediaData(existingStill)) {
-            console.log(`[SPARK Pipeline] Reusing existing Scene ${globalSceneNum} Still -> ${existingStill}`);
+            console.log(`[SPARK Pipeline] Reusing shot-bound Scene ${globalSceneNum} Still -> ${existingStill}`);
             sceneImages.push(existingStill);
             s.image = existingStill;
             s.keyframeImageUrl = existingStill;
             currentStoryboard[sIdx] = { ...s, image: existingStill, keyframeImageUrl: existingStill };
             continue;
           }
-
-          const shotFraming = s.cameraDirection || (sIdx === 0 ? "Wide/Medium establishing shot" : sIdx === 1 ? "Medium action shot" : "Medium close-up resolving shot");
-          const spoken = s.spokenLines || s.scriptSnippet ? `ACTION BEAT: "${(s.spokenLines || s.scriptSnippet).replace(/"/g, "'")}"` : "";
-          const action = s.primaryChange || s.visualDescription || s.startState || "Host presents key insight";
 
           // 1. Read contentFormat & beat subject
           const contentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief });
@@ -1363,7 +1379,12 @@ Return valid JSON with this exact structure:
           const resolvedSubject: "main" | "support" | "insert" | "set" =
             isFaceless ? "insert" : isSetShot ? "set" : isInsertShot ? "insert" : isSupportShot ? "support" : "main";
 
-          const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+          // Snapshot plate is law when present — no live-brand improvisation mid-run
+          const plateUrl =
+            generationSettings.snapshot?.character?.locationPlateUrl ||
+            brand.locationPlateUrl ||
+            (brand as any).settings?.locationPlateUrl ||
+            (brand as any).settings?.location_plate_url;
 
           // 2. Resolve target character (if support has no sheet, fallback to main - no invented face!)
           const supportChar = (characters || []).find((c) => c.role === "support" || c.id !== character?.id) || (characters || [])[1];
@@ -1396,23 +1417,21 @@ Return valid JSON with this exact structure:
             stillSubjectLine = `SUBJECT & IDENTITY: Primary host "${character?.name || "Host"}" (${character?.style || "Executive Presenter"}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Host is clearly visible in frame performing this beat's action.`;
           }
 
-          const stillPrompt = `
-${stillVisualLock.refPromptHeader}${viralConcept ? `${viralConcept}\n` : ""}
-[SINGLE FULL-BLEED CINEMATIC SCENE STILL — SCENE ${globalSceneNum} OF ${currentStoryboard.length}]
-ASPECT RATIO: ${aspectRatio} full-bleed single frame.
-COMPOSITION: ${shotFraming}. Single camera perspective.
-${stillSubjectLine}
-SET & ENVIRONMENT: ${identityPack.environmentString}.${plateUrl && resolvedSubject !== "set" && !isFaceless ? " Studio set and architectural backdrop strictly aligned with Locked Set Plate reference." : ""}
-ACTION: ${action}.
-${spoken}
-
-CRITICAL PRODUCTION LAWS:
-- THIS IS A SINGLE FULL-BLEED STILL IMAGE, NOT A STORYBOARD GRID.
-- NO multiple panels. NO split screen. NO collage. NO contact sheet. NO numbered boxes. NO borders.
-- NO TEXT, NO LETTERS, NO CAPTIONS, NO SUBTITLES, NO WATERMARKS, NO TYPOGRAPHY on this image. Clean photographic frame only.
-- NO face morphing, no extra limbs, no extra fingers, no deformed hands, no duplicated or cloned subjects, no warping. Anatomically correct, photorealistic.
-- Professional high-production cinematography, crisp lighting, depth of field.
-`.trim();
+          // OS spine still prompt — Spec compiler / storyboard frame compiler (not inline AssetService brain)
+          const compiledStill = compileLiveStillPrompt({
+            scene: s,
+            sceneIndexZeroBased: sIdx,
+            aspectRatio: identityPack.aspectRatio,
+            production,
+            brief,
+            memoryItems,
+            refPromptHeader: stillVisualLock.refPromptHeader,
+            subjectLine: stillSubjectLine,
+          });
+          const stillPrompt = compiledStill.prompt;
+          if (compiledStill.shotId && !s.shotId) {
+            (s as any).shotId = compiledStill.shotId;
+          }
 
           try {
             checkAborted();
@@ -1483,6 +1502,22 @@ CRITICAL PRODUCTION LAWS:
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.storyboardGridUrl = sceneImages[0];
         brief.generatedAssets.generatedFrames = sceneImages;
+        // One-write mirror: keep brief + productionScenes + Spec shelves aligned after stills
+        const stillSynced = syncProductionMediaStores({
+          production: { ...production, brief, productionScenes: currentStoryboard },
+          scenes: currentStoryboard.map((s, idx) => ({
+            ...s,
+            scene: s.scene || idx + 1,
+            shotId: (s as any).shotId || (s as any).id,
+            image: s.image || sceneImages[idx],
+            keyframeImageUrl: s.keyframeImageUrl || s.image || sceneImages[idx],
+          })),
+        });
+        Object.assign(brief, stillSynced.brief);
+        currentStoryboard = stillSynced.productionScenes || currentStoryboard;
+        if (stillSynced.reasoning) {
+          (production as any).reasoning = stillSynced.reasoning;
+        }
       }
 
       markStage("sfx", "active");
@@ -2670,6 +2705,7 @@ Brand: ${brand.name}
           scene: sb.scene || idx + 1,
           index: sb.scene || idx + 1,
           id: `scene-${production.id}-${sb.scene || idx + 1}`,
+          shotId: (sb as any).shotId || (sb as any).id,
           productionId: production.id,
           brandId: (brand as any)?.id,
           duration: sb.duration || "5s",
@@ -2701,12 +2737,26 @@ Brand: ${brand.name}
 
       emitProgress(isOverallSuccess ? 100 : 50, isOverallSuccess ? "Complete" : "Failed", finalMsg);
 
+      const synced = syncProductionMediaStores({
+        production: {
+          ...production,
+          brief: updatedBrief,
+          productionScenes: fullProductionScenes,
+          scenes: updatedScenes,
+          status: finalStatus as any,
+        },
+        scenes: fullProductionScenes,
+        masterVideoUrl: realVideoUrl,
+        audioUrl: realVoiceUrl,
+      });
+
       return {
-        brief: updatedBrief,
-        scenes: updatedScenes,
-        productionScenes: fullProductionScenes,
+        brief: synced.brief,
+        scenes: synced.scenes || updatedScenes,
+        productionScenes: synced.productionScenes || fullProductionScenes,
         audioUrl: realVoiceUrl,
         videoUrl: realVideoUrl,
+        reasoning: synced.reasoning,
       };
     } catch (err: any) {
       if (err?.name === "AbortError" || signal?.aborted) {
@@ -2933,7 +2983,10 @@ Brand: ${brand.name}
     memoryItems?: import("../../domain/types").MemoryItem[];
   }): Promise<ProductionScene | null> {
     const { productionId, sceneIndex, editNotes, brand, character, production, memoryItems = [] } = params;
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.fixProductionScene");
+
     const brief = production.brief || ({} as ProductionBrief);
+    const generationSettings = resolveGenerationSettings({ production, brief, brand });
     const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({
       production,
       brief,
@@ -2947,37 +3000,61 @@ Brand: ${brand.name}
         brand,
       }),
     });
-    const targetSceneIdx = existingScenes.findIndex((s) => (s.index || s.scene) === sceneIndex);
+    // Bind by 1-based scene number / shotId — never by raw array index alone
+    let targetSceneIdx = existingScenes.findIndex(
+      (s) => Number(s.index || s.scene) === sceneIndex
+    );
+    if (targetSceneIdx < 0 && sceneIndex >= 1 && sceneIndex <= existingScenes.length) {
+      targetSceneIdx = sceneIndex - 1;
+    }
 
     if (targetSceneIdx < 0) return null;
-    const sceneToFix = existingScenes[targetSceneIdx];
+    const sceneToFix = { ...existingScenes[targetSceneIdx] };
     sceneToFix.status = "generating";
     sceneToFix.editNotes = editNotes;
+    const shotId = (sceneToFix as any).shotId || (sceneToFix as any).id;
 
     try {
+      const { ModelRouter } = await import("../runtime/modelRouter");
       const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
-      const promptPack = getProductionPromptPack({
-        brand,
-        character,
-        brief,
-        production,
-        aspectRatio: identityPack.aspectRatio,
-        characterRefUrl: identityPack.characterReferenceImageUrl,
-        memoryItems,
-      });
+      const mode: "express" | "standard" | "deep" =
+        generationSettings.productionMode || identityPack.mode;
 
-      // Adjacent continuity seed: previous scene's last frame or keyframe (strictly an image, never a video URL)
       const prevScene = existingScenes[targetSceneIdx - 1];
-      const isImgUrl = (u?: string) => typeof u === "string" && isValidMediaData(u) && !u.endsWith(".mp4") && !u.endsWith(".webm") && !u.includes("video/");
-      const prevFrameCandidate = [prevScene?.lastFrameUrl, prevScene?.keyframeImageUrl, prevScene?.image].find((u) => isImgUrl(u));
+      const isImgUrl = (u?: string) =>
+        typeof u === "string" &&
+        isValidMediaData(u) &&
+        !u.endsWith(".mp4") &&
+        !u.endsWith(".webm") &&
+        !u.includes("video/");
+      const prevFrameCandidate = [
+        prevScene?.lastFrameUrl,
+        prevScene?.keyframeImageUrl,
+        prevScene?.image,
+      ].find((u) => isImgUrl(u));
 
       const contentFormat = getEffectiveContentFormat({ brand, production, brief });
-      const plateUrl = brand.locationPlateUrl || (brand as any).settings?.locationPlateUrl || (brand as any).settings?.location_plate_url;
+      const plateUrl =
+        generationSettings.snapshot?.character?.locationPlateUrl ||
+        brand.locationPlateUrl ||
+        (brand as any).settings?.locationPlateUrl ||
+        (brand as any).settings?.location_plate_url;
       const rawFixSubject = ((sceneToFix as any).subject || (sceneToFix as any).subjectType || "").toLowerCase();
       const isFixInsert = contentFormat === "faceless" || rawFixSubject === "insert" || rawFixSubject === "product";
       const isFixSet = rawFixSubject === "set" || rawFixSubject === "environment";
       const isFixSupport = !isFixInsert && !isFixSet && (rawFixSubject === "support" || rawFixSubject === "supporting");
       const resolvedFixSubject = isFixInsert ? "insert" : isFixSet ? "set" : isFixSupport ? "support" : "main";
+
+      // Scene still is the I2V first frame — never the character sheet
+      let sceneStill =
+        [sceneToFix.image, sceneToFix.keyframeImageUrl].find((u) => isImgUrl(u)) ||
+        findReusableStill({
+          shotId,
+          scene: sceneIndex,
+          storyboard: brief.storyboard,
+          productionScenes: existingScenes,
+          generatedFrames: brief.generatedAssets?.generatedFrames,
+        });
 
       const fixVisualLock = buildVisualLockRefs({
         character,
@@ -2985,23 +3062,35 @@ Brand: ${brand.name}
         locationPlateUrl: plateUrl,
         subjectType: resolvedFixSubject,
         contentFormat,
+        sceneKeyframeUrl: sceneStill,
       });
 
-      const beatPrompt = `
-${fixVisualLock.refPromptHeader}
-${promptPack.globalLockBlock}
+      const revisedScene = {
+        ...sceneToFix,
+        shotId,
+        visualDescription: `${sceneToFix.visualDescription || sceneToFix.action || ""} [REVISION: ${editNotes}]`,
+        primaryChange: `${sceneToFix.primaryChange || sceneToFix.action || sceneToFix.visualDescription || ""} — apply: ${editNotes}`,
+      };
 
-FIX REVISION FOR SCENE ${sceneIndex}:
-Original Beat Action: ${sceneToFix.action || sceneToFix.scriptBeat || sceneToFix.visualDescription}
-EXECUTIVE REVISION REASON: "${editNotes}"
-Apply revision while maintaining 100% subject identity and set continuity.
-NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography.
-`.trim();
+      const compiledStill = compileLiveStillPrompt({
+        scene: revisedScene,
+        sceneIndexZeroBased: targetSceneIdx,
+        aspectRatio: identityPack.aspectRatio,
+        production,
+        brief,
+        memoryItems,
+        refPromptHeader: fixVisualLock.refPromptHeader,
+        subjectLine: `EXECUTIVE REVISION: ${editNotes}. Maintain locked identity and set continuity.`,
+      });
+      if (compiledStill.shotId && !(sceneToFix as any).shotId) {
+        (sceneToFix as any).shotId = compiledStill.shotId;
+      }
 
-      if (identityPack.mode === "express") {
+      // Always refresh the still for the fix so motion starts from the revised beat
+      {
         const generatedStill = await withTimeout(
           ModelRouter.executeCategoryRequest("storyboardImages", {
-            prompt: beatPrompt,
+            prompt: compiledStill.prompt,
             referenceImageUrl: fixVisualLock.primaryRefUrl,
             referenceImageUrls: fixVisualLock.imageUrls,
             aspectRatio: identityPack.aspectRatio,
@@ -3019,44 +3108,111 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
               storagePath: `${productionId}/scenes/scene-0${sceneIndex}.png`,
               dataUrlOrBlob: generatedStill,
               mimeType: "image/png",
-              prompt: beatPrompt,
+              prompt: compiledStill.prompt,
               provider: "ModelRouter",
             });
             if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
           } catch {}
           sceneToFix.image = finalStill;
           sceneToFix.keyframeImageUrl = finalStill;
-          sceneToFix.status = "ready";
-          sceneToFix.updatedAt = new Date().toISOString();
+          sceneStill = finalStill;
+        } else if (mode === "express") {
+          sceneToFix.status = "needs_edit";
+          sceneToFix.lastError = "Still regeneration returned no image.";
           return sceneToFix;
         }
-        sceneToFix.status = "needs_edit";
-        sceneToFix.lastError = "Still regeneration returned no image.";
+      }
+
+      if (mode === "express") {
+        sceneToFix.status = "ready";
+        sceneToFix.updatedAt = new Date().toISOString();
         return sceneToFix;
       }
 
-      const activeVideo = resolveActiveVideoProvider();
-      const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
-      const rawFixDur = sceneToFix.durationSec || parseInt(sceneToFix.duration) || 8;
-      const fixTargetDuration = snapToAllowedDuration(Math.min(rawFixDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawFixDur, 8);
+      if (!sceneStill || !isImgUrl(sceneStill)) {
+        sceneToFix.status = "needs_edit";
+        sceneToFix.lastError =
+          "Consistency Gate: Scene still missing — cannot I2V without this shot's still as first frame.";
+        return sceneToFix;
+      }
 
-      const nextFixStill = existingScenes[targetSceneIdx + 1]?.image || existingScenes[targetSceneIdx + 1]?.keyframeImageUrl;
-      const fixEndFrame = nextFixStill && isImgUrl(nextFixStill) && nextFixStill !== fixVisualLock.primaryRefUrl
-        ? nextFixStill
-        : undefined;
-      const fixIdentityRefs = (fixVisualLock.imageUrls || []).filter(
-        (u) => u && u !== fixVisualLock.primaryRefUrl && u !== fixEndFrame
+      const activeVideo = resolveActiveVideoProvider({
+        preferredVideoProvider: generationSettings.preferredVideoProvider as any,
+      });
+      const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
+      const rawFixDur = sceneToFix.durationSec || parseInt(String(sceneToFix.duration)) || 8;
+      const fixTargetDuration =
+        snapToAllowedDuration(Math.min(rawFixDur, nativeMaxClipSec), activeVideo.providerId) ||
+        Math.min(rawFixDur, 8);
+
+      const nextFixStill =
+        existingScenes[targetSceneIdx + 1]?.image ||
+        existingScenes[targetSceneIdx + 1]?.keyframeImageUrl;
+      const fixEndFrame =
+        nextFixStill && isImgUrl(nextFixStill) && nextFixStill !== sceneStill
+          ? nextFixStill
+          : undefined;
+
+      const charSheetUrl =
+        character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
+      const orderedFixRefs: string[] = [];
+      if (charSheetUrl && isImgUrl(charSheetUrl) && charSheetUrl !== sceneStill) {
+        orderedFixRefs.push(charSheetUrl);
+      }
+      orderedFixRefs.push(sceneStill);
+      if (plateUrl && isImgUrl(plateUrl) && !orderedFixRefs.includes(plateUrl)) {
+        orderedFixRefs.push(plateUrl);
+      }
+      const fixIdentityRefs = orderedFixRefs.filter(
+        (u) => u && u !== sceneStill && u !== fixEndFrame
       );
+
+      const refHeader = [
+        charSheetUrl && isImgUrl(charSheetUrl)
+          ? `INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`
+          : "",
+        `INPUT REF [${charSheetUrl && isImgUrl(charSheetUrl) ? 2 : 1}]: First Frame = Scene ${sceneIndex} Still (mandatory I2V start)`,
+        `EXECUTIVE REVISION: ${editNotes}`,
+        "VISUAL LOCK LAW: Animate from the scene still first frame. Sheet is identity only — never the first frame.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const motionPrompt = `${refHeader}\n${buildSceneMotionPrompt({
+        mode,
+        aspectRatio: identityPack.aspectRatio,
+        sceneIndex,
+        totalScenes: existingScenes.length,
+        durationSec: fixTargetDuration,
+        shotFraming: sceneToFix.cameraDirection,
+        action:
+          revisedScene.primaryChange ||
+          sceneToFix.action ||
+          sceneToFix.visualDescription ||
+          sceneToFix.scriptBeat,
+        spokenLines: sceneToFix.spokenLines || sceneToFix.scriptSnippet,
+        onScreenText: sceneToFix.onScreenText,
+        audio: sceneToFix.audio,
+        endPose: sceneToFix.endState,
+        characterName: isFixInsert || isFixSet ? undefined : character?.name || "Host",
+        characterStyle:
+          isFixInsert || isFixSet
+            ? "B-Roll / Cinematic Visual"
+            : character?.style || "Executive Presenter",
+        environment: identityPack.environmentString,
+        viralConcept: buildViralConceptDirective(brief),
+      })}`;
+
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
 
       let generatedClip = "";
       let generatedLastFrameDataUrl: string | undefined;
-      if (isI2vApiProvider(activeVideo.providerId) && fixVisualLock.primaryRefUrl) {
+      if (isI2vApiProvider(activeVideo.providerId) && sceneStill) {
         const apiClip = await withTimeout(
           requestProductionVideoClip({
             provider: activeVideo.providerId,
-            prompt: beatPrompt,
-            firstFrameUrl: fixVisualLock.primaryRefUrl,
+            prompt: motionPrompt,
+            firstFrameUrl: sceneStill,
             endFrameUrl: fixEndFrame,
             referenceImageUrls: fixIdentityRefs,
             aspectRatio: identityPack.aspectRatio,
@@ -3072,9 +3228,9 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
       } else {
         generatedClip = await withTimeout(
           ModelRouter.executeCategoryRequest("videoGeneration", {
-            prompt: beatPrompt,
-            referenceImageUrl: fixVisualLock.primaryRefUrl,
-            referenceImageUrls: fixVisualLock.imageUrls,
+            prompt: motionPrompt,
+            referenceImageUrl: sceneStill,
+            referenceImageUrls: orderedFixRefs,
             aspectRatio: identityPack.aspectRatio,
             durationSec: fixTargetDuration,
             lastFrameUrl: prevFrameCandidate,
@@ -3096,7 +3252,7 @@ NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typo
             storagePath: `${productionId}/scenes/scene-0${sceneIndex}.mp4`,
             dataUrlOrBlob: generatedClip,
             mimeType: "video/mp4",
-            prompt: beatPrompt,
+            prompt: motionPrompt,
             provider: "ModelRouter",
           });
           if (storedAsset?.publicUrl) finalClipUrl = storedAsset.publicUrl;

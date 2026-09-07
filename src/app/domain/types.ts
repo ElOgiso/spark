@@ -271,7 +271,15 @@ export interface Production {
   brandId?: string;
   title: string;
   sparkId?: string;
-  status: "Drafting" | "Ready for Review" | "Approved" | "Needs Edit" | "Published" | "Failed" | "Cancelled";
+  status:
+    | "Drafting"
+    | "Generating"
+    | "Ready for Review"
+    | "Approved"
+    | "Needs Edit"
+    | "Published"
+    | "Failed"
+    | "Cancelled";
   mode: ProductionMode;
   productionMode?: string;
   dateCreated: string;

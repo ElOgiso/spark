@@ -166,16 +166,12 @@ ${ANTI_SLOP_RULES}
       mode: "express",
       globalLockBlock,
       voiceScript,
-      imagePromptTemplate: (sIdx, totalScenes, sceneText, actionDesc, framing) => `
-${globalLockBlock}
-
-EXPRESS NARRATOR KEYFRAME (Panel ${sIdx + 1} of ${totalScenes}):
-Visual Action: ${actionDesc}
-Camera Framing: ${framing}
-NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
-Hook Context: "${brief.hook}".
-Clear sequential storytelling.
-`.trim(),
+      // Phase E: retired — live stills use compileLiveStillPrompt / compileShotPrompt only
+      imagePromptTemplate: () => {
+        throw new Error(
+          "imagePromptTemplate is retired. Use compileLiveStillPrompt / compileShotPrompt (OS spine)."
+        );
+      },
       videoPromptTemplate: () => "",
     };
   }
@@ -186,16 +182,12 @@ Clear sequential storytelling.
       mode: "deep",
       globalLockBlock,
       voiceScript,
-      imagePromptTemplate: (sIdx, totalScenes, sceneText, actionDesc, framing) => `
-${globalLockBlock}
-
-CINEMATIC MASTER KEYFRAME (Scene ${sIdx + 1} of ${totalScenes}):
-INPUT REF [1]: Character Reference Sheet (${charName})
-ACTION: ${actionDesc}
-CAMERA: ${framing}, anamorphic prime optics, dynamic tracking.
-NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
-Set Lighting: Atmospheric rim lighting, studio set continuity, 8K photorealistic render.
-`.trim(),
+      // Phase E: retired — live stills use compileLiveStillPrompt / compileShotPrompt only
+      imagePromptTemplate: () => {
+        throw new Error(
+          "imagePromptTemplate is retired. Use compileLiveStillPrompt / compileShotPrompt (OS spine)."
+        );
+      },
       videoPromptTemplate: (durationSec, sceneDescriptions) => `
 GLOBAL LOCK:
 CHARACTER (from sheet image): ${charName} (Style: ${charStyle}, Traits: ${charTraits}). Reference sheet is image 1.
@@ -221,16 +213,12 @@ CINEMATIC MOTION LAWS:
     mode: "standard",
     globalLockBlock,
     voiceScript,
-    imagePromptTemplate: (sIdx, totalScenes, sceneText, actionDesc, framing) => `
-${globalLockBlock}
-
-HYBRID STORYBOARD PANEL (Panel ${sIdx + 1} of ${totalScenes}):
-INPUT REF [1]: Character Reference Sheet (${charName})
-ACTION: ${actionDesc}
-CAMERA: ${framing}
-NO TEXT ON IMAGE: Do not render any letters, words, captions, subtitles, or typography on this still. Clean photographic frame only.
-Clear host-on-camera perspective with high-impact visual engagement.
-`.trim(),
+    // Phase E: retired — live stills use compileLiveStillPrompt / compileShotPrompt only
+    imagePromptTemplate: () => {
+      throw new Error(
+        "imagePromptTemplate is retired. Use compileLiveStillPrompt / compileShotPrompt (OS spine)."
+      );
+    },
     videoPromptTemplate: (durationSec, sceneDescriptions) => `
 ${globalLockBlock}
 

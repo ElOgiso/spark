@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
 import { AIChatModal } from "../AIChatModal";
+import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import {
   ArrowRight,
   CheckCircle2,
@@ -526,17 +527,11 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
       const stageLabel = prod.generationProgress?.stage || "Generating";
       const percent = typeof prod.generationProgress?.percent === "number" && prod.generationProgress.percent >= 0 ? prod.generationProgress.percent : 0;
 
-      // Asset priority:
-      // 1. videoUrl
-      const videoUrl = prod.videoUrl || review?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
-
-      // 2. keyframe / storyboard frame
+      // Asset priority via one media lineage resolver
+      const mediaView = resolveProductionMediaView({ production: prod, review, brief });
+      const videoUrl = mediaView.canonical.canonicalMasterUrl;
       const storyboardImage =
-        prod.scenes?.find((s: any) => s.image)?.image ||
-        brief?.storyboard?.find((s: any) => s.image)?.image ||
-        prod.scenes?.[0]?.image ||
-        brief?.storyboard?.[0]?.image ||
-        brief?.generatedAssets?.generatedFrames?.[0];
+        mediaView.stillByScene[1] || mediaView.scenes.find((s) => s.imageUrl)?.imageUrl;
 
       // 3. thumbnail variant
       const thumbImage =
@@ -548,7 +543,9 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
       // 4. character / brand avatar or clean fallback
       const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || null;
 
-      const imageUrl = storyboardImage || thumbImage || fallbackImage;
+      const imageUrl = mediaView.isGenerating
+        ? storyboardImage || thumbImage
+        : storyboardImage || thumbImage || fallbackImage;
 
       if (isGenerating) {
         items.push({

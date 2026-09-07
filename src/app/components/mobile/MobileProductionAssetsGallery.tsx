@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { VideoFullscreenModal } from "./DonorSparkMediaHome";
 import { useSpark } from "../../state/SparkContext";
-import { resolveCanonicalProductionMedia } from "../../services/production/canonicalProductionMedia";
+import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 
 export interface ProductionSceneItem {
   id: string;
@@ -50,34 +50,30 @@ export function MobileProductionAssetsGallery({
     generatedImages.push({ id, label, url });
   };
   pushImg("sheet", "Character sheet", character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl);
-  (brief?.generatedAssets?.generatedFrames || []).forEach((url: string, idx: number) => pushImg(`still-${idx + 1}`, `Scene ${idx + 1} still`, url));
-  (brief?.storyboard || []).forEach((s: any, idx: number) => {
-    pushImg(`scene-still-${idx + 1}`, `Scene ${s.scene || idx + 1} still`, s.image || s.keyframeImageUrl);
+
+  const mediaView = resolveProductionMediaView({
+    production: activeProd,
+    brief,
+  });
+  const canonicalMedia = mediaView.canonical;
+
+  mediaView.scenes.forEach((s) => {
+    pushImg(`still-${s.scene}`, `Scene ${s.scene} still`, s.imageUrl);
+    pushImg(`last-${s.scene}`, `Scene ${s.scene} last frame`, s.lastFrameUrl);
   });
   (brief?.generatedAssets?.thumbnails || []).forEach((t: any, idx: number) => {
     pushImg(`thumb-${t.variant || idx + 1}`, `Thumbnail ${t.variant || idx + 1}`, t.image || t.url);
   });
 
-  // Map real storyboard scenes if available, else local fallback
-  const canonicalMedia = resolveCanonicalProductionMedia({
-    production: activeProd,
-    brief,
-  });
-  const rawStoryboard = brief?.storyboard || activeProd?.storyboard || activeProd?.productionScenes || [];
-  const rawClips =
-    canonicalMedia.sceneClips.length > 0
-      ? canonicalMedia.sceneClips
-      : brief?.generatedAssets?.generatedVideos || activeProd?.clips || [];
-
   const initialScenes: ProductionSceneItem[] =
-    rawStoryboard.length > 0
-      ? rawStoryboard.map((s: any, idx: number) => {
-          const clipUrl = s.videoUrl || rawClips[idx] || (rawStoryboard.length === 1 ? activeProd?.videoUrl || brief?.videoUrl : undefined);
-          const stillUrl = s.image || s.keyframeImageUrl || s.keyframeUrl || undefined;
+    mediaView.scenes.length > 0
+      ? mediaView.scenes.map((s) => {
+          const clipUrl = s.videoUrl || (mediaView.scenes.length === 1 ? canonicalMedia.canonicalMasterUrl : undefined);
+          const stillUrl = s.imageUrl;
           return {
-            id: `scene-${idx + 1}`,
-            index: idx + 1,
-            title: `Scene ${idx + 1}`,
+            id: `scene-${s.scene}`,
+            index: s.scene,
+            title: `Scene ${s.scene}`,
             durationSec: s.durationSec || parseInt(s.duration) || 5,
             status: s.status === "needs_fix" || s.status === "needs_edit"
               ? "Needs fix"
@@ -87,14 +83,14 @@ export function MobileProductionAssetsGallery({
               ? "Approved"
               : (clipUrl || stillUrl)
               ? "Ready"
-              : activeProd?.isGeneratingAssets
+              : mediaView.isGenerating
               ? "Generating"
               : "Ready",
             thumbUrl: stillUrl,
             videoUrl: clipUrl,
-            beatLine: s.onScreenText || s.scriptSnippet || s.visualDescription || s.primaryChange || `Scene ${idx + 1}`,
-            visualDescription: s.visualDescription,
-            audio: s.audio,
+            beatLine: s.description,
+            visualDescription: s.description,
+            audio: undefined,
           };
         })
       : [

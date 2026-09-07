@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { MiniMediaThumbnail } from "./MediaPreviewHelper";
+import { resolveProductionMediaView } from "../services/production/productionMediaLineage";
 import {
   Button, StatusChip, Card, EmptyState, PageHeader, SectionHeader,
   FilterPill, ConfidenceBar, type ChipVariant,
@@ -248,16 +249,16 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                       const rev = reviewItems.find((r: any) => r.productionId === item.id || r.id === item.id);
                       const brief = prod?.brief || rev?.brief;
 
-                      // 1. Video URL
-                      const videoUrl = prod?.videoUrl || rev?.videoUrl || brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.[0];
+                      const mediaView = resolveProductionMediaView({
+                        production: prod,
+                        review: rev,
+                        brief,
+                      });
+                      // 1. Canonical master only (never scene clip / generatedVideos[0] pollution)
+                      const videoUrl = mediaView.canonical.canonicalMasterUrl;
 
-                      // 2. Storyboard keyframe image
-                      const storyboardImage =
-                        prod?.scenes?.find((s: any) => s.image)?.image ||
-                        brief?.storyboard?.find((s: any) => s.image)?.image ||
-                        prod?.scenes?.[0]?.image ||
-                        brief?.storyboard?.[0]?.image ||
-                        brief?.generatedAssets?.generatedFrames?.[0];
+                      // 2. Storyboard keyframe — same shelf as Creative Review / Assets
+                      const storyboardImage = mediaView.stillByScene[1] || mediaView.scenes.find((s) => s.imageUrl)?.imageUrl;
 
                       // 3. Thumbnail variant image
                       const thumbImage =
@@ -266,21 +267,14 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                         brief?.thumbnails?.[0]?.url ||
                         brief?.thumbnails?.[0]?.image;
 
-                      // 4. Character / brand fallback
+                      // 4. Character / brand fallback — only when not generating
                       const fallbackImage = character?.avatarUrl || character?.imageUrl || brand?.logoUrl || undefined;
 
-                      const realMediaUrl = storyboardImage || thumbImage || fallbackImage;
+                      const realMediaUrl = mediaView.isGenerating
+                        ? storyboardImage || thumbImage
+                        : storyboardImage || thumbImage || fallbackImage;
 
-                      const isGenerating =
-                        Boolean(prod?.isGeneratingAssets) ||
-                        Boolean(
-                          prod?.generationProgress &&
-                          prod.generationProgress.percent > 0 &&
-                          prod.generationProgress.percent < 100 &&
-                          prod.generationProgress.stage !== "Complete" &&
-                          prod.generationProgress.stage !== "Cancelled" &&
-                          prod.generationProgress.stage !== "Failed"
-                        );
+                      const isGenerating = mediaView.isGenerating;
 
                       const stageLabel = prod?.generationProgress?.stage || "Generating";
                       const percent = prod?.generationProgress?.percent || (prod?.isGeneratingAssets ? 15 : 0);
