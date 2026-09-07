@@ -15,6 +15,7 @@ import {
 import {
   resolveCanonicalProductionMedia,
   resolveReviewHeroVideoUrl,
+  hasCanonicalPlayableMedia,
 } from "./canonicalProductionMedia";
 import type { Brand, Character, MemoryItem, Production, ViralSpark } from "../../domain/types";
 
@@ -344,5 +345,37 @@ describe("canonical media spine", () => {
     };
     const media = resolveCanonicalProductionMedia({ production, brief: production.brief });
     assert.equal(media.canonicalMasterUrl, fallback);
+  });
+
+  it("hasCanonicalPlayableMedia is true for scene clips or master, false for cinematic fallback-only", () => {
+    const scene1 = durable("scenes/scene-01.mp4");
+    const clipsOnly: any = {
+      id: "prod-clips",
+      mode: "deep",
+      productionMode: "cinematic",
+      brief: {
+        storyboard: [{ scene: 1, videoUrl: scene1 }],
+        generatedAssets: { generatedVideos: [scene1] },
+      },
+    };
+    clipsOnly.settingsSnapshot = buildProductionSettingsSnapshot({
+      brand: baseBrand(),
+      productionMode: "cinematic",
+    });
+    assert.equal(hasCanonicalPlayableMedia({ production: clipsOnly, brief: clipsOnly.brief }), true);
+
+    const fallback = durable("video/master-fallback.mp4");
+    const fallbackOnly: any = {
+      id: "prod-fallback",
+      mode: "deep",
+      productionMode: "cinematic",
+      videoUrl: fallback,
+      brief: { videoUrl: fallback, generatedAssets: { emergencyFallbackVideoUrl: fallback } },
+    };
+    fallbackOnly.settingsSnapshot = buildProductionSettingsSnapshot({
+      brand: baseBrand(),
+      productionMode: "cinematic",
+    });
+    assert.equal(hasCanonicalPlayableMedia({ production: fallbackOnly, brief: fallbackOnly.brief }), false);
   });
 });

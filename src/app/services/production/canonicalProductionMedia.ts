@@ -298,3 +298,19 @@ export function resolveReviewHeroVideoUrl(input: {
 }): string | undefined {
   return resolveCanonicalProductionMedia(input).canonicalMasterUrl;
 }
+
+/**
+ * True when durable playable video already exists (canonical master and/or scene clips).
+ * Used to skip credit-burning regenerate when force=false.
+ * Quarantined emergency narrator fallback alone does not count for cinematic/standard.
+ */
+export function hasCanonicalPlayableMedia(input: {
+  production?: any;
+  review?: any;
+  brief?: any;
+}): boolean {
+  const media = resolveCanonicalProductionMedia(input);
+  if (media.hasCanonicalMaster && isPlayableVideoUrl(media.canonicalMasterUrl)) return true;
+  if (media.sceneClips.length > 0) return true;
+  return false;
+}
