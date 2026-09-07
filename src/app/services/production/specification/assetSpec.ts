@@ -341,4 +341,6 @@ export interface ProductionAssetRequirement {
   continuityGroup?: string;
   state?: string;
   origin: AssetRequirementOrigin;
+  /** 0–1 confidence that this requirement is narratively necessary */
+  confidence?: number;
 }

@@ -57,8 +57,14 @@ import { applyVisualPlanningPipeline } from "../generation/visualPlanningPipelin
 import type { ProductionDag } from "../dag/productionDag";
 import {
   applyAssetDirectorToSpec,
+  bindAssetRequirementsToShots,
   directProductionAssets,
 } from "./productionAssetDirector";
+import {
+  buildProductionSettingsSnapshot,
+  type ProductionSettingsSnapshot,
+} from "../productionSettingsSnapshot";
+import { normalizeModeString } from "../resolveProductionMode";
 
 export interface OrchestrateIdeaInput {
   idea: string;
@@ -86,6 +92,11 @@ export interface OrchestrateIdeaInput {
   existingMasters?: import("../specification/assetSpec").MasterAssetRef[];
   /** Phase 11 — structured creative learnings for Creative Director */
   creativeLearnings?: import("./performance").CreativeLearning[];
+  /**
+   * Locked production settings snapshot (d2e4a1f).
+   * When omitted but brand is present, a snapshot is captured for this plan.
+   */
+  settingsSnapshot?: ProductionSettingsSnapshot;
 }
 
 export interface ProductionIntelligenceTrace {
@@ -294,7 +305,32 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
 
   narrative.acts[0].sceneIds = planned.scenes.map((s) => s.id);
 
-  const preferI2V = String(input.productionMode || directed.preferences.productionMode || "standard") !== "express";
+  // Capture / honor locked production settings snapshot (d2e4a1f spine).
+  // Snapshot mode wins over live brand.productionMode mutations.
+  const settingsSnapshot: ProductionSettingsSnapshot | undefined =
+    input.settingsSnapshot ||
+    (input.brand
+      ? buildProductionSettingsSnapshot({
+          brand: input.brand,
+          spark: input.spark,
+          character: input.character,
+          memoryItems: input.memoryItems,
+          productionMode:
+            input.productionMode ||
+            directed.preferences.productionMode ||
+            input.brand.productionMode,
+          automationMode: input.automationMode,
+        })
+      : undefined);
+
+  const lockedMode =
+    settingsSnapshot?.productionMode ||
+    normalizeModeString(input.productionMode) ||
+    normalizeModeString(directed.preferences.productionMode) ||
+    normalizeModeString(input.brand?.productionMode) ||
+    "standard";
+
+  const preferI2V = lockedMode !== "express";
   const optProfile = directed.strategy?.optimizationProfile || "balanced";
   const preferCost = optProfile === "cost_sensitive" || optProfile === "speed_first";
   const preferSpeed = optProfile === "speed_first" || directed.creative.pacing === "compressed";
@@ -318,11 +354,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       idea: directed.creative.intent,
       createdAt: now,
       updatedAt: now,
-      productionMode:
-        input.productionMode ||
-        directed.preferences.productionMode ||
-        input.brand?.productionMode ||
-        "standard",
+      productionMode: lockedMode,
       creativeControl: directed.preferences.creativeControl || input.creativeControl || "auto",
       targetDurationSec: duration,
       platforms: directed.classification.platformHints,
@@ -341,7 +373,7 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       requiresDialogue: directed.creative.requiresDialogue,
       requiresMusic: directed.creative.requiresMusic,
       requiresSoundDesign: directed.creative.requiresSoundDesign,
-      narratorVoiceRef: input.character?.voice?.voiceId,
+      narratorVoiceRef: input.character?.voice?.voiceId || settingsSnapshot?.voice.voiceId,
     }),
     visualStyle: planned.visualStyle,
     continuity: {
@@ -388,11 +420,12 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     characters: planned.characters,
     world: planned.world,
     visualStyle: planned.visualStyle,
-    productionMode: spec.project.productionMode,
-    contentFormat: directed.classification.primaryGenre,
+    productionMode: lockedMode,
+    contentFormat: settingsSnapshot?.contentFormat || directed.classification.primaryGenre,
     brand: input.brand,
     character: input.character,
     existingMasters: input.existingMasters,
+    settingsSnapshot,
     visualMedium: [
       input.idea,
       directed.creative.intent,
@@ -400,6 +433,8 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       directed.creative.genre,
       ...(directed.creative.grammarTags || []),
       ...(directed.grammar?.tags || []),
+      ...(settingsSnapshot?.creative.tones || []),
+      ...(settingsSnapshot?.creative.deliveryStyles || []),
     ]
       .filter(Boolean)
       .join(" "),
@@ -450,6 +485,24 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       generationTaskCount: visual.stats.generationTaskCount,
       continuityBridges: visual.stats.continuityBridges,
     };
+
+    // Bind asset requirements → shot IDs now that cinematography expanded shots
+    if (plannedSpec.meta.assetDirector?.requirements?.length) {
+      const bound = bindAssetRequirementsToShots(
+        plannedSpec.meta.assetDirector.requirements,
+        plannedSpec.scenes
+      );
+      plannedSpec = {
+        ...plannedSpec,
+        meta: {
+          ...plannedSpec.meta,
+          assetDirector: {
+            ...plannedSpec.meta.assetDirector,
+            requirements: bound,
+          },
+        },
+      };
+    }
   }
 
   const shotCount = plannedSpec.scenes.reduce((n, s) => n + s.shots.length, 0);
