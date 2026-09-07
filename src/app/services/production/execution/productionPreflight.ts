@@ -8,9 +8,12 @@ import { preflightGate } from "../qc/legacyGates";
 import { planGenerationTasks } from "../generation/generationPlanner";
 import { buildProductionDag, validateProductionDag } from "../dag/productionDag";
 import type { PreflightIssue, PreflightReport } from "./lifecycleTypes";
+import { validateProductionWorldCompleteness } from "../intelligence/productionAssetDirector";
 
 export interface RunProductionPreflightOptions {
   includeDag?: boolean;
+  /** When true (default), validate Asset Director world completeness if present */
+  includeAssetWorldGate?: boolean;
 }
 
 export function runProductionPreflight(
@@ -98,6 +101,22 @@ export function runProductionPreflight(
         ? "Complete planning before execution."
         : "Review creative/research requirements before generation.",
     });
+  }
+
+  // Extend existing preflight with Asset Director world completeness (no second QC system)
+  if (options.includeAssetWorldGate !== false && spec.meta?.assetDirector) {
+    const worldGate = validateProductionWorldCompleteness(spec);
+    for (const issue of worldGate.issues) {
+      issues.push({
+        code: issue.code,
+        severity: issue.severity,
+        message: issue.message,
+        remediation:
+          issue.severity === "blocker"
+            ? "Complete Production Asset Director requirements / master identity binding before generation."
+            : "Review production-world bindings before generation.",
+      });
+    }
   }
 
   if (options.includeDag !== false && shotCount > 0 && validation.ok) {

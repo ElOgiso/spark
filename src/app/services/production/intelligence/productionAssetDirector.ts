@@ -35,6 +35,7 @@ import {
 import { normalizeModeString, type ResolvedMode } from "../resolveProductionMode";
 import { buildProductionCharacterSheetPrompt } from "../characterSheetPrompt";
 import { buildLocationPlatePrompt } from "../locationPlatePrompt";
+import type { ProductionSettingsSnapshot } from "../productionSettingsSnapshot";
 
 export interface ProductionAssetDirectorInput {
   productionId: string;
@@ -52,6 +53,11 @@ export interface ProductionAssetDirectorInput {
   existingMasters?: MasterAssetRef[];
   /** Visual medium hint: realistic | cinematic | anime | wuxia | 3d */
   visualMedium?: string;
+  /**
+   * Locked production settings snapshot (d2e4a1f spine).
+   * When present, mode/format/brand/character locks take precedence over live inputs.
+   */
+  settingsSnapshot?: ProductionSettingsSnapshot;
 }
 
 export interface ProductionAssetDirectorResult {
@@ -266,6 +272,23 @@ function inferSupportingCast(params: {
       name: "Rival Martial Artist",
       role: "support",
       narrativePurpose: "Wuxia confrontation requires a rival identity lock",
+      sceneIndexes: sceneIdx,
+    });
+  }
+
+  // Crowd / extras — environmental presence only; never invent named waiters/patrons
+  const crowdOnly =
+    /\bcrowd(ed)?\b|\bextras?\b|\bbackground (people|patrons|guests|diners)\b/.test(ideaText);
+  if (
+    crowdOnly &&
+    mode === "deep" &&
+    !needs.some((n) => n.role === "extra")
+  ) {
+    needs.push({
+      baseId: "character_extra_crowd",
+      name: "Background Crowd Extras",
+      role: "extra",
+      narrativePurpose: "Non-identity crowd density; no per-person CharacterMaster",
       sceneIndexes: sceneIdx,
     });
   }
@@ -502,12 +525,33 @@ function sceneIdsFor(scenes: SceneSpec[], indexes: number[]): string[] {
 export function directProductionAssets(
   input: ProductionAssetDirectorInput
 ): ProductionAssetDirectorResult {
-  const mode = modeBucket(input.productionMode);
-  const medium = visualMediumFrom(input.creative, input.visualMedium, input.productionMode);
-  const contentFormat = contentFormatOf(input.creative, input.contentFormat);
+  const snapshot = input.settingsSnapshot;
+  // Precedence: locked snapshot → explicit input → creative inference
+  const lockedModeRaw = snapshot?.productionMode || input.productionMode;
+  const mode = modeBucket(lockedModeRaw);
+  const medium = visualMediumFrom(input.creative, input.visualMedium, lockedModeRaw);
+  const contentFormat = String(
+    snapshot?.contentFormat || input.contentFormat || contentFormatOf(input.creative, input.contentFormat)
+  ).toLowerCase();
   const ideaText = ideaBlob(input.idea, input.creative, input.beats);
   const notes: string[] = [];
   const requirements: ProductionAssetRequirement[] = [];
+
+  const brandName = snapshot?.brand.name || input.brand?.name;
+  const brandNiche = snapshot?.brand.niche || input.brand?.niche;
+  const brandCountry = snapshot?.brand.country || input.brand?.country;
+  const lockedCharacterName = snapshot?.character.primaryCharacterName || input.character?.name;
+  const lockedSheetUrl =
+    snapshot?.character.characterSheetUrl ||
+    input.character?.characterSheetUrl ||
+    input.character?.imageUrl ||
+    input.character?.avatarUrl;
+
+  if (snapshot) {
+    notes.push(
+      `Locked snapshot authoritative: mode=${snapshot.productionMode} format=${snapshot.contentFormat}`
+    );
+  }
 
   const existing = input.existingMasters || [];
   let reusedCount = 0;
@@ -555,6 +599,7 @@ export function directProductionAssets(
     dependencies: [],
     continuityGroup: "style",
     origin: existingStyle ? "system_required" : "ai_inferred",
+    confidence: 1,
   });
 
   // ── Characters ──────────────────────────────────────────────────────────
@@ -570,12 +615,9 @@ export function directProductionAssets(
       reusedCount += 1;
       notes.push(`Reusing lead character ${leadExisting.identity.ref}`);
     } else {
-      const sheet =
-        input.character?.characterSheetUrl ||
-        input.character?.imageUrl ||
-        input.character?.avatarUrl;
+      const sheet = lockedSheetUrl;
       const leadName =
-        input.character?.name ||
+        lockedCharacterName ||
         (/\bfounder\b/.test(ideaText)
           ? "Lead Founder"
           : /\bhero\b/.test(ideaText)
@@ -616,14 +658,14 @@ export function directProductionAssets(
     const sheetPrompt = buildProductionCharacterSheetPrompt({
       creatorName: lead.name,
       role: String(lead.role || "host"),
-      brandName: input.brand?.name,
-      niche: input.brand?.niche,
+      brandName,
+      niche: brandNiche,
       genre: medium === "anime" ? "Anime" : medium === "3d" ? "3D / 3D Render" : medium === "wuxia" ? "Cinematic" : "Realistic",
       personality: lead.performanceNotes || lead.description,
       wardrobe: lead.wardrobeState?.description,
       researchOneLiner: input.idea.slice(0, 160),
     });
-    const hasSheet = (lead.approvedReferenceUrls || []).length > 0;
+    const hasSheet = (lead.approvedReferenceUrls || []).length > 0 || Boolean(lockedSheetUrl);
     requirements.push({
       id: `req_${lead.identity.baseId}`,
       kind: "character",
@@ -647,10 +689,15 @@ export function directProductionAssets(
         ? "Approved character sheet already locked — do not regenerate"
         : "Lead character sheet required as identity reference",
       prompt: hasSheet ? undefined : sheetPrompt,
-      referenceUrls: lead.approvedReferenceUrls || [],
+      referenceUrls: lead.approvedReferenceUrls?.length
+        ? lead.approvedReferenceUrls
+        : lockedSheetUrl
+          ? [lockedSheetUrl]
+          : [],
       dependencies: [styleMaster.identity.ref],
       continuityGroup: "character_identity",
       origin: hasSheet ? "system_required" : "ai_inferred",
+      confidence: 0.95,
     });
   }
 
@@ -699,8 +746,8 @@ export function directProductionAssets(
       : buildProductionCharacterSheetPrompt({
           creatorName: master.name,
           role: "support",
-          brandName: input.brand?.name,
-          niche: input.brand?.niche,
+          brandName,
+          niche: brandNiche,
           genre: medium === "anime" ? "Anime" : medium === "3d" ? "3D / 3D Render" : medium === "wuxia" ? "Cinematic" : "Realistic",
           personality: need.narrativePurpose,
           purpose: need.narrativePurpose,
@@ -735,6 +782,7 @@ export function directProductionAssets(
       dependencies: [styleMaster.identity.ref, lead?.identity.ref].filter(Boolean) as string[],
       continuityGroup: "character_identity",
       origin: "ai_inferred",
+      confidence: isExtra ? 0.7 : 0.88,
     });
   }
 
@@ -785,13 +833,13 @@ export function directProductionAssets(
     locationMasters.push(master);
 
     const platePrompt = buildLocationPlatePrompt({
-      brandName: input.brand?.name,
-      niche: input.brand?.niche,
+      brandName,
+      niche: brandNiche,
       genre: styleLooks.look,
       contentFormat,
       environmentDescription: need.environment,
       locationName: need.name,
-      geography: input.brand?.country,
+      geography: brandCountry,
       timeOfDay: need.state || master.defaultTimeOfDay,
       lighting: master.defaultLighting,
       weather: need.state === "night" ? undefined : undefined,
@@ -837,6 +885,7 @@ export function directProductionAssets(
       continuityGroup: `location_${need.baseId}`,
       state: need.state,
       origin: "ai_inferred",
+      confidence: need.needsPlate ? 0.9 : 0.75,
     });
   }
 
@@ -900,6 +949,7 @@ export function directProductionAssets(
       dependencies: [styleMaster.identity.ref],
       continuityGroup: "props",
       origin: "ai_inferred",
+      confidence: need.needsMaster ? 0.82 : 0.55,
     });
   }
 
@@ -953,6 +1003,7 @@ export function directProductionAssets(
         continuityGroup: "wardrobe",
         state: st.state,
         origin: "ai_inferred",
+        confidence: 0.8,
       });
     }
   }
@@ -1109,5 +1160,154 @@ export function applyAssetDirectorToSpec(
         requirements: directed.requirements,
       },
     },
+  };
+}
+
+/**
+ * Bind asset requirements to concrete shot IDs after cinematography expands shots.
+ * Extends existing requirement records — does not create a second asset graph.
+ */
+export function bindAssetRequirementsToShots(
+  requirements: ProductionAssetRequirement[],
+  scenes: SceneSpec[]
+): ProductionAssetRequirement[] {
+  return requirements.map((req) => {
+    const shotIds: string[] = [];
+    for (const scene of scenes) {
+      const sceneMatch =
+        !req.sourceSceneIds.length || req.sourceSceneIds.includes(scene.id);
+      for (const shot of scene.shots || []) {
+        if (req.kind === "style") {
+          if (sceneMatch) shotIds.push(shot.id);
+          continue;
+        }
+        const refs = new Set<string>([
+          ...(shot.references?.characterRefs || []),
+          ...(shot.references?.locationRefs || []),
+          ...(shot.references?.styleRefs || []),
+          ...(shot.characterIds || []),
+          ...(shot.propIds || []),
+          ...(shot.assetIds || []),
+          ...(scene.characterIds || []),
+          ...(scene.propIds || []),
+          ...(scene.locationId ? [scene.locationId] : []),
+        ]);
+        if (req.masterAssetRef && refs.has(req.masterAssetRef) && sceneMatch) {
+          shotIds.push(shot.id);
+        }
+      }
+    }
+    return {
+      ...req,
+      sourceShotIds: Array.from(new Set([...req.sourceShotIds, ...shotIds])),
+    };
+  });
+}
+
+export interface ProductionWorldGateIssue {
+  code: string;
+  severity: "blocker" | "warning";
+  message: string;
+}
+
+/**
+ * Quality gate: incomplete visual world should block shot generation readiness.
+ * Consumes existing meta.assetDirector + scene bindings — no parallel validator system.
+ */
+export function validateProductionWorldCompleteness(
+  spec: ProductionSpec
+): { ok: boolean; issues: ProductionWorldGateIssue[] } {
+  const issues: ProductionWorldGateIssue[] = [];
+  const requirements = spec.meta.assetDirector?.requirements || [];
+  const mode = normalizeModeString(String(spec.project.productionMode || "")) || "standard";
+
+  // Narrator must not be forced into cinematic I2V asset explosion
+  if (mode === "express") {
+    const heavy = requirements.filter(
+      (r) => r.kind === "wardrobe" && r.generationRequired
+    );
+    if (heavy.length > 2) {
+      issues.push({
+        code: "NARRATOR_ASSET_OVERBUILD",
+        severity: "warning",
+        message: "Narrator mode has unusually heavy wardrobe generation requirements",
+      });
+    }
+  }
+
+  const characters = requirements.filter((r) => r.kind === "character" && r.required);
+  for (const c of characters) {
+    if (c.role === "extra") continue;
+    if (!c.masterAssetRef) {
+      issues.push({
+        code: "CHARACTER_IDENTITY_MISSING",
+        severity: "blocker",
+        message: `Required character "${c.name}" lacks a master asset reference`,
+      });
+    }
+  }
+
+  const locations = requirements.filter((r) => r.kind === "location" && r.required);
+  for (const loc of locations) {
+    if (!loc.masterAssetRef) {
+      issues.push({
+        code: "LOCATION_SOURCE_MISSING",
+        severity: "blocker",
+        message: `Required location "${loc.name}" lacks a master asset reference`,
+      });
+    }
+  }
+
+  // Duplicate base identities with conflicting generationRequired both true
+  const byBase = new Map<string, ProductionAssetRequirement[]>();
+  for (const r of requirements) {
+    const base = r.masterAssetRef?.split(":v")[0] || r.id;
+    const list = byBase.get(base) || [];
+    list.push(r);
+    byBase.set(base, list);
+  }
+  for (const [base, list] of byBase) {
+    const gens = list.filter((r) => r.generationRequired && r.kind === "character");
+    if (gens.length > 1) {
+      issues.push({
+        code: "DUPLICATE_CHARACTER_GENERATION",
+        severity: "blocker",
+        message: `Multiple character generation intents for identity ${base}`,
+      });
+    }
+  }
+
+  // Scene binding: cinematic scenes should resolve a location when locations were planned
+  if (mode === "deep" && locations.length > 0) {
+    for (const scene of spec.scenes || []) {
+      if (!scene.locationId) {
+        issues.push({
+          code: "SCENE_LOCATION_UNBOUND",
+          severity: "warning",
+          message: `Scene ${scene.id} has no locationId after asset direction`,
+        });
+      }
+    }
+  }
+
+  // Shot references for non-express productions with characters
+  if (mode !== "express" && characters.some((c) => c.role !== "extra")) {
+    for (const scene of spec.scenes || []) {
+      for (const shot of scene.shots || []) {
+        const refs = shot.references?.characterRefs || shot.characterIds || [];
+        if (!refs.length) {
+          issues.push({
+            code: "SHOT_CHARACTER_REF_MISSING",
+            severity: "warning",
+            message: `Shot ${shot.id} lacks character reference binding`,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    ok: !issues.some((i) => i.severity === "blocker"),
+    issues,
   };
 }

@@ -8,6 +8,7 @@ import { orchestrateIdeaToProductionSpec } from "./intelligence/productionOrches
 import {
   directProductionAssets,
   applyAssetDirectorToSpec,
+  validateProductionWorldCompleteness,
 } from "./intelligence/productionAssetDirector";
 import {
   createCharacterMaster,
@@ -17,6 +18,7 @@ import {
 } from "./specification/assetSpec";
 import { buildLocationPlatePrompt } from "./locationPlatePrompt";
 import { buildProductionCharacterSheetPrompt } from "./characterSheetPrompt";
+import { buildProductionSettingsSnapshot } from "./productionSettingsSnapshot";
 import type { ProductionAssetRequirement } from "./specification/assetSpec";
 
 function reqs(spec: { meta: { assetDirector?: { requirements: ProductionAssetRequirement[] } } }) {
@@ -398,5 +400,135 @@ describe("applyAssetDirectorToSpec", () => {
       notes: ["noop"],
     });
     assert.equal(again.characters.length, spec!.characters.length);
+  });
+});
+
+describe("Production Asset Director — background crowd", () => {
+  it("does not create ten named character masters for a crowded restaurant", () => {
+    const { ok, spec } = orchestrateIdeaToProductionSpec({
+      idea: "Cinematic story: the founder enters a crowded restaurant and sits alone at a corner table",
+      targetDurationSec: 30,
+      productionMode: "cinematic",
+    });
+    assert.equal(ok, true);
+    const chars = byKind(reqs(spec!), "character");
+    const namedSupport = chars.filter((c) => c.role === "support");
+    const extras = chars.filter((c) => c.role === "extra");
+    assert.ok(namedSupport.length <= 1, "must not invent a cast of restaurant patrons");
+    assert.ok(
+      extras.length <= 1,
+      "at most one background crowd extra requirement"
+    );
+    assert.ok(
+      !extras.some((e) => e.generationRequired),
+      "crowd extras do not require individual character sheets"
+    );
+    assert.ok(chars.length < 5, "asset explosion prevented");
+  });
+});
+
+describe("Production Asset Director — locked production snapshot", () => {
+  it("uses locked cinematic snapshot even when live brand prefers narrator", () => {
+    const brand = {
+      id: "b1",
+      name: "Crypto Media",
+      niche: "crypto",
+      archetype: "educator",
+      purpose: "teach",
+      country: "Nigeria",
+      contentPillars: [],
+      audience: { primary: "founders", painPoints: [], desires: [] },
+      tone: [],
+      productionMode: "narrator",
+      formatSettings: {
+        contentFormat: "story",
+        aspectMode: "portrait",
+        targetDurationSec: 30,
+      },
+    } as any;
+
+    const snapshot = buildProductionSettingsSnapshot({
+      brand,
+      character: {
+        id: "c1",
+        name: "Lead Founder",
+        role: "host",
+        style: "",
+        traits: [],
+        characterSheetUrl: "https://example.com/lead.png",
+      } as any,
+      productionMode: "cinematic",
+    });
+
+    // Live brand still says narrator — snapshot must win
+    brand.productionMode = "narrator";
+
+    const { ok, spec } = orchestrateIdeaToProductionSpec({
+      idea: "A founder confronts a competitor at a private dinner about a stolen product",
+      targetDurationSec: 30,
+      productionMode: "narrator", // even explicit live override attempt
+      brand,
+      settingsSnapshot: snapshot,
+      character: {
+        id: "c1",
+        name: "Lead Founder",
+        role: "host",
+        style: "",
+        traits: [],
+        characterSheetUrl: "https://example.com/lead.png",
+      } as any,
+    });
+
+    assert.equal(ok, true);
+    assert.equal(spec!.project.productionMode, "deep");
+    assert.ok(
+      (spec!.meta.assetDirector?.notes || []).some((n) => /Locked snapshot/i.test(n))
+    );
+    // Cinematic economics: supporting cast + location plates allowed
+    assert.ok(byKind(reqs(spec!), "character").some((c) => /competitor/i.test(c.name)));
+    assert.ok(byKind(reqs(spec!), "location").length >= 1);
+    assert.equal(spec!.continuity.lastFrameChainEnabled, true);
+  });
+});
+
+describe("Production Asset Director — asset graph bindings", () => {
+  it("binds requirements to scenes and shots with dependencies", () => {
+    const { ok, spec } = orchestrateIdeaToProductionSpec({
+      idea: "Cinematic story: founder discovers competitor stole the product at the office then confronts him at dinner",
+      targetDurationSec: 30,
+      productionMode: "cinematic",
+    });
+    assert.equal(ok, true);
+    const requirements = reqs(spec!);
+    assert.ok(requirements.length > 0);
+    for (const r of requirements) {
+      assert.ok(r.id, "requirement id");
+      assert.ok(r.kind, "requirement kind");
+      assert.ok(r.narrativePurpose, "narrative purpose");
+      assert.ok(Array.isArray(r.sourceSceneIds), "scene ids array");
+      assert.ok(Array.isArray(r.dependencies), "dependencies array");
+      if (r.kind === "character" && r.role !== "extra") {
+        assert.ok(r.masterAssetRef, "character master ref");
+      }
+    }
+    const competitor = requirements.find((r) => /competitor/i.test(r.name));
+    assert.ok(competitor);
+    assert.ok(competitor!.sourceSceneIds.length >= 1);
+    // After visual planning, shot bindings should exist for style or characters
+    const withShots = requirements.filter((r) => r.sourceShotIds.length > 0);
+    assert.ok(withShots.length >= 1, "at least one requirement bound to shots");
+  });
+});
+
+describe("Production world completeness gate", () => {
+  it("passes for a directed cinematic production", () => {
+    const { ok, spec } = orchestrateIdeaToProductionSpec({
+      idea: "Cinematic founder story with competitor confrontation at dinner",
+      targetDurationSec: 30,
+      productionMode: "cinematic",
+    });
+    assert.equal(ok, true);
+    const gate = validateProductionWorldCompleteness(spec!);
+    assert.equal(gate.ok, true, gate.issues.map((i) => i.message).join("; "));
   });
 });

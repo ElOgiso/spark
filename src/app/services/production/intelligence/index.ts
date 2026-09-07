@@ -6,10 +6,13 @@ export { planProductionScenes } from "./productionPlanner";
 export {
   directProductionAssets,
   applyAssetDirectorToSpec,
+  bindAssetRequirementsToShots,
+  validateProductionWorldCompleteness,
 } from "./productionAssetDirector";
 export type {
   ProductionAssetDirectorInput,
   ProductionAssetDirectorResult,
+  ProductionWorldGateIssue,
 } from "./productionAssetDirector";
 export {
   createProductionPlan,
