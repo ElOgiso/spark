@@ -58,7 +58,45 @@ export class VideoUnderstandingProvider {
       const match = clean.match(/\/status\/(\d+)/);
       if (match) return { platform: "x", videoId: match[1] };
     }
-    return { platform: "general", videoId: `vid-${Date.now()}` };
+    return { platform: "general", videoId: "" };
+  }
+
+  static watchedVideoKey(platform: string, videoId: string): string {
+    return `${String(platform || "").trim().toLowerCase()}:${String(videoId || "").trim()}`;
+  }
+
+  static isCannedAnalysisText(text?: string | null): boolean {
+    if (!text || typeof text !== "string") return false;
+    return (
+      /Presents a high-curiosity opening hook anchored around/i.test(text) ||
+      /Fast-paced[\s\S]{0,80}optimized for short-form/i.test(text) ||
+      /Organic value bridge/i.test(text) ||
+      /curiosity-first frame/i.test(text)
+    );
+  }
+
+  static isAcceptedVideoResearch(vr?: VideoResearch | null): boolean {
+    if (!vr) return false;
+    const videoId = String(vr.videoId || "").trim();
+    const title = String(vr.title || "").trim();
+    const url = String(vr.url || "").trim();
+    const hook = String(vr.hook_formula || "").trim();
+    const opening = String(vr.opening_line || "").trim();
+    const cta = String(vr.cta_line || "").trim();
+    const format = String(vr.format || "").trim();
+    const beats = Array.isArray(vr.spoken_beats) ? vr.spoken_beats.map((b) => String(b || "").trim()).filter(Boolean) : [];
+    const actions = Array.isArray(vr.visual_actions)
+      ? vr.visual_actions.map((a) => String(a || "").trim()).filter(Boolean)
+      : [];
+    const duration = typeof vr.duration_sec === "number" ? vr.duration_sec : vr.durationSec;
+    if (!videoId || videoId.startsWith("vid-") || !title || !url) return false;
+    if (hook.length < 8 || opening.length < 8 || cta.length < 4 || !format) return false;
+    if (beats.length < 2 || beats.length > 6 || actions.length < 1) return false;
+    if (typeof duration !== "number" || !(duration > 0)) return false;
+    if (!vr.transcript_ok && !vr.frames_ok) return false;
+    const blob = [hook, opening, cta, vr.hookAnalysis, vr.pacingAnalysis, vr.CTAAnalysis, ...beats].join(" ");
+    if (this.isCannedAnalysisText(blob)) return false;
+    return true;
   }
 
   /** Read video research from local cache */
@@ -140,14 +178,43 @@ export class VideoUnderstandingProvider {
   static async analyzeVideo(url: string, userRoutingConfig?: any): Promise<VideoResearch> {
     const cleanUrl = url.trim();
 
-    // Check cache first
     const cached = this.getFromCache(cleanUrl);
-    if (cached) {
-      console.log(`[VideoUnderstandingProvider] Returning cached analysis for ${cleanUrl}`);
-      return cached;
+    if (cached && this.isAcceptedVideoResearch(cached)) {
+      console.log(`[VideoUnderstandingProvider] Returning cached accepted analysis for ${cleanUrl}`);
+      return { ...cached, accepted: true, watchStatus: "watched" };
     }
 
     const { platform, videoId } = this.extractVideoId(cleanUrl);
+    const failed = (partial: Partial<VideoResearch> = {}): VideoResearch => ({
+      videoId: videoId || "",
+      platform,
+      title: "",
+      url: cleanUrl,
+      hookAnalysis: "",
+      retentionAnalysis: "",
+      pacingAnalysis: "",
+      editingStyle: "",
+      storytelling: "",
+      visualStyle: "",
+      emotionalPattern: "",
+      thumbnailLanguage: "",
+      CTAAnalysis: "",
+      audienceSignals: [],
+      viralReasons: [],
+      strengths: [],
+      weaknesses: [],
+      sparkScore: 0,
+      confidence: 0,
+      transcript_ok: false,
+      frames_ok: false,
+      ...partial,
+      accepted: false,
+      watchStatus: "failed",
+    });
+
+    if (!videoId) {
+      return failed();
+    }
     const googleApiKey =
       (typeof import.meta !== "undefined" && ((import.meta as any).env?.VITE_YOUTUBE_API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY || (import.meta as any).env?.YOUTUBE_API_KEY || (import.meta as any).env?.GOOGLE_API_KEY)) ||
       (typeof process !== "undefined" && (process.env?.VITE_YOUTUBE_API_KEY || process.env?.VITE_GOOGLE_API_KEY || process.env?.YOUTUBE_API_KEY || process.env?.GOOGLE_API_KEY)) ||
@@ -160,11 +227,11 @@ export class VideoUnderstandingProvider {
       : null;
 
     // Stage 1: Metadata Extraction
-    let title = `${platform.toUpperCase()} Viral Video`;
+    let title = "";
     let thumbnail: string | undefined = undefined;
-    let durationSec: number | undefined = 45;
-    let creatorHandle: string | undefined = "@creator";
-    let creatorName: string | undefined = "Public Creator";
+    let durationSec: number | undefined = undefined;
+    let creatorHandle: string | undefined = undefined;
+    let creatorName: string | undefined = undefined;
     let viewCount: number | undefined = undefined;
     let likeCount: number | undefined = undefined;
     let commentCount: number | undefined = undefined;
@@ -224,35 +291,42 @@ export class VideoUnderstandingProvider {
     const frames = await this.extractKeyframes(videoId, platform);
 
     // Stage 4: Multimodal Vision & Audio Analysis via ModelRouter
-    const prompt = `Analyze this video asset as an executive media strategist.
+    const prompt = `Watch this video once and extract a production ticket SPARK can remake.
 Video Title: "${title}"
 Platform: ${platform}
 Duration: ${durationSec}s
-Public View Count: ${viewCount || "Live Analysis"}
-Public Likes: ${likeCount || "Live Analysis"}
-Tags/Topics: ${tags.join(", ") || "General"}
+Public View Count: ${viewCount ?? "unknown"}
+Public Likes: ${likeCount ?? "unknown"}
+Tags/Topics: ${tags.join(", ") || "unknown"}
 Description: ${description.slice(0, 300)}
-${transcript ? `Full Transcript Snippet: "${transcript.slice(0, 1000)}"` : ""}
-${frames.length > 0 ? `Keyframe Image Count: ${frames.length} representative video frames attached.` : ""}
+${transcript ? `Transcript: "${transcript.slice(0, 1000)}"` : "Transcript: unavailable"}
+${frames.length > 0 ? `Keyframe URLs attached: ${frames.length}` : "Keyframes: none"}
 
-Return strict JSON only (no markdown codeblock) with these exact keys:
+Return strict JSON only (no markdown) with these exact keys:
 {
-  "hookAnalysis": "Detailed analysis of opening 3 seconds, pattern interrupt, and curiosity gap",
-  "retentionAnalysis": "Pacing, mid-video reset, and drop-off prevention tactics",
-  "pacingAnalysis": "Cut frequency, audio rhythm, and visual transition velocity",
-  "editingStyle": "B-roll usage, text overlays, sound design, and color grading style",
-  "storytelling": "Narrative arc, problem-solution framing, and emotional payoff",
-  "visualStyle": "Camera framing, lighting, thumbnail alignment, and aesthetic language",
-  "emotionalPattern": "Core audience emotional trigger e.g. FOMO, Awe, Relief, Ambition",
-  "thumbnailLanguage": "Visual contrast, facial expression, and text hook synergy",
-  "CTAAnalysis": "Call to action placement, friction, and incentive",
-  "audienceSignals": ["array of 3 key audience reaction signals"],
-  "viralReasons": ["array of 3 primary reasons this content performs well"],
-  "strengths": ["array of 2 technical strengths"],
-  "weaknesses": ["array of 2 potential improvement areas"],
-  "sparkScore": <integer 0-100 scored STRICTLY from the actual evidence above — do NOT default to a fixed number>,
-  "confidence": <float 0-1 reflecting how much real signal (frames/transcript/metrics) was actually available>
-}`;
+  "hook_formula": "reusable hook pattern, not a recap essay",
+  "opening_line": "first spoken or on-screen hook, exact words if heard",
+  "spoken_beats": ["2 to 6 short spoken beats in order"],
+  "visual_actions": ["what happens on camera per beat"],
+  "format": "short|long plus 9:16 or 16:9 if known",
+  "cta_line": "the actual call to action spoken or shown",
+  "hookAnalysis": "one sentence on why the opening works",
+  "retentionAnalysis": "one sentence on pacing from evidence only",
+  "pacingAnalysis": "one sentence from evidence only",
+  "editingStyle": "one sentence from frames/transcript only",
+  "storytelling": "one sentence from evidence only",
+  "visualStyle": "one sentence from frames only",
+  "emotionalPattern": "one emotion word from evidence",
+  "thumbnailLanguage": "one sentence from the thumbnail frame",
+  "CTAAnalysis": "one sentence from the real CTA",
+  "audienceSignals": ["up to 3 signals from comments/metrics if known"],
+  "viralReasons": ["up to 3 reasons grounded in this video"],
+  "strengths": ["up to 2"],
+  "weaknesses": ["up to 2"],
+  "sparkScore": <integer 0-100 from evidence only>,
+  "confidence": <float 0-1>
+}
+Do not invent a hook, CTA, or beats if they are not in the transcript or frames.`;
 
     const systemInstruction = frames.length > 0
       ? `You are SPARK's AI Multimodal Video Vision Engine. You have been provided with ${frames.length} actual representative keyframe images extracted from this video. Base your visual analysis directly on empirical observations of these real video frames. Return clean JSON only.`
@@ -279,13 +353,25 @@ Return strict JSON only (no markdown codeblock) with these exact keys:
       console.warn("[VideoUnderstandingProvider] Multimodal AI vision synthesis notice:", aiErr);
     }
 
+    const transcript_ok = Boolean(transcript && transcript.trim().length > 20);
+    const frames_ok = Boolean(aiResult && frames.length > 0);
+    const spoken_beats = Array.isArray(aiResult?.spoken_beats)
+      ? aiResult.spoken_beats.map((b: any) => String(b || "").trim()).filter(Boolean).slice(0, 6)
+      : [];
+    const visual_actions = Array.isArray(aiResult?.visual_actions)
+      ? aiResult.visual_actions.map((a: any) => String(a || "").trim()).filter(Boolean).slice(0, 6)
+      : [];
+    const duration_sec =
+      typeof durationSec === "number" && durationSec > 0 ? durationSec : undefined;
+
     const videoResearch: VideoResearch = {
       videoId,
       platform,
       title,
       url: cleanUrl,
-      thumbnail: thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-      durationSec,
+      thumbnail: thumbnail || (platform === "youtube" ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined),
+      durationSec: duration_sec,
+      duration_sec,
       creatorHandle,
       creatorName,
       viewCount,
@@ -296,34 +382,55 @@ Return strict JSON only (no markdown codeblock) with these exact keys:
       metadata: {
         framesExtracted: frames.length > 0,
         frameCount: frames.length,
-        frameSource: frames.length > 0 ? "YouTube Public Keyframes" : "Text Metadata Fallback",
+        frameSource: frames.length > 0 ? "YouTube Public Keyframes" : "none",
       },
-      hookAnalysis: aiResult?.hookAnalysis || `Presents a high-curiosity opening hook anchored around ${title}.`,
-      retentionAnalysis: aiResult?.retentionAnalysis || "Maintains momentum using fast visual cuts and dynamic sound design.",
-      pacingAnalysis: aiResult?.pacingAnalysis || `Fast-paced ${durationSec}s rhythm optimized for short-form retention.`,
-      editingStyle: aiResult?.editingStyle || "High-contrast text overlays, rhythmic sound drops, and punchy visual zooms.",
-      storytelling: aiResult?.storytelling || "Direct problem-solution narrative structure with immediate value delivery.",
-      visualStyle: aiResult?.visualStyle || "Clean studio lighting with high-saturation color grading and bold text captions.",
-      emotionalPattern: aiResult?.emotionalPattern || "Curiosity & High Motivation",
-      thumbnailLanguage: aiResult?.thumbnailLanguage || "Expressive subject framing paired with high-contrast text hook.",
-      CTAAnalysis: aiResult?.CTAAnalysis || "Verbal call-to-action placed in final 5 seconds driving channel subscribes.",
-      audienceSignals: Array.isArray(aiResult?.audienceSignals) ? aiResult.audienceSignals : [
-        "High re-watch rate on opening 3s hook",
-        "Strong comment velocity around key insight",
-        "High share-to-view ratio"
-      ],
-      viralReasons: Array.isArray(aiResult?.viralReasons) ? aiResult.viralReasons : [
-        "Immediate curiosity gap in first 2 seconds",
-        "Clear value promise delivered within short duration",
-        "Optimized audio-visual pacing"
-      ],
-      strengths: Array.isArray(aiResult?.strengths) ? aiResult.strengths : ["Punchy opening hook", "High visual retention"],
-      weaknesses: Array.isArray(aiResult?.weaknesses) ? aiResult.weaknesses : ["CTA could be introduced earlier"],
-      // Honest defaults when the AI vision pass is unavailable: never fabricate a high score.
-      sparkScore: typeof aiResult?.sparkScore === "number" ? aiResult.sparkScore : 60,
-      confidence: typeof aiResult?.confidence === "number" ? aiResult.confidence : 0.5,
+      hook_formula: typeof aiResult?.hook_formula === "string" ? aiResult.hook_formula.trim() : "",
+      opening_line: typeof aiResult?.opening_line === "string" ? aiResult.opening_line.trim() : "",
+      spoken_beats,
+      visual_actions,
+      format: typeof aiResult?.format === "string" ? aiResult.format.trim() : "",
+      cta_line: typeof aiResult?.cta_line === "string" ? aiResult.cta_line.trim() : "",
+      transcript_ok,
+      frames_ok,
+      hookAnalysis: typeof aiResult?.hookAnalysis === "string" ? aiResult.hookAnalysis : "",
+      retentionAnalysis: typeof aiResult?.retentionAnalysis === "string" ? aiResult.retentionAnalysis : "",
+      pacingAnalysis: typeof aiResult?.pacingAnalysis === "string" ? aiResult.pacingAnalysis : "",
+      editingStyle: typeof aiResult?.editingStyle === "string" ? aiResult.editingStyle : "",
+      storytelling: typeof aiResult?.storytelling === "string" ? aiResult.storytelling : "",
+      visualStyle: typeof aiResult?.visualStyle === "string" ? aiResult.visualStyle : "",
+      emotionalPattern: typeof aiResult?.emotionalPattern === "string" ? aiResult.emotionalPattern : "",
+      thumbnailLanguage: typeof aiResult?.thumbnailLanguage === "string" ? aiResult.thumbnailLanguage : "",
+      CTAAnalysis: typeof aiResult?.CTAAnalysis === "string" ? aiResult.CTAAnalysis : "",
+      audienceSignals: Array.isArray(aiResult?.audienceSignals) ? aiResult.audienceSignals : [],
+      viralReasons: Array.isArray(aiResult?.viralReasons) ? aiResult.viralReasons : [],
+      strengths: Array.isArray(aiResult?.strengths) ? aiResult.strengths : [],
+      weaknesses: Array.isArray(aiResult?.weaknesses) ? aiResult.weaknesses : [],
+      sparkScore: typeof aiResult?.sparkScore === "number" ? aiResult.sparkScore : 0,
+      confidence: typeof aiResult?.confidence === "number" ? aiResult.confidence : 0,
+      accepted: false,
+      watchStatus: "failed",
     };
 
+    if (!aiResult || (!transcript_ok && !frames_ok) || !this.isAcceptedVideoResearch(videoResearch)) {
+      return failed({
+        title,
+        thumbnail: videoResearch.thumbnail,
+        durationSec: duration_sec,
+        duration_sec,
+        creatorHandle,
+        creatorName,
+        viewCount,
+        likeCount,
+        commentCount,
+        publishedAt,
+        transcript,
+        transcript_ok,
+        frames_ok,
+      });
+    }
+
+    videoResearch.accepted = true;
+    videoResearch.watchStatus = "watched";
     this.saveToCache(cleanUrl, videoResearch);
     return videoResearch;
   }

@@ -1,6 +1,7 @@
-import type { ResearchSource, ResearchPattern, MemoryItem, ViralSpark, RecentVideo, Brand } from "../../domain/types";
+import type { ResearchSource, ResearchPattern, MemoryItem, ViralSpark, RecentVideo, Brand, VideoResearch } from "../../domain/types";
 import { persistMemoryCreate, persistViralSparkCreate } from "../../backend/workspaceSync";
 import { ensureViralSparkProductionReady } from "../production/viralSparkGate";
+import { VideoUnderstandingProvider } from "./providers/VideoUnderstandingProvider";
 
 export function computeFingerprint(raw: string): string {
   const clean = raw.trim().toLowerCase().replace(/\s+/g, " ");
@@ -13,58 +14,29 @@ export function computeFingerprint(raw: string): string {
   return `fp-${Math.abs(hash).toString(36)}`;
 }
 
+export function sparkFingerprintForWatch(platform: string, videoId: string, hookFormula?: string): string {
+  const key = VideoUnderstandingProvider.watchedVideoKey(platform, videoId);
+  return computeFingerprint(`${key}:${String(hookFormula || "").trim()}`);
+}
+
 export class ResearchDepartmentService {
   /**
-   * Generates SPARK's analytical observations for extracted videos based on real metadata.
-   * Observations are SPARK's analysis — never fabricated platform metrics.
+   * Title / duration / tags are not a watch. Do not invent hook, format, or CTA.
    */
-  static analyzeRecentVideos(videos: RecentVideo[]): void {
-    for (const v of videos) {
-      if (!v.observationsCategorized) {
-        const durMins = v.durationSec ? Math.floor(v.durationSec / 60) : 0;
-        const durSecs = v.durationSec ? v.durationSec % 60 : 0;
-        const tagStr = v.tags && v.tags.length > 0 ? v.tags.slice(0, 3).join(", ") : "general content";
-        const hasHighViews = typeof v.viewCount === "number" && v.viewCount > 5000;
-
-        v.observationsCategorized = {
-          hook: `Title opener "${v.title.length > 50 ? v.title.slice(0, 47) + '...' : v.title}" sets up a direct curiosity-first frame.`,
-          format: v.durationSec && v.durationSec <= 60
-            ? "Vertical Short-Form format (<60s) optimized for rapid swipe retention."
-            : `Standard video format (${durMins}m ${durSecs}s) structured around deep topic analysis.`,
-          story: v.description && v.description.length > 100
-            ? "Detailed description narrative providing key links and structured timestamps."
-            : "Concise description focusing on direct viewer engagement.",
-          thumbnail: v.thumbnail
-            ? "High-contrast public thumbnail asset with clear focal element."
-            : "Public preview asset registered.",
-          cta: "Organic value bridge inviting comment discussion and channel subscription.",
-          editing: `Topic pacing aligned with ${tagStr}. ${hasHighViews ? 'High public engagement velocity.' : 'Standard pacing.'}`,
-        };
-
-        if (!v.observations || v.observations.length === 0) {
-          v.observations = [
-            v.observationsCategorized.hook!,
-            v.observationsCategorized.format!,
-            v.observationsCategorized.editing!,
-          ];
-        }
-      }
-    }
+  static analyzeRecentVideos(_videos: RecentVideo[]): void {
+    return;
   }
 
   /**
-   * Consumes extracted ResearchPatterns with Deterministic Intelligence Fingerprinting:
-   * 1. Check existing ViralSparks & MemoryItems by fingerprint / video title.
-   * 2. If existing: UPDATE mutable metrics (views, lastSeenAt, syncCount). DO NOT duplicate.
-   * 3. If new: Create & persist new ViralSpark / MemoryItem with fingerprint.
+   * Title-only patterns are not sparks. Accepted watches persist via processVideoResearch.
    */
   static processPatterns(
-    brandId: string,
-    source: ResearchSource,
+    _brandId: string,
+    _source: ResearchSource,
     patterns: ResearchPattern[],
     existingSparks: ViralSpark[] = [],
     existingMemories: MemoryItem[] = [],
-    brand?: Brand
+    _brand?: Brand
   ): {
     memoryItems: MemoryItem[];
     viralSparks: ViralSpark[];
@@ -72,217 +44,33 @@ export class ResearchDepartmentService {
     updatedMemories: MemoryItem[];
   } {
     const now = new Date().toISOString();
-    const dateStr = now.slice(0, 10);
-
-    const memoryItems: MemoryItem[] = [];
-    const viralSparks: ViralSpark[] = [];
     const updatedSparks: ViralSpark[] = [];
     const updatedMemories: MemoryItem[] = [];
 
-    // Analyze recent videos metadata through SPARK's analytical lens
-    if (source.recentVideos && source.recentVideos.length > 0) {
-      this.analyzeRecentVideos(source.recentVideos);
-    }
-
-    // Synthesize auto-patterns from top performing videos if explicit patterns empty
-    let effectivePatterns = [...patterns];
-    if (effectivePatterns.length === 0 && source.recentVideos && source.recentVideos.length > 0) {
-      const topVids = [...source.recentVideos]
-        .filter((v) => typeof v.viewCount === "number")
-        .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))
-        .slice(0, 3);
-
-      topVids.forEach((v, idx) => {
-        const isShort = v.durationSec && v.durationSec <= 60;
-        const titleWords = v.title.split(" ");
-        const hookPattern = `First-line curiosity opener: "${v.title.slice(0, 45)}"`;
-        const titlePattern = `Title structure (${titleWords.length} words, curiosity gap)`;
-        const format = isShort ? "Vertical Short-Form (Shorts/Reels)" : "Deep Dive Narrative";
-        const ctaStyle = "Organic value bridge inviting comment discussion";
-        const nicheLanguage = v.tags && v.tags.length > 0 ? v.tags.slice(0, 3).join(", ") : "niche terms";
-
-        effectivePatterns.push({
-          id: `pat-auto-${source.id}-${idx}`,
-          sourceId: source.id,
-          patternType: "Hook",
-          confidence: v.sparkScore ? v.sparkScore / 100 : 0.8,
-          originWeight: 0.85,
-          title: `High Retention Pattern: ${v.title.slice(0, 45)}`,
-          description: `${hookPattern}. Format: ${format}. Niche terms: ${nicheLanguage}.`,
-          evidence: `Public View Count: ${v.viewCount?.toLocaleString() || "Available"}`,
-          metrics: {
-            viewCount: v.viewCount,
-            publishedAt: v.publishedAt,
-            hookPattern,
-            titlePattern,
-            thumbnailIdeaType: "High-contrast split visual with key topic focus",
-            format,
-            ctaStyle,
-            nicheLanguage,
-          },
-          createdAt: now,
-        });
-      });
-    }
-
-    for (let i = 0; i < effectivePatterns.length; i++) {
-      const p = effectivePatterns[i];
-      const sparkTitle = `${source.displayName}: ${p.title}`;
-      const sparkFingerprint = computeFingerprint(`${source.platform}:${source.id}:${p.patternType}:${p.title}:${p.evidence || ""}`);
-      const memoryFingerprint = computeFingerprint(`mem:${source.id}:${p.title}:${p.description}`);
-
-      // 1. Executive Memory Creation vs. Update
-      const existingMem = existingMemories.find(
-        (m) => (m.fingerprint && m.fingerprint === memoryFingerprint) || m.text.includes(p.title)
-      );
-
+    for (const p of patterns || []) {
+      if (!p || /viral format:/i.test(String(p.title || ""))) continue;
+      const watchedKey =
+        (p.metrics && typeof p.metrics === "object" && p.metrics.watchedVideoKey) ||
+        undefined;
+      if (!watchedKey) continue;
+      const fp = computeFingerprint(String(watchedKey));
+      const existingSpark = existingSparks.find((s) => s.fingerprint === fp);
+      if (existingSpark) {
+        existingSpark.lastSeenAt = now;
+        existingSpark.syncCount = (existingSpark.syncCount || 1) + 1;
+        updatedSparks.push(existingSpark);
+      }
+      const existingMem = existingMemories.find((m) => m.fingerprint === fp);
       if (existingMem) {
         existingMem.lastSeenAt = now;
         existingMem.syncCount = (existingMem.syncCount || 1) + 1;
         updatedMemories.push(existingMem);
-      } else {
-        const memoryItem: MemoryItem = {
-          id: `m-src-${Date.now()}-${i}`,
-          type: "learned",
-          text: `[Inspiration Account - ${source.displayName}] ${p.title}: ${p.description} (Confidence: ${Math.round((p.confidence || 0) * 100)}%)`,
-          dateAdded: dateStr,
-          category: "Winning hooks",
-          fingerprint: memoryFingerprint,
-          firstSeenAt: now,
-          lastSeenAt: now,
-          syncCount: 1,
-        };
-        memoryItems.push(memoryItem);
-
-        if (brandId) {
-          persistMemoryCreate(brandId, memoryItem).catch((err) =>
-            console.warn("[ResearchDepartmentService] Memory persist notice:", err)
-          );
-        }
-      }
-
-      // 2. Unified Spark Scoring & Generation vs. Metric Update
-      const existingSpark = existingSparks.find(
-        (s) => (s.fingerprint && s.fingerprint === sparkFingerprint) || (s.sourceId === source.id && s.title === sparkTitle)
-      );
-
-      const brandWinMemories = existingMemories.filter((m) => m.text?.includes("[BRAND WIN]"));
-      const hasProvenWinMatch = brandWinMemories.some(
-        (m) =>
-          (p.patternType && m.text.toLowerCase().includes(p.patternType.toLowerCase())) ||
-          (patternMetrics.format && m.text.toLowerCase().includes(patternMetrics.format.toLowerCase())) ||
-          (source.platform && m.text.toLowerCase().includes(source.platform.toLowerCase()))
-      );
-
-      const newViewsStr = p.metrics?.viewCount ? `${p.metrics.viewCount.toLocaleString()}` : "Unavailable from Platform";
-      const baseScore = Math.round((p.confidence || 0.5) * 100);
-      const newScore = Math.min(99, baseScore + (hasProvenWinMatch ? 10 : 0));
-      const patternMetrics: any = p.metrics && typeof p.metrics === "object" ? p.metrics : {};
-
-      if (existingSpark) {
-        // DO NOT create duplicate. Update mutable metrics only!
-        existingSpark.views = newViewsStr;
-        existingSpark.brandFitScore = newScore;
-        existingSpark.lastSeenAt = now;
-        existingSpark.lastSyncedAt = now;
-        existingSpark.syncCount = (existingSpark.syncCount || 1) + 1;
-        existingSpark.fingerprint = sparkFingerprint;
-        updatedSparks.push(existingSpark);
-      } else {
-        const sparkDraft: ViralSpark = {
-          id: `spk-src-${Date.now()}-${i}`,
-          title: sparkTitle,
-          hook: patternMetrics.hookPattern || p.description,
-          views: newViewsStr,
-          velocity: "High Velocity",
-          platformFit: source.platform === "youtube" ? "YouTube Shorts" : `${source.platform.toUpperCase()}`,
-          brandFitScore: newScore,
-          category: "rising",
-          timeWindow: "Active Now",
-          productionTime: "15 mins",
-          whyNow: `Observed ${patternMetrics.format || p.patternType} pattern on Inspiration Account (${source.displayName}). Niche focus: ${patternMetrics.nicheLanguage || "general"}.`,
-          angle: p.title,
-          audienceEmotion: "Curiosity & High Retention",
-          expectedRetention: "85%+",
-          difficulty: "Medium",
-          riskLevel: "Low",
-          suggestedFormat: patternMetrics.format?.includes("Shorts") ? "narrator_vo" : "host_hybrid",
-          suggestedProductionMode: patternMetrics.format?.includes("Shorts") ? "express" : "standard",
-          suggestedMode: patternMetrics.format?.includes("Shorts") ? "express" : "standard",
-          origin: "SOURCE",
-          sourceId: source.id,
-          fingerprint: sparkFingerprint,
-          firstSeenAt: now,
-          lastSeenAt: now,
-          lastSyncedAt: now,
-          syncCount: 1,
-          status: "draft",
-          researchContext: {
-            sourceName: source.displayName || source.username,
-            platform: source.platform,
-            hookPattern: patternMetrics.hookPattern || p.description,
-            titlePattern: patternMetrics.titlePattern,
-            format: patternMetrics.format,
-            ctaStyle: patternMetrics.ctaStyle,
-            nicheLanguage: patternMetrics.nicheLanguage ? [patternMetrics.nicheLanguage] : undefined,
-            viralReasons: [p.evidence || "High public engagement"],
-            provenStructure: patternMetrics.format,
-          },
-        };
-        // Auto-prepare spoken hook / production shape at birth — no Strengthen UI step
-        const ensured = ensureViralSparkProductionReady(sparkDraft, brand);
-        const spark = ensured.ok ? ensured.spark : { ...ensured.spark, status: ensured.spark.status || "draft" };
-        viralSparks.push(spark);
-
-        if (brandId) {
-          persistViralSparkCreate(brandId, spark).catch((err) =>
-            console.warn("[ResearchDepartmentService] Spark persist notice:", err)
-          );
-        }
       }
     }
 
-    // 3. Process source learnings into Executive Memory (Deduplicated)
-    if (source.learnings && source.learnings.length > 0) {
-      source.learnings.forEach((learning, idx) => {
-        const learningFp = computeFingerprint(`learn:${source.id}:${learning}`);
-        const existingLearnMem = existingMemories.find(
-          (m) => (m.fingerprint && m.fingerprint === learningFp) || m.text.includes(learning)
-        );
-
-        if (existingLearnMem) {
-          existingLearnMem.lastSeenAt = now;
-          existingLearnMem.syncCount = (existingLearnMem.syncCount || 1) + 1;
-          updatedMemories.push(existingLearnMem);
-        } else {
-          const learningMemory: MemoryItem = {
-            id: `m-learn-${Date.now()}-${idx}`,
-            type: "learned",
-            text: `[SPARK Learned - ${source.displayName}] ${learning}`,
-            dateAdded: dateStr,
-            category: "Audience preferences",
-            fingerprint: learningFp,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            syncCount: 1,
-          };
-          memoryItems.push(learningMemory);
-
-          if (brandId) {
-            persistMemoryCreate(brandId, learningMemory).catch((err) =>
-              console.warn("[ResearchDepartmentService] Memory persist notice:", err)
-            );
-          }
-        }
-      });
-    }
-
-    return { memoryItems, viralSparks, updatedSparks, updatedMemories };
+    return { memoryItems: [], viralSparks: [], updatedSparks, updatedMemories };
   }
 
-  /**
-   * Helper to check memory text similarity and prevent duplicates
-   */
   static isDuplicateMemory(existingMemories: MemoryItem[] = [], newText: string): boolean {
     const normNew = newText.toLowerCase().replace(/[^a-z0-9]/g, "");
     return existingMemories.some((m) => {
@@ -292,81 +80,162 @@ export class ResearchDepartmentService {
   }
 
   /**
-   * Phase 19: Converts VideoResearch signals into Executive Memory items & Viral Sparks
+   * One production ticket per accepted watch. Failed watch → no Memory, no Spark.
    */
   static processVideoResearch(
     brandId: string,
     source: ResearchSource,
-    videoResearch: import("../../domain/types").VideoResearch,
+    videoResearch: VideoResearch,
     existingMemories: MemoryItem[] = [],
-    brand?: Brand
-  ): { memoryItems: MemoryItem[]; viralSparks: ViralSpark[] } {
+    brand?: Brand,
+    existingSparks: ViralSpark[] = []
+  ): { memoryItems: MemoryItem[]; viralSparks: ViralSpark[]; updatedSparks: ViralSpark[] } {
     const now = new Date().toISOString();
     const dateStr = now.slice(0, 10);
     const memoryItems: MemoryItem[] = [];
     const viralSparks: ViralSpark[] = [];
+    const updatedSparks: ViralSpark[] = [];
 
-    // 1. Convert video research insights into Executive Memory items (with deduplication & source attribution)
-    const creatorAttr = source.displayName || videoResearch.creatorName || "Inspiration Video";
-    const insights = [
-      { text: `[Inspiration Account — ${creatorAttr}] Hook: ${videoResearch.hookAnalysis}`, cat: "Winning hooks" },
-      { text: `[Inspiration Account — ${creatorAttr}] Retention & Pacing: ${videoResearch.retentionAnalysis}`, cat: "Audience preferences" },
-      { text: `[Inspiration Account — ${creatorAttr}] Editing & Visual Style: ${videoResearch.editingStyle}`, cat: "Visual style" },
-      { text: `[Inspiration Account — ${creatorAttr}] Story Arc: ${videoResearch.storytelling}`, cat: "Content ideas" },
-    ];
+    if (!VideoUnderstandingProvider.isAcceptedVideoResearch(videoResearch) || videoResearch.accepted === false) {
+      return { memoryItems, viralSparks, updatedSparks };
+    }
 
-    insights.forEach((item, idx) => {
-      if (!this.isDuplicateMemory(existingMemories, item.text)) {
-        const mem: MemoryItem = {
-          id: `m-vid-${Date.now()}-${idx}`,
-          type: "learned",
-          text: item.text,
-          dateAdded: dateStr,
-          category: item.cat as any,
-        };
-        memoryItems.push(mem);
+    const watchedVideoKey = VideoUnderstandingProvider.watchedVideoKey(
+      videoResearch.platform,
+      videoResearch.videoId
+    );
+    const sparkFingerprint = sparkFingerprintForWatch(
+      videoResearch.platform,
+      videoResearch.videoId,
+      videoResearch.hook_formula
+    );
+    const hookFormula = String(videoResearch.hook_formula || "").trim();
+    const openingLine = String(videoResearch.opening_line || hookFormula).trim();
+    const ctaLine = String(videoResearch.cta_line || "").trim();
+    const format = String(videoResearch.format || "").trim();
+    const spokenBeats = (videoResearch.spoken_beats || []).map((b) => String(b).trim()).filter(Boolean);
+    const visualActions = (videoResearch.visual_actions || []).map((a) => String(a).trim()).filter(Boolean);
+
+    const existingSpark = existingSparks.find(
+      (s) =>
+        s.fingerprint === sparkFingerprint ||
+        s.researchContext?.watchedVideoKey === watchedVideoKey
+    );
+    if (existingSpark) {
+      existingSpark.lastSeenAt = now;
+      existingSpark.lastSyncedAt = now;
+      existingSpark.syncCount = (existingSpark.syncCount || 1) + 1;
+      existingSpark.fingerprint = sparkFingerprint;
+      updatedSparks.push(existingSpark);
+    } else {
+      const shortTitle = videoResearch.title.length > 72
+        ? `Adapt: ${videoResearch.title.slice(0, 69)}…`
+        : `Adapt: ${videoResearch.title}`;
+      const sparkDraft: ViralSpark = {
+        id: `spk-vid-${videoResearch.videoId}`,
+        title: shortTitle,
+        hook: openingLine,
+        views: videoResearch.viewCount ? videoResearch.viewCount.toLocaleString() : "Unavailable from Platform",
+        velocity: "Unavailable",
+        platformFit: videoResearch.platform === "youtube" ? "YouTube Shorts" : videoResearch.platform.toUpperCase(),
+        brandFitScore: typeof videoResearch.sparkScore === "number" ? videoResearch.sparkScore : 0,
+        category: "rising",
+        timeWindow: "Immediate Opportunity",
+        productionTime: (videoResearch.duration_sec || videoResearch.durationSec || 0) <= 60 ? "10 mins" : "30 mins",
+        whyNow: hookFormula,
+        angle: hookFormula,
+        audienceEmotion: videoResearch.emotionalPattern || "Curiosity",
+        expectedRetention: videoResearch.retentionAnalysis || "",
+        difficulty: "Medium",
+        riskLevel: "Low",
+        suggestedFormat: format,
+        suggestedProductionMode: /9:16|short/i.test(format) ? "express" : "standard",
+        origin: "SOURCE",
+        sourceId: source.id,
+        fingerprint: sparkFingerprint,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        lastSyncedAt: now,
+        syncCount: 1,
+        status: "draft",
+        researchContext: {
+          sourceName: source.displayName || source.username,
+          platform: videoResearch.platform,
+          hookPattern: hookFormula,
+          format,
+          ctaStyle: ctaLine,
+          ctaLine,
+          watchedVideoKey,
+          openingLine,
+          spokenBeats,
+          visualActions,
+          provenStructure: spokenBeats.join(" → "),
+        },
+      };
+      const ensured = ensureViralSparkProductionReady(sparkDraft, brand);
+      if (ensured.ok) {
+        viralSparks.push(ensured.spark);
         if (brandId) {
-          persistMemoryCreate(brandId, mem).catch((err) =>
-            console.warn("[ResearchDepartmentService] Video memory persist notice:", err)
+          persistViralSparkCreate(brandId, ensured.spark).catch((err) =>
+            console.warn("[ResearchDepartmentService] Video spark persist notice:", err)
           );
         }
       }
-    });
-
-    // 2. Synthesize Viral Spark from video research — auto-prepare spoken hook at birth
-    const sparkDraft: ViralSpark = {
-      id: `spk-vid-${Date.now()}`,
-      title: `Adaptation: ${videoResearch.title}`,
-      hook: videoResearch.hookAnalysis,
-      views: videoResearch.viewCount ? videoResearch.viewCount.toLocaleString() : "Unavailable from Platform",
-      velocity: "Unavailable",
-      platformFit: videoResearch.platform === "youtube" ? "YouTube Shorts" : videoResearch.platform.toUpperCase(),
-      brandFitScore: Math.round(videoResearch.sparkScore || 90),
-      category: "rising",
-      timeWindow: "Immediate Opportunity",
-      productionTime: videoResearch.durationSec && videoResearch.durationSec <= 60 ? "10 mins" : "30 mins",
-      whyNow: `AI Video Analysis identified viral hook & storytelling patterns in "${videoResearch.title}".`,
-      angle: videoResearch.title,
-      audienceEmotion: videoResearch.emotionalPattern || "Unavailable",
-      expectedRetention: videoResearch.retentionAnalysis || "Unavailable",
-      difficulty: "Medium",
-      riskLevel: "Low",
-      suggestedFormat: videoResearch.durationSec && videoResearch.durationSec <= 60 ? "Vertical 9:16" : "Landscape 16:9",
-      suggestedProductionMode: videoResearch.durationSec && videoResearch.durationSec <= 60 ? "express" : "standard",
-      origin: "SOURCE",
-      sourceId: source.id,
-      status: "draft",
-    };
-    const ensured = ensureViralSparkProductionReady(sparkDraft, brand);
-    const spark = ensured.ok ? ensured.spark : { ...ensured.spark, status: ensured.spark.status || "draft" };
-    viralSparks.push(spark);
-
-    if (brandId) {
-      persistViralSparkCreate(brandId, spark).catch((err) =>
-        console.warn("[ResearchDepartmentService] Video spark persist notice:", err)
-      );
     }
 
-    return { memoryItems, viralSparks };
+    const lawText = `[Inspiration — ${source.displayName || videoResearch.creatorName || "watch"}] ${hookFormula} | CTA: ${ctaLine} | ${format}`;
+    const lawFp = computeFingerprint(`mem:${watchedVideoKey}:law`);
+    const existingLaw = existingMemories.find((m) => m.fingerprint === lawFp);
+    if (existingLaw) {
+      existingLaw.lastSeenAt = now;
+      existingLaw.syncCount = (existingLaw.syncCount || 1) + 1;
+    } else if (!this.isDuplicateMemory(existingMemories, lawText)) {
+      const mem: MemoryItem = {
+        id: `m-vid-${videoResearch.videoId}-law`,
+        type: "learned",
+        text: lawText,
+        dateAdded: dateStr,
+        category: "Winning hooks",
+        fingerprint: lawFp,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        syncCount: 1,
+      };
+      memoryItems.push(mem);
+      if (brandId) {
+        persistMemoryCreate(brandId, mem).catch((err) =>
+          console.warn("[ResearchDepartmentService] Video memory persist notice:", err)
+        );
+      }
+    }
+
+    const beatsText = spokenBeats.join(" → ");
+    const beatsFp = computeFingerprint(`mem:${watchedVideoKey}:beats`);
+    if (
+      beatsText &&
+      !existingMemories.some((m) => m.fingerprint === beatsFp) &&
+      !this.isDuplicateMemory(existingMemories, beatsText) &&
+      !memoryItems.some((m) => m.fingerprint === beatsFp)
+    ) {
+      const beatsMem: MemoryItem = {
+        id: `m-vid-${videoResearch.videoId}-beats`,
+        type: "learned",
+        text: `[Inspiration beats — ${source.displayName || videoResearch.title}] ${beatsText}`,
+        dateAdded: dateStr,
+        category: "Audience preferences",
+        fingerprint: beatsFp,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        syncCount: 1,
+      };
+      memoryItems.push(beatsMem);
+      if (brandId) {
+        persistMemoryCreate(brandId, beatsMem).catch((err) =>
+          console.warn("[ResearchDepartmentService] Video beats memory persist notice:", err)
+        );
+      }
+    }
+
+    return { memoryItems, viralSparks, updatedSparks };
   }
 }

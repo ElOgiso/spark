@@ -92,6 +92,11 @@ export interface StructuredResearchContext {
   viralReasons?: string[];
   retentionSignals?: string[];
   provenStructure?: string;
+  spokenBeats?: string[];
+  visualActions?: string[];
+  ctaLine?: string;
+  watchedVideoKey?: string;
+  openingLine?: string;
 }
 
 export interface ViralSpark {
@@ -600,8 +605,17 @@ export interface ResearchSource {
   researchConfidence?: number | null; // 0.0 - 1.0, null if not enough data
   sourceType?: "channel" | "video";
   videoResearch?: VideoResearch;
+  /** Per-source watch ledger: platform:videoId → watched once. Lives in research_sources.metadata. */
+  watchLedger?: WatchLedgerEntry[];
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface WatchLedgerEntry {
+  watchedVideoKey: string;
+  status: "watched" | "failed";
+  fingerprint?: string;
+  watchedAt: string;
 }
 
 export interface VideoResearch {
@@ -634,6 +648,18 @@ export interface VideoResearch {
   weaknesses: string[];
   sparkScore: number;
   confidence: number;
+  /** Reusable production pattern — not a recap essay. */
+  hook_formula?: string;
+  opening_line?: string;
+  spoken_beats?: string[];
+  visual_actions?: string[];
+  format?: string;
+  duration_sec?: number;
+  cta_line?: string;
+  transcript_ok?: boolean;
+  frames_ok?: boolean;
+  accepted?: boolean;
+  watchStatus?: "watched" | "failed";
 }
 
 /** Future Video Understanding Architecture Interface */

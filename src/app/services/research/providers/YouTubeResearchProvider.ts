@@ -8,6 +8,20 @@ export interface ExtractedSourceResult {
 }
 
 export class YouTubeResearchProvider {
+  static rankWinningVideos(videos: RecentVideo[], limit = 5): RecentVideo[] {
+    return [...(videos || [])]
+      .filter((v) => {
+        const id = String(v.videoId || v.id || "").trim();
+        return Boolean(id) && !id.startsWith("vid-") && id.toLowerCase() !== "private";
+      })
+      .sort((a, b) => {
+        const views = (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0);
+        if (views !== 0) return views;
+        return (Number(b.likeCount) || 0) - (Number(a.likeCount) || 0);
+      })
+      .slice(0, Math.max(0, limit));
+  }
+
   /**
    * Parses YouTube URLs into handles (@username), channel IDs (UC...), custom URLs (/c/...), or legacy user URLs (/user/...)
    */
@@ -408,39 +422,22 @@ export class YouTubeResearchProvider {
                 recentVideos.push(recVid);
               }
 
-              // Stage 7: Sort Top 3 Videos by Real Public View Count
-              const sortedByViews = [...recentVideos]
-                .filter((v) => typeof v.viewCount === "number")
-                .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))
-                .slice(0, 3);
-
-              sortedByViews.forEach((v) => {
+              // Rank winners by public viewCount, then likeCount. Watch happens in ResearchSourceService.
+              const ranked = YouTubeResearchProvider.rankWinningVideos(recentVideos);
+              ranked.forEach((v) => {
                 topContent.push({
                   id: `top-${sourceId}-${v.id}`,
                   title: v.title,
                   sparkScore: v.sparkScore ?? null,
                   sparkScoreBreakdown: v.sparkScoreBreakdown,
-                  reason: `Top performing video on channel with ${v.viewCount?.toLocaleString()} views.`,
+                  reason: `Ranked winner: ${v.viewCount?.toLocaleString() ?? "0"} public views.`,
                   why: [
-                    `Public Views: ${v.viewCount?.toLocaleString()}`,
+                    `Public Views: ${v.viewCount?.toLocaleString() ?? "0"}`,
                     v.likeCount !== null && v.likeCount !== undefined ? `Public Likes: ${v.likeCount.toLocaleString()}` : "Likes: N/A",
                     v.durationSec ? `Duration: ${Math.floor(v.durationSec / 60)}m ${v.durationSec % 60}s` : "Duration: N/A",
                   ],
                   url: v.url,
                   views: v.viewCount ? v.viewCount.toLocaleString() : null,
-                });
-
-                // Synthesize real research pattern from top video
-                patterns.push({
-                  id: `pat-${sourceId}-${v.id}`,
-                  sourceId,
-                  patternType: v.durationSec && v.durationSec < 90 ? "Opening Pattern" : "Hook",
-                  confidence: 0.88,
-                  originWeight: 0.9,
-                  title: `Viral Format: ${v.title.slice(0, 45)}...`,
-                  description: `Real top-performing video pattern observed on ${handle} (${v.viewCount?.toLocaleString()} views).`,
-                  evidence: `Public View Count: ${v.viewCount?.toLocaleString()} views. Public Likes: ${v.likeCount?.toLocaleString() || "N/A"}.`,
-                  createdAt: new Date().toISOString(),
                 });
               });
             }
@@ -451,6 +448,21 @@ export class YouTubeResearchProvider {
         description = `YouTube Data API processing failed: ${err?.message || String(err)}`;
         console.warn("[YouTubeResearchProvider] Extraction error:", err);
       }
+    }
+
+    if (topContent.length === 0 && recentVideos.length > 0) {
+      YouTubeResearchProvider.rankWinningVideos(recentVideos).forEach((v) => {
+        topContent.push({
+          id: `top-${sourceId}-${v.id}`,
+          title: v.title,
+          sparkScore: v.sparkScore ?? null,
+          sparkScoreBreakdown: v.sparkScoreBreakdown,
+          reason: `Ranked winner: ${v.viewCount?.toLocaleString() ?? "0"} public views.`,
+          why: [`Public Views: ${v.viewCount?.toLocaleString() ?? "0"}`],
+          url: v.url,
+          views: v.viewCount ? v.viewCount.toLocaleString() : null,
+        });
+      });
     }
 
     const now = new Date().toISOString();

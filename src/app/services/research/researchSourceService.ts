@@ -1,4 +1,13 @@
-import type { ResearchSource, ResearchPattern, ResearchObservation, ViralSpark, MemoryItem } from "../../domain/types";
+import type {
+  ResearchSource,
+  ResearchPattern,
+  ViralSpark,
+  MemoryItem,
+  Brand,
+  VideoResearch,
+  WatchLedgerEntry,
+  RecentVideo,
+} from "../../domain/types";
 import { YouTubeResearchProvider, type ExtractedSourceResult } from "./providers/YouTubeResearchProvider";
 import { VideoUnderstandingProvider } from "./providers/VideoUnderstandingProvider";
 import { ResearchDepartmentService } from "./researchDepartmentService";
@@ -7,9 +16,14 @@ import {
   persistResearchSourceCreate,
   persistResearchSourceDelete,
   persistResearchSourceUpdate,
-  persistResearchPatternCreate,
 } from "../../backend/workspaceSync";
 import { generateUuid } from "../../backend/mappers/workspaceMappers";
+
+export interface ResearchWatchContext {
+  existingSparks?: ViralSpark[];
+  existingMemories?: MemoryItem[];
+  brand?: Brand;
+}
 
 export class ResearchSourceService {
   static detectPlatform(url: string): "youtube" | "tiktok" | "instagram" | "x" | "facebook" | "linkedin" {
@@ -27,9 +41,6 @@ export class ResearchSourceService {
     return url.trim().toLowerCase().replace(/\/$/, "");
   }
 
-  /**
-   * Quota policy: prevents redundant full API syncs if refreshed within the last 4 hours
-   */
   static isQuotaAllowedForSync(lastSyncedAt?: string, forceManual: boolean = false): boolean {
     if (forceManual || !lastSyncedAt) return true;
     const lastSyncTime = new Date(lastSyncedAt).getTime();
@@ -37,11 +48,136 @@ export class ResearchSourceService {
     return Date.now() - lastSyncTime >= fourHoursMs;
   }
 
+  static getWatchLedger(source?: ResearchSource | null): WatchLedgerEntry[] {
+    return Array.isArray(source?.watchLedger) ? [...source!.watchLedger] : [];
+  }
+
+  static ledgerEntry(ledger: WatchLedgerEntry[], key: string): WatchLedgerEntry | undefined {
+    return ledger.find((e) => e.watchedVideoKey === key);
+  }
+
+  static upsertLedger(
+    ledger: WatchLedgerEntry[],
+    entry: WatchLedgerEntry
+  ): WatchLedgerEntry[] {
+    const next = ledger.filter((e) => e.watchedVideoKey !== entry.watchedVideoKey);
+    next.push(entry);
+    return next;
+  }
+
+  static watchCap(opts: { forceManual: boolean; isRegister: boolean; successCount: number }): number {
+    if (opts.isRegister) return 5;
+    if (opts.forceManual) return 3;
+    if (opts.successCount >= 5) return 0;
+    return Math.max(0, 5 - opts.successCount);
+  }
+
+  static async watchRankedWinners(params: {
+    source: ResearchSource;
+    videos: RecentVideo[];
+    forceManual: boolean;
+    isRegister: boolean;
+  }): Promise<{ accepted: VideoResearch[]; ledger: WatchLedgerEntry[]; learnings: string[] }> {
+    let ledger = this.getWatchLedger(params.source);
+    const successCount = ledger.filter((e) => e.status === "watched").length;
+    const cap = this.watchCap({
+      forceManual: params.forceManual,
+      isRegister: params.isRegister,
+      successCount,
+    });
+    const ranked = YouTubeResearchProvider.rankWinningVideos(params.videos, 5);
+    const accepted: VideoResearch[] = [];
+    const learnings: string[] = ledger
+      .filter((e) => e.status === "watched")
+      .map((e) => e.fingerprint)
+      .filter((s): s is string => Boolean(s));
+
+    if (cap < 1) {
+      return { accepted, ledger, learnings: params.source.learnings || [] };
+    }
+
+    let used = 0;
+    for (const video of ranked) {
+      if (used >= cap) break;
+      const videoId = String(video.videoId || video.id || "").trim();
+      const watchUrl = video.url || `https://www.youtube.com/watch?v=${videoId}`;
+      const key = VideoUnderstandingProvider.watchedVideoKey("youtube", videoId);
+      const prior = this.ledgerEntry(ledger, key);
+      if (prior?.status === "watched") continue;
+      if (prior?.status === "failed" && !params.forceManual) continue;
+
+      used += 1;
+      const result = await VideoUnderstandingProvider.analyzeVideo(watchUrl);
+      if (VideoUnderstandingProvider.isAcceptedVideoResearch(result) && result.accepted !== false) {
+        accepted.push(result);
+        const fp = result.hook_formula || "";
+        ledger = this.upsertLedger(ledger, {
+          watchedVideoKey: key,
+          status: "watched",
+          fingerprint: fp,
+          watchedAt: new Date().toISOString(),
+        });
+        if (fp && !learnings.includes(fp)) learnings.push(fp);
+      } else {
+        ledger = this.upsertLedger(ledger, {
+          watchedVideoKey: key,
+          status: "failed",
+          watchedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const ledgerOut = [...ledger];
+    return { accepted, ledger: ledgerOut, learnings };
+  }
+
+  static applyWatchTickets(params: {
+    brandId?: string;
+    source: ResearchSource;
+    watches: VideoResearch[];
+    ctx?: ResearchWatchContext;
+  }): { videoSparks: ViralSpark[]; videoMemories: MemoryItem[] } {
+    const videoSparks: ViralSpark[] = [];
+    const videoMemories: MemoryItem[] = [];
+    const seenSparkFp = new Set(
+      (params.ctx?.existingSparks || []).map((s) => s.fingerprint).filter(Boolean) as string[]
+    );
+    const memories = [...(params.ctx?.existingMemories || [])];
+
+    for (const watch of params.watches) {
+      const vr = ResearchDepartmentService.processVideoResearch(
+        params.brandId || "",
+        params.source,
+        watch,
+        memories,
+        params.ctx?.brand,
+        params.ctx?.existingSparks || []
+      );
+      for (const spark of vr.viralSparks) {
+        if (spark.fingerprint && seenSparkFp.has(spark.fingerprint)) continue;
+        if (spark.fingerprint) seenSparkFp.add(spark.fingerprint);
+        videoSparks.push(spark);
+      }
+      for (const mem of vr.memoryItems) {
+        memories.push(mem);
+        videoMemories.push(mem);
+      }
+    }
+    return { videoSparks, videoMemories };
+  }
+
   static async registerAndExtract(
     url: string,
     brandId?: string,
-    existingSources: ResearchSource[] = []
-  ): Promise<{ source: ResearchSource; patterns: ResearchPattern[]; isExisting?: boolean; videoSparks?: ViralSpark[]; videoMemories?: MemoryItem[] } | null> {
+    existingSources: ResearchSource[] = [],
+    ctx?: ResearchWatchContext
+  ): Promise<{
+    source: ResearchSource;
+    patterns: ResearchPattern[];
+    isExisting?: boolean;
+    videoSparks?: ViralSpark[];
+    videoMemories?: MemoryItem[];
+  } | null> {
     const cleanUrl = url.trim();
     if (!cleanUrl) return null;
 
@@ -49,88 +185,99 @@ export class ResearchSourceService {
     const platform = this.detectPlatform(cleanUrl);
     const isSingleVideo = VideoUnderstandingProvider.isSingleVideoUrl(cleanUrl);
 
-    // Duplicate detection by platform + normalized URL / handle
     const existing = existingSources.find(
-      (s) => this.normalizeUrl(s.url) === normalized || (s.platform === platform && cleanUrl.includes(s.username.replace("@", "")))
+      (s) =>
+        this.normalizeUrl(s.url) === normalized ||
+        (s.platform === platform && cleanUrl.includes(String(s.username || "").replace("@", "")))
     );
 
     if (existing) {
-      // Re-sync existing source instead of creating duplicate
-      const synced = await this.syncSource(existing, brandId, true);
+      const synced = await this.syncSource(existing, brandId, true, ctx);
       return { ...synced, isExisting: true };
     }
 
-    // Use a real UUID: research_sources.id is a uuid column, so a "src-..." string id was rejected
-    // by Postgres and the source never persisted across logout/login.
     const sourceId = generateUuid();
     const now = new Date().toISOString();
 
-    // Branch A: Single Video Asset Ingestion via VideoUnderstandingProvider
     if (isSingleVideo) {
       const vRes = await VideoUnderstandingProvider.analyzeVideo(cleanUrl);
+      const accepted = VideoUnderstandingProvider.isAcceptedVideoResearch(vRes) && vRes.accepted !== false;
+      const key = VideoUnderstandingProvider.watchedVideoKey(vRes.platform || platform, vRes.videoId);
+      const ledger: WatchLedgerEntry[] = [
+        {
+          watchedVideoKey: key,
+          status: accepted ? "watched" : "failed",
+          fingerprint: accepted ? vRes.hook_formula : undefined,
+          watchedAt: now,
+        },
+      ];
 
       const source: ResearchSource = {
         id: sourceId,
         platform,
         url: cleanUrl,
         username: vRes.creatorHandle || "@video",
-        displayName: vRes.title,
+        displayName: vRes.title || "Video watch",
         avatar: vRes.thumbnail,
         banner: undefined,
         followers: null,
         videoCount: 1,
         totalViews: vRes.viewCount || null,
-        metricsAvailability: "available",
+        metricsAvailability: accepted ? "available" : "unavailable",
         verified: false,
-        description: `Video Understanding Asset: "${vRes.title}" by ${vRes.creatorName || vRes.creatorHandle}`,
-        status: "active",
+        description: accepted
+          ? `Watched once: "${vRes.title}"`
+          : `Watch failed for ${cleanUrl} — no Memory or Spark.`,
+        status: accepted ? "active" : "error",
         sourceType: "video",
-        videoResearch: vRes,
-        recentVideos: [
-          {
-            id: vRes.videoId,
-            videoId: vRes.videoId,
-            title: vRes.title,
-            url: vRes.url,
-            thumbnail: vRes.thumbnail,
-            publishedAt: vRes.publishedAt,
-            durationSec: vRes.durationSec,
-            viewCount: vRes.viewCount,
-            likeCount: vRes.likeCount,
-            commentCount: vRes.commentCount,
-            sparkScore: vRes.sparkScore,
-            whySelected: vRes.hookAnalysis,
-          },
-        ],
-        topContent: [
-          {
-            id: `top-${vRes.videoId}`,
-            title: vRes.title,
-            sparkScore: vRes.sparkScore,
-            reason: vRes.hookAnalysis,
-            why: [
-              `Public Views: ${vRes.viewCount?.toLocaleString() || "Live Analysis"}`,
-              `Hook: ${vRes.hookAnalysis.slice(0, 60)}...`,
-              `Pacing: ${vRes.pacingAnalysis.slice(0, 60)}...`,
-            ],
-            url: vRes.url,
-            views: vRes.viewCount ? vRes.viewCount.toLocaleString() : "Live Analysis",
-          },
-        ],
-        learnings: [vRes.hookAnalysis, vRes.retentionAnalysis, vRes.editingStyle],
-        researchConfidence: vRes.confidence,
+        videoResearch: accepted ? vRes : undefined,
+        watchLedger: ledger,
+        recentVideos: accepted
+          ? [
+              {
+                id: vRes.videoId,
+                videoId: vRes.videoId,
+                title: vRes.title,
+                url: vRes.url,
+                thumbnail: vRes.thumbnail,
+                publishedAt: vRes.publishedAt,
+                durationSec: vRes.duration_sec || vRes.durationSec,
+                viewCount: vRes.viewCount,
+                likeCount: vRes.likeCount,
+                commentCount: vRes.commentCount,
+                sparkScore: vRes.sparkScore,
+                whySelected: vRes.hook_formula,
+              },
+            ]
+          : [],
+        topContent: accepted
+          ? [
+              {
+                id: `top-${vRes.videoId}`,
+                title: vRes.title,
+                sparkScore: vRes.sparkScore,
+                reason: vRes.hook_formula || "Accepted watch",
+                why: [`Public Views: ${vRes.viewCount?.toLocaleString() || "n/a"}`],
+                url: vRes.url,
+                views: vRes.viewCount ? vRes.viewCount.toLocaleString() : null,
+              },
+            ]
+          : [],
+        learnings: accepted && vRes.hook_formula ? [vRes.hook_formula] : [],
+        researchConfidence: accepted ? vRes.confidence : 0,
         lastSyncedAt: now,
         createdAt: now,
         updatedAt: now,
       };
 
-      // Process video research into Executive Memory & Viral Sparks (REAL multimodal analysis).
       let videoSparks: ViralSpark[] = [];
       let videoMemories: MemoryItem[] = [];
+      if (accepted) {
+        const tickets = this.applyWatchTickets({ brandId, source, watches: [vRes], ctx });
+        videoSparks = tickets.videoSparks;
+        videoMemories = tickets.videoMemories;
+      }
       if (brandId) {
-        const vr = ResearchDepartmentService.processVideoResearch(brandId, source, vRes);
-        videoSparks = vr.viralSparks;
-        videoMemories = vr.memoryItems;
         persistResearchSourceCreate(brandId, source).catch((err) =>
           console.warn("[ResearchSourceService] Single video source persist notice:", err)
         );
@@ -139,7 +286,6 @@ export class ResearchSourceService {
       return { source, patterns: [], isExisting: false, videoSparks, videoMemories };
     }
 
-    // Branch B: Channel / Profile Ingestion via Platform Provider
     let extracted: ExtractedSourceResult;
     if (platform === "youtube") {
       extracted = await YouTubeResearchProvider.extract(cleanUrl, sourceId);
@@ -147,22 +293,7 @@ export class ResearchSourceService {
       extracted = ResearchProviderStubs.extractStub(platform, cleanUrl, sourceId);
     }
 
-    // AI Multimodal Breakdown on Creator's Top Video Asset (if available)
-    let videoResearch: any = undefined;
-    const topVideo = extracted.source.recentVideos?.[0];
-    if (topVideo?.url) {
-      try {
-        videoResearch = await VideoUnderstandingProvider.analyzeVideo(topVideo.url);
-      } catch (err) {
-        console.warn("[ResearchSourceService] Profile top video AI analysis notice:", err);
-      }
-    }
-
-    const aiLearnings = videoResearch
-      ? [videoResearch.hookAnalysis, videoResearch.retentionAnalysis, videoResearch.pacingAnalysis, ...(extracted.source.learnings || [])]
-      : extracted.source.learnings || [];
-
-    const source: ResearchSource = {
+    const draftSource: ResearchSource = {
       id: sourceId,
       platform,
       url: cleanUrl,
@@ -180,88 +311,126 @@ export class ResearchSourceService {
       description: extracted.source.description || "",
       status: extracted.source.status || "active",
       sourceType: "channel",
-      videoResearch,
       recentVideos: extracted.source.recentVideos || [],
       topContent: extracted.source.topContent || [],
-      learnings: aiLearnings,
-      researchConfidence: videoResearch?.confidence || extracted.source.researchConfidence || 88,
+      learnings: [],
+      watchLedger: [],
+      researchConfidence: extracted.source.researchConfidence ?? null,
       lastSyncedAt: now,
       createdAt: now,
       updatedAt: now,
-      observations: [
-        {
-          id: `obs-${sourceId}-1`,
-          sourceId,
-          contentTitle: `${extracted.source.displayName || "Channel"} AI Hook Analysis`,
-          videoLengthSec: videoResearch?.durationSec || 30,
-          hookText: videoResearch?.hookAnalysis || "Opener poses a high-curiosity question",
-          publishedAt: now,
-          createdAt: now,
-        },
-      ],
     };
 
-    const patterns = extracted.patterns;
+    const watchResult =
+      platform === "youtube"
+        ? await this.watchRankedWinners({
+            source: draftSource,
+            videos: draftSource.recentVideos || [],
+            forceManual: true,
+            isRegister: true,
+          })
+        : { accepted: [] as VideoResearch[], ledger: [] as WatchLedgerEntry[], learnings: [] as string[] };
 
-    // Process profile video research into Executive Memory & Viral Sparks (REAL multimodal analysis
-    // of the creator's top video when the configured vision model + data are available).
-    let videoSparks: ViralSpark[] = [];
-    let videoMemories: MemoryItem[] = [];
+    const source: ResearchSource = {
+      ...draftSource,
+      watchLedger: watchResult.ledger,
+      learnings: watchResult.learnings,
+      videoResearch: watchResult.accepted[0],
+    };
+
+    const tickets = this.applyWatchTickets({
+      brandId,
+      source,
+      watches: watchResult.accepted,
+      ctx,
+    });
+
     if (brandId) {
-      if (videoResearch) {
-        const vr = ResearchDepartmentService.processVideoResearch(brandId, source, videoResearch);
-        videoSparks = vr.viralSparks;
-        videoMemories = vr.memoryItems;
-      }
       persistResearchSourceCreate(brandId, source).catch((err) =>
         console.warn("[ResearchSourceService] Source persist notice:", err)
       );
-      for (const pat of patterns) {
-        persistResearchPatternCreate(brandId, pat).catch((err) =>
-          console.warn("[ResearchSourceService] Pattern persist notice:", err)
-        );
-      }
     }
 
-    return { source, patterns, isExisting: false, videoSparks, videoMemories };
+    return {
+      source,
+      patterns: [],
+      isExisting: false,
+      videoSparks: tickets.videoSparks,
+      videoMemories: tickets.videoMemories,
+    };
   }
 
   static async syncSource(
     source: ResearchSource,
     brandId?: string,
-    forceManual: boolean = false
-  ): Promise<{ source: ResearchSource; patterns: ResearchPattern[] }> {
+    forceManual: boolean = false,
+    ctx?: ResearchWatchContext
+  ): Promise<{
+    source: ResearchSource;
+    patterns: ResearchPattern[];
+    videoSparks?: ViralSpark[];
+    videoMemories?: MemoryItem[];
+  }> {
     if (!this.isQuotaAllowedForSync(source.lastSyncedAt, forceManual)) {
       console.log(`[ResearchSourceService] Quota policy: skipping full sync for ${source.username} (synced < 4h ago)`);
-      return { source, patterns: [] };
+      return { source, patterns: [], videoSparks: [], videoMemories: [] };
     }
 
     const now = new Date().toISOString();
 
-    // Branch A: Single Video Asset Resync
     if (source.sourceType === "video" || VideoUnderstandingProvider.isSingleVideoUrl(source.url)) {
-      const vRes = await VideoUnderstandingProvider.analyzeVideo(source.url);
+      const { platform, videoId } = VideoUnderstandingProvider.extractVideoId(source.url);
+      const key = VideoUnderstandingProvider.watchedVideoKey(platform, videoId || source.videoResearch?.videoId || "");
+      const prior = this.ledgerEntry(this.getWatchLedger(source), key);
+      let vRes = source.videoResearch;
+      let ledger = this.getWatchLedger(source);
+
+      if (prior?.status === "watched" && VideoUnderstandingProvider.isAcceptedVideoResearch(vRes)) {
+        // already watched — do not re-analyze
+      } else if (prior?.status === "failed" && !forceManual) {
+        // background does not retry failed
+      } else {
+        vRes = await VideoUnderstandingProvider.analyzeVideo(source.url);
+        const accepted = VideoUnderstandingProvider.isAcceptedVideoResearch(vRes) && vRes.accepted !== false;
+        ledger = this.upsertLedger(ledger, {
+          watchedVideoKey: key,
+          status: accepted ? "watched" : "failed",
+          fingerprint: accepted ? vRes.hook_formula : undefined,
+          watchedAt: now,
+        });
+        if (!accepted) vRes = undefined;
+      }
+
       const updatedSource: ResearchSource = {
         ...source,
-        displayName: vRes.title,
-        avatar: vRes.thumbnail,
+        displayName: vRes?.title || source.displayName,
+        avatar: vRes?.thumbnail || source.avatar,
         videoResearch: vRes,
-        learnings: [vRes.hookAnalysis, vRes.retentionAnalysis, vRes.editingStyle],
-        researchConfidence: vRes.confidence,
+        watchLedger: ledger,
+        learnings: vRes?.hook_formula ? [vRes.hook_formula] : source.learnings || [],
         lastSyncedAt: now,
         updatedAt: now,
       };
 
-      if (brandId) {
-        ResearchDepartmentService.processVideoResearch(brandId, updatedSource, vRes);
-        persistResearchSourceUpdate(source.id, { lastSyncedAt: now, updatedAt: now }).catch((err) =>
-          console.warn("[ResearchSourceService] Video source sync persist notice:", err)
-        );
+      let videoSparks: ViralSpark[] = [];
+      let videoMemories: MemoryItem[] = [];
+      if (vRes && VideoUnderstandingProvider.isAcceptedVideoResearch(vRes)) {
+        const tickets = this.applyWatchTickets({ brandId, source: updatedSource, watches: [vRes], ctx });
+        videoSparks = tickets.videoSparks;
+        videoMemories = tickets.videoMemories;
       }
-      return { source: updatedSource, patterns: [] };
+      if (brandId) {
+        persistResearchSourceUpdate(source.id, {
+          lastSyncedAt: now,
+          updatedAt: now,
+          watchLedger: ledger,
+          learnings: updatedSource.learnings,
+          videoResearch: vRes,
+        }).catch((err) => console.warn("[ResearchSourceService] Video source sync persist notice:", err));
+      }
+      return { source: updatedSource, patterns: [], videoSparks, videoMemories };
     }
 
-    // Branch B: Profile / Account Resync
     let extracted: ExtractedSourceResult;
     if (source.platform === "youtube") {
       extracted = await YouTubeResearchProvider.extract(source.url, source.id);
@@ -269,43 +438,54 @@ export class ResearchSourceService {
       extracted = ResearchProviderStubs.extractStub(source.platform, source.url, source.id);
     }
 
-    // AI Multimodal Re-analysis on Top Video
-    let videoResearch = source.videoResearch;
-    const topVideo = extracted.source.recentVideos?.[0] || source.recentVideos?.[0];
-    if (topVideo?.url) {
-      try {
-        videoResearch = await VideoUnderstandingProvider.analyzeVideo(topVideo.url);
-      } catch (err) {
-        console.warn("[ResearchSourceService] Resync top video AI analysis notice:", err);
-      }
-    }
+    const rankedVideos = extracted.source.recentVideos || source.recentVideos || [];
+    const watchResult =
+      source.platform === "youtube"
+        ? await this.watchRankedWinners({
+            source,
+            videos: rankedVideos,
+            forceManual,
+            isRegister: false,
+          })
+        : { accepted: [] as VideoResearch[], ledger: this.getWatchLedger(source), learnings: source.learnings || [] };
 
     const updatedSource: ResearchSource = {
       ...source,
       ...extracted.source,
-      videoResearch,
-      learnings: videoResearch
-        ? [videoResearch.hookAnalysis, videoResearch.retentionAnalysis, videoResearch.pacingAnalysis, ...(extracted.source.learnings || [])]
-        : extracted.source.learnings || source.learnings,
+      recentVideos: rankedVideos,
+      topContent: extracted.source.topContent || source.topContent,
+      watchLedger: watchResult.ledger,
+      learnings: watchResult.learnings,
+      videoResearch: watchResult.accepted[0] || source.videoResearch,
       lastSyncedAt: now,
       updatedAt: now,
     };
 
+    const tickets = this.applyWatchTickets({
+      brandId,
+      source: updatedSource,
+      watches: watchResult.accepted,
+      ctx,
+    });
+
     if (brandId) {
-      if (videoResearch) {
-        ResearchDepartmentService.processVideoResearch(brandId, updatedSource, videoResearch);
-      }
-      persistResearchSourceUpdate(source.id, { lastSyncedAt: now, updatedAt: now }).catch((err) =>
-        console.warn("[ResearchSourceService] Source sync persist notice:", err)
-      );
-      for (const pat of extracted.patterns) {
-        persistResearchPatternCreate(brandId, pat).catch((err) =>
-          console.warn("[ResearchSourceService] Sync pattern persist notice:", err)
-        );
-      }
+      persistResearchSourceUpdate(source.id, {
+        lastSyncedAt: now,
+        updatedAt: now,
+        watchLedger: watchResult.ledger,
+        learnings: watchResult.learnings,
+        recentVideos: rankedVideos,
+        topContent: updatedSource.topContent,
+        videoResearch: updatedSource.videoResearch,
+      }).catch((err) => console.warn("[ResearchSourceService] Source sync persist notice:", err));
     }
 
-    return { source: updatedSource, patterns: extracted.patterns };
+    return {
+      source: updatedSource,
+      patterns: [],
+      videoSparks: tickets.videoSparks,
+      videoMemories: tickets.videoMemories,
+    };
   }
 
   static async deleteSource(id: string): Promise<void> {

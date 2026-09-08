@@ -166,7 +166,7 @@ interface SparkContextType {
   getActiveOffers: () => Offer[];
   addResearchSource: (url: string) => Promise<void>;
   removeResearchSource: (id: string) => void;
-  syncResearchSource: (id: string) => Promise<void>;
+  syncResearchSource: (id: string, forceManual?: boolean) => Promise<void>;
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
@@ -1012,7 +1012,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         sources.forEach((source: any) => {
           if (ResearchSourceService.isQuotaAllowedForSync(source.lastSyncedAt, false)) {
-            void syncResearchSource(source.id);
+            void syncResearchSource(source.id, false);
           }
         });
       }).catch((err) => console.warn("[SparkContext] background research sync error", err));
@@ -3445,10 +3445,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { ResearchSourceService } = await import("../services/research/researchSourceService");
     const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
     const brandId = getBrandWorkspaceId();
-    const result = await ResearchSourceService.registerAndExtract(url, brandId, state.researchSources || []);
+    const result = await ResearchSourceService.registerAndExtract(url, brandId, state.researchSources || [], {
+      existingSparks: state.viralSparks || [],
+      existingMemories: state.memoryItems || [],
+      brand: state.brand,
+    });
     if (!result) return;
 
-    const { source, patterns, videoSparks = [] } = result;
+    const { source, patterns, videoSparks = [], videoMemories = [] } = result;
 
     setState((prev: any) => {
       const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
@@ -3471,19 +3475,32 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return u ? { ...m, ...u } : m;
       });
 
-      // Surface REAL multimodal-analysis sparks (from VideoUnderstanding) into the UI, ahead of the
-      // templated pattern sparks, so users see genuine analysis rather than title-derived templates.
-      const patternAndExisting = [...newSparks, ...mergedSparks];
-      const realVideoSparks = (videoSparks || []).filter(
-        (vs: any) => !patternAndExisting.some((s: any) => s.id === vs.id || (vs.fingerprint && s.fingerprint === vs.fingerprint) || s.title === vs.title)
+      const existingSparkKeys = new Set(
+        [...mergedSparks, ...newSparks]
+          .flatMap((s: any) => [s.id, s.fingerprint, s.researchContext?.watchedVideoKey])
+          .filter(Boolean)
+      );
+      const existingMemKeys = new Set(
+        [...mergedMemories, ...newMemoryItems]
+          .flatMap((m: any) => [m.id, m.fingerprint])
+          .filter(Boolean)
+      );
+      const uniqueVideoSparks = (videoSparks || []).filter(
+        (vs: any) =>
+          !existingSparkKeys.has(vs.id) &&
+          !(vs.fingerprint && existingSparkKeys.has(vs.fingerprint)) &&
+          !(vs.researchContext?.watchedVideoKey && existingSparkKeys.has(vs.researchContext.watchedVideoKey))
+      );
+      const uniqueVideoMemories = (videoMemories || []).filter(
+        (vm: any) => !existingMemKeys.has(vm.id) && !(vm.fingerprint && existingMemKeys.has(vm.fingerprint))
       );
 
       return {
         ...prev,
         researchSources: [source, ...(prev.researchSources || []).filter((s: any) => s.id !== source.id)],
-        researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== source.id)],
-        memoryItems: [...newMemoryItems, ...mergedMemories],
-        viralSparks: [...realVideoSparks, ...patternAndExisting],
+        researchPatterns: [...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== source.id)],
+        memoryItems: [...uniqueVideoMemories, ...newMemoryItems, ...mergedMemories],
+        viralSparks: [...uniqueVideoSparks, ...newSparks, ...mergedSparks],
       };
     });
   };
@@ -3499,7 +3516,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const syncResearchSource = async (id: string) => {
+  const syncResearchSource = async (id: string, forceManual: boolean = true) => {
     const existing = (state.researchSources || []).find((s: any) => s.id === id);
     if (!existing) return;
 
@@ -3516,8 +3533,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
       const brandId = getBrandWorkspaceId();
 
-      // Force manual refresh
-      const { source, patterns } = await ResearchSourceService.syncSource(existing, brandId, true);
+      const { source, patterns, videoSparks = [], videoMemories = [] } = await ResearchSourceService.syncSource(
+        existing,
+        brandId,
+        forceManual,
+        {
+          existingSparks: state.viralSparks || [],
+          existingMemories: state.memoryItems || [],
+          brand: state.brand,
+        }
+      );
 
       setState((prev: any) => {
         const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
@@ -3540,12 +3565,32 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return u ? { ...m, ...u } : m;
         });
 
+        const existingSparkKeys = new Set(
+          [...mergedSparks, ...newSparks]
+            .flatMap((s: any) => [s.id, s.fingerprint, s.researchContext?.watchedVideoKey])
+            .filter(Boolean)
+        );
+        const existingMemKeys = new Set(
+          [...mergedMemories, ...newMemoryItems]
+            .flatMap((m: any) => [m.id, m.fingerprint])
+            .filter(Boolean)
+        );
+        const uniqueVideoSparks = (videoSparks || []).filter(
+          (vs: any) =>
+            !existingSparkKeys.has(vs.id) &&
+            !(vs.fingerprint && existingSparkKeys.has(vs.fingerprint)) &&
+            !(vs.researchContext?.watchedVideoKey && existingSparkKeys.has(vs.researchContext.watchedVideoKey))
+        );
+        const uniqueVideoMemories = (videoMemories || []).filter(
+          (vm: any) => !existingMemKeys.has(vm.id) && !(vm.fingerprint && existingMemKeys.has(vm.fingerprint))
+        );
+
         return {
           ...prev,
           researchSources: (prev.researchSources || []).map((s: any) => (s.id === id ? source : s)),
-          researchPatterns: [...patterns, ...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
-          memoryItems: [...newMemoryItems, ...mergedMemories],
-          viralSparks: [...newSparks, ...mergedSparks],
+          researchPatterns: [...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
+          memoryItems: [...uniqueVideoMemories, ...newMemoryItems, ...mergedMemories],
+          viralSparks: [...uniqueVideoSparks, ...newSparks, ...mergedSparks],
         };
       });
     } catch (err) {

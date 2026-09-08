@@ -32,6 +32,7 @@ function sourceRowToDomain(row: ResearchSourceRow): ResearchSource {
     topContent: Array.isArray(meta.topContent) ? meta.topContent : [],
     learnings: Array.isArray(meta.learnings) ? meta.learnings : [],
     observations: Array.isArray(meta.observations) ? meta.observations : [],
+    watchLedger: Array.isArray(meta.watchLedger) ? meta.watchLedger : [],
     researchConfidence: typeof meta.researchConfidence === "number" ? meta.researchConfidence : 88,
     lastSyncedAt: meta.lastSyncedAt || row.updated_at || row.created_at,
     createdAt: row.created_at,
@@ -81,6 +82,7 @@ export async function createResearchSource(values: Partial<ResearchSource> & { b
     topContent: (values as any).topContent || [],
     learnings: (values as any).learnings || [],
     observations: (values as any).observations || [],
+    watchLedger: (values as any).watchLedger || [],
     researchConfidence: values.researchConfidence || 88,
   };
 
@@ -124,6 +126,7 @@ export async function updateResearchSource(id: string, values: Partial<ResearchS
   if ((values as any).recentVideos !== undefined) metadataPatch.recentVideos = (values as any).recentVideos;
   if ((values as any).topContent !== undefined) metadataPatch.topContent = (values as any).topContent;
   if ((values as any).learnings !== undefined) metadataPatch.learnings = (values as any).learnings;
+  if ((values as any).watchLedger !== undefined) metadataPatch.watchLedger = (values as any).watchLedger;
 
   if (Object.keys(metadataPatch).length > 0) {
     rowUpdate.metadata = metadataPatch as any;
