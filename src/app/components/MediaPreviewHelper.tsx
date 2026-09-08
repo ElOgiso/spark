@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
 import { extractSparkStoragePath, ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "../services/production/productionAssetService";
+import {
+  applyReviewFullscreenOrientation,
+  enterReviewVideoFullscreen,
+  exitReviewVideoFullscreen,
+  isReviewVideoFullscreen,
+  reviewVideoObjectFitClass,
+  unlockReviewFullscreenOrientation,
+  type ReviewFsVideo,
+} from "./reviewVideoFullscreen";
 
 // Color maps and short labels for gorgeous custom thumbnails
 export function getMediaTheme(id: string) {
@@ -317,7 +326,8 @@ export function InteractiveVideoPlayer({
   
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
 
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
 
@@ -400,12 +410,43 @@ export function InteractiveVideoPlayer({
     }
   };
 
-  const handleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      containerRef.current.requestFullscreen().catch(() => {});
+  const syncNativeFullscreen = () => {
+    const active = isReviewVideoFullscreen(videoRef.current as ReviewFsVideo | null, stageRef.current);
+    setIsNativeFullscreen(active);
+    if (!active) {
+      unlockReviewFullscreenOrientation();
+    }
+  };
+
+  useEffect(() => {
+    const video = videoRef.current as ReviewFsVideo | null;
+    document.addEventListener("fullscreenchange", syncNativeFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncNativeFullscreen as EventListener);
+    video?.addEventListener("webkitbeginfullscreen", syncNativeFullscreen as EventListener);
+    video?.addEventListener("webkitendfullscreen", syncNativeFullscreen as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncNativeFullscreen);
+      document.removeEventListener("webkitfullscreenchange", syncNativeFullscreen as EventListener);
+      video?.removeEventListener("webkitbeginfullscreen", syncNativeFullscreen as EventListener);
+      video?.removeEventListener("webkitendfullscreen", syncNativeFullscreen as EventListener);
+      unlockReviewFullscreenOrientation();
+    };
+  }, [activeVideoUrl]);
+
+  const handleFullscreen = async () => {
+    const video = videoRef.current as ReviewFsVideo | null;
+    if (isReviewVideoFullscreen(video, stageRef.current)) {
+      await exitReviewVideoFullscreen(video);
+      return;
+    }
+    if (!video && !stageRef.current) return;
+    const result = await enterReviewVideoFullscreen({
+      video,
+      stage: stageRef.current,
+    });
+    if (result !== "none") {
+      await applyReviewFullscreenOrientation(video);
+      syncNativeFullscreen();
     }
   };
 
@@ -434,7 +475,28 @@ export function InteractiveVideoPlayer({
   };
 
   return (
-    <div ref={containerRef} className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[450px] shadow-2xl">
+    <div className="rounded-xl border border-border bg-black overflow-hidden flex flex-col md:flex-row h-auto md:h-[450px] shadow-2xl">
+      <style>{`
+        .spark-review-video-stage:fullscreen,
+        .spark-review-video-stage:-webkit-full-screen {
+          width: 100%;
+          height: 100%;
+          background: #000;
+        }
+        .spark-review-video-stage:fullscreen video,
+        .spark-review-video-stage:-webkit-full-screen video,
+        .spark-review-fs-video:fullscreen,
+        .spark-review-fs-video:-webkit-full-screen {
+          object-fit: contain !important;
+          width: 100%;
+          height: 100%;
+          background: #000;
+        }
+        .spark-review-video-stage:fullscreen ~ *,
+        .spark-review-video-stage:-webkit-full-screen ~ * {
+          display: none !important;
+        }
+      `}</style>
       {/* Voiceover audio preview element (ONLY played when user explicitly taps 'Listen to Voiceover', never auto-played beside master or over stills) */}
       {audioUrl && !isMasterMerged && (
         <audio
@@ -446,7 +508,7 @@ export function InteractiveVideoPlayer({
 
       <div className="flex-1 relative aspect-video md:aspect-auto bg-neutral-950 flex flex-col justify-between overflow-hidden group select-none">
         {/* Banner: "Not merged — Approve & merge to get one file" when not in master mode */}
-        {!isMasterMerged && (
+        {!isMasterMerged && !isNativeFullscreen && (
           <div className="bg-amber-500/20 border-b border-amber-500/30 px-3.5 py-1.5 flex items-center justify-between text-xs text-amber-200 z-30">
             <span className="font-semibold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -458,36 +520,38 @@ export function InteractiveVideoPlayer({
           </div>
         )}
 
-        {/* Video / Still / Backdrop */}
+        {/* Video / Still / Backdrop — stage is FS target (file only, black letterbox) */}
         {activeVideoUrl ? (
-          <video
-            ref={videoRef}
-            src={activeVideoUrl}
-            loop={!isMasterMerged}
-            muted={isMuted}
-            playsInline
-            onTimeUpdate={(e) => {
-              const cur = (e.target as HTMLVideoElement).currentTime;
-              setCurrentTime(Math.floor(cur));
-            }}
-            onLoadedMetadata={(e) => {
-              const dur = (e.target as HTMLVideoElement).duration;
-              if (dur && !isNaN(dur) && dur > 0) setDuration(Math.round(dur));
-            }}
-            onEnded={() => setIsPlaying(false)}
-            onError={async (e) => {
-              const currentSrc = (e.target as HTMLVideoElement).src;
-              const storagePath = extractSparkStoragePath(currentSrc);
-              if (storagePath) {
-                const freshUrl = await ProductionAssetService.resolveSignedUrl(storagePath, 60 * 60 * 24 * 7);
-                if (freshUrl && freshUrl !== currentSrc) {
-                  (e.target as HTMLVideoElement).src = freshUrl;
-                  (e.target as HTMLVideoElement).load();
+          <div ref={stageRef} className="spark-review-video-stage absolute inset-0 bg-black z-0">
+            <video
+              ref={videoRef}
+              src={activeVideoUrl}
+              loop={!isMasterMerged}
+              muted={isMuted}
+              playsInline
+              className={`spark-review-fs-video ${reviewVideoObjectFitClass(isNativeFullscreen)}`}
+              onTimeUpdate={(e) => {
+                const cur = (e.target as HTMLVideoElement).currentTime;
+                setCurrentTime(Math.floor(cur));
+              }}
+              onLoadedMetadata={(e) => {
+                const dur = (e.target as HTMLVideoElement).duration;
+                if (dur && !isNaN(dur) && dur > 0) setDuration(Math.round(dur));
+              }}
+              onEnded={() => setIsPlaying(false)}
+              onError={async (e) => {
+                const currentSrc = (e.target as HTMLVideoElement).src;
+                const storagePath = extractSparkStoragePath(currentSrc);
+                if (storagePath) {
+                  const freshUrl = await ProductionAssetService.resolveSignedUrl(storagePath, 60 * 60 * 24 * 7);
+                  if (freshUrl && freshUrl !== currentSrc) {
+                    (e.target as HTMLVideoElement).src = freshUrl;
+                    (e.target as HTMLVideoElement).load();
+                  }
                 }
-              }
-            }}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+              }}
+            />
+          </div>
         ) : activeImageUrl ? (
           <img
             src={activeImageUrl}
@@ -498,9 +562,15 @@ export function InteractiveVideoPlayer({
           <div className={`absolute inset-0 bg-gradient-to-tr ${theme.from} ${theme.via} ${theme.to}`} />
         )}
         
+        {!isNativeFullscreen && (
+          <>
         <div className="absolute inset-0 bg-black/40 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-black/20 to-black/60 pointer-events-none" />
+          </>
+        )}
 
+        {!isNativeFullscreen && (
+        <>
         {/* Top Badges & Actions */}
         <div className="absolute top-12 left-4 flex items-center gap-2 z-20">
           <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white border border-white/10">
@@ -660,9 +730,12 @@ export function InteractiveVideoPlayer({
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
 
-      {/* Storyboard Scenes Sidebar */}
+      {/* Storyboard Scenes Sidebar — hidden while native video FS (no SPARK chrome) */}
+      {!isNativeFullscreen && (
       <div className="w-full md:w-80 bg-neutral-900 border-l border-border/40 flex flex-col justify-between overflow-hidden">
         <div className="p-4 border-b border-border/30 bg-neutral-950/60 flex items-center justify-between">
           <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center justify-between w-full">
@@ -733,6 +806,7 @@ export function InteractiveVideoPlayer({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
