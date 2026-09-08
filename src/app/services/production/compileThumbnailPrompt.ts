@@ -8,6 +8,7 @@ import {
   normalizeCanonicalContentFormat,
   thumbnailSubjectLock,
 } from "./contentFormatDirectives";
+import { resolveLiveVisualGenre, visualGenreDirective, cinematicCraftEnabled } from "./visualGenreDirectives";
 
 export function compileThumbnailPrompt(params: {
   variantLetter: "A" | "B" | "C" | string;
@@ -20,6 +21,8 @@ export function compileThumbnailPrompt(params: {
   identityPrefix?: string;
   refPromptHeader?: string;
   contentFormat?: ContentFormat | string | null;
+  formatSettings?: any;
+  brief?: any;
 }): { prompt: string; compiler: "thumbnail" } {
   const {
     variantLetter,
@@ -34,6 +37,15 @@ export function compileThumbnailPrompt(params: {
   } = params;
 
   const format = normalizeCanonicalContentFormat(params.contentFormat);
+  const visualGenre = resolveLiveVisualGenre({
+    formatSettings: params.formatSettings || params.brief?.formatSettings,
+    contentFormat: format,
+    brief: params.brief,
+  });
+  const genreLaw = visualGenreDirective({
+    visualGenre,
+    cinematicCraft: cinematicCraftEnabled(params.formatSettings || params.brief?.formatSettings),
+  });
 
   const formulaDirectives: Record<string, string> = {
     A: `VIRAL FORMULA: Shock / High Emotion + Curiosity Gap.
@@ -60,6 +72,7 @@ COLOR PALETTE: Primary brand accent + studio dark monochrome + cyan highlight gl
   const prompt = `
 ${refPromptHeader}
 ${contentFormatDirective(format)}
+${genreLaw}
 [${aspectRatio} PROVEN VIRAL THUMBNAIL VARIANT ${variantLetter}]
 CONCEPT: ${concept}
 ${formulaSpec}

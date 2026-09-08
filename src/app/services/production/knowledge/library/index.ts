@@ -3,9 +3,10 @@
  */
 
 import { clearSkillRegistry, registerSkills, skillRegistrySize } from "../registry";
-import { FILMMAKING_SKILL_CATALOG, FILMMAKING_SKILL_IDS } from "./catalog";
+import { FILMMAKING_SKILL_CATALOG } from "./catalog";
 
-export { FILMMAKING_SKILL_CATALOG, FILMMAKING_SKILL_IDS };
+export { FILMMAKING_SKILL_CATALOG, FILMMAKING_SKILL_IDS, CORE_FILMMAKING_SKILLS } from "./catalog";
+export { GENRE_DIRECTOR_SKILLS } from "./catalog";
 
 let loaded = false;
 

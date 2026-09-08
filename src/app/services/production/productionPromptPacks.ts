@@ -16,7 +16,7 @@ ANTI-SLOP & CONTINUITY LAWS:
 2. SET CONTINUITY: Same set, backdrop, architectural details, and lighting atmosphere across all beats. No random environment resets mid-production.
 3. SINGLE ACTION FOCUS: Render exactly ONE primary physical action per beat/scene. No multi-action confusion or random subject movement.
 4. NO TEXT ON GENERATED STILLS: Never render letters, words, captions, subtitles, watermarks, or UI type on scene stills. Captions are applied later at the caption stage. Thumbnails are the only generated images allowed to contain headline text.
-5. OPTICAL DISCIPLINE: 8K UHD photorealistic render, prime cinema lens, natural depth of field, coherent color grade, zero AI distortion or extra limbs.
+5. OPTICAL DISCIPLINE: Honor the locked visualGenre medium. Photoreal live-action ONLY for cinematic/realistic/live-action looks. Never restyle anime, donghua, or 3D-cartoon into 8K photoreal. Zero extra limbs, coherent grade.
 `.trim();
 
 /**
@@ -363,6 +363,8 @@ export interface SceneMotionPromptParams {
   followStoryboardStill?: boolean;
   /** Extra still-authority laws (from sceneMotionLock). */
   stillAuthorityLaws?: string;
+  /** Genre-aware optics — do not force 8K photoreal on stylized looks. */
+  opticalDiscipline?: string;
 }
 
 export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string {
@@ -384,6 +386,7 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     viralConcept,
     followStoryboardStill = true,
     stillAuthorityLaws,
+    opticalDiscipline,
   } = params;
 
   const physicalAction =
@@ -418,12 +421,14 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
 - NO burned-in text, letters, captions, titles, subtitles, or dialogue glyphs on the frame.
-- Professional cinematic motion, natural motion blur, realistic physics.`
+- Professional cinematic motion language (coverage/motivation) without changing IMAGE 1's medium.
+- ${opticalDiscipline || "Honor locked visualGenre optics. Do not restyle into a different medium."}`
     : `- Animate the first frame only — motion and camera. Do NOT restyle, recompose, or change the character's identity, wardrobe, or the set.
 - Single continuous camera shot. NO jump cuts. NO transitions within this shot.
 - NO multi-panel grids or split frames.
 - NO burned-in text, letters, captions, titles, subtitles, or dialogue glyphs on the frame.
-- Professional cinematic motion, natural motion blur, realistic physics.`;
+- Professional cinematic motion language (coverage/motivation) without changing IMAGE 1's medium.
+- ${opticalDiscipline || "Honor locked visualGenre optics. Do not restyle into a different medium."}`;
 
   return `
 LOCKED SPARK SHOT MOTION — SHOT ${sceneIndex} OF ${totalScenes} (${durationSec}s) [${aspectRatio}]:

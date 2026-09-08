@@ -22,7 +22,7 @@ test("motion prompt carries identity lock + shared anti-slop negative laws (Veo 
   });
   // Identity / no-restyle lock so the clip stays faithful to the approved keyframe.
   assert.match(p, /Do NOT restyle/i);
-  assert.match(p, /Animate the first frame only/i);
+  assert.match(p, /Bring IMAGE 1 to life|Animate the first frame only/i);
   // Anti-slop negative constraints appended as plain text (the only channel Veo respects).
   assert.ok(p.includes(VIDEO_NEGATIVE_LAWS));
   assert.match(p, /face morphing/i);

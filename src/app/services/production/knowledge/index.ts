@@ -54,4 +54,6 @@ export {
   resetFilmmakingSkillLibraryForTests,
   FILMMAKING_SKILL_CATALOG,
   FILMMAKING_SKILL_IDS,
+  CORE_FILMMAKING_SKILLS,
+  GENRE_DIRECTOR_SKILLS,
 } from "./library";

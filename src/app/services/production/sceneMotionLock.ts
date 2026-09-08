@@ -26,6 +26,9 @@ export interface SceneMotionLock {
   endPose: string;
   /** Where the first-frame still came from. */
   sourceStill: "storyboard_panel" | "scene_still" | "revised_still" | "unknown";
+  /** Visual genre frozen with the still. */
+  visualGenre?: string;
+  cinematicCraft?: boolean;
   /** Optional URL of the locked still when known. */
   stillUrl?: string;
   lockedAt: string;
@@ -57,6 +60,8 @@ export function buildSceneMotionLock(params: {
   sceneIndexZeroBased?: number;
   sourceStill?: SceneMotionLock["sourceStill"];
   stillUrl?: string | null;
+  visualGenre?: string | null;
+  cinematicCraft?: boolean;
 }): SceneMotionLock {
   const scene = params.scene || {};
   const director = resolveDirectorSceneScript({
@@ -93,6 +98,8 @@ export function buildSceneMotionLock(params: {
     spokenLines: director.spokenLines,
     endPose,
     sourceStill: params.sourceStill || (scene.sourceStill as SceneMotionLock["sourceStill"]) || "unknown",
+    visualGenre: params.visualGenre || scene.motionLock?.visualGenre || scene.visualGenre,
+    cinematicCraft: params.cinematicCraft !== false,
     stillUrl,
     lockedAt: new Date().toISOString(),
     directorSource: director.source,

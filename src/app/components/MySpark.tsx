@@ -59,6 +59,8 @@ import {
 import {
   VIDEO_LENGTH_OPTIONS,
   CONTENT_FORMAT_OPTIONS,
+  VISUAL_GENRE_OPTIONS,
+  PRIMARY_VISUAL_GENRE_IDS,
   type ContentFormat,
   type AIProviderId,
   getEffectiveFormatSettings,
@@ -1282,6 +1284,89 @@ export function MySpark({ onNavigate }: MySparkProps) {
                       );
                     })}
                   </div>
+                </div>
+
+                {/* Sub-row 0b: Visual Genre (look) */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Visual Genre
+                    </p>
+                    <span className="text-xs font-medium text-foreground capitalize">
+                      {String(formatSettings?.visualGenre || "auto").replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mb-2">
+                    Look tradition for storyboard and video. Show format is who is on camera. Cinematic craft can ride on every look.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 mb-2">
+                    {VISUAL_GENRE_OPTIONS.filter((g) => PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => {
+                      const current = formatSettings?.visualGenre || "auto";
+                      const active = current === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: g.id })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            active
+                              ? "bg-purple-600/20 border-purple-500/60 shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40"
+                              : "bg-background border-border hover:border-accent/40 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-xs font-semibold ${active ? "text-purple-200" : "text-foreground"}`}>
+                              {g.label}
+                            </span>
+                            {active && <Check className="w-3.5 h-3.5 text-purple-400" />}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-snug">{g.desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: "auto" })}
+                      className={`p-2 rounded-lg border text-left text-[11px] ${
+                        (formatSettings?.visualGenre || "auto") === "auto"
+                          ? "bg-purple-600/20 border-purple-500/60 text-purple-200"
+                          : "bg-background border-border text-muted-foreground"
+                      }`}
+                    >
+                      Auto
+                    </button>
+                    {VISUAL_GENRE_OPTIONS.filter((g) => !PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => {
+                      const active = formatSettings?.visualGenre === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: g.id })}
+                          className={`p-2 rounded-lg border text-left ${
+                            active
+                              ? "bg-purple-600/20 border-purple-500/60"
+                              : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <span className={`text-[11px] font-semibold ${active ? "text-purple-200" : "text-foreground"}`}>
+                            {g.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formatSettings?.cinematicCraft !== false}
+                      onChange={(e) =>
+                        updateFormatSettings && updateFormatSettings({ cinematicCraft: e.target.checked })
+                      }
+                    />
+                    Cinematic craft on all looks (coverage + motivated camera — does not force photoreal)
+                  </label>
                 </div>
 
                 {/* Sub-row 1: Target Video Length */}

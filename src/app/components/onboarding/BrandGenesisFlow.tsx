@@ -28,10 +28,13 @@ import {
 } from "../../services/onboarding/onboardDirectorVoiceService";
 import {
   VIDEO_LENGTH_OPTIONS,
+  VISUAL_GENRE_OPTIONS,
+  PRIMARY_VISUAL_GENRE_IDS,
   type ContentFormat,
   type ProductionMode,
   type AutomationMode,
   type AIProviderId,
+  type VisualGenreSetting,
 } from "../../domain/types";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
@@ -67,6 +70,8 @@ export interface BrandGenesisData {
   researchSources?: string[];
   connectedAccounts?: Array<{ platform: string; username: string; connected: boolean }>;
   contentFormat?: ContentFormat;
+  visualGenre?: VisualGenreSetting;
+  cinematicCraft?: boolean;
   aspectMode?: "portrait" | "landscape" | "dynamic";
   targetDurationSec?: number;
   preferredVideoProvider?: AIProviderId | "auto";
@@ -792,6 +797,8 @@ interface GenesisInternalState {
   productionMode: string;
   automationMode: string;
   contentFormat: ContentFormat;
+  visualGenre?: VisualGenreSetting;
+  cinematicCraft?: boolean;
   aspectMode: "portrait" | "landscape" | "dynamic";
   targetDurationSec: number;
   preferredVideoProvider?: AIProviderId | "auto";
@@ -820,6 +827,8 @@ const DEFAULT_STATE: GenesisInternalState = {
   productionMode: "Hybrid",
   automationMode: "Balanced",
   contentFormat: "host",
+  visualGenre: "auto" as VisualGenreSetting,
+  cinematicCraft: true,
   aspectMode: "portrait",
   targetDurationSec: 60,
   preferredVideoProvider: "auto",
@@ -1695,6 +1704,56 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
         </div>
       </div>
       <div className="space-y-3">
+        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Visual Genre</label>
+        <p className="text-[11px] text-white/40">Look for storyboard and video. Format is who is on camera. Cinematic craft can ride on every look.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {VISUAL_GENRE_OPTIONS.filter((g) => PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => (
+            <ModeCard
+              key={g.id}
+              label={g.label}
+              desc={g.desc}
+              selected={(data.visualGenre || "auto") === g.id}
+              onSelect={() => onChange({ visualGenre: g.id })}
+            />
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ visualGenre: "auto" })}
+            className={`px-3 py-1.5 rounded-lg border text-[11px] ${
+              (data.visualGenre || "auto") === "auto"
+                ? "bg-purple-600/30 border-purple-400/60 text-white"
+                : "bg-white/5 border-white/12 text-white/50"
+            }`}
+          >
+            Auto
+          </button>
+          {VISUAL_GENRE_OPTIONS.filter((g) => !PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => onChange({ visualGenre: g.id })}
+              className={`px-3 py-1.5 rounded-lg border text-[11px] ${
+                data.visualGenre === g.id
+                  ? "bg-purple-600/30 border-purple-400/60 text-white"
+                  : "bg-white/5 border-white/12 text-white/50"
+              }`}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-white/45 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={data.cinematicCraft !== false}
+            onChange={(e) => onChange({ cinematicCraft: e.target.checked })}
+          />
+          Cinematic craft on all looks (coverage + motivated camera — does not force photoreal)
+        </label>
+      </div>
+      <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Automation</label>
         <div className="space-y-2">
           {[
@@ -2509,6 +2568,8 @@ export function BrandGenesisFlow({
       researchSources: data.researchSources,
       connectedAccounts,
       contentFormat: data.contentFormat || "host",
+      visualGenre: data.visualGenre || "auto",
+      cinematicCraft: data.cinematicCraft !== false,
       aspectMode: data.aspectMode || "portrait",
       targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
@@ -2524,6 +2585,8 @@ export function BrandGenesisFlow({
           aspectMode: data.aspectMode || "portrait",
           targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
           contentFormat: data.contentFormat || "host",
+          visualGenre: data.visualGenre || "auto",
+          cinematicCraft: data.cinematicCraft !== false,
           preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
         });
       }

@@ -10,6 +10,7 @@ import {
   normalizeCanonicalContentFormat,
 } from "./contentFormatDirectives";
 import { getEffectiveContentFormat } from "./characterSheetGate";
+import { resolveLiveVisualGenre, visualGenreDirective } from "./visualGenreDirectives";
 
 export function compileStoryboardPlanPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -28,6 +29,15 @@ export function compileStoryboardPlanPrompt(params: {
   const subjectName = character?.name || labels.nameFallback;
   const subjectStyle = character?.style || labels.styleFallback;
   const formatLaw = contentFormatDirective(format);
+  const visualGenre = resolveLiveVisualGenre({
+    formatSettings: brief.formatSettings,
+    contentFormat: format,
+    brief,
+  });
+  const genreLaw = visualGenreDirective({
+    visualGenre,
+    cinematicCraft: brief.formatSettings?.cinematicCraft !== false,
+  });
   const subjectLine =
     format === "faceless"
       ? `FORMAT SUBJECT: Faceless / VO-led — prefer B-roll and environment panels (no invented host).`
@@ -65,6 +75,9 @@ TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
 ${subjectLine}
 FORMAT LAW: ${formatLaw}
+VISUAL GENRE LAW:
+${genreLaw}
+VALUE JOB IS EDITORIAL ONLY: valueJob labels structure (hook/proof/cta). visualDescription, startState, primaryChange, endState, and physicalAction must be concrete visible blocking — never valueJob jargon, never spoken lines as the picture.
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
@@ -124,6 +137,9 @@ TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
 ${subjectLine}
 FORMAT LAW: ${formatLaw}
+VISUAL GENRE LAW:
+${genreLaw}
+VALUE JOB IS EDITORIAL ONLY: valueJob labels structure (hook/proof/cta). visualDescription, startState, primaryChange, endState, and physicalAction must be concrete visible blocking — never valueJob jargon, never spoken lines as the picture.
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 ${formattedBeatsBlock}
@@ -180,6 +196,9 @@ TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
 ${subjectLine}
 FORMAT LAW: ${formatLaw}
+VISUAL GENRE LAW:
+${genreLaw}
+VALUE JOB IS EDITORIAL ONLY: valueJob labels structure (hook/proof/cta). visualDescription, startState, primaryChange, endState, and physicalAction must be concrete visible blocking — never valueJob jargon, never spoken lines as the picture.
 HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"

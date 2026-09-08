@@ -1073,6 +1073,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       aspectMode: data.aspectMode || "portrait",
       targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
       contentFormat: resolvedContentFormat,
+      visualGenre: data.visualGenre || "auto",
+      cinematicCraft: data.cinematicCraft !== false,
       preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
     };
 

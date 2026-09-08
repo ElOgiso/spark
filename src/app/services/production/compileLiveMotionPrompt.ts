@@ -6,7 +6,7 @@
  * Prefer SceneMotionLock frozen at still/panel time over free scene rewrite.
  */
 
-import { buildSceneMotionPrompt, buildViralConceptDirective } from "./productionPromptPacks";
+import { buildSceneMotionPrompt } from "./productionPromptPacks";
 import type { ContentFormat, ProductionBrief } from "../../domain/types";
 import {
   contentFormatDirective,
@@ -23,6 +23,11 @@ import {
   storyboardStillAnimateLaws,
   type SceneMotionLock,
 } from "./sceneMotionLock";
+import {
+  resolveLiveVisualGenre,
+  visualGenreDirective,
+} from "./visualGenreDirectives";
+import { isVisualGenreId, opticalDisciplineForVisualGenre } from "../../domain/visualGenre";
 
 export function compileLiveMotionPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -124,8 +129,19 @@ export function compileLiveMotionPrompt(params: {
     ? `EXECUTIVE REVISION: ${revisionNotes}\nVISUAL LOCK LAW: Animate from the revised scene still first frame. Keep character, environment, and props locked to IMAGE 1 — change only the requested motion/action.`
     : lockLaw;
 
+  const visualGenre = isVisualGenreId(motionLock.visualGenre)
+    ? motionLock.visualGenre
+    : resolveLiveVisualGenre({
+        formatSettings: brief?.formatSettings,
+        contentFormat: format,
+        brief,
+      });
+  const cinematicCraft = motionLock.cinematicCraft !== false;
+  const genreLaw = visualGenreDirective({ visualGenre, cinematicCraft });
+
   const refHeader = [
     contentFormatDirective(format),
+    genreLaw,
     ...refLabels,
     revisionLine,
     followStoryboardStill ? storyboardStillAnimateLaws() : "",
@@ -150,8 +166,9 @@ export function compileLiveMotionPrompt(params: {
     characterName,
     characterStyle,
     environment,
-    viralConcept: brief ? buildViralConceptDirective(brief) : undefined,
+    viralConcept: undefined,
     followStoryboardStill,
+    opticalDiscipline: opticalDisciplineForVisualGenre(visualGenre),
   })}`;
 
   return {

@@ -62,6 +62,7 @@ import {
 } from "./productionAssetDirector";
 import { normalizeCanonicalContentFormat } from "../contentFormatDirectives";
 import { getEffectiveContentFormat } from "../characterSheetGate";
+import { resolveVisualGenre } from "../../../domain/visualGenre";
 import {
   buildProductionSettingsSnapshot,
   type ProductionSettingsSnapshot,
@@ -425,6 +426,14 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
       legacyProductionId: productionId,
       grammarIds: directed.grammar.sources,
       contentFormat: lockedContentFormat,
+      visualGenre: resolveVisualGenre({
+        explicit: settingsSnapshot?.formatSettings?.visualGenre,
+        contentFormat: lockedContentFormat,
+        ideaText: [input.idea, directed.creative.intent, directed.creative.visualLanguage].filter(Boolean).join("\n"),
+        specGenre: directed.creative.genre,
+        visualDirection: directed.creative.visualLanguage,
+      }),
+      cinematicCraft: settingsSnapshot?.formatSettings?.cinematicCraft !== false,
     },
   };
 
@@ -446,6 +455,12 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
     existingMasters: input.existingMasters,
     settingsSnapshot,
     visualMedium: [
+      spec.meta.visualGenre === "donghua_wuxia"
+        ? "wuxia donghua xianxia"
+        : spec.meta.visualGenre === "cartoon_3d"
+          ? "3d cgi pixar"
+          : spec.meta.visualGenre,
+      input.idea,
       input.idea,
       directed.creative.intent,
       directed.creative.visualLanguage,

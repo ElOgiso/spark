@@ -1,4 +1,18 @@
+import type { VisualGenreSetting } from "./visualGenre";
+
 export type ContentFormat = "faceless" | "host" | "story" | "anime";
+
+export type {
+  VisualGenreId,
+  VisualGenreSetting,
+  VisualGenreOption,
+} from "./visualGenre";
+export {
+  VISUAL_GENRE_OPTIONS,
+  PRIMARY_VISUAL_GENRE_IDS,
+  resolveVisualGenre,
+  defaultVisualGenreForContentFormat,
+} from "./visualGenre";
 
 export interface Brand {
   id?: string;
@@ -734,6 +748,10 @@ export interface ProductionFormatSettings {
   aspectMode: AspectMode;
   targetDurationSec: number; // 15, 30, 60 (1m), 180 (3m), 300 (5m), 600 (10m), 900 (15m), 1200 (20m), 1800 (30m), 2700 (45m), 3600 (60m)
   contentFormat?: ContentFormat;
+  /** Look tradition under format. `auto` infers from idea + format at production lock. */
+  visualGenre?: VisualGenreSetting;
+  /** Cinematic coverage/camera craft overlay — default on, does not force photoreal. */
+  cinematicCraft?: boolean;
   preferredVideoProvider?: AIProviderId;
   preferredVideoModel?: string;
 }
@@ -742,6 +760,8 @@ export const DEFAULT_FORMAT_SETTINGS: ProductionFormatSettings = {
   aspectMode: "portrait",
   targetDurationSec: 60,
   contentFormat: "host",
+  visualGenre: "auto",
+  cinematicCraft: true,
   preferredVideoProvider: "auto",
 };
 
@@ -755,7 +775,7 @@ export const CONTENT_FORMAT_OPTIONS: ContentFormatOption[] = [
   { id: "faceless", label: "Faceless", desc: "Voice + pictures, no host required" },
   { id: "host", label: "Host", desc: "One character on camera (default)" },
   { id: "story", label: "Story", desc: "Multi-scene narrative" },
-  { id: "anime", label: "Anime", desc: "Story in locked anime / 3D style" },
+  { id: "anime", label: "Anime", desc: "Illustrated story — pick the look under Visual Genre" },
 ];
 
 export interface VideoLengthOption {
@@ -831,6 +851,22 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     localCacheSettings?.preferredVideoModel ||
     DEFAULT_FORMAT_SETTINGS.preferredVideoModel;
 
+  const rawVisualGenre =
+    direct?.visualGenre ||
+    brandSettings?.visualGenre ||
+    localCacheSettings?.visualGenre ||
+    DEFAULT_FORMAT_SETTINGS.visualGenre ||
+    "auto";
+
+  const rawCinematicCraft =
+    typeof direct?.cinematicCraft === "boolean"
+      ? direct.cinematicCraft
+      : typeof brandSettings?.cinematicCraft === "boolean"
+        ? brandSettings.cinematicCraft
+        : typeof localCacheSettings?.cinematicCraft === "boolean"
+          ? localCacheSettings.cinematicCraft
+          : DEFAULT_FORMAT_SETTINGS.cinematicCraft;
+
   return {
     ...DEFAULT_FORMAT_SETTINGS,
     ...(brandSettings || {}),
@@ -838,6 +874,8 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     aspectMode: rawAspect,
     targetDurationSec: rawTargetDuration,
     contentFormat: (rawContentFormat as ContentFormat) || "host",
+    visualGenre: rawVisualGenre,
+    cinematicCraft: rawCinematicCraft !== false,
     preferredVideoProvider: rawPreferredProvider,
     preferredVideoModel: rawPreferredModel,
   };

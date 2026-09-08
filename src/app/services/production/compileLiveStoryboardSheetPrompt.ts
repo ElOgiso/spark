@@ -22,6 +22,8 @@ import {
   frameLockPanelPromptLaws,
   type ProductionFrameLock,
 } from "./frameLock";
+import { resolveLiveVisualGenre, visualGenreDirective } from "./visualGenreDirectives";
+import { visualGenreOption } from "../../domain/visualGenre";
 
 /** Cap for a single overview sheet (4×4). Longer boards still pack chronologically. */
 export const LIVE_STORYBOARD_SHEET_MAX_PANELS = 16;
@@ -34,6 +36,8 @@ export function compileLiveStoryboardSheetPrompt(params: {
   environment?: string;
   styleLook?: string;
   contentFormat?: string | null;
+  formatSettings?: any;
+  brief?: any;
   frameLock?: ProductionFrameLock;
   /** When true (default), prefer square grids so panel cells match production AR. */
   preferNativePanelGeometry?: boolean;
@@ -56,6 +60,15 @@ export function compileLiveStoryboardSheetPrompt(params: {
   const scenes = rawScenes.slice(0, LIVE_STORYBOARD_SHEET_MAX_PANELS);
   const format = normalizeCanonicalContentFormat(params.contentFormat);
   const formatLaw = contentFormatDirective(format);
+  const visualGenre = resolveLiveVisualGenre({
+    formatSettings: params.formatSettings || params.brief?.formatSettings,
+    contentFormat: format,
+    brief: params.brief,
+  });
+  const genreLaw = visualGenreDirective({
+    visualGenre,
+    cinematicCraft: params.formatSettings?.cinematicCraft !== false,
+  });
 
   const panels = scenes.map((scene, i) => {
     const panel = panelSpecFromLiveScene(scene, i);
@@ -130,17 +143,23 @@ export function compileLiveStoryboardSheetPrompt(params: {
   const core = compileStoryboardImagePrompt(blueprint, {
     look:
       params.styleLook ||
-      (format === "anime"
-        ? "anime sequential storyboard sheet"
-        : format === "faceless"
-          ? "faceless VO B-roll sequential storyboard"
-          : "cinematic sequential storyboard"),
+      (visualGenre === "anime"
+        ? "modern anime sequential storyboard sheet"
+        : visualGenre === "donghua_wuxia"
+          ? "wuxia xianxia donghua sequential storyboard sheet"
+          : visualGenre === "cartoon_3d"
+            ? "3d animated-feature sequential storyboard sheet"
+            : format === "faceless"
+              ? "faceless VO B-roll sequential storyboard"
+              : `${visualGenreOption(visualGenre).label} sequential storyboard`),
     colorLanguage: undefined,
   } as any);
 
   const laws = [
     "You are an expert storyboard director and visual continuity supervisor.",
     formatLaw,
+    genreLaw,
+    "Each panel depicts the director physicalAction for that beat — never valueJob, hook templates, or spoken lines as the picture.",
     frameLockPanelPromptLaws(frameLock),
     "Generate ONE multi-panel storyboard SHEET image (not a single hero still).",
     `Layout: ${layout} with exactly ${panels.length} sequential panels in reading order (empty cells OK if grid capacity > panel count — do NOT distort panels to fill).`,

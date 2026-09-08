@@ -5,6 +5,8 @@
 
 import type { FilmmakingSkill, SkillPrinciple } from "../types";
 import { rule, skill } from "./helpers";
+import { GENRE_DIRECTOR_SKILLS } from "./genreDirectorSkills";
+export { GENRE_DIRECTOR_SKILLS };
 
 function principle(
   id: string,
@@ -21,7 +23,7 @@ function principle(
   };
 }
 
-export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
+export const CORE_FILMMAKING_SKILLS: FilmmakingSkill[] = [
   skill({
     id: "reference-first-visual-continuity",
     name: "Reference-First Visual Continuity",
@@ -747,6 +749,11 @@ export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
     sourceType: "research-derived",
     metadata: { testOnly: "true" },
   }),
+];
+
+export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
+  ...CORE_FILMMAKING_SKILLS,
+  ...GENRE_DIRECTOR_SKILLS,
 ];
 
 export const FILMMAKING_SKILL_IDS: string[] = FILMMAKING_SKILL_CATALOG.map((s) => s.id);

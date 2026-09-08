@@ -9,6 +9,8 @@ import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { resolveLiveBeatSubject } from "./contentFormatDirectives";
+import { resolveLiveVisualGenre, visualGenreDirective } from "./visualGenreDirectives";
+import { isPhotorealVisualGenre } from "../../domain/visualGenre";
 import {
   mergeDirectorIdentityForLock,
   resolveDirectorPixelRefs,
@@ -192,7 +194,20 @@ IDENTITY CONTINUITY LAW: Must be the exact same person in every panel. Consisten
   const setBlock = `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".${plateUrl ? ` Locked Set Reference: ${plateUrl}` : ""}
 SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and lighting atmosphere across all panels. Do not change set location mid-board unless brief explicitly changes scene location. Lighting aligned with ${brand.name || "Brand"}.`;
 
-  const styleBlock = `CINEMATIC DISCIPLINE: Format: ${aspectRatio} aspect ratio. 8K UHD photorealistic render, prime cinema optics, coherent color grade, natural depth of field, realistic skin texture, zero AI distortion.`;
+  const visualGenre = resolveLiveVisualGenre({
+    formatSettings: formatSettings,
+    contentFormat: formatSettings.contentFormat,
+    production,
+    brief,
+  });
+  const photoreal = isPhotorealVisualGenre(visualGenre);
+  const genreOptics = visualGenreDirective({
+    visualGenre,
+    cinematicCraft: formatSettings.cinematicCraft !== false,
+  });
+  const styleBlock = photoreal
+    ? `LOOK DISCIPLINE: Format ${aspectRatio}. ${genreOptics} Coherent grade, natural depth of field, zero extra limbs.`
+    : `LOOK DISCIPLINE: Format ${aspectRatio}. ${genreOptics} Do NOT apply photoreal 8K skin/live-action optics.`;
 
   const combinedPromptPrefix = `${identityBlock}\n${setBlock}\n${styleBlock}`;
 
@@ -910,8 +925,19 @@ export class ProductionAssetService {
       production,
       brief,
     });
+    const effectiveVisualGenre = resolveLiveVisualGenre({
+      formatSettings: activeFormatSettings,
+      contentFormat: effectiveContentFormat,
+      production,
+      brief,
+    });
+    (brief as any).visualGenre = effectiveVisualGenre;
+    (production as any).visualGenre = effectiveVisualGenre;
     console.log(
       `[SPARK Pipeline] Frame Lock: ${frameLock.frameLockId} ${frameLock.aspectRatio} ${frameLock.targetWidth}×${frameLock.targetHeight} (${frameLock.platformHint})`
+    );
+    console.log(
+      `[SPARK Pipeline] Visual genre: ${effectiveVisualGenre} (format=${effectiveContentFormat}, cinematicCraft=${activeFormatSettings.cinematicCraft !== false})`
     );
     // Viral concept directive is injected by OS motion/still compilers — not here.
     (production as any).aspectRatio = frameLock.aspectRatio;
@@ -1362,7 +1388,9 @@ export class ProductionAssetService {
             brandName: brand?.name,
             environment: identityPack.environmentString || durableLocationPlateUrl,
             styleLook: brief.visualDirection || brand?.niche,
-            contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
+            contentFormat: effectiveContentFormat,
+            formatSettings: activeFormatSettings,
+            brief,
             frameLock,
             preferNativePanelGeometry: true,
           });
@@ -1498,6 +1526,8 @@ export class ProductionAssetService {
               attachSceneMotionLock(s, {
                 environment: identityPack.environmentString,
                 contentFormat: effectiveContentFormat,
+                visualGenre: effectiveVisualGenre,
+                cinematicCraft: activeFormatSettings.cinematicCraft !== false,
                 sceneIndexZeroBased: pIdx,
                 sourceStill: "storyboard_panel",
                 stillUrl: finalStill,
@@ -1569,6 +1599,8 @@ export class ProductionAssetService {
               attachSceneMotionLock(s, {
                 environment: identityPack.environmentString,
                 contentFormat: effectiveContentFormat,
+                visualGenre: effectiveVisualGenre,
+                cinematicCraft: activeFormatSettings.cinematicCraft !== false,
                 sceneIndexZeroBased: sIdx,
                 sourceStill: "storyboard_panel",
                 stillUrl: panelStill as string,
@@ -1609,6 +1641,8 @@ export class ProductionAssetService {
               attachSceneMotionLock(s, {
                 environment: identityPack.environmentString,
                 contentFormat: effectiveContentFormat,
+                visualGenre: effectiveVisualGenre,
+                cinematicCraft: activeFormatSettings.cinematicCraft !== false,
                 sceneIndexZeroBased: sIdx,
                 sourceStill: "scene_still",
                 stillUrl: existingStill,
@@ -1666,6 +1700,8 @@ export class ProductionAssetService {
             attachSceneMotionLock(s, {
               environment: identityPack.environmentString,
               contentFormat: contentFormat,
+              visualGenre: effectiveVisualGenre,
+              cinematicCraft: activeFormatSettings.cinematicCraft !== false,
               sceneIndexZeroBased: sIdx,
               sourceStill: "scene_still",
               stillUrl: finalStill,
@@ -1716,6 +1752,8 @@ export class ProductionAssetService {
           attachSceneMotionLock(s, {
             environment: identityPack.environmentString,
             contentFormat,
+            visualGenre: effectiveVisualGenre,
+            cinematicCraft: activeFormatSettings.cinematicCraft !== false,
             sceneIndexZeroBased: sIdx,
             sourceStill: "scene_still",
             beat: brief?.beats?.[sIdx],
@@ -1727,6 +1765,7 @@ export class ProductionAssetService {
             character,
             activeChar,
             contentFormat,
+            visualGenre: effectiveVisualGenre,
           });
           const compiledStill = compileLiveStillPrompt({
             scene: s,
@@ -3489,6 +3528,12 @@ export class ProductionAssetService {
       ].find((u) => isImgUrl(u));
 
       const contentFormat = getEffectiveContentFormat({ brand, production, brief });
+      const effectiveVisualGenre = resolveLiveVisualGenre({
+        formatSettings: generationSettings.formatSettings,
+        contentFormat,
+        production,
+        brief,
+      });
       let plateUrl = resolveLocationPlateUrl({
         snapshotPlateUrl: generationSettings.snapshot?.character?.locationPlateUrl,
         brandPlateUrl: brand.locationPlateUrl,
@@ -3600,6 +3645,8 @@ export class ProductionAssetService {
             scene: revisedScene,
             environment: identityPack.environmentString,
             contentFormat,
+            visualGenre: effectiveVisualGenre,
+            cinematicCraft: generationSettings.formatSettings?.cinematicCraft !== false,
             sceneIndexZeroBased: targetSceneIdx,
             sourceStill: "revised_still",
             stillUrl: finalStill,
@@ -3697,6 +3744,8 @@ export class ProductionAssetService {
           scene: revisedScene,
           environment: identityPack.environmentString,
           contentFormat,
+          visualGenre: effectiveVisualGenre,
+          cinematicCraft: generationSettings.formatSettings?.cinematicCraft !== false,
           sceneIndexZeroBased: targetSceneIdx,
           sourceStill: "revised_still",
           stillUrl: sceneStill,

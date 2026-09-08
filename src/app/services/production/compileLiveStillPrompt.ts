@@ -11,7 +11,7 @@ import type { ProductionSpec, SceneSpec } from "./specification/productionSpec";
 import type { ShotSpec } from "./specification/shotSpec";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import type { Character, ContentFormat, MemoryItem } from "../../domain/types";
-import { buildViralConceptDirective } from "./productionPromptPacks";
+import { stillMediumLockLine, isVisualGenreId, type VisualGenreId } from "../../domain/visualGenre";
 import { listSpecShots } from "./productionMediaLineage";
 import {
   contentFormatDirective,
@@ -20,6 +20,13 @@ import {
   resolveProductionContentFormat,
 } from "./contentFormatDirectives";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
+import { isSceneMotionLock } from "./sceneMotionLock";
+import {
+  directorStillLookLaws,
+  resolveLiveVisualGenre,
+  visualGenreDirective,
+  cinematicCraftEnabled,
+} from "./visualGenreDirectives";
 
 function emptyHandoff() {
   return {
@@ -37,6 +44,7 @@ export function buildStillSubjectLine(params: {
   character?: Character | null;
   activeChar?: Character | null;
   contentFormat?: ContentFormat | string | null;
+  visualGenre?: VisualGenreId | string | null;
 }): string {
   const { resolvedSubject, character, activeChar } = params;
   const format = normalizeCanonicalContentFormat(params.contentFormat);
@@ -52,24 +60,30 @@ export function buildStillSubjectLine(params: {
   const labels = formatSubjectRoleLabel(format, "main");
   const name = character?.name || labels.nameFallback;
   const style = character?.style || labels.styleFallback;
-  const medium =
-    format === "anime"
-      ? " Anime medium lock: cel shading / anime line art — not photoreal."
-      : "";
+  const genreId: VisualGenreId = isVisualGenreId(params.visualGenre)
+    ? params.visualGenre
+    : format === "anime"
+      ? "anime"
+      : "cinematic";
+  const medium = stillMediumLockLine(genreId);
   return `SUBJECT & IDENTITY: ${labels.roleLine} "${name}" (${style}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Subject is clearly visible in frame performing this beat's action.${medium}`;
 }
 
 /** Map a live storyboard / production scene row into a panel spec for the OS frame compiler. */
 export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanelSpec {
   const sceneNum = Number(scene?.scene || scene?.index || idx + 1) || idx + 1;
+  const lock = isSceneMotionLock(scene?.motionLock) ? scene.motionLock : null;
   const director = resolveDirectorSceneScript({
     scene,
     sceneIndexZeroBased: idx,
   });
-  // Visual objective = physical action only — never spoken dialogue as the picture
-  const action = director.physicalAction;
-  const spoken = director.spokenLines;
-  const camera = scene?.cameraDirection || "Medium cinematic framing";
+  // Frozen lock wins; else director physicalAction — never spoken dialogue / valueJob as the picture
+  const action = lock?.physicalAction || director.physicalAction;
+  const spoken = lock?.spokenLines || director.spokenLines;
+  const camera =
+    lock?.cameraDirection ||
+    scene?.cameraDirection ||
+    "Medium cinematic framing";
   return {
     panelId: scene?.panelId || `panel-${sceneNum}`,
     shotId: scene?.shotId || scene?.id || `shot-${sceneNum}`,
@@ -157,13 +171,42 @@ export function compileLiveStillPrompt(params: {
     specMeta: production?.reasoning?.productionSpec?.meta,
   });
   const formatLaw = contentFormatDirective(format);
+  const visualGenre = resolveLiveVisualGenre({
+    formatSettings: brief?.formatSettings || production?.formatSettings,
+    contentFormat: format,
+    production,
+    brief,
+  });
+  const cinematicCraft = cinematicCraftEnabled(
+    production?.reasoning?.settingsSnapshot?.formatSettings ||
+      brief?.formatSettings ||
+      production?.formatSettings
+  );
+  const genreLaw = visualGenreDirective({ visualGenre, cinematicCraft });
+
+  const lock = isSceneMotionLock(scene?.motionLock)
+    ? scene.motionLock
+    : null;
+  const director = resolveDirectorSceneScript({
+    scene,
+    sceneIndexZeroBased,
+  });
+  const physicalAction = lock?.physicalAction || director.physicalAction;
+  const cameraDirection =
+    lock?.cameraDirection || scene?.cameraDirection || "Medium cinematic framing";
+  const directorLockLaws = directorStillLookLaws({
+    physicalAction,
+    cameraDirection,
+    visualGenre,
+    cinematicCraft,
+  });
 
   const laws = buildRankedBrandLaws(memoryItems).lawsBlock;
-  const viral = brief ? buildViralConceptDirective(brief) : "";
   const styleSummary = [
     formatLaw,
+    genreLaw,
+    directorLockLaws,
     laws ? `BRAND LAWS:\n${laws}` : "",
-    viral || "",
     subjectLine || "",
   ]
     .filter(Boolean)
@@ -185,7 +228,8 @@ export function compileLiveStillPrompt(params: {
           refPromptHeader,
           styleSummary,
           compiled,
-          "Generate a SINGLE clean cinematic still frame (not a multi-panel sheet).",
+          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides SHOT PURPOSE / WHY / valueJob for the picture.",
+          "Generate a SINGLE clean still frame (not a multi-panel sheet).",
           "NO TEXT, NO LETTERS, NO CAPTIONS on image. Full-bleed only.",
           `Aspect ratio: ${aspectRatio}.`,
         ]
@@ -212,7 +256,8 @@ export function compileLiveStillPrompt(params: {
           refPromptHeader,
           styleSummary,
           compiled,
-          "Generate a SINGLE clean cinematic still frame (not a multi-panel sheet).",
+          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides SHOT PURPOSE / WHY / valueJob for the picture.",
+          "Generate a SINGLE clean still frame (not a multi-panel sheet).",
           "NO TEXT, NO LETTERS, NO CAPTIONS on image. Full-bleed only.",
           `Aspect ratio: ${aspectRatio}.`,
         ]

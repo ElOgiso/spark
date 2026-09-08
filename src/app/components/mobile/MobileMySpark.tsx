@@ -57,7 +57,7 @@ import {
   seedDefaultAudience,
 } from "../../domain/brandOptions";
 import { normalizeHandle } from "../../domain/accountUtils";
-import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, type ContentFormat, type AIProviderId } from "../../domain/types";
+import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, VISUAL_GENRE_OPTIONS, PRIMARY_VISUAL_GENRE_IDS, type ContentFormat, type AIProviderId } from "../../domain/types";
 
 interface MobileMySparkProps {
   onNavigate?: (path: string) => void;
@@ -1001,6 +1001,70 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                 );
               })}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Visual Genre</span>
+              <span className="font-semibold text-foreground capitalize">
+                {String(formatSettings?.visualGenre || "auto").replace(/_/g, " ")}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {VISUAL_GENRE_OPTIONS.filter((g) => PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => {
+                const active = (formatSettings?.visualGenre || "auto") === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: g.id })}
+                    className={`p-2.5 rounded-xl border text-left ${
+                      active
+                        ? "bg-purple-600/20 border-purple-500/60 ring-1 ring-purple-500/40"
+                        : "bg-background border-border text-muted-foreground"
+                    }`}
+                  >
+                    <span className={`text-xs font-semibold ${active ? "text-purple-200" : "text-foreground"}`}>{g.label}</span>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{g.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: "auto" })}
+                className={`px-2 py-1 rounded-lg border text-[10px] ${
+                  (formatSettings?.visualGenre || "auto") === "auto"
+                    ? "bg-purple-600/20 border-purple-500/60 text-purple-200"
+                    : "bg-background border-border text-muted-foreground"
+                }`}
+              >
+                Auto
+              </button>
+              {VISUAL_GENRE_OPTIONS.filter((g) => !PRIMARY_VISUAL_GENRE_IDS.includes(g.id)).map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => updateFormatSettings && updateFormatSettings({ visualGenre: g.id })}
+                  className={`px-2 py-1 rounded-lg border text-[10px] ${
+                    formatSettings?.visualGenre === g.id
+                      ? "bg-purple-600/20 border-purple-500/60 text-purple-200"
+                      : "bg-background border-border text-muted-foreground"
+                  }`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={formatSettings?.cinematicCraft !== false}
+                onChange={(e) => updateFormatSettings && updateFormatSettings({ cinematicCraft: e.target.checked })}
+              />
+              Cinematic craft on all looks
+            </label>
           </div>
 
           {/* Sub-row 1: Target Video Length */}

@@ -13,6 +13,7 @@ import type {
   FilmmakingSkillContext,
   ShotFilmmakingGuidance,
 } from "./types";
+import { isVisualGenreId, resolveVisualGenre, visualGenreSkillTags } from "../../../domain/visualGenre";
 
 const CONTINUITY_MERGE_CAP = 6;
 
@@ -96,6 +97,16 @@ export function skillContextFromShot(
     isIsolatedShot,
     requiresMotion,
     requiresTimeline,
+    tags: visualGenreSkillTags({
+      visualGenre: isVisualGenreId(spec.meta?.visualGenre)
+        ? spec.meta.visualGenre
+        : resolveVisualGenre({
+            explicit: spec.meta?.visualGenre,
+            contentFormat: spec.meta?.contentFormat,
+            specGenre: spec.creative?.genre,
+          }),
+      cinematicCraft: spec.meta?.cinematicCraft !== false,
+    }),
   };
 }
 

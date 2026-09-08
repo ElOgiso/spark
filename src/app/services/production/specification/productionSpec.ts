@@ -193,6 +193,9 @@ export interface ProductionSpec {
     grammarIds: string[];
     /** Locked ContentFormat for this Spec (snapshot authority — not genre). */
     contentFormat?: import("../../../domain/types").ContentFormat;
+    /** Locked visual look tradition (under format). */
+    visualGenre?: import("../../../domain/visualGenre").VisualGenreId;
+    cinematicCraft?: boolean;
     /** Autonomous Production Asset Director output (planning only — not media) */
     assetDirector?: {
       requirementCount: number;
