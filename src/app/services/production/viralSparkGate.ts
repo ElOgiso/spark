@@ -293,7 +293,7 @@ export async function rewriteSparkForProduction(params: {
 }): Promise<ViralSpark> {
   const { spark, brand, memoryItems = [], researchContext = spark.researchContext } = params;
 
-  if (!ProductionGenerationGuard.isEnabled()) {
+  if (!ProductionGenerationGuard.isEnabled(brand?.id)) {
     return autoRepairViralSparkDeterministic(spark, brand);
   }
 

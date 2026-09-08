@@ -5,6 +5,7 @@ import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
+import { isProductionTombstoned } from "./production/productionTombstone";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
 import { createProductionPlan } from "./production/intelligence/productionOrchestrator";
 import {
@@ -103,7 +104,7 @@ export class ProductionService implements IProductionService {
     /** Phase 11 — optional prior learnings for Creative Director (soft influence only). */
     creativeLearnings?: CreativeLearning[];
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
-    ProductionGenerationGuard.assertEnabled("createProductionFromSpark");
+    ProductionGenerationGuard.assertEnabled("createProductionFromSpark", params.brand?.id);
     const prodId = params.productionId || generateUuid();
     const reviewId = params.reviewId || generateUuid();
     const dateStr = new Date().toISOString().split("T")[0];
@@ -200,7 +201,7 @@ export class ProductionService implements IProductionService {
 
     // Phase C: never mark Ready for Review before media truth exists.
     // Generation ON → Generating; Generation OFF → Drafting (brief/plan only).
-    const createStatus: Production["status"] = ProductionGenerationGuard.isEnabled()
+    const createStatus: Production["status"] = ProductionGenerationGuard.isEnabled(params.brand?.id)
       ? "Generating"
       : "Drafting";
 
@@ -209,7 +210,7 @@ export class ProductionService implements IProductionService {
       title: brief.title || params.spark.title,
       sparkId: params.spark.id,
       status: createStatus,
-      isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
+      isGeneratingAssets: ProductionGenerationGuard.isEnabled(params.brand?.id),
       mode: resolvedMode,
       productionMode: resolvedMode,
       targetDurationSec,
@@ -325,6 +326,7 @@ export class ProductionService implements IProductionService {
       signal,
       automationMode,
     } = params;
+    ProductionGenerationGuard.assertEnabled("generateAssetsForProduction", brand?.id);
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
     }
@@ -354,6 +356,9 @@ export class ProductionService implements IProductionService {
     }
 
     const handleProgress = (prog: import("../domain/types").GenerationProgress) => {
+      if (signal?.aborted) return;
+      if (isProductionTombstoned(production.id)) return;
+      if (!ProductionGenerationGuard.isEnabled(brand?.id)) return;
       onProgress?.(prog);
       const state = this.getFullState();
       const currentProds: Production[] = state.productions || [];

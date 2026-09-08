@@ -59,7 +59,7 @@ import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import {
   recordProductionTombstone,
-  clearProductionTombstones,
+  isProductionTombstoned,
   filterTombstonedProductions,
   filterTombstonedReviews,
 } from "../services/production/productionTombstone";
@@ -1713,8 +1713,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const productionGuardBrandId = () => getBrandWorkspaceId() || state.brand?.id;
+
+  const shouldHaltProductionWrites = (productionId?: string, signal?: AbortSignal | null) => {
+    if (signal?.aborted) return true;
+    if (productionId && isProductionTombstoned(productionId)) return true;
+    return !ProductionGenerationGuard.isEnabled(productionGuardBrandId());
+  };
+
   const createProductionFromSpark = (sparkOrId: string | ViralSpark) => {
-    if (!ProductionGenerationGuard.isEnabled()) {
+    if (!ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
       NotificationService.addNotification({
         title: "Production Generation is OFF",
         description:
@@ -1768,7 +1776,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const resolvedMode = resolveProductionMode({ modeOverride: state.productionMode, brand: state.brand, spark });
     const hostStyle = state.character?.style || "Executive Creator";
     // Phase C: Generating while assets run; Drafting when Generation is OFF (no fake Review film).
-    const genEnabled = ProductionGenerationGuard.isEnabled();
+    const genEnabled = ProductionGenerationGuard.isEnabled(productionGuardBrandId());
     const status: Production["status"] = genEnabled ? "Generating" : "Drafting";
     const platformFit = spark.platformFit || (resolvedMode === "deep" ? "YouTube Long-form" : "YouTube Shorts");
     const formats = platformFit.split(" + ").map((s: string) => s.trim()).filter(Boolean);
@@ -1785,8 +1793,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       formats,
       formatSettings: effectiveFormat,
       targetDurationSec: effectiveFormat.targetDurationSec,
-      isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
-      generationProgress: ProductionGenerationGuard.isEnabled()
+      isGeneratingAssets: ProductionGenerationGuard.isEnabled(productionGuardBrandId()),
+      generationProgress: ProductionGenerationGuard.isEnabled(productionGuardBrandId())
         ? {
             percent: 1,
             stage: "Queued",
@@ -1869,8 +1877,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           targetDurationSec: effectiveDuration,
         })
         .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
+          if (isProductionTombstoned(prodId) || isProductionTombstoned(reviewId)) {
+            return;
+          }
+
           let effectiveProdId = prodId;
           let effectiveReviewId = reviewId;
+          const genStillOn = ProductionGenerationGuard.isEnabled(productionGuardBrandId());
 
           let stableEnrichedProd: Production = {
             ...enrichedProd,
@@ -1880,7 +1893,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             formatSettings: effectiveFormat,
             targetDurationSec: effectiveDuration,
             aspectRatio: effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16",
-            isGeneratingAssets: ProductionGenerationGuard.isEnabled(),
+            isGeneratingAssets: genStillOn,
           };
 
           let stableEnrichedReview: ReviewItem = {
@@ -1890,7 +1903,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
 
           const brandId = getBrandWorkspaceId();
-          if (isSupabaseConfigured() && brandId) {
+          if (isProductionTombstoned(prodId) || isProductionTombstoned(reviewId)) {
+            return;
+          }
+          if (isSupabaseConfigured() && brandId && genStillOn) {
             try {
               // Production MUST exist before review (FK review_items.production_id → productions.id).
               // Parallel Promise.all raced and silently dropped review rows.
@@ -1939,6 +1955,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
           }
 
+          if (isProductionTombstoned(effectiveProdId) || isProductionTombstoned(effectiveReviewId)) {
+            return;
+          }
+
+          if (!genStillOn || !ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
+            setState((prev: any) => ({
+              ...prev,
+              productions: prev.productions.map((p: any) =>
+                p.id === effectiveProdId
+                  ? { ...p, ...stableEnrichedProd, id: effectiveProdId, sparkId: spark.id, isGeneratingAssets: false }
+                  : p
+              ),
+              reviewItems: prev.reviewItems.map((r: any) =>
+                r.id === effectiveReviewId || r.productionId === effectiveProdId
+                  ? { ...r, ...stableEnrichedReview, id: effectiveReviewId, productionId: effectiveProdId }
+                  : r
+              ),
+            }));
+            return;
+          }
+
           setState((prev: any) => ({
             ...prev,
             productions: prev.productions.map((p: any) =>
@@ -1954,7 +1991,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           eventBus.emit("SCRIPT_READY", { prodId: effectiveProdId, title: enrichedProd.title }, state.brand.name);
 
           // Chain asset generation automatically when Production Generation is ON
-          if (ProductionGenerationGuard.isEnabled()) {
+          if (ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
             const gate = canStartAssetGeneration({
               production: stableEnrichedProd,
               brief: enrichedBrief,
@@ -2032,7 +2069,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 creditSettings: effectiveCredit,
                 signal: controller.signal,
                 onProgress: (progress) => {
-                  if (controller.signal.aborted) return;
+                  if (shouldHaltProductionWrites(effectiveProdId, controller.signal)) return;
                   setState((prev: any) => ({
                     ...prev,
                     productions: prev.productions.map((p: any) => {
@@ -2117,7 +2154,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 },
               });
 
-              if (controller.signal.aborted) return;
+              if (shouldHaltProductionWrites(effectiveProdId, controller.signal)) return;
 
               setState((prev: any) => ({
                 ...prev,
@@ -2169,6 +2206,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
               eventBus.emit("STORYBOARD_READY", { prodId: effectiveProdId, title: updatedProd.title }, state.brand.name);
             } catch (assetErr: any) {
+              if (isProductionTombstoned(effectiveProdId)) return;
               if (controller.signal.aborted || assetErr?.name === "AbortError") {
                 console.log(`[SparkContext] Auto generation aborted for prodId ${effectiveProdId}`);
                 return;
@@ -2221,6 +2259,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         })
         .catch((err: any) => {
+          if (isProductionTombstoned(prodId)) return;
           console.warn("[SparkContext] Production brief generation notice:", err);
           setState((prev: any) => ({
             ...prev,
@@ -2238,6 +2277,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const fixProductionScene = useCallback(
     async (productionId: string, sceneIndex: number, editNotes: string) => {
+      if (isProductionTombstoned(productionId)) return null;
+      if (!ProductionGenerationGuard.isEnabled(getBrandWorkspaceId() || state.brand?.id)) {
+        console.warn("[SparkContext] Scene fix blocked: Production Generation is OFF.");
+        return null;
+      }
       const prod = state.productions?.find((p: any) => p.id === productionId);
       if (!prod) return null;
 
@@ -2388,7 +2432,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const mergeProductionScenes = useCallback(
     async (productionId: string) => {
-      if (!ProductionGenerationGuard.isEnabled()) {
+      if (!ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
         console.warn("[SparkContext] Scene merge blocked: Production Generation is OFF.");
         return null;
       }
@@ -2465,7 +2509,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   const [productionGenerationEnabled, setProductionGenerationEnabledState] = useState<boolean>(() => {
-    return ProductionGenerationGuard.isEnabled();
+    return ProductionGenerationGuard.isEnabled(activeBrandId || undefined);
   });
 
   // Keep React toggle in sync after cloud hydrate writes brand.settings → localStorage cache.
@@ -2551,7 +2595,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const generateProductionAssets = async (productionId: string, forceRegenerate = false) => {
-    if (!ProductionGenerationGuard.isEnabled()) {
+    if (isProductionTombstoned(productionId)) return;
+    if (!ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
       console.warn("[SparkContext] Asset generation blocked: Production Generation is OFF.");
       return;
     }
@@ -2664,7 +2709,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         forceRegenerate,
         signal: controller.signal,
         onProgress: (progress) => {
-          if (controller.signal.aborted) return;
+          if (shouldHaltProductionWrites(productionId, controller.signal)) return;
           setState((prev: any) => ({
             ...prev,
             productions: prev.productions.map((p: any) => {
@@ -2747,7 +2792,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
       });
 
-      if (controller.signal.aborted) return;
+      if (shouldHaltProductionWrites(productionId, controller.signal)) return;
 
       setState((prev: any) => ({
         ...prev,
@@ -2798,6 +2843,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       eventBus.emit("STORYBOARD_READY", { prodId: productionId, title: updatedProd.title }, state.brand.name);
     } catch (err: any) {
+      if (isProductionTombstoned(productionId)) return;
       if (controller.signal.aborted || err?.name === "AbortError") {
         console.log(`[SparkContext] Asset generation aborted for prodId ${productionId}`);
         setState((prev: any) => ({
@@ -2839,6 +2885,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (activeGenerationControllers.current.get(productionId) === controller) {
         activeGenerationControllers.current.delete(productionId);
       }
+      if (isProductionTombstoned(productionId)) return;
       setState((prev: any) => ({
         ...prev,
         productions: prev.productions.map((p: any) =>
@@ -3077,34 +3124,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    const bId = getBrandWorkspaceId();
-    if (isSupabaseConfigured() && bId) {
-      void deleteProductionCascade(bId, productionId, targetTitle).then((result) => {
-        if (result?.ok !== false) return;
-        clearProductionTombstones(
-          productionId,
-          ...removedProductions.map((p: any) => p.id),
-          ...removedReviewItems.map((r: any) => r.id),
-          ...removedReviewItems.map((r: any) => r.productionId)
-        );
-        setState((prev: any) => ({
-          ...prev,
-          productions: [...removedProductions, ...(prev.productions || []).filter((p: any) => p.id !== productionId)],
-          reviewItems: [
-            ...removedReviewItems,
-            ...(prev.reviewItems || []).filter(
-              (r: any) => r.id !== productionId && r.productionId !== productionId
-            ),
-          ],
-        }));
-        NotificationService.addNotification({
-          title: "Delete failed",
-          description: result?.error || "Production could not be deleted from the cloud. It was restored locally.",
-          type: "system_update",
-          priority: "high",
-          relatedRoute: "/review",
+    const bId = getBrandWorkspaceId() || state.brand?.id;
+    if (isSupabaseConfigured()) {
+      const runCascade = (isRetry: boolean) =>
+        deleteProductionCascade(bId || "", productionId, targetTitle).then((result) => {
+          if (result?.ok !== false) return;
+          NotificationService.addNotification({
+            title: isRetry
+              ? "Cloud delete failed — hidden locally"
+              : "Cloud delete failed — hidden locally, retrying",
+            description: result?.error || (isRetry
+              ? "Production stays hidden on this device. Cloud row may still exist."
+              : "Will retry once."),
+            type: "system_update",
+            priority: "high",
+            relatedRoute: "/review",
+          });
+          if (!isRetry) {
+            void runCascade(true);
+          }
         });
-      });
+      void runCascade(false);
     }
   };
 

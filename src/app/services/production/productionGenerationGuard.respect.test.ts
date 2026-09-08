@@ -224,8 +224,20 @@ describe("Production Generation ON/OFF preference respect", () => {
       () =>
         productionService.createProductionFromSpark({
           spark: { id: "s1", title: "t", hook: "h", angle: "a", whyNow: "w" } as any,
-          brand: { name: "B", niche: "N" } as any,
+          brand: { id: "brand-1", name: "B", niche: "N" } as any,
         }),
+      /currently OFF/
+    );
+  });
+
+  it("assertEnabled with brandId uses the scoped toggle", () => {
+    ProductionGenerationGuard.setEnabled(true, "brand-on");
+    ProductionGenerationGuard.setEnabled(false, "brand-off");
+    assert.doesNotThrow(() =>
+      ProductionGenerationGuard.assertEnabled("createProductionFromSpark", "brand-on")
+    );
+    assert.throws(
+      () => ProductionGenerationGuard.assertEnabled("createProductionFromSpark", "brand-off"),
       /currently OFF/
     );
   });

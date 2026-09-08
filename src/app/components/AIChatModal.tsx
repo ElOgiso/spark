@@ -624,7 +624,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
       return;
     }
 
-    const prodEnabled = ProductionGenerationGuard.isEnabled();
+    const prodEnabled = ProductionGenerationGuard.isEnabled(sparkState.brand?.id);
 
     const isConfirmationToEnable =
       lower === "yes" ||
@@ -797,7 +797,8 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
   };
 
   const handleActionCreateFromSpark = (sparkId: string) => {
-    createProductionFromSpark(sparkId);
+    const created = createProductionFromSpark(sparkId);
+    if (!created) return;
     const feedbackText = `Created production draft from viral spark. Active scenes are ready inside your drafting board!`;
     addChatMessage({ sender: "spark", text: feedbackText, timestamp: new Date() });
     speakText(feedbackText, isMuted);

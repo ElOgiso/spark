@@ -3,6 +3,8 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
+import { isProductionTombstoned } from "./productionTombstone";
+import { productionWriteHalted } from "./productionPersistGuard";
 import { brandProductionStoragePath } from "./brandProductionStoragePath";
 import { getProductionPromptPack } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
@@ -850,6 +852,17 @@ export class ProductionAssetService {
     signal?: AbortSignal;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
+    const brandIdForGuard = (brand as any)?.id;
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets", brandIdForGuard);
+
+    const checkAborted = () => {
+      if (signal?.aborted || isProductionTombstoned(production.id) || !ProductionGenerationGuard.isEnabled(brandIdForGuard)) {
+        const err = new Error("Generation cancelled by executive");
+        err.name = "AbortError";
+        throw err;
+      }
+    };
+
     const generationSettings = resolveGenerationSettings({
       production,
       brief,
@@ -866,7 +879,6 @@ export class ProductionAssetService {
       );
     }
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
-    ProductionGenerationGuard.assertEnabled("ProductionAssetService.generateAssets");
 
     const gate = canStartAssetGeneration({
       production,
@@ -896,14 +908,6 @@ export class ProductionAssetService {
         videoUrl: brief.videoUrl,
       };
     }
-
-    const checkAborted = () => {
-      if (signal?.aborted) {
-        const err = new Error("Generation cancelled by executive");
-        err.name = "AbortError";
-        throw err;
-      }
-    };
 
     checkAborted();
 
@@ -1021,7 +1025,7 @@ export class ProductionAssetService {
         lastError?: string;
       }
     ) => {
-      if (signal?.aborted) return;
+      if (productionWriteHalted({ productionId: production.id, brandId: brandIdForGuard, signal })) return;
       latestProgressSnapshot = {
         percent: Math.min(100, Math.max(0, percent)),
         stage,
@@ -1046,8 +1050,9 @@ export class ProductionAssetService {
     emitProgress(1, "Initializing", `Initializing ${mode.toUpperCase()} production pipeline (single spine)...`);
 
     const persistCurrentStage = async (stageName: string) => {
+      if (productionWriteHalted({ productionId: production.id, brandId: brandIdForGuard, signal })) return;
       try {
-        const { persistProductionUpdate, persistReviewUpdate } = await import("../../backend/workspaceSync");
+        const { persistProductionUpdate } = await import("../../backend/workspaceSync");
         const stageBrief: ProductionBrief = {
           ...brief,
           storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
@@ -1089,7 +1094,7 @@ export class ProductionAssetService {
     const startHeartbeat = (stageLabel: string) => {
       stopHeartbeat();
       heartbeatTimer = setInterval(() => {
-        if (signal?.aborted) {
+        if (productionWriteHalted({ productionId: production.id, brandId: brandIdForGuard, signal })) {
           stopHeartbeat();
           return;
         }
@@ -3456,7 +3461,7 @@ export class ProductionAssetService {
     memoryItems?: import("../../domain/types").MemoryItem[];
   }): Promise<ProductionScene | null> {
     const { productionId, sceneIndex, editNotes, brand, character, production, memoryItems = [] } = params;
-    ProductionGenerationGuard.assertEnabled("ProductionAssetService.fixProductionScene");
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.fixProductionScene", brand?.id);
 
     const brief = production.brief || ({} as ProductionBrief);
     const generationSettings = resolveGenerationSettings({ production, brief, brand });
@@ -3887,8 +3892,8 @@ export class ProductionAssetService {
     production: Production;
     brand: Brand;
   }): Promise<string | null> {
-    ProductionGenerationGuard.assertEnabled("ProductionAssetService.mergeProductionScenes");
     const { productionId, production, brand } = params;
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.mergeProductionScenes", brand?.id);
     const brief = production.brief || ({} as ProductionBrief);
     const scenes = (production.productionScenes && production.productionScenes.length > 0)
       ? production.productionScenes

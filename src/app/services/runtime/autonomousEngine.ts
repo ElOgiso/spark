@@ -143,7 +143,15 @@ export class AutonomousEngine {
           memoryItems: state.memoryItems || [],
           productionMode: resolvedProductionMode,
           targetDurationSec,
+        }).catch((err: any) => {
+          console.warn("[AutonomousEngine] generateBrief skipped:", err?.message || err);
+          return null;
         });
+        if (!brief) return;
+
+        if (!ProductionGenerationGuard.isEnabled(brand?.id)) {
+          return;
+        }
 
         const newProduction: Production = {
           id: prodId,

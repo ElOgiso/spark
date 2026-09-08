@@ -815,7 +815,7 @@ export class ProductionBriefService {
     const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
     const budget = resolveBeatBudget(effectiveDurationSec);
 
-    ProductionGenerationGuard.assertEnabled("ProductionBriefService.generateBrief");
+    ProductionGenerationGuard.assertEnabled("ProductionBriefService.generateBrief", brand?.id);
 
     const rankedMemory = buildRankedBrandLaws(memoryItems).lawsBlock;
     const researchPromptBlock = formatResearchContextBlock(resolvedResearch, brand.name);

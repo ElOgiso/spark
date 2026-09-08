@@ -37,6 +37,16 @@ import { listByBrand } from "./repositories/repositoryUtils";
 import { listMediaAssetsByBrandId } from "./repositories/productionAssetRepository";
 import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow, MediaAssetRow } from "./database.types";
 import { refreshProductionMediaAssets, refreshCharacterMediaAssets } from "../services/production/productionAssetService";
+import { isProductionTombstoned } from "../services/production/productionTombstone";
+import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
+import {
+  planProductionCreatePersist,
+  planProductionUpdatePersist,
+  planReviewCreatePersist,
+  planReviewUpdatePersist,
+  productionDeleteCloudSucceeded,
+  isCancelOrStatusPatch,
+} from "../services/production/productionPersistGuard";
 import type {
   Account,
   AnalyticsInsight,
@@ -451,6 +461,11 @@ export async function persistViralSparkCreate(brandId: string, spark: ViralSpark
 
 export async function persistProductionCreate(brandId: string, production: Production) {
   if (!isSupabaseConfigured()) return null;
+  const plan = planProductionCreatePersist({ productionId: production.id, brandId });
+  if (plan !== "full") {
+    console.warn("[workspaceSync] persistProductionCreate skipped:", plan, production.id);
+    return null;
+  }
   const insert = domainProductionToInsert(brandId, production);
   const result = await createProduction(insert);
   if (result.error) {
@@ -462,10 +477,24 @@ export async function persistProductionCreate(brandId: string, production: Produ
 
 export async function persistProductionUpdate(id: string, production: Partial<Production>) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
+  if (isProductionTombstoned(id)) {
+    console.warn("[workspaceSync] persistProductionUpdate skipped: tombstone", id);
+    return;
+  }
   const supabase = getSupabaseClient();
   if (!supabase) return;
 
-  const { data: existing } = await (supabase.from("productions") as any).select("brief, assets").eq("id", id).single();
+  const { data: existing } = await (supabase.from("productions") as any)
+    .select("brief, assets, brand_id")
+    .eq("id", id)
+    .maybeSingle();
+  const brandId = (existing as any)?.brand_id || (production as any).brandId;
+  const plan = planProductionUpdatePersist({ productionId: id, brandId });
+  if (plan === "skip_tombstone") {
+    console.warn("[workspaceSync] persistProductionUpdate skipped: tombstone", id);
+    return;
+  }
+
   const existingBrief = (existing?.brief && typeof existing.brief === "object" && !Array.isArray(existing.brief))
     ? existing.brief
     : {};
@@ -477,7 +506,7 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     : {};
 
   const patch: Record<string, unknown> = {};
-  if (production.status) {
+  if (production.status && (plan === "full" || isCancelOrStatusPatch(production.status))) {
     const statusMap: Record<string, string> = {
       Drafting: "drafting",
       "Ready for Review": "ready_for_review",
@@ -485,10 +514,19 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
       "Needs Edit": "needs_edit",
       Published: "published",
       Failed: "failed",
+      Cancelled: "cancelled",
     };
     patch.status = statusMap[production.status] || production.status;
   }
   if (production.title) patch.title = production.title;
+
+  if (plan === "status_only") {
+    if (Object.keys(patch).length > 0) {
+      await updateProduction(id, patch);
+    }
+    console.warn("[workspaceSync] persistProductionUpdate status_only (Production OFF) — skipped generation fields", id);
+    return;
+  }
 
   const genProg =
     production.generationProgress ||
@@ -540,10 +578,25 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
 
 export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
+  if (isProductionTombstoned(id) || isProductionTombstoned(item.productionId)) {
+    console.warn("[workspaceSync] persistReviewUpdate skipped: tombstone", id);
+    return;
+  }
   const supabase = getSupabaseClient();
   if (!supabase) return;
 
-  const { data: existing } = await (supabase.from("review_items") as any).select("reasoning").eq("id", id).single();
+  const { data: existing } = await (supabase.from("review_items") as any)
+    .select("reasoning, production_id, brand_id")
+    .eq("id", id)
+    .maybeSingle();
+  const productionId = item.productionId || (existing as any)?.production_id;
+  const brandId = (existing as any)?.brand_id;
+  const plan = planReviewUpdatePersist({ reviewId: id, productionId, brandId });
+  if (plan === "skip_tombstone") {
+    console.warn("[workspaceSync] persistReviewUpdate skipped: tombstone", id);
+    return;
+  }
+
   const existingReasoning = (existing?.reasoning && typeof existing.reasoning === "object" && !Array.isArray(existing.reasoning))
     ? existing.reasoning
     : {};
@@ -567,8 +620,16 @@ export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>)
   }
   if (item.conceptText) reasoningPatch.conceptText = item.conceptText;
   if (item.openingMoment) reasoningPatch.openingMoment = item.openingMoment;
-  if (item.brief) reasoningPatch.brief = item.brief;
   if (item.whyThisWorks) reasoningPatch.whyThisWorks = item.whyThisWorks;
+
+  if (plan === "status_only") {
+    patch.reasoning = reasoningPatch;
+    await updateReviewItem(id, patch as any);
+    console.warn("[workspaceSync] persistReviewUpdate status_only (Production OFF) — skipped generation fields", id);
+    return;
+  }
+
+  if (item.brief) reasoningPatch.brief = item.brief;
   if (item.videoUrl) reasoningPatch.videoUrl = item.videoUrl;
   if (item.audioUrl) reasoningPatch.audioUrl = item.audioUrl;
 
@@ -583,6 +644,15 @@ function isUuid(id?: string | null) {
 
 export async function persistReviewCreate(brandId: string, item: ReviewItem) {
   if (!isSupabaseConfigured()) return null;
+  const plan = planReviewCreatePersist({
+    reviewId: item.id,
+    productionId: item.productionId,
+    brandId,
+  });
+  if (plan !== "full") {
+    console.warn("[workspaceSync] persistReviewCreate skipped:", plan, item.id, item.productionId);
+    return null;
+  }
   const insert = domainReviewToInsert(brandId, item);
   const result = await createReviewItem(insert);
   if (result.error) {
@@ -597,10 +667,19 @@ export async function persistReviewCreate(brandId: string, item: ReviewItem) {
 
 export async function persistReviewApprove(id: string) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
+  if (isProductionTombstoned(id)) return;
   await updateReviewItem(id, {
     status: "approved",
     approved_at: new Date().toISOString(),
   } as any);
+}
+
+function isIgnorableOptionalTableError(error: any): boolean {
+  const code = String(error?.code || "");
+  const msg = String(error?.message || error?.details || error || "");
+  if (code === "42P01" || code === "PGRST205" || code === "42703" || code === "PGRST204") return true;
+  if (/could not find the table|schema cache|does not exist|relation .* does not exist/i.test(msg)) return true;
+  return false;
 }
 
 export async function deleteProductionCascade(
@@ -609,40 +688,91 @@ export async function deleteProductionCascade(
   _title?: string
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isSupabaseConfigured()) return { ok: true };
-  if (!productionId || !isUuid(productionId)) {
-    return { ok: false, error: "Invalid production id" };
-  }
+  if (!productionId) return { ok: true };
+  // Local tombstone already applied; non-UUID ids have no cloud productions row.
+  if (!isUuid(productionId)) return { ok: true };
   const supabase = getSupabaseClient();
   if (!supabase) return { ok: false, error: "Supabase unavailable" };
 
   try {
     const reviewDel = await (supabase.from("review_items") as any).delete().eq("production_id", productionId);
-    if (reviewDel?.error) {
+    if (reviewDel?.error && !isIgnorableOptionalTableError(reviewDel.error)) {
       console.warn("[workspaceSync] deleteProductionCascade review_items:", reviewDel.error);
-      return { ok: false, error: reviewDel.error.message || "Failed to delete review items" };
+      // Continue — productions row delete is the success criterion.
     }
 
-    await (supabase.from("production_assets") as any).delete().eq("production_id", productionId).catch(() => {});
-
-    await (supabase.from("media_assets") as any).delete().like("storage_path", `${productionId}/%`);
-    if (brandId && isUuid(brandId)) {
-      await (supabase.from("media_assets") as any)
-        .delete()
-        .like("storage_path", `brands/${brandId}/${productionId}/%`);
+    const optionalTables = ["production_assets"] as const;
+    for (const table of optionalTables) {
+      try {
+        const res = await (supabase.from(table) as any).delete().eq("production_id", productionId);
+        if (res?.error && !isIgnorableOptionalTableError(res.error)) {
+          console.warn(`[workspaceSync] deleteProductionCascade ${table}:`, res.error);
+        }
+      } catch (optErr) {
+        console.warn(`[workspaceSync] deleteProductionCascade ${table} notice:`, optErr);
+      }
     }
 
-    await removeSparkStoragePrefix(supabase, productionId);
-    if (brandId && isUuid(brandId)) {
-      await removeSparkStoragePrefix(supabase, `brands/${brandId}/${productionId}`);
+    try {
+      const mediaDel = await (supabase.from("media_assets") as any).delete().like("storage_path", `${productionId}/%`);
+      if (mediaDel?.error && !isIgnorableOptionalTableError(mediaDel.error)) {
+        console.warn("[workspaceSync] deleteProductionCascade media_assets:", mediaDel.error);
+      }
+      if (brandId && isUuid(brandId)) {
+        const brandedDel = await (supabase.from("media_assets") as any)
+          .delete()
+          .like("storage_path", `brands/${brandId}/${productionId}/%`);
+        if (brandedDel?.error && !isIgnorableOptionalTableError(brandedDel.error)) {
+          console.warn("[workspaceSync] deleteProductionCascade media_assets branded:", brandedDel.error);
+        }
+      }
+    } catch (mediaErr) {
+      console.warn("[workspaceSync] deleteProductionCascade media_assets notice:", mediaErr);
+    }
+
+    try {
+      await removeSparkStoragePrefix(supabase, productionId);
+      if (brandId && isUuid(brandId)) {
+        await removeSparkStoragePrefix(supabase, `brands/${brandId}/${productionId}`);
+      }
+    } catch (storageErr) {
+      console.warn("[workspaceSync] deleteProductionCascade storage notice:", storageErr);
+    }
+
+    const { data: existing, error: lookupErr } = await (supabase.from("productions") as any)
+      .select("id, brand_id")
+      .eq("id", productionId)
+      .maybeSingle();
+
+    if (!existing && !lookupErr) {
+      return { ok: true };
+    }
+
+    const resolvedBrandId = brandId || existing?.brand_id;
+    if (resolvedBrandId && isUuid(resolvedBrandId) && resolvedBrandId !== brandId) {
+      try {
+        await removeSparkStoragePrefix(supabase, `brands/${resolvedBrandId}/${productionId}`);
+      } catch (storageErr) {
+        console.warn("[workspaceSync] deleteProductionCascade storage notice:", storageErr);
+      }
     }
 
     const { error: prodDelErr } = await (supabase.from("productions") as any).delete().eq("id", productionId);
-    if (prodDelErr) {
-      console.warn("[workspaceSync] deleteProductionCascade productions:", prodDelErr);
-      return { ok: false, error: prodDelErr.message || "Failed to delete production row" };
+
+    const { data: stillThere } = await (supabase.from("productions") as any)
+      .select("id")
+      .eq("id", productionId)
+      .maybeSingle();
+
+    if (productionDeleteCloudSucceeded(Boolean(stillThere))) {
+      return { ok: true };
     }
 
-    return { ok: true };
+    console.warn("[workspaceSync] deleteProductionCascade productions:", prodDelErr);
+    return {
+      ok: false,
+      error: prodDelErr?.message || "productions row still present after DELETE",
+    };
   } catch (err: any) {
     console.warn("[workspaceSync] deleteProductionCascade error:", err);
     return { ok: false, error: err?.message || String(err) };
@@ -738,6 +868,7 @@ export async function persistAccountToken(brandId: string, account: any) {
 
 export async function persistReviewNeedsEdit(id: string, notes?: string) {
   if (!isSupabaseConfigured() || !isUuid(id)) return;
+  if (isProductionTombstoned(id)) return;
   await requestReviewEdits(id, notes);
 }
 export async function persistPublishJobCreate(brandId: string, job: PublishJob) {
@@ -1548,6 +1679,13 @@ export async function persistProductionAssetCreate(
   asset: import("../domain/types").ProductionAsset
 ): Promise<void> {
   if (!isSupabaseConfigured()) return;
+  const productionId = (asset as any).productionId;
+  const plan = planProductionCreatePersist({ productionId, brandId });
+  if (plan !== "full") {
+    console.warn("[workspaceSync] persistProductionAssetCreate skipped:", plan, productionId);
+    return;
+  }
+  if (!ProductionGenerationGuard.isEnabled(brandId)) return;
   try {
     const { createMediaAsset } = await import("./repositories/productionAssetRepository");
     await createMediaAsset({

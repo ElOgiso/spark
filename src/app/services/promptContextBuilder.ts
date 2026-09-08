@@ -86,7 +86,7 @@ export class PromptContextBuilder {
       contextParts.push(`WORKSPACE SNAPSHOT: Active Productions=${activeProds}, Pending Reviews=${pendingReviews}, Automation Mode=${autoMode.toUpperCase()}`);
     }
 
-    const prodEnabled = ProductionGenerationGuard.isEnabled();
+    const prodEnabled = ProductionGenerationGuard.isEnabled(workspaceState?.brand?.id);
     contextParts.push(`PRODUCTION GENERATION STATUS: ${prodEnabled ? "ENABLED (Drafting & Media Rendering Active)" : "DISABLED (Super Spark chat only — zero briefs, images, video, or other credit spend)"}`);
 
     if (!prodEnabled) {
