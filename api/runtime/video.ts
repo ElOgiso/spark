@@ -5,7 +5,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createClient } from "@supabase/supabase-js";
+import { persistVideoBuffer } from "./_sparkStorage.js";
 import {
   SEEDANCE_MODEL_15_PRO,
   SEEDANCE_POLL_INTERVAL_MS,
@@ -231,77 +231,30 @@ async function extractLastFrameJpeg(videoBuffer: Buffer): Promise<string | undef
   }
 }
 
-function createSupabase() {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error(
-      "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_URL / VITE_SUPABASE_SERVICE_ROLE_KEY)."
-    );
-  }
-  return createClient(supabaseUrl, supabaseKey);
-}
-
-async function persistVideoBuffer(params: {
-  buffer: Buffer;
-  brandId: string;
-  productionId: string;
-  filename?: string;
-  contentType?: string;
-}): Promise<string> {
-  const supabase = createSupabase();
-  const SPARK_BUCKET = "Spark";
-  const storagePath = `brands/${params.brandId}/${params.productionId}/video/${params.filename || "clip.mp4"}`;
-  const { error: uploadError } = await supabase.storage.from(SPARK_BUCKET).upload(storagePath, params.buffer, {
-    contentType: params.contentType || "video/mp4",
-    upsert: true,
-  });
-  if (uploadError) {
-    const { error: fallbackError } = await supabase.storage.from("media").upload(storagePath, params.buffer, {
-      contentType: params.contentType || "video/mp4",
-      upsert: true,
-    });
-    if (fallbackError) {
-      throw new Error(`Storage upload failed: ${uploadError.message} / ${fallbackError.message}`);
-    }
-  }
-  const { data: signData } = await supabase.storage.from(SPARK_BUCKET).createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-  if (signData?.signedUrl) return signData.signedUrl;
-  const { data: publicData } = supabase.storage.from(SPARK_BUCKET).getPublicUrl(storagePath);
-  return publicData?.publicUrl || "";
-}
-
 async function finalizeClip(params: {
   videoUrl: string;
   brandId: string;
   productionId: string;
-  persist?: boolean;
-}): Promise<{ videoUrl: string; lastFrameDataUrl?: string; persistedUrl?: string }> {
-  let buffer: Buffer | undefined;
-  try {
-    buffer = await downloadVideoRetry(params.videoUrl);
-  } catch (err) {
-    console.warn("[video adapter] clip download notice (returning provider URL):", err);
-    return { videoUrl: params.videoUrl };
-  }
+  filename?: string;
+}): Promise<{
+  videoUrl: string;
+  publicUrl: string;
+  storagePath: string;
+  lastFrameDataUrl?: string;
+}> {
+  const buffer = await downloadVideoRetry(params.videoUrl);
   const lastFrameDataUrl = await extractLastFrameJpeg(buffer);
-  let persistedUrl: string | undefined;
-  if (params.persist !== false && params.productionId) {
-    try {
-      persistedUrl = await persistVideoBuffer({
-        buffer,
-        brandId: params.brandId,
-        productionId: params.productionId,
-        filename: `clip-${Date.now()}.mp4`,
-      });
-    } catch (err) {
-      console.warn("[video adapter] persist notice:", err);
-    }
-  }
+  const persisted = await persistVideoBuffer({
+    buffer,
+    brandId: params.brandId,
+    productionId: params.productionId,
+    filename: params.filename || `clip-${Date.now()}.mp4`,
+  });
   return {
-    videoUrl: persistedUrl || params.videoUrl,
+    videoUrl: persisted.publicUrl || persisted.videoUrl,
+    publicUrl: persisted.publicUrl,
+    storagePath: persisted.storagePath,
     lastFrameDataUrl,
-    persistedUrl,
   };
 }
 
@@ -577,7 +530,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const outputBuffer = fs.readFileSync(outputFilePath);
-        const publicUrl = await persistVideoBuffer({
+        const persisted = await persistVideoBuffer({
           buffer: outputBuffer,
           brandId,
           productionId: productionId || "default-prod",
@@ -586,8 +539,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         return res.status(200).json({
           success: true,
-          publicUrl,
-          videoUrl: publicUrl,
+          storagePath: persisted.storagePath,
+          publicUrl: persisted.publicUrl,
+          videoUrl: persisted.publicUrl || persisted.videoUrl,
           provider: "ServerlessFFmpeg",
         });
       } catch (err: any) {
@@ -639,11 +593,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         videoUrl: providerVideoUrl,
         brandId,
         productionId: productionId || "default-prod",
+        filename: `clip-${Date.now()}.mp4`,
       });
 
       return res.status(200).json({
         success: true,
-        videoUrl: finalized.videoUrl,
+        storagePath: finalized.storagePath,
+        publicUrl: finalized.publicUrl,
+        videoUrl: finalized.publicUrl || finalized.videoUrl,
         lastFrameDataUrl: finalized.lastFrameDataUrl,
         provider,
         costUsd: p === "kling" ? 0.2 : p === "seedance" || p === "ark" ? 0.18 : 0.15,
@@ -670,7 +627,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const videoUrl = await pollGenericUrl(`https://api.runwayml.com/v1/tasks/${taskId}`, {
           Authorization: `Bearer ${keys.runway}`,
         });
-        return res.status(200).json({ videoUrl, costUsd: 0.25 });
+        const finalized = await finalizeClip({
+          videoUrl,
+          brandId,
+          productionId: productionId || "default-prod",
+        });
+        return res.status(200).json({
+          success: true,
+          storagePath: finalized.storagePath,
+          publicUrl: finalized.publicUrl,
+          videoUrl: finalized.publicUrl || finalized.videoUrl,
+          lastFrameDataUrl: finalized.lastFrameDataUrl,
+          costUsd: 0.25,
+        });
       }
       const errText = await response.text();
       throw new Error(`Runway error: ${errText}`);
@@ -696,7 +665,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const videoUrl = await pollGenericUrl(`https://api.lumalabs.ai/v1/generations/${taskId}`, {
           Authorization: `Bearer ${keys.luma}`,
         });
-        return res.status(200).json({ videoUrl, costUsd: 0.22 });
+        const finalized = await finalizeClip({
+          videoUrl,
+          brandId,
+          productionId: productionId || "default-prod",
+        });
+        return res.status(200).json({
+          success: true,
+          storagePath: finalized.storagePath,
+          publicUrl: finalized.publicUrl,
+          videoUrl: finalized.publicUrl || finalized.videoUrl,
+          lastFrameDataUrl: finalized.lastFrameDataUrl,
+          costUsd: 0.22,
+        });
       }
       const errText = await response.text();
       throw new Error(`Luma error: ${errText}`);
@@ -721,7 +702,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const videoUrl = await pollGenericUrl(`https://queue.fal.run/fal-ai/wan/vid/requests/${requestId}`, {
           Authorization: `Key ${keys.wan}`,
         });
-        return res.status(200).json({ videoUrl, costUsd: 0.12 });
+        const finalized = await finalizeClip({
+          videoUrl,
+          brandId,
+          productionId: productionId || "default-prod",
+        });
+        return res.status(200).json({
+          success: true,
+          storagePath: finalized.storagePath,
+          publicUrl: finalized.publicUrl,
+          videoUrl: finalized.publicUrl || finalized.videoUrl,
+          lastFrameDataUrl: finalized.lastFrameDataUrl,
+          costUsd: 0.12,
+        });
       }
       const errText = await response.text();
       throw new Error(`Wan Fal.ai error: ${errText}`);

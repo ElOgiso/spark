@@ -254,6 +254,7 @@ export interface ProductionBrief {
   takeGrids?: string[];
   audioUrl?: string;
   videoUrl?: string;
+  video_storage_path?: string;
   thumbnailUrl?: string;
   lastError?: string;
   generationProgress?: GenerationProgress;
@@ -313,6 +314,8 @@ export interface Production {
   brief?: ProductionBrief;
   audioUrl?: string;
   videoUrl?: string;
+  /** Durable Spark object key: brands/{brandId}/{productionId}/video/... */
+  videoStoragePath?: string;
   storyboardGridUrl?: string;
   thumbnailUrl?: string;
   isGeneratingAssets?: boolean;

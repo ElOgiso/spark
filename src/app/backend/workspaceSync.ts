@@ -35,8 +35,14 @@ import { executiveSummaryRepository } from "./repositories/executiveSummaryRepos
 import { executiveTimelineRepository } from "./repositories/executiveTimelineRepository";
 import { listByBrand } from "./repositories/repositoryUtils";
 import { listMediaAssetsByBrandId } from "./repositories/productionAssetRepository";
-import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow, MediaAssetRow } from "./database.types";
-import { refreshProductionMediaAssets, refreshCharacterMediaAssets } from "../services/production/productionAssetService";
+import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow, MediaAssetRow, ProductionRow } from "./database.types";
+import {
+  refreshProductionMediaAssets,
+  refreshCharacterMediaAssets,
+  isEphemeralMediaUrl,
+  extractSparkStoragePath,
+  sanitizePersistedMediaUrl,
+} from "../services/production/productionAssetService";
 import { isProductionTombstoned } from "../services/production/productionTombstone";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import {
@@ -274,7 +280,9 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
   const rawCharacters = (characters.data ?? []).map(characterRowToDomain);
 
   const rawMediaAssets: MediaAssetRow[] = (mediaAssetsRes?.data as MediaAssetRow[] | null) || [];
-  const rawProductions = (productions.data ?? []).map(productionRowToDomain);
+  const rawProductions = (productions.data ?? []).map((row) =>
+    attachProductionStorageIdentity(row, productionRowToDomain(row))
+  );
 
   // Resign / refresh media URLs for each production
   const refreshedProductions: Production[] = [];
@@ -284,12 +292,17 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
 
     // If signed URL was refreshed, persist new signed URL on productions row in database
     if (didResign && isUuid(refreshedProd.id)) {
+      const persistableResignedVideo = sanitizePersistedMediaUrl(refreshedProd.videoUrl);
       void updateProduction(refreshedProd.id, {
         brief: (refreshedProd.brief as any) || null,
         assets: {
-          video_url: refreshedProd.videoUrl || null,
-          audio_url: refreshedProd.audioUrl || null,
           ...(refreshedProd.brief?.generatedAssets || {}),
+          video_url: persistableResignedVideo || null,
+          audio_url: sanitizePersistedMediaUrl(refreshedProd.audioUrl) || null,
+          video_storage_path:
+            refreshedProd.videoStoragePath ||
+            extractSparkStoragePath(persistableResignedVideo) ||
+            null,
         } as any,
       }).catch((err) => console.warn("[workspaceSync] Production signed URL update notice:", err));
     }
@@ -453,6 +466,38 @@ export async function persistMemoryUpdate(
   return result.data ? memoryRowToDomain(result.data) : null;
 }
 
+function attachProductionStorageIdentity(row: ProductionRow, production: Production): Production {
+  const assets =
+    row.assets && typeof row.assets === "object" && !Array.isArray(row.assets)
+      ? (row.assets as Record<string, unknown>)
+      : {};
+  const brief = production.brief;
+  const assetsVideo = typeof assets.video_url === "string" ? assets.video_url : undefined;
+  const assetsAudio = typeof assets.audio_url === "string" ? assets.audio_url : undefined;
+  const storagePath =
+    (typeof assets.video_storage_path === "string" && assets.video_storage_path) ||
+    (typeof brief?.video_storage_path === "string" && brief.video_storage_path) ||
+    extractSparkStoragePath(sanitizePersistedMediaUrl(production.videoUrl, assetsVideo)) ||
+    extractSparkStoragePath(assetsVideo) ||
+    production.videoStoragePath;
+  const videoUrl = sanitizePersistedMediaUrl(production.videoUrl, assetsVideo) || production.videoUrl;
+  const audioUrl = sanitizePersistedMediaUrl(production.audioUrl, assetsAudio) || production.audioUrl;
+  return {
+    ...production,
+    videoUrl,
+    audioUrl,
+    videoStoragePath: storagePath || undefined,
+    brief: brief
+      ? {
+          ...brief,
+          videoUrl,
+          audioUrl,
+          video_storage_path: storagePath || brief.video_storage_path,
+        }
+      : brief,
+  };
+}
+
 export async function persistViralSparkCreate(brandId: string, spark: ViralSpark) {
   if (!isSupabaseConfigured()) return null;
   const result = await createViralSpark(domainViralSparkToInsert(brandId, spark));
@@ -535,9 +580,46 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     existingBrief.generationProgress ||
     existingBriefObj.generationProgress;
 
-  const audioUrl = (production as any).audioUrl || (production as any).brief?.audioUrl || existingBrief.audioUrl || existingBriefObj.audioUrl;
-  const videoUrl = (production as any).videoUrl || (production as any).brief?.videoUrl || existingBrief.videoUrl || existingBriefObj.videoUrl;
-  const storyboardGridUrl = (production as any).brief?.storyboardGridUrl || (production as any).brief?.generatedAssets?.storyboardGridUrl || existingBrief.storyboardGridUrl || existingBriefObj.storyboardGridUrl;
+  const audioUrl = sanitizePersistedMediaUrl(
+    (production as any).audioUrl || (production as any).brief?.audioUrl,
+    existingBrief.audioUrl || existingBriefObj.audioUrl
+  );
+  const incomingVideo =
+    (production as any).videoUrl || (production as any).brief?.videoUrl || existingBrief.videoUrl || existingBriefObj.videoUrl;
+  const videoUrl = sanitizePersistedMediaUrl(
+    incomingVideo,
+    existingBrief.videoUrl || existingBriefObj.videoUrl || (existingAssets.video_url as string | undefined)
+  );
+  const storyboardGridUrl = sanitizePersistedMediaUrl(
+    (production as any).brief?.storyboardGridUrl || (production as any).brief?.generatedAssets?.storyboardGridUrl,
+    existingBrief.storyboardGridUrl || existingBriefObj.storyboardGridUrl
+  );
+  const videoStoragePath =
+    (production as any).videoStoragePath ||
+    extractSparkStoragePath(videoUrl) ||
+    existingAssets.video_storage_path ||
+    existingBrief.video_storage_path;
+
+  const sanitizeScenes = (scenes: any) => {
+    if (!Array.isArray(scenes)) return scenes;
+    return scenes.map((s: any) => {
+      if (!s || typeof s !== "object") return s;
+      const sceneVideo = sanitizePersistedMediaUrl(s.videoUrl, undefined);
+      return sceneVideo === s.videoUrl ? s : { ...s, videoUrl: sceneVideo };
+    });
+  };
+
+  const incomingGenerated = ((production as any).brief?.generatedAssets as any) || {};
+  const generatedVideos = Array.isArray(incomingGenerated.generatedVideos)
+    ? incomingGenerated.generatedVideos.filter((u: any) => typeof u === "string" && !isEphemeralMediaUrl(u) && sanitizePersistedMediaUrl(u))
+    : incomingGenerated.generatedVideos;
+  const { video_url: _dropVideoUrl, videoUrl: _dropVideoCamel, ...generatedAssetsRest } = incomingGenerated;
+  const sanitizedGeneratedAssets = {
+    ...generatedAssetsRest,
+    generatedVideos,
+    storyboardGridUrl,
+    voiceoverUrl: audioUrl,
+  };
 
   const briefObject = (production as any).brief
     ? {
@@ -546,6 +628,9 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
         videoUrl,
         storyboardGridUrl,
         generationProgress: genProg,
+        video_storage_path: videoStoragePath,
+        generatedAssets: sanitizedGeneratedAssets,
+        storyboard: sanitizeScenes((production as any).brief?.storyboard),
       }
     : existingBriefObj;
 
@@ -553,21 +638,24 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     ...existingBrief,
     aspectRatio: production.aspectRatio || existingBrief.aspectRatio,
     formats: production.formats || existingBrief.formats,
-    scenes: production.scenes || (production as any).productionScenes || existingBrief.scenes,
+    scenes: sanitizeScenes(production.scenes || (production as any).productionScenes || existingBrief.scenes),
     sparkId: production.sparkId || existingBrief.sparkId,
     audioUrl,
     videoUrl,
     storyboardGridUrl,
     generationProgress: genProg,
+    video_storage_path: videoStoragePath,
     briefObject,
   };
 
   patch.assets = {
     ...existingAssets,
+    ...sanitizedGeneratedAssets,
     video_url: videoUrl || null,
     audio_url: audioUrl || null,
     storyboard_grid_url: storyboardGridUrl || null,
-    ...(((production as any).brief?.generatedAssets as any) || {}),
+    video_storage_path: videoStoragePath || existingAssets.video_storage_path || null,
+    generatedVideos,
   };
 
   if ((production as any).reasoning) {
@@ -630,8 +718,14 @@ export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>)
   }
 
   if (item.brief) reasoningPatch.brief = item.brief;
-  if (item.videoUrl) reasoningPatch.videoUrl = item.videoUrl;
-  if (item.audioUrl) reasoningPatch.audioUrl = item.audioUrl;
+  if (item.videoUrl) {
+    const persistableReviewVideo = sanitizePersistedMediaUrl(item.videoUrl, existingReasoning.videoUrl as string | undefined);
+    if (persistableReviewVideo) reasoningPatch.videoUrl = persistableReviewVideo;
+  }
+  if (item.audioUrl) {
+    const persistableReviewAudio = sanitizePersistedMediaUrl(item.audioUrl, existingReasoning.audioUrl as string | undefined);
+    if (persistableReviewAudio) reasoningPatch.audioUrl = persistableReviewAudio;
+  }
 
   patch.reasoning = reasoningPatch;
 

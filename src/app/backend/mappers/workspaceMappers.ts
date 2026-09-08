@@ -21,6 +21,10 @@ import type {
   ReviewItem,
   ViralSpark,
 } from "../../domain/types";
+import {
+  extractSparkStoragePath,
+  sanitizePersistedMediaUrl,
+} from "../../services/production/productionAssetService";
 
 // The DB `memory_items.category` CHECK constraint allows ONLY these snake_case values. The app's
 // MemoryItem category labels map 1:1 to them. (The MemoryCategory enum is a separate/legacy
@@ -351,9 +355,15 @@ export function domainProductionToInsert(
     Failed: "failed",
   };
   const genProg = production.generationProgress || production.brief?.generationProgress || production.brief?.generatedAssets?.generationProgress;
-  const audioUrl = production.audioUrl || production.brief?.audioUrl;
-  const videoUrl = production.videoUrl || production.brief?.videoUrl;
-  const storyboardGridUrl = production.brief?.storyboardGridUrl || production.brief?.generatedAssets?.storyboardGridUrl;
+  const audioUrl = sanitizePersistedMediaUrl(production.audioUrl || production.brief?.audioUrl);
+  const videoUrl = sanitizePersistedMediaUrl(production.videoUrl || production.brief?.videoUrl);
+  const storyboardGridUrl = sanitizePersistedMediaUrl(
+    production.brief?.storyboardGridUrl || production.brief?.generatedAssets?.storyboardGridUrl
+  );
+  const videoStoragePath =
+    production.videoStoragePath ||
+    production.brief?.video_storage_path ||
+    extractSparkStoragePath(videoUrl);
 
   const briefObject = production.brief
     ? {
@@ -362,6 +372,13 @@ export function domainProductionToInsert(
         videoUrl,
         storyboardGridUrl,
         generationProgress: genProg,
+        video_storage_path: videoStoragePath,
+        storyboard: Array.isArray(production.brief.storyboard)
+          ? production.brief.storyboard.map((s) => ({
+              ...s,
+              videoUrl: sanitizePersistedMediaUrl(s.videoUrl),
+            }))
+          : production.brief.storyboard,
       }
     : undefined;
 
@@ -374,19 +391,26 @@ export function domainProductionToInsert(
     brief: {
       aspectRatio: production.aspectRatio,
       formats: production.formats,
-      scenes: production.scenes,
+      scenes: Array.isArray(production.scenes)
+        ? production.scenes.map((s) => ({
+            ...s,
+            videoUrl: sanitizePersistedMediaUrl(s.videoUrl),
+          }))
+        : production.scenes,
       sparkId: production.sparkId,
       audioUrl,
       videoUrl,
       storyboardGridUrl,
       generationProgress: genProg,
+      video_storage_path: videoStoragePath,
       briefObject,
     } as Json,
     assets: {
+      ...((production.brief?.generatedAssets as any) || {}),
       video_url: videoUrl || null,
       audio_url: audioUrl || null,
       storyboard_grid_url: storyboardGridUrl || null,
-      ...((production.brief?.generatedAssets as any) || {}),
+      video_storage_path: videoStoragePath || null,
     } as any,
     reasoning: (production.reasoning || {}) as Json,
   };
@@ -410,8 +434,12 @@ export function reviewRowToDomain(row: ReviewItemRow): ReviewItem {
   };
 
   const brief = (reasoning.brief as any) || undefined;
-  const videoUrl = typeof reasoning.videoUrl === "string" && reasoning.videoUrl ? reasoning.videoUrl : brief?.videoUrl;
-  const audioUrl = typeof reasoning.audioUrl === "string" && reasoning.audioUrl ? reasoning.audioUrl : brief?.audioUrl;
+  const videoUrl = sanitizePersistedMediaUrl(
+    typeof reasoning.videoUrl === "string" && reasoning.videoUrl ? reasoning.videoUrl : brief?.videoUrl
+  );
+  const audioUrl = sanitizePersistedMediaUrl(
+    typeof reasoning.audioUrl === "string" && reasoning.audioUrl ? reasoning.audioUrl : brief?.audioUrl
+  );
 
   return {
     id: row.id,
@@ -460,8 +488,8 @@ export function domainReviewToInsert(
       openingMoment: item.openingMoment,
       brief: item.brief,
       whyThisWorks: item.whyThisWorks,
-      videoUrl: item.videoUrl,
-      audioUrl: item.audioUrl,
+      videoUrl: sanitizePersistedMediaUrl(item.videoUrl),
+      audioUrl: sanitizePersistedMediaUrl(item.audioUrl),
     } as Json,
   };
 

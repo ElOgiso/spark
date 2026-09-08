@@ -22,6 +22,7 @@ export interface ProductionVideoClipRequest {
 
 export interface ProductionVideoClipResult {
   videoUrl: string;
+  storagePath?: string;
   lastFrameDataUrl?: string;
   provider: string;
 }
@@ -80,8 +81,22 @@ export async function requestProductionVideoClip(
         "Video adapter returned no videoUrl"
     );
   }
+  const storagePath = typeof data.storagePath === "string" ? data.storagePath : undefined;
+  const looksSpark =
+    /\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(videoUrl) ||
+    Boolean(storagePath && storagePath.startsWith("brands/"));
+  const looksProvider =
+    /vidgen\.x\.ai|generativelanguage\.googleapis|oaidalleapiprodscus|fal\.media|klingai\.com|runwayml\.com|lumalabs\.ai/i.test(
+      videoUrl
+    );
+  if (looksProvider || !looksSpark) {
+    throw new Error(
+      "Video adapter returned a provider URL instead of Spark storage bytes. Persist failed."
+    );
+  }
   return {
     videoUrl,
+    storagePath,
     lastFrameDataUrl:
       typeof data.lastFrameDataUrl === "string" ? data.lastFrameDataUrl : undefined,
     provider: (typeof data.provider === "string" && data.provider) || params.provider,

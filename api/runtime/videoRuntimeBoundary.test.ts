@@ -124,6 +124,30 @@ test("requestProductionVideoClip fails loudly when success=false even on HTTP 20
   globalThis.fetch = originalFetch;
 });
 
+test("requestProductionVideoClip rejects provider vidgen URL even on HTTP 200", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        success: true,
+        videoUrl: "https://vidgen.x.ai/files/abc.mp4",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )) as typeof fetch;
+
+  await assert.rejects(
+    () =>
+      requestProductionVideoClip({
+        provider: "grok",
+        prompt: "test",
+        firstFrameUrl: "data:image/jpeg;base64,AAA",
+      }),
+    /provider URL|Spark storage/i
+  );
+
+  globalThis.fetch = originalFetch;
+});
+
 test("requestProductionVideoClip fails loudly when HTTP 200 has no videoUrl", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>

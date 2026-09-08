@@ -124,14 +124,19 @@ export async function mergeSceneVideos(
       if (serverResp.ok) {
         const serverData = await serverResp.json();
         if (serverData.success && serverData.publicUrl) {
-          console.log(`[SceneVideoMerger] Serverless FFmpeg mux completed successfully -> ${serverData.publicUrl}`);
-          return {
-            publicUrl: serverData.publicUrl,
-            mimeType: "video/mp4",
-            extension: "mp4",
-            durationSec: serverData.durationSec || 15,
-            provider: "ServerlessFFmpeg",
-          };
+          const sparkUrl = String(serverData.publicUrl);
+          if (!/\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(sparkUrl)) {
+            console.warn("[SceneVideoMerger] Mux returned a non-Spark URL — treating as persist failure");
+          } else {
+            console.log(`[SceneVideoMerger] Serverless FFmpeg mux completed successfully -> ${sparkUrl}`);
+            return {
+              publicUrl: sparkUrl,
+              mimeType: "video/mp4",
+              extension: "mp4",
+              durationSec: serverData.durationSec || 15,
+              provider: "ServerlessFFmpeg",
+            };
+          }
         } else if (serverData.fallbackToClient) {
           console.log(`[SceneVideoMerger] Serverless mux signaled client fallback: ${serverData.error || serverData.message}`);
         }

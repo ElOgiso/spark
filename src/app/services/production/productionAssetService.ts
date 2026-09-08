@@ -255,8 +255,37 @@ export function isEphemeralMediaUrl(val?: string | null): boolean {
     trimmed.includes("vidgen.x.ai") ||
     trimmed.includes("generativelanguage.googleapis.com") ||
     trimmed.includes("oaidalleapiprodscus.blob.core.windows.net") ||
-    trimmed.includes("fal.media")
+    trimmed.includes("fal.media") ||
+    trimmed.includes("klingai.com") ||
+    trimmed.includes("runwayml.com") ||
+    trimmed.includes("lumalabs.ai") ||
+    trimmed.includes("ark.cn-beijing") ||
+    trimmed.includes("byteimg.com")
   );
+}
+
+export function isSparkStorageUrl(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (extractSparkStoragePath(trimmed)) return true;
+  return /\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(trimmed);
+}
+
+/** Playable identity we are allowed to write onto production.videoUrl / scene.videoUrl. */
+export function isPersistableSparkMediaUrl(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  if (isEphemeralMediaUrl(val)) return false;
+  return isSparkStorageUrl(val);
+}
+
+export function sanitizePersistedMediaUrl(
+  incoming?: string | null,
+  existing?: string | null
+): string | undefined {
+  if (incoming && isPersistableSparkMediaUrl(incoming)) return incoming;
+  if (existing && isPersistableSparkMediaUrl(existing)) return existing;
+  if (incoming && !isEphemeralMediaUrl(incoming) && isSparkStorageUrl(incoming)) return incoming;
+  return undefined;
 }
 
 export function extractSparkStoragePath(url?: string | null): string | null {
@@ -707,6 +736,16 @@ export class ProductionAssetService {
         uploadBlob = new Blob([byteArray], { type: mimeType });
       }
     } else if (dataUrlOrBlob.startsWith("http://") || dataUrlOrBlob.startsWith("https://")) {
+      if (isPersistableSparkMediaUrl(dataUrlOrBlob) && extractSparkStoragePath(dataUrlOrBlob) === storagePath) {
+        return {
+          publicUrl: dataUrlOrBlob,
+          storagePath,
+          assetId,
+          driveFileId,
+          driveWebViewLink,
+          uploadSuccess: true,
+        };
+      }
       try {
         const fetched = await fetch(dataUrlOrBlob);
         if (fetched.ok) {
@@ -714,6 +753,25 @@ export class ProductionAssetService {
         }
       } catch (fetchErr) {
         console.warn("[ProductionAssetService] Remote URL fetch for storage upload notice:", fetchErr);
+      }
+      if (!uploadBlob) {
+        try {
+          const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+          const ingested = await ingestRemoteMediaToSpark({
+            url: dataUrlOrBlob,
+            brandId,
+            productionId,
+            assetType,
+            storagePath,
+            mimeType,
+          });
+          if (ingested?.publicUrl && !isEphemeralMediaUrl(ingested.publicUrl)) {
+            uploadSuccess = true;
+            finalPublicUrl = ingested.publicUrl;
+          }
+        } catch (ingestErr) {
+          console.warn("[ProductionAssetService] Server ingest fallback notice:", ingestErr);
+        }
       }
     }
 
@@ -750,7 +808,7 @@ export class ProductionAssetService {
           uploadSuccess = false;
           console.error(`[ProductionAssetService] Supabase Storage upload to bucket "${SPARK_STORAGE_BUCKET}" failed:`, error);
         }
-      } else if (!uploadBlob) {
+      } else if (!uploadBlob && !uploadSuccess) {
         console.warn(`[ProductionAssetService] No binary blob available for upload to "${storagePath}"`);
       }
     } catch (err) {
@@ -805,6 +863,11 @@ export class ProductionAssetService {
       console.warn("[ProductionAssetService] Media asset record persist notice:", dbErr);
     }
 
+    if (uploadSuccess && (isEphemeralMediaUrl(finalPublicUrl) || !isSparkStorageUrl(finalPublicUrl))) {
+      uploadSuccess = false;
+      finalPublicUrl = "";
+    }
+
     if (!uploadSuccess) {
       return { publicUrl: "", storagePath, assetId, driveFileId, driveWebViewLink, uploadSuccess: false };
     }
@@ -821,14 +884,17 @@ export class ProductionAssetService {
       const { getSupabaseClient } = await import("../../backend/supabaseClient");
       const supabase = getSupabaseClient();
       if (!supabase) return null;
+      const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
+      if (pubData?.publicUrl) {
+        return pubData.publicUrl;
+      }
       const { data, error } = await supabase.storage
         .from(SPARK_STORAGE_BUCKET)
         .createSignedUrl(storagePath, expiresIn);
       if (!error && data?.signedUrl) {
         return data.signedUrl;
       }
-      const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-      return pubData?.publicUrl || null;
+      return null;
     } catch (err) {
       console.warn("[ProductionAssetService] resolveSignedUrl error:", err);
       return null;
@@ -1069,11 +1135,13 @@ export class ProductionAssetService {
           },
           audioUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
+          video_storage_path: extractSparkStoragePath(realVideoUrl) || production.videoStoragePath || brief.video_storage_path,
         };
         await persistProductionUpdate(production.id, {
           brief: stageBrief,
           audioUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
+          videoStoragePath: extractSparkStoragePath(realVideoUrl) || production.videoStoragePath,
           generationProgress: latestProgressSnapshot,
           isGeneratingAssets: latestProgressSnapshot ? (latestProgressSnapshot.stage !== "Complete" && latestProgressSnapshot.stage !== "Failed" && latestProgressSnapshot.percent < 100) : false,
           scenes: stageBrief.storyboard?.map((s) => ({
@@ -1978,7 +2046,7 @@ export class ProductionAssetService {
             brief.videoUrl,
             brief.generatedAssets?.generatedVideos?.[0],
             ...(brief.storyboard?.map((s) => s.videoUrl) || []),
-          ].find((u) => isDurableMasterVideoReady(u))
+          ].find((u) => isPersistableSparkMediaUrl(u))
         : undefined;
 
       if (canReuseExistingVideo && existingVideoCandidate) {
@@ -2427,23 +2495,39 @@ export class ProductionAssetService {
                 checkAborted();
 
                 if (isValidMediaData(generated.url)) {
-                  let finalClip = generated.url;
+                  let finalClip = "";
                   try {
                     const storedClip = await this.uploadAssetToStorage({
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
-                      storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.mp4`),
+                      storagePath: getStoragePath(`video/clip-scene-0${globalSceneNum}.mp4`),
                       dataUrlOrBlob: generated.url,
                       mimeType: "video/mp4",
                       prompt: sceneMotionPrompt,
                       provider: generated.provider || "ModelRouter",
                     });
-                    if (storedClip?.publicUrl && isDurableMasterVideoReady(storedClip.publicUrl)) finalClip = storedClip.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Video -> ${finalClip}`);
+                    if (
+                      storedClip?.uploadSuccess &&
+                      storedClip.publicUrl &&
+                      isPersistableSparkMediaUrl(storedClip.publicUrl)
+                    ) {
+                      finalClip = storedClip.publicUrl;
+                    }
+                    console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Video -> ${finalClip || "(persist failed)"}`);
                   } catch (storageErr: any) {
                     console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video upload notice:`, storageErr);
                   }
+                  if (!finalClip && isPersistableSparkMediaUrl(generated.url)) {
+                    finalClip = generated.url;
+                  }
+                  if (!finalClip) {
+                    console.warn(
+                      `[SPARK Pipeline] Scene ${globalSceneNum} refused provider URL persist:`,
+                      String(generated.url || "").slice(0, 120)
+                    );
+                    if (!lastError) lastError = `Scene ${globalSceneNum} Video: persist to Spark failed`;
+                  } else {
 
                   // Extract last frame of this clip and persist it so clip N+1 can send it as first_frame.
                   try {
@@ -2493,6 +2577,7 @@ export class ProductionAssetService {
                   sceneClips.push(finalClip);
                   if (sIdx === 0 && (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false && currentStoryboard.length === 1) {
                     realVideoUrl = finalClip;
+                  }
                   }
                 } else {
                   console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));
@@ -3154,6 +3239,7 @@ export class ProductionAssetService {
         },
         audioUrl: realVoiceUrl,
         videoUrl: realVideoUrl,
+        video_storage_path: extractSparkStoragePath(realVideoUrl) || production.videoStoragePath,
       };
 
       const updatedScenes = updatedBrief.storyboard!.map((s) => ({
@@ -3939,7 +4025,7 @@ export class ProductionAssetService {
               prompt: `Scene ${sceneIdx} durable video clip`,
               provider: "SceneClipStoragePersist",
             });
-            if (stored?.publicUrl) {
+            if (stored?.uploadSuccess && stored.publicUrl && isPersistableSparkMediaUrl(stored.publicUrl)) {
               clipUrl = stored.publicUrl;
               s.videoUrl = clipUrl;
             }
@@ -3947,7 +4033,9 @@ export class ProductionAssetService {
             console.warn("[ProductionAssetService] Ephemeral clip storage upload notice:", e);
           }
         }
-        durableReadyClips.push(clipUrl);
+        if (isPersistableSparkMediaUrl(clipUrl)) {
+          durableReadyClips.push(clipUrl);
+        }
       }
     }
 
@@ -3993,7 +4081,9 @@ export class ProductionAssetService {
             });
             if (stored?.publicUrl && isDurableMasterVideoReady(stored.publicUrl)) {
               production.videoUrl = stored.publicUrl;
+              production.videoStoragePath = stored.storagePath || extractSparkStoragePath(stored.publicUrl) || undefined;
               brief.videoUrl = stored.publicUrl;
+              brief.video_storage_path = production.videoStoragePath;
               production.status = "Ready for Review";
               production.generationProgress = {
                 stage: "Complete",
@@ -4057,7 +4147,9 @@ export class ProductionAssetService {
             if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
               const masterUrl = storedMaster.publicUrl;
               production.videoUrl = masterUrl;
+              production.videoStoragePath = storedMaster.storagePath || extractSparkStoragePath(masterUrl) || undefined;
               brief.videoUrl = masterUrl;
+              brief.video_storage_path = production.videoStoragePath;
               if (!brief.generatedAssets) brief.generatedAssets = {};
               brief.generatedAssets.generatedVideos = [masterUrl];
               production.status = "Ready for Review";
@@ -4089,7 +4181,9 @@ export class ProductionAssetService {
     if (readyClips.length === 1 && scenes.length <= 1) {
       if (isDurableMasterVideoReady(readyClips[0])) {
         production.videoUrl = readyClips[0];
+        production.videoStoragePath = extractSparkStoragePath(readyClips[0]) || production.videoStoragePath;
         brief.videoUrl = readyClips[0];
+        brief.video_storage_path = production.videoStoragePath;
         (production as any).canonicalMasterUrl = readyClips[0];
         (brief as any).canonicalMasterUrl = readyClips[0];
         if (!brief.generatedAssets) brief.generatedAssets = {};
@@ -4133,7 +4227,9 @@ export class ProductionAssetService {
       if (mergeResult.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
         const masterUrl = mergeResult.publicUrl;
         production.videoUrl = masterUrl;
+        production.videoStoragePath = extractSparkStoragePath(masterUrl) || production.videoStoragePath;
         brief.videoUrl = masterUrl;
+        brief.video_storage_path = production.videoStoragePath;
       (production as any).canonicalMasterUrl = masterUrl;
       (brief as any).canonicalMasterUrl = masterUrl;
         if (!brief.generatedAssets) brief.generatedAssets = {};
@@ -4164,7 +4260,9 @@ export class ProductionAssetService {
         if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
           const masterUrl = storedMaster.publicUrl;
           production.videoUrl = masterUrl;
+          production.videoStoragePath = storedMaster.storagePath || extractSparkStoragePath(masterUrl) || undefined;
           brief.videoUrl = masterUrl;
+          brief.video_storage_path = production.videoStoragePath;
           if (!brief.generatedAssets) brief.generatedAssets = {};
           brief.generatedAssets.generatedVideos = [masterUrl];
           production.status = "Ready for Review";
@@ -4286,9 +4384,16 @@ export async function refreshProductionMediaAssets(
   let updatedLastError = production.lastError || brief?.lastError;
 
   // 1. Video URL
+  const knownVideoStoragePath =
+    production.videoStoragePath ||
+    (brief as any)?.video_storage_path ||
+    (brief as any)?.generatedAssets?.video_storage_path ||
+    extractSparkStoragePath(updatedVideoUrl);
+
   if (updatedVideoUrl) {
     const res = await resolveFreshPlayableUrl({
       url: updatedVideoUrl,
+      storagePath: knownVideoStoragePath,
       productionId: production.id,
       brandId: production.brandId,
       assetType: "video",
@@ -4302,8 +4407,8 @@ export async function refreshProductionMediaAssets(
       updatedLastError = "Asset not in Spark storage";
     }
   } else {
-    // Check if storage has a video asset for this production
     const res = await resolveFreshPlayableUrl({
+      storagePath: knownVideoStoragePath,
       productionId: production.id,
       brandId: production.brandId,
       assetType: "video",
@@ -4415,6 +4520,32 @@ export async function refreshProductionMediaAssets(
     }
   }
 
+  const resolvedVideoStoragePath =
+    extractSparkStoragePath(updatedVideoUrl) || knownVideoStoragePath || undefined;
+
+  if (brief?.storyboard && Array.isArray(brief.storyboard)) {
+    const nextStoryboard: ProductionScene[] = [];
+    for (const scene of brief.storyboard) {
+      if (!scene?.videoUrl) {
+        nextStoryboard.push(scene);
+        continue;
+      }
+      const res = await resolveFreshPlayableUrl({
+        url: scene.videoUrl,
+        storagePath: extractSparkStoragePath(scene.videoUrl),
+        productionId: production.id,
+        brandId: production.brandId,
+        assetType: "video",
+        mediaAssets,
+      });
+      if (res.resigned) didResign = true;
+      if (res.url) nextStoryboard.push({ ...scene, videoUrl: res.url });
+      else if (res.isEphemeralWithoutStorage) nextStoryboard.push({ ...scene, videoUrl: undefined });
+      else nextStoryboard.push(scene);
+    }
+    if (brief) brief.storyboard = nextStoryboard;
+  }
+
   // Re-assemble brief
   let updatedBrief = brief;
   if (updatedBrief) {
@@ -4430,12 +4561,14 @@ export async function refreshProductionMediaAssets(
     updatedBrief.audioUrl = updatedAudioUrl;
     updatedBrief.storyboardGridUrl = updatedGridUrl;
     updatedBrief.thumbnailUrl = updatedThumbUrl;
+    updatedBrief.video_storage_path = resolvedVideoStoragePath;
     if (updatedLastError) updatedBrief.lastError = updatedLastError;
   }
 
   const updatedProduction: Production = {
     ...production,
     videoUrl: updatedVideoUrl,
+    videoStoragePath: resolvedVideoStoragePath,
     audioUrl: updatedAudioUrl,
     storyboardGridUrl: updatedGridUrl,
     thumbnailUrl: updatedThumbUrl,

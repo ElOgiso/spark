@@ -76,6 +76,12 @@ export function createRuntimeAdapterPorts(): AdapterPorts {
       if (!res.ok) throw new Error(data.error || `Mux failed (${res.status})`);
       const videoUrl = data.videoUrl || data.publicUrl;
       if (!videoUrl) throw new Error("Mux returned no videoUrl");
+      if (
+        /vidgen\.x\.ai|generativelanguage\.googleapis|fal\.media/i.test(String(videoUrl)) ||
+        !/\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(String(videoUrl))
+      ) {
+        throw new Error("Mux returned a non-Spark videoUrl — persist failed");
+      }
       return {
         videoUrl: String(videoUrl),
         providerJobId: `mux_${request.executionId}`,
