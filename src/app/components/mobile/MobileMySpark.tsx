@@ -54,7 +54,6 @@ import {
   BRAND_LANGUAGES,
   BRAND_TONE_OPTIONS,
   BRAND_STYLE_OPTIONS,
-  seedDefaultAudience,
 } from "../../domain/brandOptions";
 import { normalizeHandle } from "../../domain/accountUtils";
 import { VIDEO_LENGTH_OPTIONS, CONTENT_FORMAT_OPTIONS, VISUAL_GENRE_OPTIONS, PRIMARY_VISUAL_GENRE_IDS, type ContentFormat, type AIProviderId } from "../../domain/types";
@@ -147,12 +146,12 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
   // Edit Identity Full-Screen Mobile Sheet State
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [editName, setEditName] = useState(brand?.name || "");
-  const [editNiche, setEditNiche] = useState(brand?.niche || "AI & Automation");
-  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "Visionary Creator");
+  const [editNiche, setEditNiche] = useState(brand?.niche || "");
+  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "");
   const [editPurpose, setEditPurpose] = useState(brand?.purpose || "");
   const [editWebsite, setEditWebsite] = useState(brand?.website || "");
-  const [editCountry, setEditCountry] = useState(brand?.country || "United States");
-  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (US)");
+  const [editCountry, setEditCountry] = useState(brand?.country || "");
+  const [editLanguage, setEditLanguage] = useState(brand?.language || "");
   const [editAudiencePrimary, setEditAudiencePrimary] = useState(brand?.audience?.primary || "");
   const [editPainPoints, setEditPainPoints] = useState(
     Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints.join(", ") : ""
@@ -163,35 +162,21 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
   const openEditIdentity = () => {
     setEditName(brand?.name || "");
-    setEditNiche(brand?.niche || "AI & Automation");
-    setEditArchetype(brand?.archetype || "Visionary Creator");
+    setEditNiche(brand?.niche || "");
+    setEditArchetype(brand?.archetype || "");
     setEditPurpose(brand?.purpose || "");
     setEditWebsite(brand?.website || "");
-    setEditCountry(brand?.country || "United States");
-    setEditLanguage(brand?.language || "English (US)");
+    setEditCountry(brand?.country || "");
+    setEditLanguage(brand?.language || "");
 
     const currentAud = brand?.audience;
-    const isAudEmpty = !currentAud?.primary && (!currentAud?.painPoints || currentAud.painPoints.length === 0);
-    if (isAudEmpty) {
-      const seeded = seedDefaultAudience({
-        niche: brand?.niche || "AI & Automation",
-        archetype: brand?.archetype || "Visionary Creator",
-        country: brand?.country || "United States",
-        language: brand?.language,
-        characterName: character?.name,
-      });
-      setEditAudiencePrimary(seeded.primary);
-      setEditPainPoints(seeded.painPoints.join(", "));
-      setEditDesires(seeded.desires.join(", "));
-    } else {
-      setEditAudiencePrimary(currentAud?.primary || "");
-      setEditPainPoints(
-        Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
-      );
-      setEditDesires(
-        Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
-      );
-    }
+    setEditAudiencePrimary(currentAud?.primary || "");
+    setEditPainPoints(
+      Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
+    );
+    setEditDesires(
+      Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
+    );
     setShowEditIdentity(true);
   };
 
@@ -200,12 +185,12 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
     if (!updateBrand) return;
     updateBrand({
       name: editName.trim() || brand?.name || "My Brand",
-      niche: editNiche.trim() || brand?.niche || "AI & Automation",
-      archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
+      niche: editNiche.trim() || brand?.niche || "",
+      archetype: editArchetype.trim() || brand?.archetype || "",
       purpose: editPurpose.trim() || brand?.purpose || "",
       website: editWebsite.trim(),
-      country: editCountry.trim() || "United States",
-      language: editLanguage.trim() || "English (US)",
+      country: editCountry.trim() || brand?.country || "",
+      language: editLanguage.trim() || brand?.language || "",
       audience: {
         ...brand?.audience,
         primary: editAudiencePrimary.trim(),
@@ -399,11 +384,11 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-1">
-            <span className="px-1.5 py-0.2 rounded bg-muted font-medium text-foreground text-[11px]">{brand?.niche || "AI & Automation"}</span>
+            <span className="px-1.5 py-0.2 rounded bg-muted font-medium text-foreground text-[11px]">{brand?.niche || "—"}</span>
             <span>•</span>
-            <span className="text-[11px]">{brand?.archetype || "Visionary Creator"}</span>
+            <span className="text-[11px]">{brand?.archetype || "—"}</span>
             <span>•</span>
-            <span className="text-[11px]">{brand?.country || "United States"}</span>
+            <span className="text-[11px]">{brand?.country || "—"}</span>
           </div>
         </div>
         <button
@@ -431,7 +416,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
           </button>
         </div>
         <p className={`text-xs text-foreground leading-relaxed ${isPurposeExpanded ? "" : "line-clamp-2"}`}>
-          {brand?.purpose || "Creating authoritative, engaging digital media content to scale audience trust."}
+          {brand?.purpose || "—"}
         </p>
       </section>
 

@@ -36,8 +36,8 @@ test("getEffectiveFormatSettings respects formatSettings.targetDurationSec from 
 
 test("onboard goal falls through to brand purpose when vision is absent", () => {
   const data = { goal: "Authority", niche: "AI" };
-  const goal = data.goal || "Growth & Authority";
-  const vision = (data as any).vision || (data as any).purpose || goal || "To build a leading media brand.";
+  const goal = data.goal || "";
+  const vision = (data as any).vision || (data as any).purpose || goal || "";
   assert.equal(vision, "Authority");
 });
 

@@ -101,7 +101,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
   // Selection states
   const [creatorName, setCreatorName] = useState(() => auth.profile?.display_name || auth.currentUser?.email?.split("@")[0] || "");
   const [brandName, setBrandName] = useState("");
-  const [niche, setNicheSelection] = useState("AI & Technology");
+  const [niche, setNicheSelection] = useState("");
   const [customNiche, setCustomNiche] = useState("");
   const [audience, setAudience] = useState("Creators & Founders");
   const [goal, setGoal] = useState("Viral Reach & Growth");
@@ -232,7 +232,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     setIsGeneratingPortrait(true);
     setPortraitError(null);
 
-    const activeNiche = customNiche.trim() || niche || "AI & Technology";
+    const activeNiche = customNiche.trim() || niche || "";
     const { buildProductionCharacterSheetPrompt } = await import("../../../services/production/characterSheetPrompt");
     const prompt = buildProductionCharacterSheetPrompt({
       creatorName,
@@ -454,7 +454,7 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
 
   // Final Completion Handler
   const handleFinalCompletion = () => {
-    const activeNiche = customNiche.trim() || niche || "AI & Technology";
+    const activeNiche = customNiche.trim() || niche || "";
     const selectedVoiceObj = voices.find((v) => v.voiceId === selectedVoiceId);
 
     const voiceProfile: VoiceProfile = {
@@ -473,9 +473,9 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       audience,
       goal,
       platforms: Object.keys(connectedAccounts).length > 0 ? Object.keys(connectedAccounts) : ["YouTube Shorts"],
-      tone: "Energetic & Relatable",
-      vision: "Autonomous AI media company",
-      visualStyle: "Realistic / Live-Action",
+      tone: "",
+      vision: "",
+      visualStyle: "",
       productionMode,
       automationMode,
       contentFormat,

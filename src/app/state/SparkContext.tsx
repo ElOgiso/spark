@@ -1202,18 +1202,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const initializeBrandGenesis = async (data: any) => {
-    const brandName = data.brandName || "My Brand";
-    const creatorName = data.creatorName || "Creator";
-    const niche = data.niche || "Content Creation";
-    const goal = data.goal || "Growth & Authority";
-    const vision = data.vision || data.purpose || goal || "To build a leading media brand.";
-    const audience = data.audience || "General Audience";
+    const brandName = String(data.brandName || data.creatorName || "").trim() || "My Brand";
+    const creatorName = String(data.creatorName || data.brandName || "").trim() || "Creator";
+    const niche = String(data.niche || "").trim();
+    const goal = String(data.goal || "").trim();
+    const vision = String(data.vision || data.purpose || goal || "").trim();
+    const audience = typeof data.audience === "string" ? data.audience.trim() : "";
     const platforms =
       data.platforms && data.platforms.length > 0
         ? data.platforms
         : [];
-    const tone = data.tone || "Energetic & Relatable";
-    const visualStyle = data.visualStyle || "Realistic / Live-Action";
+    const tone = typeof data.tone === "string" ? data.tone.trim() : "";
+    const visualStyle = String(data.visualStyle || "").trim();
     const automationMode = data.automationMode || "balanced";
     const reviewRequired = data.reviewRequired !== false;
 
@@ -1241,51 +1241,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Real research/source pipeline only — no mock initialSparks seed
     const initialSparks: ViralSpark[] = [];
 
-    // Production mode: no fabricated sparks/productions/reviews.
-    // Only real onboarding identity + memory rules.
-    const initialMemoryItems: MemoryItem[] = [
-      {
-        id: `m-brand-${Date.now()}`,
-        type: "rule",
-        text: `Brand Identity Rule: Focus on ${niche}. Tone: ${tone}. Primary audience: ${audience}.`,
-        dateAdded: new Date().toISOString().split("T")[0],
-        category: "Brand",
-      },
-      {
-        id: `m-prod-${Date.now() + 1}`,
-        type: "rule",
-        text: `Production Mode: Configured as ${rawProdMode === "express" ? "Narrator" : rawProdMode === "deep" ? "Cinematic" : rawProdMode === "standard" ? "Hybrid" : rawProdMode.toUpperCase()} pipeline.`,
-        dateAdded: new Date().toISOString().split("T")[0],
-        category: "Publishing behavior",
-      },
-      {
-        id: `m-auto-${Date.now() + 2}`,
-        type: "rule",
-        text: `Governance Rule: Automation mode set to ${automationMode.toUpperCase()}.`,
-        dateAdded: new Date().toISOString().split("T")[0],
-        category: "Publishing behavior",
-      },
-    ];
-
-    if (data.voiceProfile) {
-      initialMemoryItems.push({
-        id: `m-voice-${Date.now() + 3}`,
-        type: "rule",
-        text: `Host Voice: ${data.voiceProfile.name} (${data.voiceProfile.accent}, ${data.voiceProfile.language}).`,
-        dateAdded: new Date().toISOString().split("T")[0],
-        category: "Voice",
-      });
-    }
-
-    if (data.audioEnergy) {
-      initialMemoryItems.push({
-        id: `m-audio-${Date.now() + 4}`,
-        type: "rule",
-        text: `Audio Energy: ${data.audioEnergy} soundtrack pacing.`,
-        dateAdded: new Date().toISOString().split("T")[0],
-        category: "Audio",
-      });
-    }
+    // First memories come from accepted watches (law path). Do not persist slop identity rules.
+    const initialMemoryItems: MemoryItem[] = [];
 
     const localTokens = getStoredAccountTokens();
     const connectedFromOAuth: Account[] = Object.values(localTokens).map((t) => ({
@@ -1324,31 +1281,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ];
     }
 
-    let initialResearchSources: ResearchSource[] = [];
-    if (data.researchSources && Array.isArray(data.researchSources) && data.researchSources.length > 0) {
-      initialResearchSources = data.researchSources.filter(Boolean).map((url: string, idx: number) => ({
-        id: `src-gen-${Date.now()}-${idx}`,
-        platform: (url.toLowerCase().includes("youtube") || url.toLowerCase().includes("youtu.be")
-          ? "youtube"
-          : url.toLowerCase().includes("tiktok")
-          ? "tiktok"
-          : url.toLowerCase().includes("instagram")
-          ? "instagram"
-          : "x") as any,
-        url,
-        username: url.split("/").filter(Boolean).pop() || "@creator",
-        displayName: url.split("/").filter(Boolean).pop() || "Inspiration Source",
-        videoCount: 1,
-        status: "active" as const,
-        sourceType: "channel" as const,
-        recentVideos: [],
-        learnings: ["High retention visual hook pattern", "Fast pace viral cut"],
-        metricsAvailability: "available" as const,
-        addedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        lastSyncAt: new Date().toISOString(),
-      } as ResearchSource));
-    }
+    const initialResearchSources: ResearchSource[] = [];
 
     const isAdditionalWorkspace = data.mode === "additional_workspace";
     let brandId = "";
@@ -1366,10 +1299,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           purpose: vision,
           audience: {
             primary: audience,
-            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
-            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+            painPoints: [],
+            desires: [],
           },
-          tone: [{ label: tone, active: true }],
+          tone: tone ? [{ label: tone, active: true }] : [],
           content_pillars: [],
           automation_mode: automationMode,
           review_required: reviewRequired,
@@ -1517,10 +1450,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: brandId || undefined,
       name: brandName,
       niche,
-      archetype: data.archetype || "Visionary Creator",
+      archetype: data.archetype || undefined,
       purpose: vision,
-      country: data.country,
-      language: data.language,
+      country: data.country || undefined,
+      language: data.language || undefined,
       contentFormat: resolvedContentFormat,
       formatSettings: resolvedFormatSettings,
       contentPillars: [],
@@ -1530,7 +1463,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         desires: [],
       },
       tone: tone ? [{ label: tone, active: true }] : [],
-      settings: {},
+      settings: { pillars_user_edited: false },
     };
     const genesisBible = buildBrandBiblePatch(genesisBrand, { forceFrom: "onboard" });
     if (genesisBible) {
@@ -1694,9 +1627,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (brandId && isUuid(brandId)) {
-      if (initialMemoryItems[0]) {
-        void persistMemoryCreate(brandId, initialMemoryItems[0]);
-      }
       try {
         const {
           persistBrandUpdate,

@@ -54,7 +54,6 @@ import {
   BRAND_LANGUAGES,
   BRAND_TONE_OPTIONS,
   BRAND_STYLE_OPTIONS,
-  seedDefaultAudience,
 } from "../domain/brandOptions";
 import {
   VIDEO_LENGTH_OPTIONS,
@@ -142,12 +141,12 @@ export function MySpark({ onNavigate }: MySparkProps) {
   // Profile & Brand Extended Edit State
   const [showEditIdentity, setShowEditIdentity] = useState(false);
   const [editName, setEditName] = useState(brand?.name || "");
-  const [editNiche, setEditNiche] = useState(brand?.niche || "AI & Automation");
-  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "Visionary Creator");
+  const [editNiche, setEditNiche] = useState(brand?.niche || "");
+  const [editArchetype, setEditArchetype] = useState(brand?.archetype || "");
   const [editPurpose, setEditPurpose] = useState(brand?.purpose || "");
   const [editWebsite, setEditWebsite] = useState(brand?.website || "");
-  const [editCountry, setEditCountry] = useState(brand?.country || "United States");
-  const [editLanguage, setEditLanguage] = useState(brand?.language || "English (US)");
+  const [editCountry, setEditCountry] = useState(brand?.country || "");
+  const [editLanguage, setEditLanguage] = useState(brand?.language || "");
   const [editAudiencePrimary, setEditAudiencePrimary] = useState(brand?.audience?.primary || "");
   const [editPainPoints, setEditPainPoints] = useState(
     Array.isArray(brand?.audience?.painPoints) ? brand.audience.painPoints.join(", ") : ""
@@ -158,35 +157,21 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
   const openEditIdentity = () => {
     setEditName(brand?.name || "");
-    setEditNiche(brand?.niche || "AI & Automation");
-    setEditArchetype(brand?.archetype || "Visionary Creator");
+    setEditNiche(brand?.niche || "");
+    setEditArchetype(brand?.archetype || "");
     setEditPurpose(brand?.purpose || "");
     setEditWebsite(brand?.website || "");
-    setEditCountry(brand?.country || "United States");
-    setEditLanguage(brand?.language || "English (US)");
+    setEditCountry(brand?.country || "");
+    setEditLanguage(brand?.language || "");
 
     const currentAud = brand?.audience;
-    const isAudEmpty = !currentAud?.primary && (!currentAud?.painPoints || currentAud.painPoints.length === 0);
-    if (isAudEmpty) {
-      const seeded = seedDefaultAudience({
-        niche: brand?.niche || "AI & Automation",
-        archetype: brand?.archetype || "Visionary Creator",
-        country: brand?.country || "United States",
-        language: brand?.language,
-        characterName: character?.name,
-      });
-      setEditAudiencePrimary(seeded.primary);
-      setEditPainPoints(seeded.painPoints.join(", "));
-      setEditDesires(seeded.desires.join(", "));
-    } else {
-      setEditAudiencePrimary(currentAud?.primary || "");
-      setEditPainPoints(
-        Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
-      );
-      setEditDesires(
-        Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
-      );
-    }
+    setEditAudiencePrimary(currentAud?.primary || "");
+    setEditPainPoints(
+      Array.isArray(currentAud?.painPoints) ? currentAud.painPoints.join(", ") : ""
+    );
+    setEditDesires(
+      Array.isArray(currentAud?.desires) ? currentAud.desires.join(", ") : ""
+    );
     setShowEditIdentity(true);
   };
 
@@ -200,12 +185,12 @@ export function MySpark({ onNavigate }: MySparkProps) {
     if (!updateBrand) return;
     updateBrand({
       name: editName.trim() || brand?.name || "My Brand",
-      niche: editNiche.trim() || brand?.niche || "AI & Automation",
-      archetype: editArchetype.trim() || brand?.archetype || "Visionary Creator",
+      niche: editNiche.trim() || brand?.niche || "",
+      archetype: editArchetype.trim() || brand?.archetype || "",
       purpose: editPurpose.trim() || brand?.purpose || "",
       website: editWebsite.trim(),
-      country: editCountry.trim() || "United States",
-      language: editLanguage.trim() || "English (US)",
+      country: editCountry.trim() || brand?.country || "",
+      language: editLanguage.trim() || brand?.language || "",
       audience: {
         ...brand?.audience,
         primary: editAudiencePrimary.trim(),
@@ -437,13 +422,13 @@ export function MySpark({ onNavigate }: MySparkProps) {
                     <span className="px-2.5 py-0.5 rounded-full bg-success/20 text-success text-xs font-medium">Active</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
-                    <span className="px-2 py-0.5 rounded bg-muted font-medium text-foreground">{brand?.niche || "AI & Automation"}</span>
+                    <span className="px-2 py-0.5 rounded bg-muted font-medium text-foreground">{brand?.niche || "—"}</span>
                     <span>•</span>
-                    <span>Archetype: <strong className="text-foreground">{brand?.archetype || "Visionary Creator"}</strong></span>
+                    <span>Archetype: <strong className="text-foreground">{brand?.archetype || "—"}</strong></span>
                     <span>•</span>
-                    <span>{brand?.country || "United States"}</span>
+                    <span>{brand?.country || "—"}</span>
                     <span>•</span>
-                    <span>{brand?.language || "English (US)"}</span>
+                    <span>{brand?.language || "—"}</span>
                     {brand?.website && (
                       <>
                         <span>•</span>
@@ -465,7 +450,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
               <div className="p-4 rounded-xl bg-background border border-border">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1 font-mono">Brand Purpose</p>
-                <p className="text-sm leading-relaxed text-foreground">{brand?.purpose || "Creating impactful, high-converting digital productions with compounding distribution."}</p>
+                <p className="text-sm leading-relaxed text-foreground">{brand?.purpose || "—"}</p>
               </div>
 
               {showEditIdentity && (
@@ -550,7 +535,6 @@ export function MySpark({ onNavigate }: MySparkProps) {
                           onChange={(e) => setEditPurpose(e.target.value)}
                           placeholder="What high-level impact and transformation does your brand produce?"
                           className="w-full mt-1 bg-background text-foreground text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-                          required
                         />
                       </div>
 

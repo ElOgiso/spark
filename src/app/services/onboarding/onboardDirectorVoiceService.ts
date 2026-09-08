@@ -28,8 +28,8 @@ export const ONBOARD_FIXED_SCRIPTS: Record<OnboardScriptKey, string> = {
   step_brand_identity: "What should we call this brand — and what niche does SPARK own?",
   step_character_host: "Who is the host on camera? Lock a character SPARK can keep consistent forever.",
   step_narrator_voice: "Choose the narrator voice for your content. This is your brand voice — not my chat voice.",
-  step_research_sources: "Paste channels or profiles SPARK should learn from. I'll start analysing as soon as you add them.",
-  step_production_mode: "How should SPARK produce — and how much should I decide without you?",
+  step_research_sources: "Paste channels SPARK should learn from. How much should I decide without you?",
+  step_production_mode: "Show format is who is on camera. Visual genre is the look. How long is a typical piece?",
   step_ready_launch: "Your SPARK is ready. Enter when you are.",
 };
 
@@ -37,10 +37,10 @@ export const FRAME_TO_SCRIPT_KEY: Record<number, OnboardScriptKey> = {
   0: "welcome_super_spark",
   1: "step_connect_account",
   2: "step_brand_identity",
-  3: "step_character_host",
-  4: "step_narrator_voice",
-  5: "step_research_sources",
-  6: "step_production_mode",
+  3: "step_production_mode",
+  4: "step_character_host",
+  5: "step_narrator_voice",
+  6: "step_research_sources",
   7: "step_ready_launch",
 };
 

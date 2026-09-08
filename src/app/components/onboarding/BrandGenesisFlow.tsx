@@ -31,12 +31,15 @@ import {
   VIDEO_LENGTH_OPTIONS,
   VISUAL_GENRE_OPTIONS,
   PRIMARY_VISUAL_GENRE_IDS,
+  CONTENT_FORMAT_OPTIONS,
   type ContentFormat,
   type ProductionMode,
   type AutomationMode,
   type AIProviderId,
   type VisualGenreSetting,
 } from "../../domain/types";
+import { BRAND_ARCHETYPES, BRAND_NICHES, BRAND_COUNTRIES, BRAND_LANGUAGES } from "../../domain/brandOptions";
+import { compileGenesisDirectorReply, nextDirectorInterviewQuestion } from "../../services/brand/proposeBrandBible";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 
@@ -98,11 +101,15 @@ export interface BrandGenesisData {
   aspectMode?: "portrait" | "landscape" | "dynamic";
   targetDurationSec?: number;
   preferredVideoProvider?: AIProviderId | "auto";
+  archetype?: string;
+  country?: string;
+  language?: string;
   mode?: "first_user" | "additional_workspace";
 }
 
 export interface BrandGenesisFlowProps {
   onComplete: (data: BrandGenesisData) => void;
+  onDraftChange?: (data: BrandGenesisData) => void;
   mode?: "first_user" | "additional_workspace";
   onCancel?: () => void;
 }
@@ -353,12 +360,6 @@ const PLATFORMS = [
   { id: "snapchat",  name: "Snapchat",  Logo: SnapchatLogo,  live: false, oauthKey: null },
 ];
 
-const PLATFORM_NICHE: Record<string, string> = {
-  youtube: "Education", x: "Tech", instagram: "Lifestyle",
-  tiktok: "Comedy", facebook: "Business", linkedin: "Business",
-  threads: "Lifestyle", pinterest: "Fashion", snapchat: "Comedy",
-};
-
 const GENRES = [
   { id: "Realistic",    label: "Human / Realistic", desc: "Photoreal studio portrait",        img: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=700&q=85&fit=crop&crop=face" },
   { id: "Cinematic",   label: "Cinematic",          desc: "Dramatic film-light portrait",     img: "https://images.unsplash.com/photo-1675726205553-4e348f24da2c?w=700&q=85&fit=crop&crop=top" },
@@ -472,21 +473,21 @@ const FRAME_NAMES: Record<number, string> = {
   0: "Welcome & Introduction",
   1: "Connect Social Platforms",
   2: "Brand Name & Niche Strategy",
-  3: "Host Character & Visual Style",
-  4: "Narrator Voice & Cadence",
-  5: "Research Sources & Calibration",
-  6: "Production & Automation Modes",
+  3: "Show Format, Visual Genre & Length",
+  4: "Host Character & Visual Style",
+  5: "Narrator Voice & Cadence",
+  6: "Research Sources & Production",
   7: "Review & Launch",
 };
 
 const SPARK_REPLIES: Record<number, string[]> = {
-  1: ["Connect any account that's live — YouTube and X are ready now. The rest are coming soon.", "Once connected, I'll pull your handle and start building your identity layer."],
-  2: ["Your brand name sets the tone for everything. Make it memorable.", "I'll auto-detect your niche from your connected account — you can always override it."],
-  3: ["The character is your brand's face across every video. Pick a style you want to own forever.", "After generating, tap the sheet to zoom in and check the details."],
-  4: ["Voice is identity. Choose the one that feels most like your brand.", "You can describe a custom voice in the field and I'll build it."],
-  5: ["Paste any channel you want me to learn from. I'll extract what makes them work.", "Research sources are private — I use them to calibrate, not to copy."],
-  6: ["Production mode sets how your content looks. Automation sets how much I do solo.", "You can change these any time from your dashboard."],
-  7: ["Everything looks good. When you're ready, enter the dashboard.", "You can always come back and update any of these settings."],
+  1: ["Connect any account that's live — YouTube and X are ready now. The rest are coming soon.", "Once connected, I'll use the handle for identity — you confirm the chips."],
+  2: ["Name the brand. Tell me what it should make — I'll pre-select chips, you confirm.", "Who is it for? One line. Leave a field blank if you have not decided."],
+  3: ["Show format is who is on camera. Visual genre is the look of the show.", "Tap a length chip for the real timers — 15s through 60m."],
+  4: ["The character is the face on camera. Faceless shows can skip this.", "After generating, tap the sheet to check the details."],
+  5: ["Voice is identity. Choose the one that feels most like your brand.", "You can describe a custom voice in the field and I'll build it."],
+  6: ["Paste any channel you want me to learn from. I'll extract what makes them work.", "Production mode and automation can wait — change them any time in My Spark."],
+  7: ["Confirm the chips. You can still edit everything in My Spark after you enter.", "When you're ready, enter."],
 };
 const DEFAULT_REPLIES = ["Got it — I'll factor that in.", "Noted. Moving forward with that.", "Good call. I'll apply that across your brand setup."];
 
@@ -803,7 +804,13 @@ interface GenesisInternalState {
   brandName: string;
   creatorName: string;
   niche: string;
+  audience: string;
+  archetype: string;
+  country: string;
+  language: string;
   goal: string;
+  lookChosen: boolean;
+  durationChosen: boolean;
   characterGenre: string;
   characterSkin: string;
   characterHair: string;
@@ -819,11 +826,11 @@ interface GenesisInternalState {
   researchSources: string[];
   productionMode: string;
   automationMode: string;
-  contentFormat: ContentFormat;
+  contentFormat?: ContentFormat;
   visualGenre?: VisualGenreSetting;
   cinematicCraft?: boolean;
   aspectMode: "portrait" | "landscape" | "dynamic";
-  targetDurationSec: number;
+  targetDurationSec?: number;
   preferredVideoProvider?: AIProviderId | "auto";
 }
 
@@ -833,7 +840,13 @@ const DEFAULT_STATE: GenesisInternalState = {
   brandName: "",
   creatorName: "",
   niche: "",
-  goal: "Growth",
+  audience: "",
+  archetype: "",
+  country: "",
+  language: "",
+  goal: "",
+  lookChosen: false,
+  durationChosen: false,
   characterGenre: "Realistic",
   characterSkin: "Rich Brown",
   characterHair: "Short Crop",
@@ -849,21 +862,21 @@ const DEFAULT_STATE: GenesisInternalState = {
   researchSources: [],
   productionMode: "Hybrid",
   automationMode: "Balanced",
-  contentFormat: "host",
-  visualGenre: "auto" as VisualGenreSetting,
+  contentFormat: undefined,
+  visualGenre: undefined,
   cinematicCraft: true,
   aspectMode: "portrait",
-  targetDurationSec: 60,
+  targetDurationSec: undefined,
   preferredVideoProvider: "auto",
 };
 
 const DIRECTORS: Record<number, string> = {
   1: "Connect the social accounts you want SPARK to manage. I'll use them for identity, publishing, and distribution.",
-  2: "What should we call this brand — and what niche does SPARK own?",
-  3: "Who is the host on camera? Lock a character SPARK can keep consistent forever.",
-  4: "Choose the narrator voice for your content. This is your brand voice — not my chat voice.",
-  5: "Paste channels or profiles SPARK should learn from. I'll start analysing as soon as you add them.",
-  6: "How should SPARK produce — and how much should I decide without you?",
+  2: "What should we call this brand — and what should it make?",
+  3: "Show format is who is on camera. Visual genre is the look. How long is a typical piece?",
+  4: "Who is the host on camera? Lock a character SPARK can keep consistent forever.",
+  5: "Choose the narrator voice for your content. This is your brand voice — not my chat voice.",
+  6: "Paste channels SPARK should learn from. How much should I decide without you?",
   7: "Your SPARK is ready. Enter when you are.",
 };
 
@@ -1006,36 +1019,25 @@ function FrameConnect({
 }
 
 function FrameBrand({ data, onChange, justEntered }: { data: GenesisInternalState; onChange: (d: Partial<GenesisInternalState>) => void; justEntered: boolean }) {
-  const [detecting, setDetecting] = useState(false);
-  const [detectedNiche, setDetectedNiche] = useState("");
-
   useEffect(() => {
     if (!justEntered) return;
     const first = data.connectedPlatforms[0];
     if (!first) return;
     if (!data.brandName && data.connectedHandles[first]) {
       const raw = data.connectedHandles[first].replace("@", "").replace("creator_", "");
+      const name = raw.charAt(0).toUpperCase() + raw.slice(1);
       onChange({
-        brandName: raw.charAt(0).toUpperCase() + raw.slice(1) + " Studio",
-        creatorName: raw.charAt(0).toUpperCase() + raw.slice(1),
+        brandName: name,
+        creatorName: data.creatorName || name,
       });
-    }
-    if (!data.niche) {
-      setDetecting(true);
-      setTimeout(() => {
-        const suggested = PLATFORM_NICHE[first] || "Education";
-        setDetectedNiche(suggested);
-        onChange({ niche: suggested });
-        setDetecting(false);
-      }, 1200);
     }
   }, [justEntered]);
 
-  const niches = ["AI", "Business", "Finance", "Fitness", "Fashion", "Beauty", "Comedy", "Education", "Tech", "Crypto", "Lifestyle", "Food", "Gaming", "Motivation", "News", "Travel", "Health", "Music", "Sports", "Other"];
-  const goals = ["Growth", "Authority", "Sales", "Community"];
+  const selectClass =
+    "w-full bg-white/6 border border-white/12 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-purple-500/55";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="space-y-2">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Brand name</label>
         <input
@@ -1045,36 +1047,62 @@ function FrameBrand({ data, onChange, justEntered }: { data: GenesisInternalStat
           className="w-full bg-white/6 border border-white/12 rounded-xl px-4 py-3.5 text-sm text-white placeholder-white/22 outline-none focus:border-purple-500/55 transition-colors"
         />
       </div>
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Niche</label>
-          {detecting && <span className="text-[9px] text-[#F018FF] flex items-center gap-1"><RefreshCw className="w-2.5 h-2.5 animate-spin" /> AI detecting…</span>}
-          {detectedNiche && !detecting && <span className="text-[9px] text-[#F018FF]">· AI suggested</span>}
-        </div>
-        {detectedNiche && <p className="text-[11px] text-white/28 -mt-1">Tap a different niche to override</p>}
+      <div className="space-y-2">
+        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Niche</label>
+        <p className="text-[11px] text-white/28">From the chat or tap a chip. Leave empty if you have not said it.</p>
         <div className="flex flex-wrap gap-2">
-          {niches.map((n) => (
+          {BRAND_NICHES.map((n) => (
             <Chip
               key={n}
               label={n}
               selected={data.niche === n}
-              suggested={n === detectedNiche && data.niche !== n}
               onToggle={() => onChange({ niche: data.niche === n ? "" : n })}
             />
           ))}
+          {data.niche && !(BRAND_NICHES as readonly string[]).includes(data.niche) && (
+            <Chip label={data.niche} selected onToggle={() => onChange({ niche: "" })} />
+          )}
         </div>
       </div>
-      <div className="space-y-3">
-        <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Goal <span className="normal-case text-white/22">(optional)</span></label>
-        <div className="flex flex-wrap gap-2">
-          {goals.map((g) => (
-            <Chip
-              key={g}
-              label={g}
-              selected={data.goal === g}
-              onToggle={() => onChange({ goal: data.goal === g ? "" : g })}
-            />
-          ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Archetype</label>
+          <select
+            value={data.archetype}
+            onChange={(e) => onChange({ archetype: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">Select…</option>
+            {BRAND_ARCHETYPES.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Country</label>
+          <select
+            value={data.country}
+            onChange={(e) => onChange({ country: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">Select…</option>
+            {BRAND_COUNTRIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Language</label>
+          <select
+            value={data.language}
+            onChange={(e) => onChange({ language: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">Select…</option>
+            {BRAND_LANGUAGES.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
         </div>
       </div>
     </div>
@@ -1694,9 +1722,20 @@ function FrameSources({
   );
 }
 
-function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: (d: Partial<GenesisInternalState>) => void }) {
+function FrameModes({
+  data,
+  onChange,
+  section = "all",
+}: {
+  data: GenesisInternalState;
+  onChange: (d: Partial<GenesisInternalState>) => void;
+  section?: "look" | "ops" | "all";
+}) {
+  const showLook = section === "look" || section === "all";
+  const showOps = section === "ops" || section === "all";
   return (
     <div className="space-y-6">
+      {showOps && (
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Production</label>
         <div className="space-y-2">
@@ -1715,25 +1754,24 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
           ))}
         </div>
       </div>
+      )}
+      {showLook && (
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Show Format</label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {[
-            { id: "faceless" as const, label: "Faceless", desc: "Voice + pictures, no host required" },
-            { id: "host" as const, label: "Host", desc: "One character on camera (default selected)" },
-            { id: "story" as const, label: "Story", desc: "Multi-scene narrative" },
-            { id: "anime" as const, label: "Anime", desc: "Story in locked anime/3D style" },
-          ].map((m) => (
+          {CONTENT_FORMAT_OPTIONS.map((m) => (
             <ModeCard
               key={m.id}
               label={m.label}
               desc={m.desc}
-              selected={(data.contentFormat || "host") === m.id}
+              selected={data.contentFormat === m.id}
               onSelect={() => onChange({ contentFormat: m.id })}
             />
           ))}
         </div>
       </div>
+      )}
+      {showLook && (
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Visual Genre</label>
         <p className="text-[11px] text-white/40">Look for storyboard and video. Format is who is on camera. Cinematic craft can ride on every look.</p>
@@ -1743,15 +1781,15 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
               key={g.id}
               label={g.label}
               desc={g.desc}
-              selected={(data.visualGenre || "auto") === g.id}
-              onSelect={() => onChange({ visualGenre: g.id })}
+              selected={data.visualGenre === g.id}
+              onSelect={() => onChange({ visualGenre: g.id, lookChosen: true })}
             />
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => onChange({ visualGenre: "auto" })}
+            onClick={() => onChange({ visualGenre: "auto", lookChosen: true })}
             className={`px-3 py-1.5 rounded-lg border text-[11px] ${
               (data.visualGenre || "auto") === "auto"
                 ? "bg-purple-600/30 border-purple-400/60 text-white"
@@ -1764,7 +1802,7 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
             <button
               key={g.id}
               type="button"
-              onClick={() => onChange({ visualGenre: g.id })}
+              onClick={() => onChange({ visualGenre: g.id, lookChosen: true })}
               className={`px-3 py-1.5 rounded-lg border text-[11px] ${
                 data.visualGenre === g.id
                   ? "bg-purple-600/30 border-purple-400/60 text-white"
@@ -1784,6 +1822,8 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
           Cinematic craft on all looks (coverage + motivated camera — does not force photoreal)
         </label>
       </div>
+      )}
+      {showOps && (
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Automation</label>
         <div className="space-y-2">
@@ -1802,6 +1842,8 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
           ))}
         </div>
       </div>
+      )}
+      {showLook && (
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Aspect Ratio Strategy</label>
         <div className="grid grid-cols-3 gap-2">
@@ -1824,12 +1866,12 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Target Video Length</label>
         <div className="flex flex-wrap gap-2">
           {VIDEO_LENGTH_OPTIONS.map((dur) => {
-            const active = (data.targetDurationSec || 60) === dur.sec;
+            const active = data.targetDurationSec === dur.sec;
             return (
               <button
                 key={dur.sec}
                 type="button"
-                onClick={() => onChange({ targetDurationSec: dur.sec })}
+                onClick={() => onChange({ targetDurationSec: dur.sec, durationChosen: true })}
                 className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
                   active
                     ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/30 ring-1 ring-purple-400/50"
@@ -1939,6 +1981,7 @@ function FrameModes({ data, onChange }: { data: GenesisInternalState; onChange: 
           Longer episode runtimes will be automatically split into continuous scenes at the selected engine's native clip limit.
         </p>
       </div>
+      )}
     </div>
   );
 }
@@ -1950,14 +1993,15 @@ function FrameReady({ data, onPreviewSheet }: { data: GenesisInternalState; onPr
       {[
         { label: "Brand",      value: data.brandName || "—" },
         { label: "Niche",      value: data.niche || "—" },
-        { label: "Goal",       value: data.goal || "—" },
-        { label: "Character",  value: `${data.characterGenre} · ${data.characterPersonality}` },
+        { label: "Audience",   value: data.audience || "—" },
+        { label: "Look",       value: String(data.visualGenre || "auto").replace(/_/g, " ") },
+        { label: "Character",  value: data.characterSheetUrl ? `${data.characterGenre} · ${data.characterPersonality}` : (data.contentFormat === "faceless" ? "Skipped · faceless" : "—") },
         { label: "Voice",      value: data.selectedVoice || "—" },
         { label: "Sources",    value: data.researchSources.length > 0 ? `${data.researchSources.length} channel${data.researchSources.length !== 1 ? "s" : ""}` : "None" },
         { label: "Production", value: data.productionMode },
-        { label: "Show Format", value: ((data.contentFormat || "host").charAt(0).toUpperCase() + (data.contentFormat || "host").slice(1)) },
+        { label: "Show Format", value: data.contentFormat ? (data.contentFormat.charAt(0).toUpperCase() + data.contentFormat.slice(1)) : "—" },
         { label: "Automation", value: data.automationMode },
-        { label: "Format",     value: `${(data.aspectMode || "portrait").toUpperCase()} · ${(data.targetDurationSec || 60) >= 60 ? `${Math.round((data.targetDurationSec || 60) / 60)}m` : `${data.targetDurationSec || 60}s`}` },
+        { label: "Format",     value: typeof data.targetDurationSec === "number" ? `${(data.aspectMode || "portrait").toUpperCase()} · ${data.targetDurationSec >= 60 ? `${Math.round(data.targetDurationSec / 60)}m` : `${data.targetDurationSec}s`}` : `${(data.aspectMode || "portrait").toUpperCase()} · —` },
         { label: "Clip Engine", value: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? (PROVIDER_VIDEO_CAPABILITIES as any)[data.preferredVideoProvider]?.displayName || data.preferredVideoProvider.toUpperCase() : "Auto (Best Available)" },
       ].map((row, i, arr) => (
         <div key={row.label} className={`flex items-center justify-between px-5 py-3.5 ${i < arr.length - 1 ? "border-b border-white/6" : ""}`}>
@@ -2095,8 +2139,59 @@ function LegalFlow({ onComplete }: { onComplete: () => void }) {
 // ─── Main Brand Genesis Component ──────────────────────────────────────────────
 let _msgId = 0;
 
+function toGenesisData(data: GenesisInternalState, mode?: "first_user" | "additional_workspace"): BrandGenesisData {
+  const connectedAccounts = data.connectedPlatforms.map((pid) => {
+    const realHandle = data.connectedHandles[pid] || (pid === "youtube" ? "@youtube" : "@x");
+    return {
+      platform: pid === "youtube" ? "YouTube Shorts" : pid === "x" ? "Twitter/X" : pid,
+      username: realHandle,
+      connected: true,
+    };
+  });
+  const prodModeMapped: ProductionMode =
+    data.productionMode === "Cinematic" ? "deep" : data.productionMode === "Narrator" ? "express" : "standard";
+  const autoModeMapped: AutomationMode =
+    data.automationMode === "Manual" ? "manual" : data.automationMode === "Autonomous" ? "autonomous" : "balanced";
+  return {
+    brandName: data.brandName,
+    creatorName: data.creatorName || data.brandName,
+    niche: data.niche,
+    audience: data.audience,
+    goal: data.goal,
+    platforms: data.connectedPlatforms,
+    productionMode: prodModeMapped,
+    automationMode: autoModeMapped,
+    characterChoice: data.characterSheetUrl ? "describe" : "skip",
+    characterDescription: data.characterDescription,
+    characterSheetUrl: data.characterSheetUrl,
+    characterImageUrl: data.characterSheetUrl,
+    locationPlateUrl: data.locationPlateUrl,
+    supportCharacters: data.supportCharacters || [],
+    genre: data.characterGenre,
+    skinTone: data.characterSkin,
+    hairStyle: data.characterHair,
+    wardrobe: data.characterWardrobe,
+    personality: data.characterPersonality,
+    voiceProfile: data.selectedVoice,
+    voiceId: data.selectedVoiceId,
+    researchSources: data.researchSources,
+    connectedAccounts,
+    contentFormat: data.contentFormat,
+    visualGenre: data.visualGenre || "auto",
+    cinematicCraft: data.cinematicCraft !== false,
+    aspectMode: data.aspectMode || "portrait",
+    targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : undefined,
+    preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
+    archetype: data.archetype,
+    country: data.country,
+    language: data.language,
+    mode: mode || "first_user",
+  };
+}
+
 export function BrandGenesisFlow({
   onComplete,
+  onDraftChange,
   mode = "first_user",
   onCancel,
 }: BrandGenesisFlowProps) {
@@ -2131,6 +2226,19 @@ export function BrandGenesisFlow({
   const [voiceSpeaking, setVoiceSpeaking] = useState(() => onboardDirectorVoiceService.isSpeaking());
 
   const update = (partial: Partial<GenesisInternalState>) => setData((d) => ({ ...d, ...partial }));
+
+  useEffect(() => {
+    onDraftChange?.(toGenesisData(data, mode));
+  }, [data, mode, onDraftChange]);
+
+  useEffect(() => {
+    if (frame !== 2) return;
+    if (chatHistory.length > 0) return;
+    const q = nextDirectorInterviewQuestion(data);
+    if (!q) return;
+    setChatHistory([{ id: ++_msgId, role: "spark", text: q }]);
+    setChatExpanded(true);
+  }, [frame]);
 
   // Subscribe to onboard director voice updates & cleanup on unmount; warm up initial speech
   useEffect(() => {
@@ -2459,7 +2567,7 @@ export function BrandGenesisFlow({
     }
   };
 
-  // Super Spark Interactive Chat
+  // Super Spark Interactive Chat — director compile maps only what they said
   const sendChat = async () => {
     if (!askValue.trim() || chatThinking) return;
     const msg = askValue.trim();
@@ -2469,8 +2577,28 @@ export function BrandGenesisFlow({
     setChatExpanded(true);
     setChatThinking(true);
 
-    // If user describes a custom voice on frame 4
-    if (frame === 4 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound") || msg.toLowerCase().includes("narrator") || msg.toLowerCase().includes("tone") || msg.toLowerCase().includes("accent"))) {
+    const compiled = compileGenesisDirectorReply(msg);
+    const patch: Partial<GenesisInternalState> = {};
+    if (compiled.niche) patch.niche = compiled.niche;
+    if (compiled.audience) patch.audience = compiled.audience;
+    if (compiled.visualGenre) {
+      patch.visualGenre = compiled.visualGenre;
+      patch.lookChosen = true;
+    }
+    if (compiled.contentFormat) patch.contentFormat = compiled.contentFormat;
+    if (typeof compiled.targetDurationSec === "number") {
+      patch.targetDurationSec = compiled.targetDurationSec;
+      patch.durationChosen = true;
+    }
+    if (compiled.country) patch.country = compiled.country;
+    if (compiled.language) patch.language = compiled.language;
+    if (Object.keys(patch).length > 0) update(patch);
+    const nextState = { ...data, ...patch };
+    const nextQ = nextDirectorInterviewQuestion(nextState);
+    const isAsk = /\?/.test(msg) || /^(what|how|why|who|when|where|can you|explain)\b/i.test(msg);
+
+    // Custom voice design lives on the voice frame
+    if (frame === 5 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound") || msg.toLowerCase().includes("narrator") || msg.toLowerCase().includes("tone") || msg.toLowerCase().includes("accent"))) {
       try {
         const preview = await designElevenLabsVoice({
           description: msg,
@@ -2527,6 +2655,23 @@ export function BrandGenesisFlow({
       }
     }
 
+    if (!isAsk && nextQ) {
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: nextQ };
+      setChatHistory((h) => [...h, reply]);
+      setChatThinking(false);
+      void onboardDirectorVoiceService.speak(nextQ);
+      return;
+    }
+
+    if (!isAsk && Object.keys(patch).length > 0 && !nextQ) {
+      const confirm = "Locked from what you said. Confirm the chips, then continue.";
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: confirm };
+      setChatHistory((h) => [...h, reply]);
+      setChatThinking(false);
+      void onboardDirectorVoiceService.speak(confirm);
+      return;
+    }
+
     try {
       const { generateOnboardAssistantResponse } = await import("../../services/geminiService");
       const replyText = await generateOnboardAssistantResponse({
@@ -2534,13 +2679,13 @@ export function BrandGenesisFlow({
         stepName: FRAME_NAMES[frame] || `Step ${frame}`,
         stepNumber: frame,
         brandData: {
-          brandName: data.brandName,
-          creatorName: data.creatorName,
-          niche: data.niche,
-          goal: data.goal,
-          characterGenre: data.characterGenre,
-          selectedVoice: data.selectedVoice,
-          connectedPlatforms: data.connectedPlatforms,
+          brandName: nextState.brandName,
+          creatorName: nextState.creatorName,
+          niche: nextState.niche,
+          goal: nextState.goal,
+          characterGenre: nextState.characterGenre,
+          selectedVoice: nextState.selectedVoice,
+          connectedPlatforms: nextState.connectedPlatforms,
         },
         history: chatHistory.map((m) => ({ role: m.role, text: m.text })),
       });
@@ -2551,7 +2696,7 @@ export function BrandGenesisFlow({
       void onboardDirectorVoiceService.speak(replyText);
     } catch (chatErr) {
       console.warn("[BrandGenesisFlow] Live Chat generation error:", chatErr);
-      const fallbackText = getSparkReply(frame, chatHistory.filter((m) => m.role === "spark").length);
+      const fallbackText = nextQ || getSparkReply(frame, chatHistory.filter((m) => m.role === "spark").length);
       const reply: ChatMessage = { id: ++_msgId, role: "spark", text: fallbackText };
       setChatHistory((h) => [...h, reply]);
       setChatThinking(false);
@@ -2561,51 +2706,7 @@ export function BrandGenesisFlow({
 
   // Final Completion Handler
   const handleFinalCompletion = async () => {
-    const connectedAccounts = data.connectedPlatforms.map((pid) => {
-      const realHandle = data.connectedHandles[pid] || (pid === "youtube" ? "@youtube" : "@x");
-      return {
-        platform: pid === "youtube" ? "YouTube Shorts" : pid === "x" ? "Twitter/X" : pid,
-        username: realHandle,
-        connected: true,
-      };
-    });
-
-    const prodModeMapped: ProductionMode =
-      data.productionMode === "Cinematic" ? "deep" : data.productionMode === "Narrator" ? "express" : "standard";
-    const autoModeMapped: AutomationMode =
-      data.automationMode === "Manual" ? "manual" : data.automationMode === "Autonomous" ? "autonomous" : "balanced";
-
-    const genesisData: BrandGenesisData = {
-      brandName: data.brandName || "Spark Studio",
-      creatorName: data.creatorName || data.brandName || "Creator",
-      niche: data.niche || "Creator Economy",
-      goal: data.goal || "Growth",
-      platforms: data.connectedPlatforms,
-      productionMode: prodModeMapped,
-      automationMode: autoModeMapped,
-      characterChoice: data.characterSheetUrl ? "describe" : "skip",
-      characterDescription: data.characterDescription,
-      characterSheetUrl: data.characterSheetUrl,
-      characterImageUrl: data.characterSheetUrl,
-      locationPlateUrl: data.locationPlateUrl,
-      supportCharacters: data.supportCharacters || [],
-      genre: data.characterGenre,
-      skinTone: data.characterSkin,
-      hairStyle: data.characterHair,
-      wardrobe: data.characterWardrobe,
-      personality: data.characterPersonality,
-      voiceProfile: data.selectedVoice,
-      voiceId: data.selectedVoiceId,
-      researchSources: data.researchSources,
-      connectedAccounts,
-      contentFormat: data.contentFormat || "host",
-      visualGenre: data.visualGenre || "auto",
-      cinematicCraft: data.cinematicCraft !== false,
-      aspectMode: data.aspectMode || "portrait",
-      targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
-      preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
-      mode: mode || "first_user",
-    };
+    const genesisData = toGenesisData(data, mode);
 
     try {
       await initializeBrandGenesis(genesisData);
@@ -2613,12 +2714,12 @@ export function BrandGenesisFlow({
       if (brandId) {
         const { persistFormatSettings } = await import("../../backend/workspaceSync");
         await persistFormatSettings(brandId, {
-          aspectMode: data.aspectMode || "portrait",
-          targetDurationSec: typeof data.targetDurationSec === "number" ? data.targetDurationSec : 60,
-          contentFormat: data.contentFormat || "host",
-          visualGenre: data.visualGenre || "auto",
-          cinematicCraft: data.cinematicCraft !== false,
-          preferredVideoProvider: data.preferredVideoProvider && data.preferredVideoProvider !== "auto" ? data.preferredVideoProvider : "auto",
+          aspectMode: genesisData.aspectMode || "portrait",
+          targetDurationSec: typeof genesisData.targetDurationSec === "number" ? genesisData.targetDurationSec : 60,
+          contentFormat: genesisData.contentFormat || "host",
+          visualGenre: genesisData.visualGenre || "auto",
+          cinematicCraft: genesisData.cinematicCraft !== false,
+          preferredVideoProvider: genesisData.preferredVideoProvider && genesisData.preferredVideoProvider !== "auto" ? genesisData.preferredVideoProvider : "auto",
         });
       }
       if (mode !== "additional_workspace") {
@@ -2630,7 +2731,12 @@ export function BrandGenesisFlow({
     onComplete(genesisData);
   };
 
-  const canContinue = () => frame !== 2 || (data.brandName.trim().length > 0 && data.niche.length > 0);
+  const canContinue = () => {
+    if (frame === 2) return data.brandName.trim().length > 0;
+    if (frame === 4) return data.contentFormat === "faceless" || Boolean(data.characterSheetUrl);
+    return true;
+  };
+  const canSkip = frame === 1 || frame === 5 || frame === 6 || (frame === 4 && data.contentFormat === "faceless");
   const direction = frame > prevFrame ? "forward" : "back";
   const slideStyle: React.CSSProperties = {
     animation: `${direction === "forward" ? "genesis-in" : "genesis-back"} 220ms cubic-bezier(0.22,1,0.36,1) both`,
@@ -2651,6 +2757,8 @@ export function BrandGenesisFlow({
       case 2:
         return <FrameBrand data={data} onChange={update} justEntered={justEnteredFrame} />;
       case 3:
+        return <FrameModes data={data} onChange={update} section="look" />;
+      case 4:
         return (
           <FrameCharacter
             data={data}
@@ -2660,7 +2768,7 @@ export function BrandGenesisFlow({
             generateError={generateError}
           />
         );
-      case 4:
+      case 5:
         return (
           <FrameVoice
             data={data}
@@ -2671,17 +2779,18 @@ export function BrandGenesisFlow({
             voiceError={voiceError}
           />
         );
-      case 5:
-        return (
-          <FrameSources
-            data={data}
-            onChange={update}
-            onAddSource={handleAddSource}
-            syncStatuses={syncStatuses}
-          />
-        );
       case 6:
-        return <FrameModes data={data} onChange={update} />;
+        return (
+          <div className="space-y-6">
+            <FrameSources
+              data={data}
+              onChange={update}
+              onAddSource={handleAddSource}
+              syncStatuses={syncStatuses}
+            />
+            <FrameModes data={data} onChange={update} section="ops" />
+          </div>
+        );
       case 7:
         return <FrameReady data={data} onPreviewSheet={() => setViewerOpen(true)} />;
       default:
@@ -2817,7 +2926,7 @@ export function BrandGenesisFlow({
                             if (firstPlatform && data.connectedHandles[firstPlatform]) {
                               const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
                               if (!nextCreator) nextCreator = handleClean;
-                              if (!nextBrand) nextBrand = handleClean.toLowerCase().endsWith("media") || handleClean.toLowerCase().endsWith("studio") ? handleClean : `${handleClean} Studio`;
+                              if (!nextBrand) nextBrand = handleClean;
                             }
                             if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
                               update({ brandName: nextBrand, creatorName: nextCreator });
@@ -2831,7 +2940,7 @@ export function BrandGenesisFlow({
                       >
                         Continue
                       </button>
-                      {[1, 3, 4, 5].includes(frame) && (
+                      {canSkip && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2842,7 +2951,7 @@ export function BrandGenesisFlow({
                               if (firstPlatform && data.connectedHandles[firstPlatform]) {
                                 const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
                                 if (!nextCreator) nextCreator = handleClean;
-                                if (!nextBrand) nextBrand = handleClean.toLowerCase().endsWith("media") || handleClean.toLowerCase().endsWith("studio") ? handleClean : `${handleClean} Studio`;
+                                if (!nextBrand) nextBrand = handleClean;
                               }
                               if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
                                 update({ brandName: nextBrand, creatorName: nextCreator });

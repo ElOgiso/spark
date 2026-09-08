@@ -2,7 +2,9 @@
  * My Spark bible proposer — 3–5 shootable pillars + one short audience line.
  * Domain helper only. Not an agent. Not a UI component.
  */
-import type { Brand, Character, ContentFormat, ResearchSource, VideoResearch } from "../../domain/types";
+import type { Brand, Character, ContentFormat, ResearchSource, VideoResearch, VisualGenreSetting } from "../../domain/types";
+import { VIDEO_LENGTH_OPTIONS } from "../../domain/types";
+import { inferVisualGenreFromText, normalizeVisualGenre } from "../../domain/visualGenre";
 
 export type AcceptedWatchHint = {
   hook_formula?: string;
@@ -357,4 +359,160 @@ export function mergeBrandBiblePatch(brand: Brand, patch: BrandBiblePatch): Bran
     audience: patch.audience ? { ...brand.audience, ...patch.audience } : brand.audience,
     settings: { ...(brand.settings || {}), ...(patch.settings || {}) },
   };
+}
+
+export type GenesisDirectorCompile = {
+  niche?: string;
+  audience?: string;
+  visualGenre?: VisualGenreSetting;
+  contentFormat?: ContentFormat;
+  targetDurationSec?: number;
+  country?: string;
+  language?: string;
+};
+
+const COUNTRY_TOKEN: Record<string, string> = {
+  ng: "Nigeria",
+  nigeria: "Nigeria",
+  uk: "United Kingdom",
+  gb: "United Kingdom",
+  us: "United States",
+  usa: "United States",
+  ca: "Canada",
+  canada: "Canada",
+  au: "Australia",
+  australia: "Australia",
+  in: "India",
+  india: "India",
+  ke: "Kenya",
+  kenya: "Kenya",
+  gh: "Ghana",
+  ghana: "Ghana",
+  za: "South Africa",
+};
+
+const LANGUAGE_FOR_COUNTRY: Record<string, string> = {
+  Nigeria: "English (NG)",
+  "United Kingdom": "English (UK)",
+  "United States": "English (US)",
+  Australia: "English (AU)",
+  India: "English (IN)",
+  Canada: "English (US)",
+};
+
+const DURATION_SPEECH: Array<[RegExp, number]> = [
+  [/\b15\s*(m|min|mins|minutes)\b/i, 900],
+  [/\b15\s*(s|sec|secs|seconds)\b|\b15s\b/i, 15],
+  [/\b30\s*(m|min|mins|minutes)\b/i, 1800],
+  [/\b30\s*(s|sec|secs|seconds)\b|\b30s\b/i, 30],
+  [/\b60\s*(s|sec|secs|seconds)\b|\b60s\b/i, 60],
+  [/\b1\s*(m|min|mins|minutes)\b|\b1m\b/i, 60],
+  [/\b3\s*(m|min|mins|minutes)\b|\b3m\b/i, 180],
+  [/\b5\s*(m|min|mins|minutes)\b|\b5m\b/i, 300],
+  [/\b10\s*(m|min|mins|minutes)\b|\b10m\b/i, 600],
+  [/\b20\s*(m|min|mins|minutes)\b|\b20m\b/i, 1200],
+  [/\b45\s*(m|min|mins|minutes)\b|\b45m\b/i, 2700],
+  [/\b60\s*(m|min|mins|minutes)\b|\b60m\b|\b1\s*h(our)?s?\b/i, 3600],
+];
+
+function parseSpokenDuration(text: string): number | undefined {
+  const blob = String(text || "");
+  for (const [re, sec] of DURATION_SPEECH) {
+    if (re.test(blob) && VIDEO_LENGTH_OPTIONS.some((o) => o.sec === sec)) return sec;
+  }
+  return undefined;
+}
+
+function parseSpokenFormat(text: string): ContentFormat | undefined {
+  const blob = String(text || "").toLowerCase();
+  if (/\bfaceless\b/.test(blob)) return "faceless";
+  if (/\bhost\b|\bon[- ]camera\b/.test(blob)) return "host";
+  if (/\bstory\b|\bnarrative\b/.test(blob)) return "story";
+  if (/\banime\b|\bmanga\b/.test(blob)) return "anime";
+  return undefined;
+}
+
+function parseSpokenCountry(text: string): string | undefined {
+  const blob = String(text || "");
+  const inMatch = blob.match(/\bin\s+([A-Za-z]{2,}|[A-Z]{2})\b/);
+  const token = (inMatch?.[1] || "").trim().toLowerCase();
+  if (token && COUNTRY_TOKEN[token]) return COUNTRY_TOKEN[token];
+  for (const [key, country] of Object.entries(COUNTRY_TOKEN)) {
+    if (key.length > 2 && new RegExp(`\\b${key}\\b`, "i").test(blob)) return country;
+  }
+  return undefined;
+}
+
+function parseSpokenTopic(text: string): string | undefined {
+  const blob = String(text || "").replace(/\s+/g, " ").trim();
+  if (!blob) return undefined;
+  const about = blob.match(/\babout\s+(.+)$/i);
+  let topic = about?.[1] || "";
+  if (!topic) {
+    const make = blob.match(/\b(?:make|making)\s+(.+)$/i);
+    topic = make?.[1] || "";
+  }
+  if (!topic) return undefined;
+  topic = topic
+    .replace(/\bin\s+([A-Za-z]{2}|nigeria|kenya|ghana|india|canada|australia)\b/gi, "")
+    .replace(/\b(15|30|60)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)?\b/gi, "")
+    .replace(/\b(anime|manga|faceless|host|story|narrative|cinematic|explainers?|shorts?)\b/gi, "")
+    .replace(/\b(i make|we make|i want|we want)\b/gi, "")
+    .replace(/[,.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (topic.length < 3) return undefined;
+  return topic.slice(0, 80);
+}
+
+function parseSpokenAudience(text: string): string | undefined {
+  const blob = String(text || "").replace(/\s+/g, " ").trim();
+  const forMatch = blob.match(/\bfor\s+([^,.]+)/i);
+  const who = blob.match(/\b(?:who(?:'s| is)? it for|audience is)\s+([^,.]+)/i);
+  const line = (who?.[1] || forMatch?.[1] || "").trim();
+  if (line.length < 3) return undefined;
+  if (/^(me|us|youtube|tiktok|everyone)$/i.test(line)) return undefined;
+  return line.slice(0, 140);
+}
+
+/** Map only what the executive said. Never invent a second niche or a prose genre. */
+export function compileGenesisDirectorReply(text: string): GenesisDirectorCompile {
+  const raw = String(text || "").trim();
+  if (!raw) return {};
+  const out: GenesisDirectorCompile = {};
+  const niche = parseSpokenTopic(raw);
+  if (niche) out.niche = niche;
+  const audience = parseSpokenAudience(raw);
+  if (audience) out.audience = audience;
+  const inferred = inferVisualGenreFromText(raw);
+  const normalized = normalizeVisualGenre(raw) || (inferred as VisualGenreSetting | undefined);
+  if (normalized) out.visualGenre = normalized === "auto" ? "auto" : normalized;
+  else if (inferred) out.visualGenre = inferred;
+  const format = parseSpokenFormat(raw);
+  if (format) out.contentFormat = format;
+  const duration = parseSpokenDuration(raw);
+  if (typeof duration === "number") out.targetDurationSec = duration;
+  const country = parseSpokenCountry(raw);
+  if (country) {
+    out.country = country;
+    const language = LANGUAGE_FOR_COUNTRY[country];
+    if (language) out.language = language;
+  }
+  return out;
+}
+
+export function nextDirectorInterviewQuestion(state: {
+  niche?: string;
+  audience?: string;
+  visualGenre?: VisualGenreSetting | string;
+  lookChosen?: boolean;
+  durationChosen?: boolean;
+}): string | null {
+  if (!String(state.niche || "").trim()) return "What should this brand make?";
+  if (!String(state.audience || "").trim()) return "Who is it for? One line.";
+  if (!state.lookChosen && (!state.visualGenre || state.visualGenre === "auto")) {
+    return "Look: tap a Visual Genre chip, or name anime / cinematic / documentary.";
+  }
+  if (!state.durationChosen) return "How long should a typical piece be? Tap a length chip.";
+  return null;
 }

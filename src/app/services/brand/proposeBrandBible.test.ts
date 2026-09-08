@@ -10,6 +10,7 @@ import {
   buildBrandBiblePatch,
   isPlaceholderAudience,
   acceptedWatchesFromResearch,
+  compileGenesisDirectorReply,
 } from "./proposeBrandBible";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -140,6 +141,26 @@ describe("when proposer runs", () => {
   });
 });
 
+describe("compileGenesisDirectorReply", () => {
+  it("maps 15s anime explainers about mobile money in NG", () => {
+    const out = compileGenesisDirectorReply("I make 15s anime explainers about mobile money in NG");
+    assert.equal(out.niche, "mobile money");
+    assert.equal(out.visualGenre, "anime");
+    assert.equal(out.targetDurationSec, 15);
+    assert.equal(out.country, "Nigeria");
+    assert.equal(out.language, "English (NG)");
+    assert.equal(out.contentFormat, "anime");
+    assert.equal(out.audience, undefined);
+  });
+
+  it("does not invent a second niche or a prose genre", () => {
+    const out = compileGenesisDirectorReply("just thinking");
+    assert.equal(out.niche, undefined);
+    assert.equal(out.visualGenre, undefined);
+    assert.equal(out.targetDurationSec, undefined);
+  });
+});
+
 describe("source laws", () => {
   it("workspace hydrate does not inject template pillars or audience novels", () => {
     const sync = fs.readFileSync(path.join(__dirname, "../../backend/workspaceSync.ts"), "utf8");
@@ -148,5 +169,28 @@ describe("source laws", () => {
     const brief = fs.readFileSync(path.join(__dirname, "../production/productionBriefService.ts"), "utf8");
     assert.match(brief, /active !== false/);
     assert.doesNotMatch(brief, /Strategy, Insights/);
+  });
+
+  it("initializeBrandGenesis has no slop fallbacks", () => {
+    const ctx = fs.readFileSync(path.join(__dirname, "../../state/SparkContext.tsx"), "utf8");
+    const start = ctx.indexOf("const initializeBrandGenesis");
+    assert.ok(start >= 0);
+    const slice = ctx.slice(start, start + 12000);
+    assert.doesNotMatch(slice, /Content Creation/);
+    assert.doesNotMatch(slice, /General Audience/);
+    assert.doesNotMatch(slice, /Energetic & Relatable/);
+    assert.doesNotMatch(slice, /To build a leading media brand/);
+    assert.doesNotMatch(slice, /Brand Identity Rule: Focus on/);
+  });
+
+  it("genesis look frame imports My Spark catalogs", () => {
+    const flow = fs.readFileSync(path.join(__dirname, "../../components/onboarding/BrandGenesisFlow.tsx"), "utf8");
+    assert.match(flow, /VISUAL_GENRE_OPTIONS/);
+    assert.match(flow, /VIDEO_LENGTH_OPTIONS/);
+    assert.match(flow, /PRIMARY_VISUAL_GENRE_IDS/);
+    assert.match(flow, /CONTENT_FORMAT_OPTIONS/);
+    assert.match(flow, /compileGenesisDirectorReply/);
+    assert.match(flow, /section="look"/);
+    assert.match(flow, /contentFormat === "faceless"/);
   });
 });

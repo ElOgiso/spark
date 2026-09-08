@@ -94,9 +94,9 @@ function AppContent() {
     audience: "",
     goal: "",
     platforms: [],
-    tone: "Energetic & Relatable",
+    tone: "",
     vision: "",
-    visualStyle: "Realistic / Live-Action",
+    visualStyle: "",
     productionMode: "hybrid",
     automationMode: "balanced",
     reviewRequired: true,
@@ -384,6 +384,7 @@ function AppContent() {
         return (
           <ProtectedRoute>
             <BrandGenesisFlow
+              onDraftChange={setGenesisData}
               onComplete={(data) => {
                 if (data) {
                   setGenesisData(data);
@@ -415,6 +416,7 @@ function AppContent() {
           <ProtectedRoute>
             <BrandGenesisFlow
               mode="additional_workspace"
+              onDraftChange={setGenesisData}
               onCancel={() => auth.closeCreateWorkspaceModal()}
               onComplete={(data) => {
                 auth.closeCreateWorkspaceModal();
