@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { MiniMediaThumbnail } from "../MediaPreviewHelper";
 import {
@@ -9,6 +9,7 @@ import {
 import { MobileCreativeReview } from "./MobileCreativeReview";
 import { StatusChip, ConfidenceBar, Button, type ChipVariant } from "../ds";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
+import { readSparkReviewFocusId, resolveCardPlayableVideoUrl } from "../../services/production/homeReviewCardMedia";
 
 type StageFilter = "all" | "drafting" | "ready" | "needs_edit" | "approved" | "scheduled";
 
@@ -305,13 +306,14 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
   const { productions, reviewItems, deleteProduction } = useSpark();
   const [activeFilter, setActiveFilter] = useState<StageFilter>("all");
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
+  const [didApplyFocus, setDidApplyFocus] = useState(false);
 
   const reviews: ReviewItem[] = productions.map((p) => {
     const rev = reviewItems.find((r) => r.productionId === p.id || r.id === p.id);
     
     const brief = p.brief || rev?.brief;
     const mediaView = resolveProductionMediaView({ production: p, review: rev, brief });
-    const videoUrl = mediaView.canonical.canonicalMasterUrl;
+    const videoUrl = resolveCardPlayableVideoUrl(p, { review: rev, brief });
     const audioUrl = p.audioUrl || p.brief?.audioUrl || rev?.audioUrl || p.brief?.generatedAssets?.voiceoverUrl;
     const scenes = mediaView.scenes;
     const generationProgress = p.generationProgress || p.brief?.generationProgress || rev?.brief?.generationProgress;
@@ -345,6 +347,16 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
       isGeneratingAssets: p.isGeneratingAssets,
     };
   });
+
+  useEffect(() => {
+    if (didApplyFocus) return;
+    if (!productions.length) return;
+    const focus = readSparkReviewFocusId();
+    setDidApplyFocus(true);
+    if (!focus) return;
+    const match = reviews.find((r) => r.productionId === focus || r.id === focus);
+    if (match) setSelectedReview(match);
+  }, [productions.length, reviews, didApplyFocus]);
 
   if (selectedReview) {
     const currentReview = reviews.find((r) => r.id === selectedReview.id) || selectedReview;
@@ -470,7 +482,8 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
                         id={review.id}
                         title={review.title}
                         imageUrl={previewImage}
-                        isVideo={Boolean(prod?.videoUrl || review.videoUrl || isComplete)}
+                        videoUrl={review.videoUrl}
+                        isVideo={Boolean(review.videoUrl)}
                         aspectRatio={prod?.aspectRatio === "16:9" ? "16:9" : "9:16"}
                         className="shadow-md"
                       />

@@ -14,6 +14,7 @@ import {
 import { getStoredTheme, type ThemeMode } from "../theme";
 import { DesktopSparkMediaHome } from "./DesktopSparkMediaHome";
 import { normalizeHandle } from "../domain/accountUtils";
+import { resolveCardPlayableVideoUrl } from "../services/production/homeReviewCardMedia";
 
 interface SparkHomeProps {
   onNavigate: (path: string) => void;
@@ -212,10 +213,7 @@ function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
     : [
         // 1. Real Production & Review Media activities (up to 8)
         ...productions.slice(0, 8).map((p: any, i: number) => {
-          const vUrl =
-            p.videoUrl ||
-            p.brief?.videoUrl ||
-            p.brief?.generatedAssets?.generatedVideos?.[0];
+          const vUrl = resolveCardPlayableVideoUrl(p);
           const imgUrl =
             p.thumbnailUrl ||
             p.thumbnail ||
@@ -223,8 +221,7 @@ function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
             p.scenes?.[0]?.image ||
             p.brief?.generatedAssets?.generatedFrames?.[0] ||
             p.brief?.generatedAssets?.thumbnails?.[0]?.image ||
-            p.brief?.generatedAssets?.thumbnails?.[0]?.url ||
-            p.brief?.generatedAssets?.storyboardGridUrl;
+            p.brief?.generatedAssets?.thumbnails?.[0]?.url;
           const isGenerating = Boolean(
             p.isGeneratingAssets ||
               p.status === "Generating" ||
@@ -251,10 +248,9 @@ function DefaultSparkHome({ onNavigate }: SparkHomeProps) {
             hasMedia: true,
             thumbnailUrl: imgUrl,
             imageUrl: imgUrl,
-            videoUrl: typeof vUrl === "string" && vUrl.startsWith("http") ? vUrl : undefined,
+            videoUrl: vUrl,
             isGenerating,
             productionId: p.id,
-            targetPath: "/review",
           };
         }),
 

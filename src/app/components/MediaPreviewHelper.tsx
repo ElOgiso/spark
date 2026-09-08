@@ -74,6 +74,7 @@ export function MiniMediaThumbnail({
       {videoUrl && !isGenerating ? (
         <video
           src={videoUrl}
+          poster={imageUrl || undefined}
           muted
           loop
           autoPlay

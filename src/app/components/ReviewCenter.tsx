@@ -3,6 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { MiniMediaThumbnail } from "./MediaPreviewHelper";
 import { resolveProductionMediaView } from "../services/production/productionMediaLineage";
+import { openProductionReviewDetail, resolveCardPlayableVideoUrl } from "../services/production/homeReviewCardMedia";
 import {
   Button, StatusChip, Card, EmptyState, PageHeader, SectionHeader,
   FilterPill, ConfidenceBar, type ChipVariant,
@@ -254,8 +255,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                         review: rev,
                         brief,
                       });
-                      // 1. Canonical master only (never scene clip / generatedVideos[0] pollution)
-                      const videoUrl = mediaView.canonical.canonicalMasterUrl;
+                      const videoUrl = resolveCardPlayableVideoUrl(prod, { review: rev, brief });
 
                       // 2. Storyboard keyframe — same shelf as Creative Review / Assets
                       const storyboardImage = mediaView.stillByScene[1] || mediaView.scenes.find((s) => s.imageUrl)?.imageUrl;
@@ -284,12 +284,7 @@ export function ReviewCenter({ onNavigate }: ReviewCenterProps = {}) {
                           key={item.id}
                           className="border-b border-border/50 transition-colors cursor-pointer group hover:bg-accent/5"
                           onClick={() => {
-                            if (item.reviewType === "creative") {
-                              try {
-                                sessionStorage.setItem("spark_review_focus_id", item.id);
-                              } catch {}
-                              onNavigate?.(`/review/creative?productionId=${item.id}`);
-                            }
+                            openProductionReviewDetail(onNavigate, item.id);
                           }}
                         >
                           <td className="px-5 py-4">

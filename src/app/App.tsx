@@ -304,6 +304,7 @@ function AppContent() {
           <CreativeReview
             onNavigate={setCurrentPage}
             onBack={() => setCurrentPage("/review")}
+            currentPage={currentPage}
           />
         );
       case "/calendar":

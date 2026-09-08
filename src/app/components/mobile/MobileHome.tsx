@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 
 import { getStoredTheme } from "../../theme";
 import { DonorSparkMediaHome, VideoFullscreenModal } from "./DonorSparkMediaHome";
+import { openProductionReviewDetail, resolveCardPlayableVideoUrl } from "../../services/production/homeReviewCardMedia";
 
 interface ActivityItem {
   id: string;
@@ -22,6 +23,7 @@ interface ActivityItem {
   isGenerating?: boolean;
   statusLabel?: string;
   path?: string;
+  productionId?: string;
 }
 
 interface MobileHomeProps {
@@ -128,7 +130,7 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
 
   // Media activity items from real productions (max 4 on mobile)
   const mediaActivities: ActivityItem[] = productions.slice(0, 4).map((p: any, idx: number) => {
-    const vUrl = p.videoUrl || p.brief?.videoUrl || p.brief?.generatedAssets?.generatedVideos?.[0];
+    const vUrl = resolveCardPlayableVideoUrl(p);
     const imgUrl =
       p.thumbnailUrl ||
       p.thumbnail ||
@@ -157,10 +159,10 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
       title: p.title || "Untitled Production",
       time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent",
       thumbnailUrl: imgUrl,
-      videoUrl: typeof vUrl === "string" && vUrl.startsWith("http") ? vUrl : undefined,
+      videoUrl: vUrl,
       isGenerating,
       statusLabel,
-      path: "/review",
+      productionId: p.id,
     };
   });
 
@@ -349,17 +351,36 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
                       return (
                         <div
                           key={item.id}
-                          onClick={() => onNavigate?.(item.path || "/review")}
-                          className="flex items-center justify-between gap-3 p-2 rounded-xl border border-white/5 bg-white/[0.02] active:bg-white/[0.06] active:border-white/15 transition-all cursor-pointer group"
+                          className="flex items-center justify-between gap-3 p-2 rounded-xl border border-white/5 bg-white/[0.02] active:bg-white/[0.06] active:border-white/15 transition-all group"
                         >
                           {/* Left: Compact thumbnail (w-20, h-13, rounded-lg) */}
                           <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="relative w-20 h-13 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
-                              {item.thumbnailUrl ? (
+                            <div
+                              className="relative w-20 h-13 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0"
+                              onClick={() => {
+                                if (!isPlayable) return;
+                                setActiveFullscreenVideo({
+                                  videoUrl: item.videoUrl!,
+                                  title: item.title,
+                                });
+                              }}
+                              role={isPlayable ? "button" : undefined}
+                            >
+                              {isPlayable ? (
+                                <video
+                                  src={item.videoUrl}
+                                  poster={item.thumbnailUrl || undefined}
+                                  muted
+                                  loop
+                                  autoPlay
+                                  playsInline
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : item.thumbnailUrl ? (
                                 <img
                                   src={item.thumbnailUrl}
                                   alt={item.title}
-                                  className="w-full h-full object-cover group-active:scale-105 transition-transform duration-200"
+                                  className="w-full h-full object-cover"
                                 />
                               ) : (
                                 <div className="flex items-center justify-center w-full h-full bg-white/[0.02]">
@@ -424,10 +445,14 @@ function DefaultMobileHome({ onNavigate }: MobileHomeProps = {}) {
                             </div>
                           </div>
 
-                          {/* Right: Hint arrow */}
-                          <div className="flex items-center gap-1.5 flex-shrink-0 text-white/30 group-active:text-white/70">
+                          <button
+                            type="button"
+                            onClick={() => openProductionReviewDetail(onNavigate, item.productionId)}
+                            className="flex items-center gap-1 flex-shrink-0 text-[11px] font-semibold text-purple-400 active:text-purple-300 px-2 py-1"
+                          >
+                            Review
                             <ArrowRight className="w-3.5 h-3.5" />
-                          </div>
+                          </button>
                         </div>
                       );
                     })}

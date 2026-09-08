@@ -3,6 +3,7 @@ import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
 import { AIChatModal } from "../AIChatModal";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
+import { openProductionReviewDetail, resolveCardPlayableVideoUrl } from "../../services/production/homeReviewCardMedia";
 import {
   ArrowRight,
   CheckCircle2,
@@ -504,7 +505,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
       percent?: number;
       imageUrl?: string | null;
       videoUrl?: string | null;
-      targetPath: string;
+      productionId?: string;
     }> = [];
 
     // 1. Productions (in progress & completed)
@@ -529,7 +530,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
 
       // Asset priority via one media lineage resolver
       const mediaView = resolveProductionMediaView({ production: prod, review, brief });
-      const videoUrl = mediaView.canonical.canonicalMasterUrl;
+      const videoUrl = resolveCardPlayableVideoUrl(prod, { review, brief });
       const storyboardImage =
         mediaView.stillByScene[1] || mediaView.scenes.find((s) => s.imageUrl)?.imageUrl;
 
@@ -560,7 +561,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
           percent,
           imageUrl,
           videoUrl,
-          targetPath: "/review",
+          productionId: prod.id,
         });
       } else {
         items.push({
@@ -573,7 +574,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
           isGenerating: false,
           imageUrl,
           videoUrl,
-          targetPath: "/review",
+          productionId: prod.id,
         });
       }
     });
@@ -598,7 +599,6 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
         badgeColor: "#f59e0b",
         score: spark.score || 94,
         imageUrl: sparkThumb,
-        targetPath: "/viral-sparks",
       });
     });
 
@@ -851,7 +851,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                   Opportunities & Media
                 </p>
                 <button
-                  onClick={() => onNavigate(mixedItems[0]?.targetPath || "/viral-sparks")}
+                  onClick={() => onNavigate?.("/viral-sparks")}
                   className="m-press"
                   style={{
                     display: "flex",
@@ -871,10 +871,14 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
               {mixedItems.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {mixedItems.map((item) => (
-                    <button
+                    <div
                       key={item.id}
-                      onClick={() => onNavigate(item.targetPath)}
                       className="m-press"
+                      onClick={() => {
+                        if (item.videoUrl && !item.isGenerating) {
+                          setActiveFullscreenVideo({ videoUrl: item.videoUrl, title: item.title });
+                        }
+                      }}
                       style={{
                         width: "100%",
                         textAlign: "left",
@@ -885,12 +889,14 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                         border: "1px solid rgba(255,255,255,0.1)",
                         display: "block",
                         background: "linear-gradient(135deg, #111827 0%, #0f172a 100%)",
+                        cursor: item.videoUrl && !item.isGenerating ? "pointer" : "default",
                       }}
                     >
                       {/* Media Background: Video OR Real Image */}
                       {item.videoUrl && !item.isGenerating ? (
                         <video
                           src={item.videoUrl}
+                          poster={item.imageUrl || undefined}
                           muted
                           loop
                           autoPlay
@@ -1067,7 +1073,16 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                             <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {item.subtitle}
                             </span>
-                            <div
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (item.type === "viral_spark") {
+                                  onNavigate?.("/viral-sparks");
+                                  return;
+                                }
+                                openProductionReviewDetail(onNavigate, item.productionId);
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -1077,17 +1092,18 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                                 background: "rgba(168,85,247,0.25)",
                                 border: "1px solid rgba(168,85,247,0.4)",
                                 flexShrink: 0,
+                                cursor: "pointer",
                               }}
                             >
                               <span style={{ fontSize: 12, fontWeight: 700, color: M.purple }}>
                                 {item.type === "viral_spark" ? "Open" : "Review"}
                               </span>
                               <ArrowRight style={{ width: 12, height: 12, color: M.purple }} />
-                            </div>
+                            </button>
                           </div>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               ) : (
