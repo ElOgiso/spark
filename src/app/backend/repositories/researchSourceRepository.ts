@@ -2,6 +2,17 @@ import { deleteRow, insertRow, listByBrand, updateRow } from "./repositoryUtils"
 import type { RepositoryResult } from "./repositoryTypes";
 import type { ResearchSource, ResearchPattern } from "../../domain/types";
 import type { ResearchSourceRow, ResearchPatternRow } from "../database.types";
+import { getSupabaseClient, isSupabaseConfigured } from "../supabaseClient";
+
+/** Merge jsonb extras so lastSyncedAt-only patches cannot wipe watchLedger. */
+export function mergeResearchSourceMetadata(
+  existing: Record<string, unknown> | null | undefined,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const base =
+    existing && typeof existing === "object" && !Array.isArray(existing) ? { ...existing } : {};
+  return { ...base, ...patch };
+}
 
 function sourceRowToDomain(row: ResearchSourceRow): ResearchSource {
   const meta = (row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
@@ -127,9 +138,28 @@ export async function updateResearchSource(id: string, values: Partial<ResearchS
   if ((values as any).topContent !== undefined) metadataPatch.topContent = (values as any).topContent;
   if ((values as any).learnings !== undefined) metadataPatch.learnings = (values as any).learnings;
   if ((values as any).watchLedger !== undefined) metadataPatch.watchLedger = (values as any).watchLedger;
+  if ((values as any).sourceType !== undefined) metadataPatch.sourceType = (values as any).sourceType;
+  if ((values as any).observations !== undefined) metadataPatch.observations = (values as any).observations;
+  if (values.researchConfidence !== undefined) metadataPatch.researchConfidence = values.researchConfidence;
+  if ((values as any).videoCount !== undefined) metadataPatch.videoCount = (values as any).videoCount;
+  if ((values as any).totalViews !== undefined) metadataPatch.totalViews = (values as any).totalViews;
+  if ((values as any).banner !== undefined) metadataPatch.banner = (values as any).banner;
 
   if (Object.keys(metadataPatch).length > 0) {
-    rowUpdate.metadata = metadataPatch as any;
+    let existingMeta: Record<string, unknown> = {};
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data } = await (supabase.from("research_sources") as any)
+          .select("metadata")
+          .eq("id", id)
+          .maybeSingle();
+        if (data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)) {
+          existingMeta = data.metadata as Record<string, unknown>;
+        }
+      }
+    }
+    rowUpdate.metadata = mergeResearchSourceMetadata(existingMeta, metadataPatch) as any;
   }
 
   const res = await updateRow("research_sources", id, rowUpdate as any);

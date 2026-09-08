@@ -1563,7 +1563,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
               const isExpanded = expandedSourceId === source.id;
               const isSyncing = source.status === "syncing" || syncingSourceId === source.id;
               const isHealthy = source.status === "active";
-              const isNeedsAttention = source.status === "error" || source.status === "unavailable";
+              const isNeedsAttention = source.status === "error" || source.status === "unavailable" || source.status === "needs_attention";
               const confidenceText = source.researchConfidence
                 ? `${Math.round(source.researchConfidence * 100)}% Confidence`
                 : "Not enough data";
@@ -1601,6 +1601,8 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                         ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                         : isHealthy
                         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : isNeedsAttention
+                        ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
                         : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                     }`}>
                       {isSyncing ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : null}
@@ -1641,23 +1643,41 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                   {isExpanded && (
                     <div className="mt-2 pt-3 border-t border-border/60 space-y-4 text-xs">
                       {/* Video Research */}
-                      {source.videoResearch && (
+                      {source.videoResearch && (source.videoResearch.hook_formula || source.videoResearch.opening_line || source.videoResearch.cta_line || source.videoResearch.format) && (
                         <div className="p-3 rounded-lg bg-card border border-accent/30 space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-accent-foreground">AI Video Understanding</span>
-                            <span className="px-2 py-0.5 rounded bg-accent/20 text-accent-foreground font-mono font-bold text-[10px]">
-                              {source.videoResearch.sparkScore} Spark Score
-                            </span>
+                            {typeof source.videoResearch.sparkScore === "number" && source.videoResearch.sparkScore > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-accent/20 text-accent-foreground font-mono font-bold text-[10px]">
+                                {source.videoResearch.sparkScore} Spark Score
+                              </span>
+                            )}
                           </div>
                           <div className="space-y-2 text-[11px]">
-                            <div>
-                              <p className="font-semibold text-[10px] text-foreground">Hook Analysis</p>
-                              <p className="text-muted-foreground leading-relaxed">{source.videoResearch.hookAnalysis}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-[10px] text-foreground">Retention Pacing</p>
-                              <p className="text-muted-foreground leading-relaxed">{source.videoResearch.retentionAnalysis}</p>
-                            </div>
+                            {source.videoResearch.hook_formula && (
+                              <div>
+                                <p className="font-semibold text-[10px] text-foreground">Hook formula</p>
+                                <p className="text-muted-foreground leading-relaxed">{source.videoResearch.hook_formula}</p>
+                              </div>
+                            )}
+                            {source.videoResearch.opening_line && (
+                              <div>
+                                <p className="font-semibold text-[10px] text-foreground">Opening line</p>
+                                <p className="text-muted-foreground leading-relaxed">{source.videoResearch.opening_line}</p>
+                              </div>
+                            )}
+                            {source.videoResearch.cta_line && (
+                              <div>
+                                <p className="font-semibold text-[10px] text-foreground">CTA</p>
+                                <p className="text-muted-foreground leading-relaxed">{source.videoResearch.cta_line}</p>
+                              </div>
+                            )}
+                            {source.videoResearch.format && (
+                              <div>
+                                <p className="font-semibold text-[10px] text-foreground">Format</p>
+                                <p className="text-muted-foreground leading-relaxed">{source.videoResearch.format}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

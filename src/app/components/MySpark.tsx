@@ -1863,7 +1863,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
                     const isSyncing = source.status === "syncing" || syncingSourceId === source.id;
                     const isHealthy = source.status === "active";
-                    const isNeedsAttention = source.status === "error" || source.status === "unavailable";
+                    const isNeedsAttention = source.status === "error" || source.status === "unavailable" || source.status === "needs_attention";
 
                     const statusLabel = isSyncing ? "Syncing" : isHealthy ? "Healthy" : "Needs attention";
                     const statusBadgeStyle = isSyncing
@@ -1989,8 +1989,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         {isExpanded && (
                           <div className="mt-2 pt-4 border-t border-border/60 space-y-5 text-xs">
 
-                            {/* Phase 19: Deep AI Video Understanding Drawer View for Video & Profile Assets */}
-                            {source.videoResearch && (
+                            {source.videoResearch && (source.videoResearch.hook_formula || source.videoResearch.opening_line || source.videoResearch.cta_line || source.videoResearch.format) && (
                               <div className="p-4 rounded-xl bg-card border border-accent/30 space-y-4">
                                 <div className="flex items-center justify-between border-b border-border/40 pb-3">
                                   <div className="flex items-center gap-2">
@@ -1999,48 +1998,39 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                       AI Video Understanding & Hook Analysis
                                     </h5>
                                   </div>
-                                  <span className="px-2.5 py-0.5 rounded-full bg-accent/20 text-accent-foreground font-mono font-bold text-xs">
-                                    {source.videoResearch.sparkScore} Spark Score
-                                  </span>
+                                  {typeof source.videoResearch.sparkScore === "number" && source.videoResearch.sparkScore > 0 && (
+                                    <span className="px-2.5 py-0.5 rounded-full bg-accent/20 text-accent-foreground font-mono font-bold text-xs">
+                                      {source.videoResearch.sparkScore} Spark Score
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Hook & Opening (0-3s)</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.hookAnalysis}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Storytelling & Narrative</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.storytelling}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Retention & Pacing</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.retentionAnalysis}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Editing & Visual Style</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.editingStyle}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Emotional Trigger</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.emotionalPattern}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
-                                    <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Call To Action (CTA)</p>
-                                    <p className="text-muted-foreground leading-relaxed">{source.videoResearch.CTAAnalysis}</p>
-                                  </div>
+                                  {source.videoResearch.hook_formula && (
+                                    <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
+                                      <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Hook formula</p>
+                                      <p className="text-muted-foreground leading-relaxed">{source.videoResearch.hook_formula}</p>
+                                    </div>
+                                  )}
+                                  {source.videoResearch.opening_line && (
+                                    <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
+                                      <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Opening line</p>
+                                      <p className="text-muted-foreground leading-relaxed">{source.videoResearch.opening_line}</p>
+                                    </div>
+                                  )}
+                                  {source.videoResearch.cta_line && (
+                                    <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
+                                      <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">CTA</p>
+                                      <p className="text-muted-foreground leading-relaxed">{source.videoResearch.cta_line}</p>
+                                    </div>
+                                  )}
+                                  {source.videoResearch.format && (
+                                    <div className="p-3 rounded-lg bg-background border border-border/60 space-y-1">
+                                      <p className="font-semibold text-[10px] text-accent-foreground uppercase tracking-wide">Format</p>
+                                      <p className="text-muted-foreground leading-relaxed">{source.videoResearch.format}</p>
+                                    </div>
+                                  )}
                                 </div>
-
-                                {source.videoResearch.viralReasons && source.videoResearch.viralReasons.length > 0 && (
-                                  <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 space-y-1">
-                                    <p className="font-semibold text-[10px] text-emerald-400 uppercase tracking-wide">Why This Video Performs</p>
-                                    <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground text-[11px]">
-                                      {source.videoResearch.viralReasons.map((reason: string, rIdx: number) => (
-                                        <li key={rIdx}>{reason}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
                               </div>
                             )}
 
@@ -2062,7 +2052,6 @@ export function MySpark({ onNavigate }: MySparkProps) {
                                 <div className="space-y-3">
                                   {recentVids.map((vid: any) => {
                                     const isVidExpanded = expandedWhyId === vid.id;
-                                    const cats = vid.observationsCategorized;
                                     return (
                                       <div key={vid.id} className="p-3.5 rounded-lg bg-card border border-border/70 space-y-3">
                                         <div className="flex items-start gap-3">
@@ -2135,35 +2124,28 @@ export function MySpark({ onNavigate }: MySparkProps) {
 
                                           {isVidExpanded && (
                                             <div className="mt-3 pl-3 space-y-2 border-l-2 border-accent/40 text-[11px] text-muted-foreground">
-                                              {vid.description && (
-                                                <p><strong className="text-foreground">Description:</strong> {vid.description.slice(0, 200)}{vid.description.length > 200 ? '...' : ''}</p>
+                                              {vid.hook_formula && (
+                                                <p><strong className="text-foreground">Hook formula:</strong> {vid.hook_formula}</p>
                                               )}
-                                              {vid.tags && vid.tags.length > 0 && (
-                                                <p><strong className="text-foreground">Tags:</strong> {vid.tags.join(", ")}</p>
+                                              {vid.opening_line && (
+                                                <p><strong className="text-foreground">Opening line:</strong> {vid.opening_line}</p>
                                               )}
-
-                                              {/* Categorized SPARK Observations */}
-                                              {cats && (
-                                                <div className="pt-1 space-y-1 bg-accent/5 p-2.5 rounded-lg border border-accent/15">
-                                                  <p className="text-[10px] font-bold uppercase tracking-wider text-accent-foreground mb-1">SPARK Analysis Observations</p>
-                                                  {cats.hook && <p><strong className="text-foreground">Hook:</strong> {cats.hook}</p>}
-                                                  {cats.format && <p><strong className="text-foreground">Format:</strong> {cats.format}</p>}
-                                                  {cats.story && <p><strong className="text-foreground">Story:</strong> {cats.story}</p>}
-                                                  {cats.thumbnail && <p><strong className="text-foreground">Thumbnail:</strong> {cats.thumbnail}</p>}
-                                                  {cats.cta && <p><strong className="text-foreground">CTA:</strong> {cats.cta}</p>}
-                                                  {cats.editing && <p><strong className="text-foreground">Editing:</strong> {cats.editing}</p>}
-                                                </div>
+                                              {vid.cta_line && (
+                                                <p><strong className="text-foreground">CTA:</strong> {vid.cta_line}</p>
                                               )}
-
-                                              {vid.sparkScoreBreakdown && vid.sparkScoreBreakdown.explanation && (
-                                                <div>
-                                                  <strong className="text-foreground">Why This Score:</strong>
-                                                  <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
-                                                    {vid.sparkScoreBreakdown.explanation.map((exp: string, idx: number) => (
-                                                      <li key={idx}>{exp}</li>
-                                                    ))}
-                                                  </ul>
-                                                </div>
+                                              {vid.format && (
+                                                <p><strong className="text-foreground">Format:</strong> {vid.format}</p>
+                                              )}
+                                              {!vid.hook_formula && !vid.opening_line && !vid.cta_line && !vid.format && (
+                                                <>
+                                                  <p><strong className="text-foreground">Title:</strong> {vid.title}</p>
+                                                  <p>
+                                                    <strong className="text-foreground">Views:</strong>{" "}
+                                                    {vid.viewCount !== null && vid.viewCount !== undefined
+                                                      ? vid.viewCount.toLocaleString()
+                                                      : "Unavailable from Platform"}
+                                                  </p>
+                                                </>
                                               )}
                                             </div>
                                           )}

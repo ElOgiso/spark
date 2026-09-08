@@ -25,6 +25,19 @@ import { ensureViralSparkProductionReady } from "./viralSparkGate";
  * - faceless -> "insert" except hook/CTA may stay "main" if a sheet exists, else "insert"
  * - story | anime -> mix: hook main, at least one insert or set on longer runtimes, support only if a support character exists
  */
+export function resolveBriefWhyNow(
+  spark: Pick<ViralSpark, "whyNow" | "hook"> & { hook_formula?: string },
+  brand?: Pick<Brand, "niche"> | null
+): string {
+  const why = String(spark.whyNow || "").trim();
+  if (why) return why;
+  const hook = String(spark.hook || spark.hook_formula || "").trim();
+  if (hook) return hook;
+  const niche = String(brand?.niche || "").trim();
+  if (niche) return niche;
+  return "";
+}
+
 export function resolveBeatSubject(params: {
   contentFormat?: "faceless" | "host" | "story" | "anime" | string;
   beatIndex: number;
@@ -363,7 +376,7 @@ export function compileDeterministicBrief(params: {
   const audiencePain = (brand.audience?.painPoints?.[0] || (brand as any).painPoints?.[0] || (brand as any).targetAudience || "").replace(/["\r\n]+/g, " ").trim();
   const audienceDesire = (brand.audience?.desires?.[0] || (brand as any).desires?.[0] || "").replace(/["\r\n]+/g, " ").trim();
   const sparkAngle = spark.angle ? spark.angle.replace(/["\r\n]+/g, " ").trim() : "";
-  const sparkWhyNow = spark.whyNow ? spark.whyNow.replace(/["\r\n]+/g, " ").trim() : "";
+  const sparkWhyNow = resolveBriefWhyNow(spark, brand).replace(/["\r\n]+/g, " ").trim();
   const sparkTitle = spark.title ? spark.title.replace(/["\r\n]+/g, " ").trim() : "";
 
   const spokenCta = defaultOffer
@@ -689,8 +702,8 @@ export function compileDeterministicBrief(params: {
       : `Vertical 9:16 framing. Presenter ${hostTitle} centered in studio set, high-contrast lower-third typography, dynamic scene transitions.`;
 
   const caption = defaultOffer
-    ? `${spark.title}\n\n${spark.whyNow || ""}\n\nGet ${defaultOffer.title} → ${defaultOffer.url}\n\n#${brand.name.replace(/\s+/g, "")} #${(niche || brand.niche || "strategy").replace(/\s+/g, "")}`
-    : `${spark.title}\n\n${spark.whyNow || ""}\n\nSave this post and follow ${brand.name} for more strategic breakdowns.`;
+    ? `${spark.title}\n\n${sparkWhyNow}\n\nGet ${defaultOffer.title} → ${defaultOffer.url}\n\n#${brand.name.replace(/\s+/g, "")} #${(niche || brand.niche || "strategy").replace(/\s+/g, "")}`
+    : `${spark.title}\n\n${sparkWhyNow}\n\nSave this post and follow ${brand.name} for more strategic breakdowns.`;
 
   const offerCta = defaultOffer
     ? {
@@ -736,11 +749,7 @@ export function compileDeterministicBrief(params: {
     visualDirection,
     caption,
     platformRecommendation: spark.platformFit || (modeKey === "deep" ? "YouTube Long-form (16:9)" : "YouTube Shorts (9:16)"),
-    whyThisWorks: researchContext
-      ? `Based on proven inspiration pattern (${researchContext.sourceName || "Inspiration Account"}: ${researchContext.format || "Structured format"}). Cites verified retention signals translated for ${brand.name}.`
-      : spark.whyNow
-      ? `Built on strategic opportunity: ${spark.whyNow}. Adapted directly to ${brand.name}'s niche authority.`
-      : `High curiosity gap paired with ${brand.name}'s executive authority.`,
+    whyThisWorks: sparkWhyNow,
     researchContext: researchContext,
     brandFitScore: spark.brandFitScore || 90,
     suggestedDuration: durationSec >= 300 ? "300-600s" : durationSec >= 120 ? "120-180s" : durationSec >= 60 ? "60-90s" : "30-45s",

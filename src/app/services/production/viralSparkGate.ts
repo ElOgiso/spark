@@ -275,7 +275,7 @@ export function autoRepairViralSparkDeterministic(
     // Honest scoring: preserve the spark's real brand-fit score. Structural repair (hook/title/
     // format/CTA) does NOT change true fit, so we no longer fake a >=88 floor. Unknown -> neutral 60.
     brandFitScore: typeof spark.brandFitScore === "number" && spark.brandFitScore > 0 ? spark.brandFitScore : 60,
-    whyNow: spark.whyNow || `High-retention strategic framework adapted for ${brandName}.`,
+    whyNow: spark.whyNow?.trim() || spark.hook?.trim() || brand?.niche?.trim() || "",
     researchContext: repairedResearchContext,
     // Deterministic repair produces a spoken hook candidate — mark ready only if gates pass
     status: isMetaHook(repairedHook) ? "draft" : "ready",

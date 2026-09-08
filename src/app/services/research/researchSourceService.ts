@@ -31,6 +31,9 @@ export interface ResearchWatchContext {
   brand?: Brand;
 }
 
+export const WATCH_FAIL_DESCRIPTION =
+  "No videos could be analysed. Sync again when captions or frames are available.";
+
 export class ResearchSourceService {
   static detectPlatform(url: string): "youtube" | "tiktok" | "instagram" | "x" | "facebook" | "linkedin" {
     const lower = url.toLowerCase();
@@ -76,6 +79,46 @@ export class ResearchSourceService {
     if (opts.forceManual) return 3;
     if (opts.successCount >= 5) return 0;
     return Math.max(0, 5 - opts.successCount);
+  }
+
+  static applyWatchOutcomeStatus(params: {
+    source: ResearchSource;
+    accepted: VideoResearch[];
+    platform?: string;
+  }): { status: ResearchSource["status"]; description?: string } {
+    const platform = params.platform || params.source.platform;
+    const isYtChannel =
+      platform === "youtube" && (params.source.sourceType || "channel") === "channel";
+    const prev = params.source.description || "";
+    if (params.accepted.length === 0 && isYtChannel) {
+      return { status: "needs_attention", description: WATCH_FAIL_DESCRIPTION };
+    }
+    if (params.accepted.length > 0) {
+      return {
+        status: "active",
+        description: prev.includes("No videos could be analysed") ? "" : prev,
+      };
+    }
+    return { status: params.source.status || "active", description: prev || undefined };
+  }
+
+  static attachAcceptedWatchFields(
+    videos: RecentVideo[],
+    watches: VideoResearch[]
+  ): RecentVideo[] {
+    return (videos || []).map((v) => {
+      const id = String(v.videoId || v.id || "").trim();
+      const t = watches.find((w) => String(w.videoId || "").trim() === id);
+      const next: RecentVideo = { ...v };
+      delete next.observationsCategorized;
+      if (t) {
+        next.hook_formula = t.hook_formula;
+        next.opening_line = t.opening_line;
+        next.cta_line = t.cta_line;
+        next.format = t.format;
+      }
+      return next;
+    });
   }
 
   static async watchRankedWinners(params: {
@@ -360,8 +403,15 @@ export class ResearchSourceService {
           })
         : { accepted: [] as VideoResearch[], ledger: [] as WatchLedgerEntry[], learnings: [] as string[] };
 
+    const outcome = this.applyWatchOutcomeStatus({
+      source: draftSource,
+      accepted: watchResult.accepted,
+      platform,
+    });
     const source: ResearchSource = {
       ...draftSource,
+      ...outcome,
+      recentVideos: this.attachAcceptedWatchFields(draftSource.recentVideos || [], watchResult.accepted),
       watchLedger: watchResult.ledger,
       learnings: watchResult.learnings,
       videoResearch: watchResult.accepted[0],
@@ -459,6 +509,9 @@ export class ResearchSourceService {
           watchLedger: ledger,
           learnings: updatedSource.learnings,
           videoResearch: vRes,
+          sourceType: updatedSource.sourceType,
+          status: updatedSource.status,
+          description: updatedSource.description,
         }).catch((err) => console.warn("[ResearchSourceService] Video source sync persist notice:", err));
       }
       return { source: updatedSource, patterns: [], videoSparks, videoMemories, brandPatch };
@@ -482,10 +535,11 @@ export class ResearchSourceService {
           })
         : { accepted: [] as VideoResearch[], ledger: this.getWatchLedger(source), learnings: source.learnings || [] };
 
-    const updatedSource: ResearchSource = {
+    const recentVideos = this.attachAcceptedWatchFields(rankedVideos, watchResult.accepted);
+    const merged: ResearchSource = {
       ...source,
       ...extracted.source,
-      recentVideos: rankedVideos,
+      recentVideos,
       topContent: extracted.source.topContent || source.topContent,
       watchLedger: watchResult.ledger,
       learnings: watchResult.learnings,
@@ -493,6 +547,12 @@ export class ResearchSourceService {
       lastSyncedAt: now,
       updatedAt: now,
     };
+    const outcome = this.applyWatchOutcomeStatus({
+      source: merged,
+      accepted: watchResult.accepted,
+      platform: source.platform,
+    });
+    const updatedSource: ResearchSource = { ...merged, ...outcome };
 
     const tickets = this.applyWatchTickets({
       brandId,
@@ -507,9 +567,12 @@ export class ResearchSourceService {
         updatedAt: now,
         watchLedger: watchResult.ledger,
         learnings: watchResult.learnings,
-        recentVideos: rankedVideos,
+        recentVideos,
         topContent: updatedSource.topContent,
         videoResearch: updatedSource.videoResearch,
+        sourceType: updatedSource.sourceType,
+        status: updatedSource.status,
+        description: updatedSource.description,
       }).catch((err) => console.warn("[ResearchSourceService] Source sync persist notice:", err));
     }
 

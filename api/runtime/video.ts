@@ -31,6 +31,66 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+export const YOUTUBE_CAPTION_LANGS = ["en", "en-US", "a.en"] as const;
+
+export function decodeTimedTextXml(xml: string): string {
+  const matches = xml.match(/<text[^>]*>([\s\S]*?)<\/text>/g);
+  if (!matches || matches.length === 0) return "";
+  return matches
+    .map((m) =>
+      m
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/\\n/g, " ")
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isYoutubeCaptionsRequest(req: VercelRequest): boolean {
+  const q = req.query || {};
+  const body = (req.body || {}) as Record<string, unknown>;
+  const action = String(q.action || body.action || "").toLowerCase();
+  if (action === "captions" || action === "timedtext") return true;
+  if (typeof q.timedtext !== "undefined") return true;
+  return false;
+}
+
+export async function fetchYoutubeTimedTextPlain(videoId: string): Promise<string> {
+  const id = String(videoId || "").trim();
+  if (!id) return "";
+  for (const lang of YOUTUBE_CAPTION_LANGS) {
+    try {
+      const url = `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(id)}&lang=${encodeURIComponent(lang)}`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const text = decodeTimedTextXml(await res.text());
+      if (text.length > 20) return text.slice(0, 3000);
+    } catch (err) {
+      console.warn("[video adapter] timedtext notice:", err);
+    }
+  }
+  return "";
+}
+
+async function handleYoutubeCaptions(req: VercelRequest, res: VercelResponse) {
+  const q = req.query || {};
+  const body = (req.body || {}) as Record<string, unknown>;
+  const videoId = String(q.v || body.videoId || body.v || "").trim();
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).send("");
+  }
+  const text = await fetchYoutubeTimedTextPlain(videoId);
+  return res.status(200).send(text);
+}
+
 /** Keep in sync with Vercel serverless limit — poll loops must finish before this. */
 export const config = {
   maxDuration: 300,
@@ -413,6 +473,10 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (isIngestMediaRequest(req)) {
     return handleIngestMedia(req, res);
+  }
+
+  if (isYoutubeCaptionsRequest(req)) {
+    return handleYoutubeCaptions(req, res);
   }
 
   if (req.method !== "POST") {

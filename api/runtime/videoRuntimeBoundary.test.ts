@@ -169,6 +169,31 @@ test("requestProductionVideoClip fails loudly when HTTP 200 has no videoUrl", as
   globalThis.fetch = originalFetch;
 });
 
+test("existing video route serves YouTube caption proxy without a 13th function", () => {
+  const videoSrc = fs.readFileSync(path.join(__dirname, "video.ts"), "utf8");
+  assert.match(videoSrc, /isYoutubeCaptionsRequest/);
+  assert.match(videoSrc, /fetchYoutubeTimedTextPlain/);
+  assert.match(videoSrc, /YOUTUBE_CAPTION_LANGS/);
+  const apiRoot = path.join(__dirname, "..");
+  const lambdas: string[] = [];
+  const walk = (dir: string) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (
+        ent.isFile() &&
+        ent.name.endsWith(".ts") &&
+        !ent.name.endsWith(".test.ts") &&
+        !ent.name.startsWith("_")
+      ) {
+        lambdas.push(p);
+      }
+    }
+  };
+  walk(apiRoot);
+  assert.ok(lambdas.length <= 12, `Hobby functions ${lambdas.length} > 12`);
+});
+
 test("I2V provider detection remains centralized for known adapters", () => {
   assert.equal(isI2vApiProvider("grok"), true);
   assert.equal(isI2vApiProvider("kling"), true);

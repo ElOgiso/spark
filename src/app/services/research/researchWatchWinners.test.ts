@@ -16,8 +16,10 @@ import {
   formatCtaPreferLaw,
   SOURCE_TRADEMARK_LAW,
 } from "./researchDepartmentService";
-import { ResearchSourceService } from "./researchSourceService";
+import { ResearchSourceService, WATCH_FAIL_DESCRIPTION } from "./researchSourceService";
+import { mergeResearchSourceMetadata } from "../../backend/repositories/researchSourceRepository";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
+import { resolveBriefWhyNow } from "../production/productionBriefService";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -230,9 +232,153 @@ describe("source laws + memory feed", () => {
     const brief = read("../production/productionBriefService.ts");
     const ranker = read("../memory/rankBrandLaws.ts");
     assert.doesNotMatch(brief, /sharp executive authority/);
+    assert.doesNotMatch(brief, /executive authority/);
     assert.doesNotMatch(ranker, /sharp executive authority/);
     assert.doesNotMatch(brief, /zero filler words/);
     assert.doesNotMatch(ranker, /zero filler words/);
+  });
+
+  it("persist + hydrate map watchLedger both directions on research_sources.metadata", () => {
+    const repo = fs.readFileSync(path.join(__dirname, "../../backend/repositories/researchSourceRepository.ts"), "utf8");
+    const sync = fs.readFileSync(path.join(__dirname, "../../backend/workspaceSync.ts"), "utf8");
+    assert.match(repo, /watchLedger:\s*Array\.isArray\(meta\.watchLedger\)\s*\?\s*meta\.watchLedger/);
+    assert.match(repo, /watchLedger:\s*\(values as any\)\.watchLedger/);
+    assert.match(repo, /mergeResearchSourceMetadata/);
+    assert.match(repo, /metadataPatch\.watchLedger/);
+    assert.match(repo, /metadataPatch\.learnings/);
+    assert.match(repo, /metadataPatch\.sourceType/);
+    assert.match(repo, /metadataPatch\.videoResearch/);
+    assert.match(sync, /persistResearchSourceCreate/);
+    assert.match(sync, /persistResearchSourceUpdate/);
+    assert.match(sync, /listResearchSources/);
+  });
+
+  it("update metadata merge keeps watchLedger when only lastSyncedAt is patched", () => {
+    const merged = mergeResearchSourceMetadata(
+      {
+        watchLedger: [{ watchedVideoKey: "youtube:abc", status: "watched" }],
+        learnings: ["Curiosity then payoff"],
+        sourceType: "channel",
+        videoResearch: { videoId: "abc" },
+        avatar: "https://img",
+      },
+      { lastSyncedAt: "2026-09-08T00:00:00.000Z" }
+    );
+    assert.deepEqual(merged.watchLedger, [{ watchedVideoKey: "youtube:abc", status: "watched" }]);
+    assert.deepEqual(merged.learnings, ["Curiosity then payoff"]);
+    assert.equal(merged.sourceType, "channel");
+    assert.equal((merged.videoResearch as any).videoId, "abc");
+    assert.equal(merged.lastSyncedAt, "2026-09-08T00:00:00.000Z");
+    assert.equal(merged.avatar, "https://img");
+  });
+
+  it("youtube channel with 0 accepted is needs_attention; accepted clears it", () => {
+    const fail = ResearchSourceService.applyWatchOutcomeStatus({
+      source: {
+        platform: "youtube",
+        sourceType: "channel",
+        description: "Channel about ops",
+        status: "active",
+      } as any,
+      accepted: [],
+    });
+    assert.equal(fail.status, "needs_attention");
+    assert.equal(fail.description, WATCH_FAIL_DESCRIPTION);
+    const tickets = ResearchSourceService.applyWatchTickets({
+      source: { id: "src", platform: "youtube", displayName: "Chan", username: "@c", url: "https://youtube.com/@c" } as any,
+      watches: [],
+    });
+    assert.equal(tickets.videoSparks.length, 0);
+    assert.equal(tickets.videoMemories.length, 0);
+    const ok = ResearchSourceService.applyWatchOutcomeStatus({
+      source: {
+        platform: "youtube",
+        sourceType: "channel",
+        description: WATCH_FAIL_DESCRIPTION,
+        status: "needs_attention",
+      } as any,
+      accepted: [acceptedWatch()],
+    });
+    assert.equal(ok.status, "active");
+    assert.equal(ok.description, "");
+  });
+
+  it("second sync does not analyzeVideo for watched ledger keys", async () => {
+    let calls = 0;
+    const orig = VideoUnderstandingProvider.analyzeVideo;
+    VideoUnderstandingProvider.analyzeVideo = async () => {
+      calls += 1;
+      return acceptedWatch();
+    };
+    try {
+      const source = {
+        id: "src",
+        platform: "youtube",
+        sourceType: "channel",
+        url: "https://youtube.com/@c",
+        username: "@c",
+        displayName: "Chan",
+        watchLedger: [{ watchedVideoKey: "youtube:v1", status: "watched", watchedAt: "2026-01-01T00:00:00.000Z" }],
+        learnings: ["fp"],
+      } as any;
+      const out = await ResearchSourceService.watchRankedWinners({
+        source,
+        videos: [{ id: "v1", videoId: "v1", title: "watched already", viewCount: 99 }] as any,
+        forceManual: true,
+        isRegister: false,
+      });
+      assert.equal(calls, 0);
+      assert.equal(out.accepted.length, 0);
+      assert.equal(out.ledger.filter((e) => e.watchedVideoKey === "youtube:v1").length, 1);
+    } finally {
+      VideoUnderstandingProvider.analyzeVideo = orig;
+    }
+  });
+
+  it("whyNow brief fallback is hook then niche then empty — no invented flavor", () => {
+    assert.equal(resolveBriefWhyNow({ whyNow: "Margins compress", hook: "Ignore me" } as any, { niche: "AI ops" }), "Margins compress");
+    assert.equal(resolveBriefWhyNow({ whyNow: "", hook: "Stop scrolling at second three." } as any, { niche: "AI ops" }), "Stop scrolling at second three.");
+    assert.equal(resolveBriefWhyNow({ whyNow: "", hook: "", hook_formula: "Name the loss" } as any, { niche: "AI ops" }), "Name the loss");
+    assert.equal(resolveBriefWhyNow({ whyNow: "", hook: "" } as any, { niche: "AI ops" }), "AI ops");
+    assert.equal(resolveBriefWhyNow({ whyNow: "", hook: "" } as any, { niche: "" }), "");
+    const brief = read("../production/productionBriefService.ts");
+    assert.doesNotMatch(brief, /High curiosity gap paired with/);
+    assert.doesNotMatch(brief, /executive authority/);
+    const drawer = fs.readFileSync(path.join(__dirname, "../../components/MySpark.tsx"), "utf8");
+    assert.doesNotMatch(drawer, /observationsCategorized/);
+    assert.doesNotMatch(drawer, /SPARK Analysis Observations/);
+  });
+
+  it("origin caption proxy lives on existing /api/runtime/video and Hobby functions stay at 12", () => {
+    const videoSrc = fs.readFileSync(path.join(__dirname, "../../../../api/runtime/video.ts"), "utf8");
+    assert.match(videoSrc, /isYoutubeCaptionsRequest/);
+    assert.match(videoSrc, /fetchYoutubeTimedTextPlain/);
+    assert.match(videoSrc, /en-US/);
+    assert.match(videoSrc, /a\.en/);
+    const vu = read("providers/VideoUnderstandingProvider.ts");
+    assert.match(vu, /\/api\/runtime\/video\?action=captions/);
+    assert.match(vu, /res\.status === 404/);
+    const xml = `<transcript><text start="0">Hello &amp; welcome</text><text>to the show&#39;s open</text></transcript>`;
+    assert.equal(VideoUnderstandingProvider.decodeTimedTextXml(xml), "Hello & welcome to the show's open");
+    const apiRoot = path.join(__dirname, "../../../../api");
+    const lambdas: string[] = [];
+    const walk = (dir: string) => {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, ent.name);
+        if (ent.isDirectory()) walk(p);
+        else if (
+          ent.isFile() &&
+          ent.name.endsWith(".ts") &&
+          !ent.name.endsWith(".test.ts") &&
+          !ent.name.startsWith("_")
+        ) {
+          lambdas.push(p);
+        }
+      }
+    };
+    walk(apiRoot);
+    assert.ok(lambdas.length <= 12, `Hobby functions ${lambdas.length} > 12: ${lambdas.join(", ")}`);
+    assert.ok(lambdas.some((p) => p.endsWith(`${path.sep}video.ts`)));
   });
 
   it("ranker puts pinned and hook laws first and caps at 10", () => {

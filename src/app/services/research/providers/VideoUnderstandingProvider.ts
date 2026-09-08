@@ -125,27 +125,74 @@ export class VideoUnderstandingProvider {
     }
   }
 
+  static decodeTimedTextXml(xml: string): string {
+    const matches = xml.match(/<text[^>]*>([\s\S]*?)<\/text>/g);
+    if (!matches || matches.length === 0) return "";
+    return matches
+      .map((m) =>
+        m
+          .replace(/<[^>]+>/g, "")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&apos;/g, "'")
+          .replace(/\\n/g, " ")
+      )
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  static async fetchTranscriptClient(videoId: string): Promise<string | undefined> {
+    const langs = ["en", "en-US", "a.en"];
+    for (const lang of langs) {
+      try {
+        const res = await fetch(
+          `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(videoId)}&lang=${encodeURIComponent(lang)}`
+        );
+        if (!res.ok) continue;
+        const text = this.decodeTimedTextXml(await res.text());
+        if (text.length > 20) return text.slice(0, 3000);
+      } catch (err) {
+        console.warn("[VideoUnderstandingProvider] Client caption fetch notice:", err);
+      }
+    }
+    return undefined;
+  }
+
   /**
-   * Stage 2: Fetch public transcript / timed text captions for video
+   * Stage 2: Origin timedtext proxy first (avoids browser CORS). Client YouTube
+   * timedtext only if that route is missing (404).
    */
   static async fetchTranscript(videoId: string, platform: string): Promise<string | undefined> {
-    if (platform !== "youtube") return undefined;
+    if (platform !== "youtube" || !videoId) return undefined;
+    let routeMissing = false;
     try {
-      const res = await fetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`);
-      if (res.ok) {
-        const xml = await res.text();
-        const matches = xml.match(/<text[^>]*>(.*?)<\/text>/g);
-        if (matches && matches.length > 0) {
-          const text = matches
-            .map((m) => m.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#39;/g, "'"))
-            .join(" ")
-            .trim();
-          if (text.length > 20) return text.slice(0, 3000);
+      const res = await fetch(`/api/runtime/video?action=captions&v=${encodeURIComponent(videoId)}`);
+      if (res.status === 404) {
+        routeMissing = true;
+      } else if (res.ok) {
+        const raw = (await res.text()).trim();
+        if (raw.length > 20 && !raw.startsWith("{")) return raw.slice(0, 3000);
+        if (raw.startsWith("{")) {
+          try {
+            const data = JSON.parse(raw);
+            const text = typeof data.text === "string" ? data.text.trim() : "";
+            if (text.length > 20) return text.slice(0, 3000);
+          } catch {
+            /* empty or non-caption JSON */
+          }
         }
+        return undefined;
+      } else {
+        return undefined;
       }
     } catch (err) {
-      console.warn("[VideoUnderstandingProvider] Caption fetch notice:", err);
+      console.warn("[VideoUnderstandingProvider] Origin caption fetch notice:", err);
     }
+    if (routeMissing) return this.fetchTranscriptClient(videoId);
     return undefined;
   }
 

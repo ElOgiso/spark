@@ -541,6 +541,10 @@ export interface RecentVideo {
   pacingText?: string;
   topicText?: string;
   whySelected?: string;
+  hook_formula?: string;
+  opening_line?: string;
+  cta_line?: string;
+  format?: string;
 }
 
 export interface CuratedContentItem {
@@ -595,7 +599,7 @@ export interface ResearchSource {
   country?: string;
   creationDate?: string;
   lastSyncedAt?: string;
-  status: "active" | "syncing" | "error" | "unavailable";
+  status: "active" | "syncing" | "error" | "unavailable" | "needs_attention";
   videoInsights?: VideoInsightSummary[];
   observations?: ResearchObservation[];
   recentVideos?: RecentVideo[];
