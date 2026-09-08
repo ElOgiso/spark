@@ -25,7 +25,12 @@ export interface SceneMotionLock {
   /** Readable end pose for the clip. */
   endPose: string;
   /** Where the first-frame still came from. */
-  sourceStill: "storyboard_panel" | "scene_still" | "revised_still" | "unknown";
+  sourceStill:
+    | "storyboard_panel"
+    | "storyboard_panel_needs_fix"
+    | "scene_still"
+    | "revised_still"
+    | "unknown";
   /** Visual genre frozen with the still. */
   visualGenre?: string;
   cinematicCraft?: boolean;

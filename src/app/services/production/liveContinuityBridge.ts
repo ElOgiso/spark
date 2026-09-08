@@ -301,23 +301,20 @@ export async function assembleMasterFromClips(
   params: AssembleMasterFromClipsParams
 ): Promise<{
   publicUrl?: string;
-  blob?: Blob;
+  storagePath?: string;
   mimeType: string;
-  extension: "webm" | "mp4";
+  extension: "mp4";
   durationSec: number;
   provider?: string;
+  error?: string;
 } | null> {
   const { mergeSceneVideos } = await import("./sceneVideoMerger");
-  // Prefer VO as mix bed; if no VO but SFX exists, attach SFX so cinematic masters aren't silent of bed
-  const audioUrl = params.audioUrl || params.sfxUrl;
+  // Narrator-only VO bed. Do not treat SFX as the social master audio.
   return mergeSceneVideos({
     productionId: params.productionId,
     brandId: params.brandId,
     videoUrls: params.videoUrls,
-    audioUrl,
-    onScreenTexts: params.onScreenTexts,
-    width: params.width,
-    height: params.height,
+    audioUrl: params.audioUrl,
     timeoutMs: params.timeoutMs ?? 120000,
   });
 }

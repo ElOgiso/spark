@@ -7,6 +7,7 @@ import path from "path";
 import os from "os";
 import { persistVideoBuffer } from "./_sparkStorage.js";
 import { handleIngestMedia, isIngestMediaRequest } from "./_ingestMedia.js";
+import { collectSparkShotClipUrls } from "./_sparkShotClips.js";
 import {
   SEEDANCE_MODEL_15_PRO,
   SEEDANCE_POLL_INTERVAL_MS,
@@ -433,11 +434,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       audioUrl,
     } = body;
 
-    // 0. Serverless FFmpeg Video Muxing (Concat I2V-continuous scene clips into master)
-    if (provider === "mux" || action === "mux" || (Array.isArray(videoUrls) && !provider)) {
-      const validUrls = (videoUrls || []).filter((u: any) => typeof u === "string" && u.trim().startsWith("http"));
+    // 0. Serverless FFmpeg merge (concat Spark shot-N.mp4 → video/master.mp4)
+    if (
+      provider === "mux" ||
+      action === "mux" ||
+      action === "merge" ||
+      (Array.isArray(videoUrls) && !provider)
+    ) {
+      const validUrls = collectSparkShotClipUrls(
+        (videoUrls || []).filter((u: any) => typeof u === "string")
+      );
       if (validUrls.length === 0) {
-        return res.status(400).json({ error: "No valid HTTP video URLs provided for muxing" });
+        return res.status(200).json({
+          success: false,
+          error: "NO_DURABLE_SHOT_CLIPS",
+          message:
+            "No Spark storage shot-N.mp4 clips to merge. Approve & merge needs brands/{brandId}/{productionId}/video/shot-N.mp4.",
+        });
       }
 
       let ffmpegPath = "ffmpeg";
@@ -447,9 +460,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({
           success: false,
           ffmpegAvailable: false,
-          fallbackToClient: true,
           error: "FFMPEG_UNAVAILABLE",
-          message: "Serverless FFmpeg binary not available on host. Use client Canvas mux fallback.",
+          message:
+            "ffmpeg is not available on this serverless image. Cannot write brands/{brandId}/{productionId}/video/master.mp4.",
         });
       }
 
@@ -558,8 +571,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error("[ServerlessMux] Execution error:", err);
         return res.status(200).json({
           success: false,
-          fallbackToClient: true,
           error: err?.message || String(err),
+          message: `Server ffmpeg merge failed: ${err?.message || String(err)}`,
         });
       } finally {
         try {

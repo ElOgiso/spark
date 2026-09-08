@@ -2,6 +2,7 @@
  * Storyboard sheet panels ARE scene stills — crop geometry + extract contract.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import {
   computePanelCropRects,
@@ -68,6 +69,13 @@ test("computePanelCropRects stops at panelCount even if grid is larger", () => {
   });
   assert.equal(rects.length, 5);
   assert.equal(rects[4].panelIndex, 4);
+});
+
+test("geometry miss still crops — source never returns empty panels before crop", () => {
+  const src = fs.readFileSync(new URL("./extractStoryboardSheetPanels.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /if \(!geo\.ok\)[\s\S]{0,220}panels:\s*\[\]/);
+  assert.match(src, /keeping best-effort panel crops/);
+  assert.match(src, /never invent a second full-bleed/);
 });
 
 test("extractStoryboardSheetPanels returns [] without browser canvas", async () => {

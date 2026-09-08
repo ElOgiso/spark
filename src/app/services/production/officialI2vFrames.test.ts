@@ -50,6 +50,47 @@ describe("official i2v frame 1 contract", () => {
     assert.equal(frames.firstFrameUrl, still);
   });
 
+  it("prefers next-panel plannedEnd over previous last-frame extract", () => {
+    const first = "https://cdn.example.com/scenes/scene-01.png";
+    const nextPanel = "https://cdn.example.com/scenes/scene-02.png";
+    const prevLast = "https://cdn.example.com/scenes/scene-00-last.jpg";
+    const frames = resolveOfficialI2vClipFrames({
+      sceneImage: first,
+      previousLastFrameUrl: prevLast,
+      plannedEndUrl: nextPanel,
+    });
+    assert.equal(frames.firstFrameUrl, first);
+    assert.equal(frames.lastFrameUrl, nextPanel);
+    assert.equal(frames.endFrameUrl, nextPanel);
+    assert.notEqual(frames.lastFrameUrl, first);
+    assert.notEqual(frames.lastFrameUrl, prevLast);
+  });
+
+  it("falls back to previous last-frame extract when next panel crop is missing", () => {
+    const first = "https://cdn.example.com/scenes/scene-02.png";
+    const prevLast = "https://cdn.example.com/scenes/scene-01-last.jpg";
+    const frames = resolveOfficialI2vClipFrames({
+      sceneImage: first,
+      previousLastFrameUrl: prevLast,
+    });
+    assert.equal(frames.lastFrameUrl, prevLast);
+    assert.equal(frames.endFrameUrl, prevLast);
+  });
+
+  it("never uses the storyboard sheet or firstFrame as lastFrame", () => {
+    const first = "https://cdn.example.com/scenes/scene-01.png";
+    const sheet = "https://cdn.example.com/storyboard/sheet-01.png";
+    const frames = resolveOfficialI2vClipFrames({
+      sceneImage: first,
+      previousLastFrameUrl: first,
+      plannedEndUrl: sheet,
+      forbidden: { gridUrl: sheet },
+    });
+    assert.equal(frames.firstFrameUrl, first);
+    assert.equal(frames.lastFrameUrl, undefined);
+    assert.equal(frames.endFrameUrl, undefined);
+  });
+
   it("never uses character sheet or location plate as frame 1", () => {
     const sheet = "https://cdn.example.com/character/sheet.png";
     const plate = "https://cdn.example.com/location/plate.png";

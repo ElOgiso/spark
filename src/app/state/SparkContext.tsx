@@ -2587,6 +2587,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           }
         }
+      } else if (prod.lastError) {
+        throw new Error(String(prod.lastError));
       }
       return masterUrl;
     },

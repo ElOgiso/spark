@@ -21,6 +21,7 @@ import {
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
+import { collectSparkShotClipUrls } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
 import {
   resolveGenerationSettings,
@@ -1458,10 +1459,12 @@ export class ProductionAssetService {
       });
       /** Panel crops from the locked sheet — skip ModelRouter still regen when set. */
       const sheetPanelSceneUrls: (string | undefined)[] = new Array(currentStoryboard.length);
-      if ((!hasRealStoryboardSheet || forceRegenerate) && currentStoryboard.length > 0) {
+
+      const renderStoryboardSheetOnce = async (label: string): Promise<boolean> => {
+        if (currentStoryboard.length === 0) return false;
         try {
           checkAborted();
-          emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels)...`);
+          emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels, ${label})...`);
           const sheetCompiled = compileLiveStoryboardSheetPrompt({
             scenes: currentStoryboard,
             aspectRatio: identityPack.aspectRatio,
@@ -1488,7 +1491,7 @@ export class ProductionAssetService {
             console.log(`[SPARK Pipeline] Director refs (sheet): ${sheetLock.directorNotes.join("; ")}`);
           }
           console.log(
-            `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels) via ModelRouter ("storyboardImages")...`
+            `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels, ${label}) via ModelRouter ("storyboardImages")...`
           );
           const { ModelRouter: SheetRouter } = await import("../runtime/modelRouter");
           const sheetImgUrl = await withTimeout(
@@ -1531,17 +1534,23 @@ export class ProductionAssetService {
             hasRealStoryboardSheet = true;
             emitProgress(20, "Keyframes", `Storyboard sheet locked (${sheetCompiled.sheetLabel}, ${frameLock.aspectRatio}). Validating panel geometry...`);
             void persistCurrentStage("Storyboard-Sheet");
-          } else {
-            console.warn("[SPARK Pipeline] Storyboard sheet returned empty/invalid image — continuing with per-scene stills");
+            return true;
           }
+          console.warn("[SPARK Pipeline] Storyboard sheet returned empty/invalid image — no parallel still pipeline");
+          return hasRealStoryboardSheet;
         } catch (sheetErr: any) {
           if (sheetErr?.name === "AbortError" || signal?.aborted) throw sheetErr;
           console.warn("[SPARK Pipeline] Storyboard sheet generation notice:", sheetErr);
           if (!lastError) lastError = `Storyboard Sheet: ${sheetErr?.message || String(sheetErr)}`;
+          return hasRealStoryboardSheet;
         }
+      };
+
+      if ((!hasRealStoryboardSheet || forceRegenerate) && currentStoryboard.length > 0) {
+        await renderStoryboardSheetOnce(forceRegenerate ? "forceRegenerate" : "initial");
       }
 
-      // PART 0b — Crop sheet panels → scene.image ONLY when cell AR matches Frame Lock
+      // PART 0b — Crop sheet panels → scene.image. Geometry miss: retry THE SHEET once, keep best crop.
       if (hasRealStoryboardSheet && realGridUrl && currentStoryboard.length > 0) {
         try {
           checkAborted();
@@ -1559,25 +1568,33 @@ export class ProductionAssetService {
             "Keyframes",
             `Extracting ${panelCountForSheet} scene panels (${sheetLayout} ${grid.cols}×${grid.rows}, lock ${frameLock.aspectRatio})...`
           );
-          const extracted = await extractStoryboardSheetPanelsDetailed({
-            sheetUrl: realGridUrl,
-            layout: sheetLayout,
-            panelCount: panelCountForSheet,
-            frameLock,
-          });
+          const runExtract = () =>
+            extractStoryboardSheetPanelsDetailed({
+              sheetUrl: realGridUrl as string,
+              layout: sheetLayout,
+              panelCount: panelCountForSheet,
+              frameLock,
+            });
+          let extracted = await runExtract();
           if (!extracted.geometryOk) {
             console.warn(
-              `[SPARK Pipeline] Panel geometry gate FAILED — ${extracted.geometryReason}. Regenerating native ${frameLock.aspectRatio} stills.`
+              `[SPARK Pipeline] Panel geometry gate FAILED — ${extracted.geometryReason}. Regenerating THE SHEET once (not native stills).`
             );
-            if (!brief.generatedAssets) brief.generatedAssets = {};
-            (brief.generatedAssets as any).storyboardPanelGeometry = {
-              ok: false,
-              reason: extracted.geometryReason,
-              frameLockId: frameLock.frameLockId,
-            };
-          } else if (extracted.panels.length > 0) {
+            await renderStoryboardSheetOnce("geometry-retry");
+            extracted = await runExtract();
+          }
+          const sourceStill = extracted.geometryOk ? "storyboard_panel" : "storyboard_panel_needs_fix";
+          if (!brief.generatedAssets) brief.generatedAssets = {};
+          (brief.generatedAssets as any).storyboardPanelGeometry = {
+            ok: extracted.geometryOk,
+            reason: extracted.geometryReason,
+            frameLockId: frameLock.frameLockId,
+            sourceStill,
+            panelCount: extracted.panels.length,
+          };
+          if (extracted.panels.length > 0) {
             console.log(
-              `[SPARK Pipeline] Extracted ${extracted.panels.length}/${panelCountForSheet} Frame-Locked panels (${frameLock.aspectRatio}) — using as scene stills`
+              `[SPARK Pipeline] Extracted ${extracted.panels.length}/${panelCountForSheet} sheet panels (${sourceStill}, ${frameLock.aspectRatio}) — using as scene stills`
             );
             for (let pIdx = 0; pIdx < extracted.panels.length && pIdx < currentStoryboard.length; pIdx++) {
               checkAborted();
@@ -1591,7 +1608,7 @@ export class ProductionAssetService {
                   storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
                   dataUrlOrBlob: finalStill,
                   mimeType: "image/jpeg",
-                  prompt: `Frame-locked storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio})`,
+                  prompt: `Storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio}, ${sourceStill})`,
                   provider: "storyboardPanelExtract",
                 });
                 if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
@@ -1603,14 +1620,14 @@ export class ProductionAssetService {
               const s = currentStoryboard[pIdx];
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
-              (s as any).sourceStill = "storyboard_panel";
+              (s as any).sourceStill = sourceStill;
               attachSceneMotionLock(s, {
                 environment: identityPack.environmentString,
                 contentFormat: effectiveContentFormat,
                 visualGenre: effectiveVisualGenre,
                 cinematicCraft: activeFormatSettings.cinematicCraft !== false,
                 sceneIndexZeroBased: pIdx,
-                sourceStill: "storyboard_panel",
+                sourceStill,
                 stillUrl: finalStill,
                 beat: brief?.beats?.[pIdx],
               });
@@ -1622,22 +1639,18 @@ export class ProductionAssetService {
                 physicalAction: (s as any).physicalAction,
               };
             }
-            if (!brief.generatedAssets) brief.generatedAssets = {};
             (brief.generatedAssets as any).storyboardPanelsExtracted = extracted.panels.length;
-            (brief.generatedAssets as any).storyboardPanelGeometry = {
-              ok: true,
-              reason: extracted.geometryReason,
-              frameLockId: frameLock.frameLockId,
-            };
             emitProgress(
               22,
               "Keyframes",
-              `Locked ${extracted.panels.length} native ${frameLock.aspectRatio} panels (skipping redundant still regen)...`
+              extracted.geometryOk
+                ? `Locked ${extracted.panels.length} native ${frameLock.aspectRatio} panels (skipping still regen)...`
+                : `Kept ${extracted.panels.length} best sheet crops after geometry miss (no invented stills)...`
             );
             void persistCurrentStage("Storyboard-Panels");
           } else {
             console.warn(
-              "[SPARK Pipeline] Panel extract returned empty — falling back to per-scene native still generation"
+              "[SPARK Pipeline] Panel extract returned empty after sheet retry — not inventing full-bleed stills"
             );
           }
         } catch (panelErr: any) {
@@ -1650,14 +1663,16 @@ export class ProductionAssetService {
       try {
         const { ModelRouter } = await import("../runtime/modelRouter");
 
-        const needStillRegen = currentStoryboard.some(
-          (_, i) => !isValidMediaData(sheetPanelSceneUrls[i])
-        );
-        if (needStillRegen) {
+        const needStillRegen =
+          !hasRealStoryboardSheet &&
+          currentStoryboard.some((_, i) => !isValidMediaData(sheetPanelSceneUrls[i]));
+        if (hasRealStoryboardSheet) {
+          emitProgress(23, "Keyframes", `Sheet exists — scene stills are board crops only (no still regen)...`);
+        } else if (needStillRegen) {
           emitProgress(
             23,
             "Keyframes",
-            `Rendering remaining full-bleed scene stills where panel crop missing (${aspectRatio})...`
+            `No storyboard sheet — rendering full-bleed scene stills (${aspectRatio})...`
           );
         } else {
           emitProgress(23, "Keyframes", `All scene stills sourced from storyboard panels — skipping still regen...`);
@@ -1683,7 +1698,10 @@ export class ProductionAssetService {
                 visualGenre: effectiveVisualGenre,
                 cinematicCraft: activeFormatSettings.cinematicCraft !== false,
                 sceneIndexZeroBased: sIdx,
-                sourceStill: "storyboard_panel",
+                sourceStill:
+                  (s as any).sourceStill === "storyboard_panel_needs_fix"
+                    ? "storyboard_panel_needs_fix"
+                    : "storyboard_panel",
                 stillUrl: panelStill as string,
                 beat: brief?.beats?.[sIdx],
               });
@@ -1702,6 +1720,13 @@ export class ProductionAssetService {
               `Scene ${globalSceneNum} of ${currentStoryboard.length} locked from storyboard panel...`
             );
             void persistCurrentStage(`Scene-Still-${globalSceneNum}`);
+            continue;
+          }
+
+          if (hasRealStoryboardSheet) {
+            console.warn(
+              `[SPARK Pipeline] Scene ${globalSceneNum}: sheet exists but no panel crop — not inventing a full-bleed still`
+            );
             continue;
           }
 
@@ -2249,6 +2274,12 @@ export class ProductionAssetService {
                 plannedEndUrl: nextScene?.image || sceneImages[sIdx + 1] || continuityPlan.endFrameUrl,
                 forbidden: {
                   gridUrl: realGridUrl,
+                  sheetUrls: [
+                    character?.characterSheetUrl,
+                    character?.imageUrl,
+                    character?.avatarUrl,
+                  ],
+                  plateUrl: durableLocationPlateUrl,
                 },
                 sceneLabel: `Scene ${globalSceneNum}`,
               });
@@ -2261,7 +2292,7 @@ export class ProductionAssetService {
                 );
               }
               console.log(
-                `[SPARK Pipeline] Official I2V Scene ${globalSceneNum}: frame1=shot still lastFrame=${Boolean(sceneLastFrame)} (continuityPlan mode=${continuityPlan.mode})`
+                `[SPARK Pipeline] Official I2V Scene ${globalSceneNum}: frame1=panel/shot still lastFrame=${Boolean(sceneLastFrame)} nextPanel=${Boolean(nextScene?.image || sceneImages[sIdx + 1])} (continuityPlan mode=${continuityPlan.mode})`
               );
 
               // Consistency Gate: scene image must exist
@@ -2346,7 +2377,7 @@ export class ProductionAssetService {
                 `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} shot still)`,
               ];
               if (isChainingLastFrame) {
-                refLabels.push(`INPUT REF [lastFrame]: Previous shot extracted last frame (official continuity)`);
+                refLabels.push(`INPUT REF [lastFrame]: Next panel crop (or previous last-frame extract as fallback)`);
               }
               if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
                 refLabels.push(`Character sheet logged for Review (not i2v start): ${activeChar?.name || "Host"}`);
@@ -2679,24 +2710,10 @@ export class ProductionAssetService {
                   (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
                   (production as any).canonicalMasterUrl = mergeResult.publicUrl;
                   console.log(`[SPARK Pipeline] Autonomous Serverless Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
-                } else if (mergeResult && mergeResult.blob && mergeResult.blob.size > 0) {
-                  const ext = mergeResult.extension || "mp4";
-                  const storedMergedVid = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "video",
-                    storagePath: getStoragePath(`video/master.${ext}`),
-                    dataUrlOrBlob: mergeResult.blob,
-                    mimeType: mergeResult.mimeType || `video/${ext}`,
-                    prompt: `Merged ${mode} master video from ${sceneClips.length} scenes`,
-                    provider: mergeResult.provider || "SceneVideoMerger",
-                  });
-                  if (storedMergedVid?.publicUrl && isDurableMasterVideoReady(storedMergedVid.publicUrl)) {
-                    realVideoUrl = storedMergedVid.publicUrl;
-                    (brief as any).canonicalMasterUrl = storedMergedVid.publicUrl;
-                    (production as any).canonicalMasterUrl = storedMergedVid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Autonomous Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
-                  }
+                } else {
+                  console.warn(
+                    "[SPARK Pipeline] Autonomous merge did not produce a server ffmpeg master — not using Canvas/MediaRecorder"
+                  );
                 }
               } catch (mergeErr: any) {
                 console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
@@ -4005,198 +4022,32 @@ export class ProductionAssetService {
       return production.videoUrl || null;
     }
 
-    // Ensure all scene clips are uploaded to durable Spark storage before merging
-    const durableReadyClips: string[] = [];
     const orderedScenes = [...scenes].sort((a, b) => (a.index || a.scene) - (b.index || b.scene));
-
-    for (const s of orderedScenes) {
-      if (s.videoUrl && isPlayableVideoUrl(s.videoUrl)) {
-        let clipUrl = s.videoUrl;
-        if (!isStorageVerifiedVideoUrl(clipUrl)) {
-          try {
-            const sceneIdx = s.scene || s.index || 1;
-            const stored = await ProductionAssetService.uploadAssetToStorage({
-              productionId,
-              brandId: (brand as any)?.id,
-              assetType: "video",
-              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/scene-${sceneIdx}.mp4`),
-              dataUrlOrBlob: clipUrl,
-              mimeType: "video/mp4",
-              prompt: `Scene ${sceneIdx} durable video clip`,
-              provider: "SceneClipStoragePersist",
-            });
-            if (stored?.uploadSuccess && stored.publicUrl && isPersistableSparkMediaUrl(stored.publicUrl)) {
-              clipUrl = stored.publicUrl;
-              s.videoUrl = clipUrl;
-            }
-          } catch (e) {
-            console.warn("[ProductionAssetService] Ephemeral clip storage upload notice:", e);
-          }
-        }
-        if (isPersistableSparkMediaUrl(clipUrl)) {
-          durableReadyClips.push(clipUrl);
-        }
-      }
-    }
-
-    const readyClips = durableReadyClips;
+    const clipCandidates = [
+      ...orderedScenes.map((s) => s.videoUrl),
+      ...((brief.generatedAssets?.generatedVideos || []) as Array<string | undefined>),
+    ];
+    const readyClips = collectSparkShotClipUrls(clipCandidates);
 
     const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
     const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
-    const targetMergeTexts = collectSceneCaptionLines(
-      scenes,
-      brief.beats,
-      brief.hook,
-      formatBurnedOnScreenText
-    );
-    const mergeSfxUrl =
-      (brief.generatedAssets as any)?.sfxUrl ||
-      (brief as any).sfxUrl ||
-      undefined;
 
-    if (readyClips.length === 0) {
-      const allStills = scenes
-        .map((s, idx) => s.image || brief.storyboard?.[idx]?.image || brief.generatedAssets?.generatedFrames?.[idx])
-        .filter(Boolean) as string[];
-      const voAudio = brief.audioUrl || production.audioUrl || brief.generatedAssets?.voiceoverUrl;
-      if (allStills.length > 0 && voAudio) {
-        try {
-          const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
-          const compileRes = await compileNarratorSlideshowVideo({
-            imageUrls: allStills,
-            audioUrl: voAudio,
-            onScreenTexts: targetMergeTexts,
-          });
-          if (compileRes?.blob && compileRes.blob.size > 0) {
-            const ext = compileRes.extension || "mp4";
-            const stored = await ProductionAssetService.uploadAssetToStorage({
-              productionId,
-              brandId: (brand as any).id,
-              assetType: "video",
-              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/master.${ext}`),
-              dataUrlOrBlob: compileRes.blob,
-              mimeType: compileRes.mimeType,
-              prompt: "Narrator compiled master video",
-              provider: "NarratorSlideshowCompiler",
-            });
-            if (stored?.publicUrl && isDurableMasterVideoReady(stored.publicUrl)) {
-              production.videoUrl = stored.publicUrl;
-              production.videoStoragePath = stored.storagePath || extractSparkStoragePath(stored.publicUrl) || undefined;
-              brief.videoUrl = stored.publicUrl;
-              brief.video_storage_path = production.videoStoragePath;
-              production.status = "Ready for Review";
-              production.generationProgress = {
-                stage: "Complete",
-                percent: 100,
-                message: "Master film compiled and saved to Spark storage",
-                stages: production.generationProgress?.stages || [],
-              };
-              return stored.publicUrl;
-            }
-          }
-        } catch (narrErr) {
-          console.warn("[ProductionAssetService] Narrator merge fallback notice:", narrErr);
-        }
-      }
-      
-      if (isDurableMasterVideoReady(production.videoUrl)) {
-        return production.videoUrl || null;
-      }
+    const failMerge = (message: string) => {
       production.status = "Failed";
-      production.lastError = "Merge did not produce a Spark master";
+      production.lastError = message;
       production.generationProgress = {
         stage: "Failed",
         percent: 0,
-        message: "Merge did not produce a Spark master",
+        message,
         stages: production.generationProgress?.stages || [],
       };
       return null;
-    }
+    };
 
-    if (readyClips.length === 1 && scenes.length > 1) {
-      // HYBRID MUX: Hook video clip (scene 1) + remaining scene stills timed to VO audio
-      const remainingStills = scenes
-        .slice(1)
-        .map((s, idx) => s.image || brief.storyboard?.[idx + 1]?.image || brief.generatedAssets?.generatedFrames?.[idx + 1])
-        .filter(Boolean) as string[];
-      const hybridAudioUrl = brief.audioUrl || production.audioUrl || brief.generatedAssets?.voiceoverUrl;
-
-      if (remainingStills.length > 0) {
-        try {
-          const { compileHybridVideo } = await import("./narratorVideoCompiler");
-          const hybridResult = await compileHybridVideo({
-            hookVideoUrl: readyClips[0],
-            remainingImageUrls: remainingStills,
-            audioUrl: hybridAudioUrl,
-            onScreenTexts: targetMergeTexts,
-          });
-
-          if (hybridResult && hybridResult.blob && hybridResult.blob.size > 0) {
-            const ext = hybridResult.extension || "mp4";
-            const storedMaster = await ProductionAssetService.uploadAssetToStorage({
-              productionId,
-              brandId: (brand as any).id,
-              assetType: "video",
-              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/master.${ext}`),
-              dataUrlOrBlob: hybridResult.blob,
-              mimeType: hybridResult.mimeType,
-              prompt: "Merged Hybrid Master Video (Hook Video + Narrator Stills)",
-              provider: "HybridVideoCompiler",
-            });
-
-            if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
-              const masterUrl = storedMaster.publicUrl;
-              production.videoUrl = masterUrl;
-              production.videoStoragePath = storedMaster.storagePath || extractSparkStoragePath(masterUrl) || undefined;
-              brief.videoUrl = masterUrl;
-              brief.video_storage_path = production.videoStoragePath;
-              if (!brief.generatedAssets) brief.generatedAssets = {};
-              brief.generatedAssets.generatedVideos = [masterUrl];
-              production.status = "Ready for Review";
-              production.generationProgress = {
-                stage: "Complete",
-                percent: 100,
-                message: "Master film compiled and saved to Spark storage",
-                stages: production.generationProgress?.stages || [],
-              };
-              return masterUrl;
-            }
-          }
-        } catch (hybridErr) {
-          console.warn("[ProductionAssetService] Hybrid merge notice:", hybridErr);
-        }
-      }
-
-      production.status = "Failed";
-      production.lastError = "Merge did not produce a Spark master";
-      production.generationProgress = {
-        stage: "Failed",
-        percent: 0,
-        message: "Merge did not produce a Spark master",
-        stages: production.generationProgress?.stages || [],
-      };
-      return null;
-    }
-
-    if (readyClips.length === 1 && scenes.length <= 1) {
-      if (isDurableMasterVideoReady(readyClips[0])) {
-        production.videoUrl = readyClips[0];
-        production.videoStoragePath = extractSparkStoragePath(readyClips[0]) || production.videoStoragePath;
-        brief.videoUrl = readyClips[0];
-        brief.video_storage_path = production.videoStoragePath;
-        (production as any).canonicalMasterUrl = readyClips[0];
-        (brief as any).canonicalMasterUrl = readyClips[0];
-        if (!brief.generatedAssets) brief.generatedAssets = {};
-        brief.generatedAssets.generatedVideos = [readyClips[0]];
-        production.status = "Ready for Review";
-        production.generationProgress = {
-          stage: "Complete",
-          percent: 100,
-          message: "Master film compiled and saved to Spark storage",
-          stages: production.generationProgress?.stages || [],
-        };
-        return readyClips[0];
-      }
+    if (readyClips.length < 1) {
+      return failMerge(
+        "Approve & merge needs at least one durable Spark clip at brands/{brandId}/{productionId}/video/shot-N.mp4. Missing shots were skipped; none remained."
+      );
     }
 
     try {
@@ -4205,33 +4056,18 @@ export class ProductionAssetService {
         brandId: (brand as any)?.id,
         videoUrls: readyClips,
         audioUrl: mergeAudioUrl,
-        sfxUrl: mergeSfxUrl,
-        onScreenTexts: targetMergeTexts,
         timeoutMs: 120000,
       });
 
-      if (!mergeResult) {
-        console.warn("[ProductionAssetService] Merge produced empty result.");
-        production.status = "Failed";
-        production.lastError = "Merge did not produce a Spark master";
-        production.generationProgress = {
-          stage: "Failed",
-          percent: 0,
-          message: "Merge did not produce a Spark master",
-          stages: production.generationProgress?.stages || [],
-        };
-        return null;
-      }
-
-      // If serverless FFmpeg mux already uploaded directly to Storage and returned publicUrl
-      if (mergeResult.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
+      if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
         const masterUrl = mergeResult.publicUrl;
         production.videoUrl = masterUrl;
-        production.videoStoragePath = extractSparkStoragePath(masterUrl) || production.videoStoragePath;
+        production.videoStoragePath =
+          mergeResult.storagePath || extractSparkStoragePath(masterUrl) || production.videoStoragePath;
         brief.videoUrl = masterUrl;
         brief.video_storage_path = production.videoStoragePath;
-      (production as any).canonicalMasterUrl = masterUrl;
-      (brief as any).canonicalMasterUrl = masterUrl;
+        (production as any).canonicalMasterUrl = masterUrl;
+        (brief as any).canonicalMasterUrl = masterUrl;
         if (!brief.generatedAssets) brief.generatedAssets = {};
         brief.generatedAssets.generatedVideos = [masterUrl];
         production.status = "Ready for Review";
@@ -4244,58 +4080,15 @@ export class ProductionAssetService {
         return masterUrl;
       }
 
-      // If client Canvas fallback produced a Blob
-      if (mergeResult.blob && mergeResult.blob.size > 0) {
-        const storedMaster = await ProductionAssetService.uploadAssetToStorage({
-          productionId,
-          brandId: (brand as any).id,
-          assetType: "video",
-          storagePath: brandProductionStoragePath((brand as any)?.id, productionId, "video/master.mp4"),
-          dataUrlOrBlob: mergeResult.blob,
-          mimeType: mergeResult.mimeType,
-          prompt: "Merged Master Video from Approved Scene Sequence",
-          provider: mergeResult.provider || "SceneVideoMerger",
-        });
-
-        if (storedMaster?.publicUrl && isDurableMasterVideoReady(storedMaster.publicUrl)) {
-          const masterUrl = storedMaster.publicUrl;
-          production.videoUrl = masterUrl;
-          production.videoStoragePath = storedMaster.storagePath || extractSparkStoragePath(masterUrl) || undefined;
-          brief.videoUrl = masterUrl;
-          brief.video_storage_path = production.videoStoragePath;
-          if (!brief.generatedAssets) brief.generatedAssets = {};
-          brief.generatedAssets.generatedVideos = [masterUrl];
-          production.status = "Ready for Review";
-          production.generationProgress = {
-            stage: "Complete",
-            percent: 100,
-            message: "Master film compiled and saved to Spark storage",
-            stages: production.generationProgress?.stages || [],
-          };
-          return masterUrl;
-        }
-      }
-
-      production.status = "Failed";
-      production.lastError = "Merge did not produce a Spark master";
-      production.generationProgress = {
-        stage: "Failed",
-        percent: 0,
-        message: "Merge did not produce a Spark master",
-        stages: production.generationProgress?.stages || [],
-      };
-      return null;
-    } catch (err) {
+      return failMerge(
+        mergeResult?.error ||
+          "Server ffmpeg merge did not write video/master.mp4. Canvas/MediaRecorder is not a master."
+      );
+    } catch (err: any) {
       console.error("[ProductionAssetService] Merge execution notice:", err);
-      production.status = "Failed";
-      production.lastError = "Merge did not produce a Spark master";
-      production.generationProgress = {
-        stage: "Failed",
-        percent: 0,
-        message: "Merge did not produce a Spark master",
-        stages: production.generationProgress?.stages || [],
-      };
-      return null;
+      return failMerge(
+        err?.message || "Server ffmpeg merge failed. Canvas/MediaRecorder is not a master."
+      );
     }
   }
 }

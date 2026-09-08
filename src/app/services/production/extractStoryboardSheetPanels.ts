@@ -1,9 +1,9 @@
 /**
  * Extract scene stills from a multi-panel storyboard SHEET.
  *
- * Law: panels on the sheet MAY become scene images only when each cell
- * already matches the Frame Lock panel aspect ratio (native production frame).
- * Distorted grid cells must NOT be accepted — fall back to full-bleed regen.
+ * Law: the sheet is the only native still generator. Crops stay board pixels
+ * even when geometry validation fails — never invent a second full-bleed
+ * still set. The caller retries the sheet once, then keeps the best crop.
  */
 
 import type { StoryboardLayout } from "./preproduction/types";
@@ -169,8 +169,9 @@ export interface ExtractStoryboardPanelsResult {
 /**
  * Crop each panel from the sheet into JPEG data URLs (row-major → scene order).
  *
- * When `frameLock` is provided, equal-grid cell AR must match the locked panel AR
- * or extraction returns empty panels (caller must regen native stills).
+ * When `frameLock` is provided, equal-grid cell AR is validated. A geometry
+ * miss still returns best-effort crops with geometryOk=false (caller retries
+ * the sheet once — never a parallel still pipeline).
  */
 export async function extractStoryboardSheetPanels(params: {
   sheetUrl: string;
@@ -214,6 +215,8 @@ export async function extractStoryboardSheetPanelsDetailed(params: {
     const { img, objectUrl } = loaded;
     const { cols, rows } = storyboardLayoutToGrid(params.layout, panelCount);
 
+    let geometryOk = true;
+    let geometryReason = "Panel cells match Frame Lock (or lock not required)";
     if (params.frameLock) {
       const geo = validateSheetPanelGeometry({
         frameLock: params.frameLock,
@@ -223,15 +226,9 @@ export async function extractStoryboardSheetPanelsDetailed(params: {
         rows,
       });
       if (!geo.ok) {
-        console.warn(`[SPARK Pipeline] ${geo.reason}`);
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        return {
-          panels: [],
-          geometryOk: false,
-          geometryReason: geo.reason,
-          sheetWidth: img.naturalWidth,
-          sheetHeight: img.naturalHeight,
-        };
+        geometryOk = false;
+        geometryReason = geo.reason;
+        console.warn(`[SPARK Pipeline] ${geo.reason} — keeping best-effort panel crops (no parallel stills)`);
       }
     }
 
@@ -270,10 +267,17 @@ export async function extractStoryboardSheetPanelsDetailed(params: {
     }
 
     if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (out.length !== panelCount) {
+      geometryOk = false;
+      geometryReason =
+        geometryReason && geometryReason !== "Panel cells match Frame Lock (or lock not required)"
+          ? `${geometryReason}; extracted ${out.length}/${panelCount} panels`
+          : `extracted ${out.length}/${panelCount} panels`;
+    }
     return {
       panels: out,
-      geometryOk: true,
-      geometryReason: "Panel cells match Frame Lock (or lock not required)",
+      geometryOk,
+      geometryReason,
       sheetWidth: img.naturalWidth,
       sheetHeight: img.naturalHeight,
     };

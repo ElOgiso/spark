@@ -85,22 +85,21 @@ export function resolveOfficialI2vClipFrames(params: {
     );
   }
 
+  const forbidden = params.forbidden || {};
   const prevLast = isUsableImageUrl(params.previousLastFrameUrl)
     ? params.previousLastFrameUrl.trim()
     : undefined;
-  const lastFrameUrl =
-    prevLast &&
-    prevLast !== firstFrameUrl &&
-    !isForbiddenI2vStartFrame(prevLast, params.forbidden || {})
-      ? prevLast
-      : undefined;
-
   const planned = isUsableImageUrl(params.plannedEndUrl) ? params.plannedEndUrl.trim() : undefined;
-  const endFrameUrl =
-    lastFrameUrl ||
-    (planned && planned !== firstFrameUrl && !isForbiddenI2vStartFrame(planned, params.forbidden || {})
-      ? planned
-      : undefined);
+
+  const usableLast = (url: string | undefined): string | undefined => {
+    if (!url || url === firstFrameUrl) return undefined;
+    if (isForbiddenI2vStartFrame(url, forbidden)) return undefined;
+    return url;
+  };
+
+  // Official last = next panel crop. Previous-clip extract is fallback only.
+  const lastFrameUrl = usableLast(planned) || usableLast(prevLast);
+  const endFrameUrl = lastFrameUrl;
 
   return { firstFrameUrl, lastFrameUrl, endFrameUrl };
 }
