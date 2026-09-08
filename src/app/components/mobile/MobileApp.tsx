@@ -31,7 +31,7 @@ export function MobileApp() {
       return;
     }
     setSubPath(null);
-    if (cleanPath === "/review") {
+    if (cleanPath === "/review" || cleanPath.startsWith("/review/")) {
       setActiveTab("review");
     } else if (cleanPath === "/viral-sparks") {
       setActiveTab("viral-sparks");

@@ -30,6 +30,12 @@ import {
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
 import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
+import {
+  openProductionReviewDetail,
+  readSparkReviewFocusId,
+  parseProductionIdFromPage,
+  resolveCardPlayableVideoUrl,
+} from "../services/production/homeReviewCardMedia";
 import { getNotionModeLabel } from "../services/production/resolveProductionMode";
 import {
   resolveCanonicalProductionMedia,
@@ -54,6 +60,7 @@ import {
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
   onBack?: () => void;
+  currentPage?: string;
 }
 
 function asText(value: unknown, fallback = ""): string {
@@ -75,25 +82,16 @@ function asText(value: unknown, fallback = ""): string {
   return String(value);
 }
 
-export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
+export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeReviewProps) {
   const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode } = useSpark() as any;
 
-  // 1. Resolve focus target ID from query params or sessionStorage
-  const [focusId] = useState<string | null>(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const params = new URLSearchParams(window.location.search);
-        const qId = params.get("productionId") || params.get("id") || params.get("reviewId");
-        if (qId) return qId;
-        const stored = sessionStorage.getItem("spark_review_focus_id");
-        if (stored) {
-          sessionStorage.removeItem("spark_review_focus_id");
-          return stored;
-        }
-      }
-    } catch {}
-    return null;
-  });
+  // 1. Resolve focus target ID from sessionStorage, then SPA currentPage / location query
+  const [focusId, setFocusId] = useState<string | null>(() => readSparkReviewFocusId(currentPage));
+
+  useEffect(() => {
+    const fromPage = parseProductionIdFromPage(currentPage);
+    if (fromPage) setFocusId(fromPage);
+  }, [currentPage]);
 
   // 2. Fetch active production linked to focusId or fallback
   const activeProd = (() => {
@@ -483,7 +481,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                     review: rev,
                     brief,
                   });
-                  const videoUrl = queueView.canonical.canonicalMasterUrl;
+                  const videoUrl = resolveCardPlayableVideoUrl(p, { review: rev, brief });
 
                   const sceneStill = queueView.stillByScene[1] || queueView.scenes.find((s) => s.imageUrl)?.imageUrl;
 
@@ -512,10 +510,7 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
                     <button
                       key={p.id}
                       onClick={() => {
-                        try {
-                          sessionStorage.setItem("spark_review_focus_id", p.id);
-                        } catch {}
-                        onNavigate?.(`/review/creative?productionId=${p.id}`);
+                        openProductionReviewDetail(onNavigate, p.id);
                       }}
                       className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition-all flex-shrink-0 max-w-[240px] ${
                         isSelected
