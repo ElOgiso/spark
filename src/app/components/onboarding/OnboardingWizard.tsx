@@ -62,7 +62,7 @@ export interface BrandGenesisData {
   platforms: string[];
   tone: string;
   vision: string;
-  visualStyle: "Realistic / Live-Action" | "Cinematic 3D" | "Anime / Stylized Studio";
+  visualStyle?: "Realistic / Live-Action" | "Cinematic 3D" | "Anime / Stylized Studio";
   productionMode: "narrator" | "hybrid" | "cinematic";
   automationMode: "manual" | "balanced" | "autonomous";
   contentFormat?: "faceless" | "host" | "story" | "anime";
@@ -145,7 +145,6 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     platforms: [],
     tone: "",
     vision: "",
-    visualStyle: "",
     productionMode: "hybrid",
     automationMode: "balanced",
     reviewRequired: true,

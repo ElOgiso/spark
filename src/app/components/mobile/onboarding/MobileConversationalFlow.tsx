@@ -475,7 +475,6 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       platforms: Object.keys(connectedAccounts).length > 0 ? Object.keys(connectedAccounts) : ["YouTube Shorts"],
       tone: "",
       vision: "",
-      visualStyle: "",
       productionMode,
       automationMode,
       contentFormat,

@@ -1844,6 +1844,7 @@ function FrameModes({
       </div>
       )}
       {showLook && (
+      <>
       <div className="space-y-3">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Aspect Ratio Strategy</label>
         <div className="grid grid-cols-3 gap-2">
@@ -1981,6 +1982,7 @@ function FrameModes({
           Longer episode runtimes will be automatically split into continuous scenes at the selected engine's native clip limit.
         </p>
       </div>
+      </>
       )}
     </div>
   );
