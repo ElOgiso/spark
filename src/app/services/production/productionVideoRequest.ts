@@ -18,6 +18,7 @@ export interface ProductionVideoClipRequest {
   resolution?: string;
   productionId?: string;
   brandId?: string;
+  shotIndex?: number;
 }
 
 export interface ProductionVideoClipResult {
@@ -45,13 +46,15 @@ export async function requestProductionVideoClip(
       // End-frame conditioning must NOT silently reuse the first frame.
       lastFrameUrl: params.endFrameUrl,
       endFrameUrl: params.endFrameUrl,
-      referenceImageUrls: params.referenceImageUrls || [],
+      referenceImageUrls:
+        /^(grok|xai)$/i.test(params.provider) ? [] : params.referenceImageUrls || [],
       aspectRatio: params.aspectRatio,
       durationSec: params.durationSec,
       model: params.model,
       resolution: params.resolution,
       productionId: params.productionId,
       brandId: params.brandId,
+      shotIndex: params.shotIndex,
     }),
   });
 

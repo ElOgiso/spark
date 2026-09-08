@@ -51,6 +51,66 @@ export function snapGrokDuration(sec?: number): number {
   return clampInt(typeof sec === "number" ? sec : 5, 1, 15);
 }
 
+/** Veo durationSeconds ∈ {4, 6, 8}. Must be 8 when lastFrame or identity refs are present. */
+export function snapVeoDuration(
+  sec?: number,
+  opts?: { hasLastFrame?: boolean; hasIdentityRefs?: boolean }
+): 4 | 6 | 8 {
+  if (opts?.hasLastFrame || opts?.hasIdentityRefs) return 8;
+  if (sec === 4 || sec === 6 || sec === 8) return sec;
+  const n = typeof sec === "number" && Number.isFinite(sec) ? sec : 8;
+  if (n <= 4) return 4;
+  if (n <= 6) return 6;
+  return 8;
+}
+
+export function veoImagePartFromDataUri(dataUri: string): {
+  bytesBase64Encoded: string;
+  mimeType: string;
+  imageBytes: string;
+} {
+  const trimmed = (dataUri || "").trim();
+  const mimeMatch = trimmed.match(/^data:([^;,]+)/);
+  const mimeType = mimeMatch?.[1] || "image/jpeg";
+  const bytes = dataUriToRawBase64(trimmed);
+  return { bytesBase64Encoded: bytes, mimeType, imageBytes: bytes };
+}
+
+/**
+ * Official Veo 3.1 i2v instance: shot still as image, previous last frame as lastFrame.
+ * No referenceImages (i2v ≠ reference-to-video). No { uri: https }.
+ */
+export function buildVeoVideoPayload(params: {
+  prompt: string;
+  firstFrameDataUri: string;
+  lastFrameDataUri?: string;
+  aspectRatio?: string;
+  durationSec?: number;
+}): {
+  instances: Array<Record<string, unknown>>;
+  parameters: { aspectRatio: "16:9" | "9:16"; sampleCount: 1; durationSeconds: 4 | 6 | 8 };
+} {
+  const image = veoImagePartFromDataUri(params.firstFrameDataUri);
+  const instance: Record<string, unknown> = {
+    prompt: i2vMotionLock(params.prompt),
+    image,
+  };
+  if (params.lastFrameDataUri) {
+    instance.lastFrame = veoImagePartFromDataUri(params.lastFrameDataUri);
+  }
+  const durationSeconds = snapVeoDuration(params.durationSec, {
+    hasLastFrame: Boolean(params.lastFrameDataUri),
+  });
+  return {
+    instances: [instance],
+    parameters: {
+      aspectRatio: normalizeAspectRatio(params.aspectRatio) === "16:9" ? "16:9" : "9:16",
+      sampleCount: 1,
+      durationSeconds,
+    },
+  };
+}
+
 /** Kling duration must be the number-string "5" or "10", never "5s". */
 export function snapKlingDuration(sec?: number): "5" | "10" {
   const n = typeof sec === "number" && Number.isFinite(sec) ? sec : 5;
@@ -265,11 +325,6 @@ export function grokMotionPrompt(prompt: string): string {
 }
 
 export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string, unknown> {
-  const refs = (req.referenceDataUris || [])
-    .filter(Boolean)
-    .filter((u) => u !== req.firstFrameDataUri)
-    .slice(0, 7);
-
   const body: Record<string, unknown> = {
     model: req.model || GROK_VIDEO_MODEL,
     prompt: grokMotionPrompt(req.prompt),
@@ -278,9 +333,19 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     resolution: normalizeResolution(req.resolution),
   };
 
+  // Official i2v: image only. xAI forbids image + reference_images on one request.
   if (req.firstFrameDataUri) {
     body.image_url = req.firstFrameDataUri;
+    if (req.lastFrameDataUri && req.lastFrameDataUri !== req.firstFrameDataUri) {
+      body.last_frame_url = req.lastFrameDataUri;
+    }
+    return body;
   }
+
+  const refs = (req.referenceDataUris || [])
+    .filter(Boolean)
+    .filter((u) => u !== req.lastFrameDataUri)
+    .slice(0, 7);
   if (refs.length > 0) {
     body.reference_image_urls = refs;
   }
@@ -306,35 +371,32 @@ export function extractGrokVideoUrl(data: any): string {
 }
 
 /**
- * Resolve first/end/identity frames from a production request.
- * lastFrameUrl from ProductionAssetService is the *extracted previous last frame*
- * and is a FIRST-frame continuity input, not Kling image_tail.
- * End pose / image_tail comes from endFrameUrl / imageTailUrl / nextSceneStillUrl.
+ * Official I2V frames from a production request.
+ * Frame 1 = imageUrl / firstFrameUrl only (this shot's still). Never lastFrameUrl.
+ * lastFrameUrl / endFrameUrl = previous clip last frame or planned end pose.
  */
 export function resolveClipFrames(body: Record<string, any>): {
   firstFrameUrl?: string;
   endFrameUrl?: string;
   referenceImageUrls: string[];
 } {
-  const first =
-    body.imageUrl ||
-    body.firstFrameUrl ||
-    body.image_url ||
-    body.continuityFrameUrl ||
-    body.lastFrameUrl ||
-    undefined;
-  const end =
+  const firstRaw = body.imageUrl || body.firstFrameUrl || body.image_url || undefined;
+  const first = typeof firstRaw === "string" && firstRaw.trim() ? firstRaw.trim() : undefined;
+  const endRaw =
     body.endFrameUrl ||
     body.imageTailUrl ||
     body.nextSceneStillUrl ||
+    body.lastFrameUrl ||
     undefined;
+  const end = typeof endRaw === "string" && endRaw.trim() && endRaw.trim() !== first ? endRaw.trim() : undefined;
   const refsRaw = body.referenceImageUrls || body.reference_image_urls || [];
   const refs = Array.isArray(refsRaw) ? refsRaw.filter((u: unknown) => typeof u === "string" && u.trim()) : [];
+  const lastRaw = typeof body.lastFrameUrl === "string" ? body.lastFrameUrl.trim() : "";
   return {
-    firstFrameUrl: typeof first === "string" && first.trim() ? first.trim() : undefined,
-    endFrameUrl: typeof end === "string" && end.trim() && end.trim() !== first ? end.trim() : undefined,
+    firstFrameUrl: first,
+    endFrameUrl: end,
     referenceImageUrls: refs
       .map((u: string) => u.trim())
-      .filter((u: string) => u && u !== first && u !== end),
+      .filter((u: string) => u && u !== first && u !== end && u !== lastRaw),
   };
 }

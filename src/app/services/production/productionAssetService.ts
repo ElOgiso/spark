@@ -20,6 +20,7 @@ import {
 } from "./resolveLiveDirectorRefs";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
+import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
 import { resolveProductionMode } from "./resolveProductionMode";
 import {
   resolveGenerationSettings,
@@ -2240,15 +2241,27 @@ export class ProductionAssetService {
                 nextShotId: (nextScene as any)?.shotId || (nextScene as any)?.id,
                 preferContinuation: sIdx > 0,
               });
-              const sceneFirstFrame = continuityPlan.firstFrameUrl;
-              const sceneEndFrame = continuityPlan.endFrameUrl;
+              const officialI2v = resolveOfficialI2vClipFrames({
+                sceneImage: s.image,
+                keyframeUrl: (s as any).keyframeImageUrl || (s as any).keyframe,
+                generatedFrameUrl: sceneImages[sIdx],
+                previousLastFrameUrl: prevScene?.lastFrameUrl,
+                plannedEndUrl: nextScene?.image || sceneImages[sIdx + 1] || continuityPlan.endFrameUrl,
+                forbidden: {
+                  gridUrl: realGridUrl,
+                },
+                sceneLabel: `Scene ${globalSceneNum}`,
+              });
+              const sceneFirstFrame = officialI2v.firstFrameUrl;
+              const sceneEndFrame = officialI2v.endFrameUrl;
+              const sceneLastFrame = officialI2v.lastFrameUrl;
               if (continuityPlan.continuityGap) {
                 console.warn(
                   `[SPARK Pipeline] Continuity GAP Scene ${globalSceneNum}: ${continuityPlan.gapReason}`
                 );
               }
               console.log(
-                `[SPARK Pipeline] Frame strategy Scene ${globalSceneNum}: mode=${continuityPlan.mode} chained=${continuityPlan.chained} — ${continuityPlan.rationale.slice(-1)[0] || ""}`
+                `[SPARK Pipeline] Official I2V Scene ${globalSceneNum}: frame1=shot still lastFrame=${Boolean(sceneLastFrame)} (continuityPlan mode=${continuityPlan.mode})`
               );
 
               // Consistency Gate: scene image must exist
@@ -2258,9 +2271,8 @@ export class ProductionAssetService {
                 throw new Error(errMsg);
               }
 
-              // Calculate native duration for this single scene shot (never whole film, snap to provider map)
+              // Calculate native duration after we know whether Veo lastFrame is present (must be 8).
               const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
-              const sceneTargetDuration = snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) || Math.min(rawSceneDur, 8);
 
               // 1. Resolve content format & subject rules (honor stamped beat subjects)
               const effectiveContentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings });
@@ -2312,49 +2324,35 @@ export class ProductionAssetService {
                   ? motionMerged.locationPlateUrl
                   : undefined;
 
-              // 4. Construct Reference List for Prompt and ModelRouter:
-              // - primaryRef for i2v = THAT scene's still / continuity keyframe (sceneFirstFrame)
-              // - Identity sheets from Spec Director masters when present
-              const isChainingLastFrame = continuityPlan.chained;
-              const orderedSceneRefs: string[] = [];
-              const refLabels: string[] = [];
-
-              if (isInsertOrSet) {
-                // INSERT / SET: Still is the only primary composition frame
-                orderedSceneRefs.push(sceneFirstFrame);
-                refLabels.push(
-                  isChainingLastFrame
-                    ? `INPUT REF [1]: First Frame Keyframe (Scene ${sIdx} Last Frame CONTINUATION)`
-                    : `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} Single Still)`
+              if (
+                (sceneCharSheetUrl && sceneFirstFrame === sceneCharSheetUrl) ||
+                (validPlate && sceneFirstFrame === validPlate)
+              ) {
+                throw new Error(
+                  `I2V Scene ${globalSceneNum}: start frame must be this shot's still, not a character sheet or location plate.`
                 );
+              }
 
-                if (motionMerged.propUrl && !orderedSceneRefs.includes(motionMerged.propUrl)) {
-                  orderedSceneRefs.push(motionMerged.propUrl);
-                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Asset Director Prop / Product Reference`);
-                }
+              const veoLike = /^(gemini|veo|google)$/i.test(String(activeVideo.providerId || ""));
+              const sceneTargetDuration =
+                veoLike && sceneLastFrame
+                  ? 8
+                  : snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) ||
+                    Math.min(rawSceneDur, 8);
 
-                if (validPlate && validPlate !== sceneFirstFrame) {
-                  orderedSceneRefs.push(validPlate);
-                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Locked Set / Location Plate Reference`);
-                }
-              } else {
-                // MAIN / SUPPORT: Sheet first for identity, still is the frame (primaryRef = sceneFirstFrame)
-                if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl)) {
-                  orderedSceneRefs.push(sceneCharSheetUrl);
-                  refLabels.push(
-                    `INPUT REF [1]: ${isSupportSubject ? "Supporting Character" : "Character"} Model Sheet (${activeChar?.name || "Host"})`
-                  );
-                }
-
-                orderedSceneRefs.push(sceneFirstFrame);
-                refLabels.push(
-                  `INPUT REF [${orderedSceneRefs.length}]: First Frame Keyframe (${isChainingLastFrame ? "Scene " + sIdx + " LAST → CONTINUATION" : "Scene " + globalSceneNum + " Single Still"})`
-                );
-
-                if (validPlate && !orderedSceneRefs.includes(validPlate)) {
-                  orderedSceneRefs.push(validPlate);
-                  refLabels.push(`INPUT REF [${orderedSceneRefs.length}]: Locked Set / Studio Location Plate`);
-                }
+              // 4. Prompt labels only — sheets/plates/grid never occupy the i2v start-frame field.
+              const isChainingLastFrame = Boolean(sceneLastFrame);
+              const refLabels: string[] = [
+                `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} shot still)`,
+              ];
+              if (isChainingLastFrame) {
+                refLabels.push(`INPUT REF [lastFrame]: Previous shot extracted last frame (official continuity)`);
+              }
+              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
+                refLabels.push(`Character sheet logged for Review (not i2v start): ${activeChar?.name || "Host"}`);
+              }
+              if (validPlate && validPlate !== sceneFirstFrame) {
+                refLabels.push(`Location plate logged for Review (not i2v start)`);
               }
 
               const sceneMotionCompiled = compileLiveMotionPrompt({
@@ -2384,16 +2382,7 @@ export class ProductionAssetService {
                 );
               }
 
-              // Prefer continuity-plan identity refs + Director locks (never use sheet as first frame)
-              for (const u of continuityPlan.referenceImageUrls) {
-                if (u && !orderedSceneRefs.includes(u) && u !== sceneFirstFrame) {
-                  orderedSceneRefs.push(u);
-                }
-              }
-
-              const identityRefs = orderedSceneRefs.filter(
-                (u) => u && u !== sceneFirstFrame && u !== sceneEndFrame
-              );
+              const identityRefs: string[] = [];
               const continuity = evaluateVisualContinuity({
                 sceneIndex: sIdx,
                 firstFrameUrl: sceneFirstFrame,
@@ -2402,7 +2391,7 @@ export class ProductionAssetService {
               });
               const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
               console.log(
-                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Strategy: ${continuityPlan.mode}, FirstFrame: ${Boolean(sceneFirstFrame)} (${isChainingLastFrame ? "prev LAST" : "scene still"}), EndFrame: ${Boolean(sceneEndFrame)}, IdentityRefs: ${identityRefs.length}, Chained: ${continuity.chained}, Duration: ${sceneTargetDuration}s]...`
+                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Official i2v still + lastFrame=${Boolean(sceneLastFrame)}, Duration: ${sceneTargetDuration}s]...`
               );
               if (!continuity.ok || continuityPlan.continuityGap) {
                 console.warn(
@@ -2423,12 +2412,13 @@ export class ProductionAssetService {
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
                       endFrameUrl: sceneEndFrame,
-                      referenceImageUrls: identityRefs,
+                      referenceImageUrls: [],
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
                       model: preferredVideoModel,
                       productionId: production.id,
                       brandId: (brand as any).id,
+                      shotIndex: globalSceneNum,
                     });
                     return {
                       url: apiClip.videoUrl,
@@ -2459,14 +2449,18 @@ export class ProductionAssetService {
                       console.log(`[SPARK Pipeline] I2V adapters exhausted — ModelRouter failover for Scene ${globalSceneNum}`);
                       const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                         prompt: sceneMotionPrompt,
+                        firstFrameUrl: sceneFirstFrame,
                         referenceImageUrl: sceneFirstFrame,
-                        referenceImageUrls: orderedSceneRefs,
+                        referenceImageUrls: [],
                         aspectRatio: identityPack.aspectRatio,
                         durationSec: sceneTargetDuration,
-                        lastFrameUrl: prevScene?.lastFrameUrl,
+                        lastFrameUrl: sceneLastFrame,
                         endFrameUrl: sceneEndFrame,
                         preferredProvider: (preferredVideoProvider || "gemini") as any,
                         model: preferredVideoModel,
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        shotIndex: globalSceneNum,
                       });
                       return { url: routed, provider: "model_router_failover" };
                     }
@@ -2474,14 +2468,18 @@ export class ProductionAssetService {
 
                   const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: sceneMotionPrompt,
+                    firstFrameUrl: sceneFirstFrame,
                     referenceImageUrl: sceneFirstFrame,
-                    referenceImageUrls: orderedSceneRefs,
+                    referenceImageUrls: [],
                     aspectRatio: identityPack.aspectRatio,
                     durationSec: sceneTargetDuration,
-                    lastFrameUrl: prevScene?.lastFrameUrl,
+                    lastFrameUrl: sceneLastFrame,
                     endFrameUrl: sceneEndFrame,
                     preferredProvider: activeVideo.providerId,
                     model: preferredVideoModel,
+                    productionId: production.id,
+                    brandId: (brand as any).id,
+                    shotIndex: globalSceneNum,
                   });
                   return { url: routed, provider: activeVideo.providerId };
                 };
@@ -2501,7 +2499,7 @@ export class ProductionAssetService {
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
-                      storagePath: getStoragePath(`video/clip-scene-0${globalSceneNum}.mp4`),
+                      storagePath: getStoragePath(`video/shot-${globalSceneNum}.mp4`),
                       dataUrlOrBlob: generated.url,
                       mimeType: "video/mp4",
                       prompt: sceneMotionPrompt,
@@ -2522,11 +2520,7 @@ export class ProductionAssetService {
                     finalClip = generated.url;
                   }
                   if (!finalClip) {
-                    console.warn(
-                      `[SPARK Pipeline] Scene ${globalSceneNum} refused provider URL persist:`,
-                      String(generated.url || "").slice(0, 120)
-                    );
-                    if (!lastError) lastError = `Scene ${globalSceneNum} Video: persist to Spark failed`;
+                    throw new Error(`Scene ${globalSceneNum} Video: persist to Spark failed`);
                   } else {
 
                   // Extract last frame of this clip and persist it so clip N+1 can send it as first_frame.
@@ -3796,44 +3790,38 @@ export class ProductionAssetService {
         nextShotId: (nextFixScene as any)?.shotId || (nextFixScene as any)?.id,
         preferContinuation: targetSceneIdx > 0,
       });
-      const fixFirstFrame = fixContinuity.firstFrameUrl;
-      const fixEndFrame = fixContinuity.endFrameUrl;
+      const officialFix = resolveOfficialI2vClipFrames({
+        sceneImage: sceneStill,
+        keyframeUrl: sceneToFix.keyframeImageUrl || (sceneToFix as any).keyframe,
+        previousLastFrameUrl: prevLastForContinuation,
+        plannedEndUrl: nextFixScene?.image || nextFixScene?.keyframeImageUrl || fixContinuity.endFrameUrl,
+        forbidden: {
+          gridUrl: brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl,
+          sheetUrls: [character?.characterSheetUrl, character?.imageUrl, character?.avatarUrl],
+          plateUrl,
+        },
+        sceneLabel: `Scene ${sceneIndex} fix`,
+      });
+      const fixFirstFrame = officialFix.firstFrameUrl;
+      const fixEndFrame = officialFix.endFrameUrl;
+      const fixLastFrame = officialFix.lastFrameUrl;
+      const veoLikeFix = /^(gemini|veo|google)$/i.test(String(activeVideo.providerId || ""));
+      const fixI2vDuration = veoLikeFix && fixLastFrame ? 8 : fixTargetDuration;
       if (fixContinuity.continuityGap) {
         console.warn(`[fixProductionScene] Continuity GAP: ${fixContinuity.gapReason}`);
       }
       console.log(
-        `[fixProductionScene] Frame strategy: mode=${fixContinuity.mode} chained=${fixContinuity.chained}`
+        `[fixProductionScene] Official I2V: frame1=shot still lastFrame=${Boolean(fixLastFrame)}`
       );
 
       const charSheetUrl =
         character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
-      const orderedFixRefs: string[] = [];
-      if (charSheetUrl && isImgUrl(charSheetUrl) && charSheetUrl !== fixFirstFrame) {
-        orderedFixRefs.push(charSheetUrl);
-      }
-      orderedFixRefs.push(fixFirstFrame);
-      if (sceneStill && sceneStill !== fixFirstFrame && !orderedFixRefs.includes(sceneStill)) {
-        orderedFixRefs.push(sceneStill);
-      }
-      if (plateUrl && isImgUrl(plateUrl) && !orderedFixRefs.includes(plateUrl)) {
-        orderedFixRefs.push(plateUrl);
-      }
-      for (const u of fixContinuity.referenceImageUrls) {
-        if (u && !orderedFixRefs.includes(u)) orderedFixRefs.push(u);
-      }
-      const fixIdentityRefs = orderedFixRefs.filter(
-        (u) => u && u !== fixFirstFrame && u !== fixEndFrame
-      );
-
       const fixRefLabels = [
+        `INPUT REF [1]: First Frame Keyframe (Scene ${sceneIndex} shot still)`,
+        fixLastFrame ? "INPUT REF [lastFrame]: Previous shot extracted last frame" : "",
         charSheetUrl && isImgUrl(charSheetUrl)
-          ? `INPUT REF [1]: Character Reference Sheet (${character?.name || "Host"})`
+          ? `Character sheet logged for Review (not i2v start): ${character?.name || "Host"}`
           : "",
-        `INPUT REF [${charSheetUrl && isImgUrl(charSheetUrl) ? 2 : 1}]: First Frame = ${
-          fixContinuity.chained
-            ? `Scene ${targetSceneIdx} LAST (CONTINUATION)`
-            : `Scene ${sceneIndex} Still`
-        }`,
       ].filter(Boolean) as string[];
 
       // Ensure lock exists even if still regen was skipped (reuse path)
@@ -3858,7 +3846,7 @@ export class ProductionAssetService {
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,
-        durationSec: fixTargetDuration,
+        durationSec: fixI2vDuration,
         scene: { ...revisedScene, motionLock: (sceneToFix as any).motionLock },
         refLabels: fixRefLabels,
         isInsertOrSet: isFixInsert || isFixSet,
@@ -3882,11 +3870,12 @@ export class ProductionAssetService {
             prompt: motionPrompt,
             firstFrameUrl: fixFirstFrame,
             endFrameUrl: fixEndFrame,
-            referenceImageUrls: fixIdentityRefs,
+            referenceImageUrls: [],
             aspectRatio: identityPack.aspectRatio,
-            durationSec: fixTargetDuration,
+            durationSec: fixI2vDuration,
             productionId,
             brandId: (brand as any).id,
+            shotIndex: sceneIndex,
           }),
           fixTimeoutMs,
           `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
@@ -3897,13 +3886,17 @@ export class ProductionAssetService {
         generatedClip = await withTimeout(
           ModelRouter.executeCategoryRequest("videoGeneration", {
             prompt: motionPrompt,
+            firstFrameUrl: fixFirstFrame,
             referenceImageUrl: fixFirstFrame,
-            referenceImageUrls: orderedFixRefs,
+            referenceImageUrls: [],
             aspectRatio: identityPack.aspectRatio,
-            durationSec: fixTargetDuration,
-            lastFrameUrl: prevLastForContinuation || prevFrameCandidate,
+            durationSec: fixI2vDuration,
+            lastFrameUrl: fixLastFrame,
             endFrameUrl: fixEndFrame,
             preferredProvider: activeVideo.providerId,
+            productionId,
+            brandId: (brand as any).id,
+            shotIndex: sceneIndex,
           }),
           fixTimeoutMs,
           `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
@@ -3917,14 +3910,21 @@ export class ProductionAssetService {
             productionId,
             brandId: (brand as any).id,
             assetType: "video",
-            storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `scenes/scene-0${sceneIndex}.mp4`),
+            storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/shot-${sceneIndex}.mp4`),
             dataUrlOrBlob: generatedClip,
             mimeType: "video/mp4",
             prompt: motionPrompt,
             provider: "ModelRouter",
           });
-          if (storedAsset?.publicUrl) finalClipUrl = storedAsset.publicUrl;
-        } catch {}
+          if (storedAsset?.publicUrl && isPersistableSparkMediaUrl(storedAsset.publicUrl)) {
+            finalClipUrl = storedAsset.publicUrl;
+          } else if (!isPersistableSparkMediaUrl(generatedClip)) {
+            throw new Error(`Scene ${sceneIndex} Video: persist to Spark failed`);
+          }
+        } catch (persistErr) {
+          if (String((persistErr as Error)?.message || "").includes("persist to Spark")) throw persistErr;
+          throw new Error(`Scene ${sceneIndex} Video: persist to Spark failed`);
+        }
 
         try {
           const lastExtract = await extractVideoLastFrame(finalClipUrl);

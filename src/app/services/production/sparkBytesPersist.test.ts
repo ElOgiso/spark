@@ -108,6 +108,7 @@ describe("server persist source contract", () => {
     assert.doesNotMatch(videoSrc, /persistedUrl \|\| params\.videoUrl/);
     assert.match(videoSrc, /storagePath: finalized\.storagePath/);
     assert.match(videoSrc, /filename:\s*["']master\.mp4["']/);
+    assert.match(videoSrc, /shot-\$\{Math\.round\(shotIndex\)\}\.mp4/);
   });
 
   it("Spark persist helper prefers getPublicUrl and never uses a second bucket", () => {

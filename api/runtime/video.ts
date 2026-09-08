@@ -129,13 +129,18 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
   const frames = resolveClipFrames(body);
   const firstFrameDataUri = frames.firstFrameUrl ? await toDataUri(frames.firstFrameUrl) : undefined;
   const lastFrameDataUri = frames.endFrameUrl ? await toDataUri(frames.endFrameUrl) : undefined;
+  const provider = String(body.provider || "").toLowerCase();
+  // Grok i2v cannot combine image + reference_images. This pass is still-only i2v.
+  const allowRefs = provider !== "grok" && provider !== "xai";
   const referenceDataUris: string[] = [];
-  for (const url of frames.referenceImageUrls) {
-    try {
-      const uri = await toDataUri(url);
-      if (uri) referenceDataUris.push(uri);
-    } catch (err) {
-      console.warn("[video adapter] reference image fetch notice:", err);
+  if (allowRefs) {
+    for (const url of frames.referenceImageUrls) {
+      try {
+        const uri = await toDataUri(url);
+        if (uri) referenceDataUris.push(uri);
+      } catch (err) {
+        console.warn("[video adapter] reference image fetch notice:", err);
+      }
     }
   }
   return {
@@ -594,11 +599,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         providerVideoUrl = await generateGrok(clipReq);
       }
 
+      const shotIndex = Number(body.shotIndex || body.sceneIndex || body.shot);
+      const clipFilename =
+        Number.isFinite(shotIndex) && shotIndex > 0
+          ? `shot-${Math.round(shotIndex)}.mp4`
+          : `shot-${Date.now()}.mp4`;
       const finalized = await finalizeClip({
         videoUrl: providerVideoUrl,
         brandId,
         productionId: productionId || "default-prod",
-        filename: `clip-${Date.now()}.mp4`,
+        filename: clipFilename,
       });
 
       return res.status(200).json({

@@ -181,19 +181,19 @@ test("Seedance 2.0 cannot mix first/last frame with reference media", () => {
   assert.deepEqual(roles, ["first_frame", "last_frame"]);
 });
 
-test("Grok sends image_url dataUri plus up to 7 reference faces", () => {
+test("Grok i2v sends image_url and omits reference faces on the same request", () => {
   const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
     firstFrameDataUri: "data:image/jpeg;base64,START",
+    lastFrameDataUri: "data:image/jpeg;base64,END",
     referenceDataUris: refs,
     durationSec: 7,
     aspectRatio: "9:16",
   });
   assert.equal(body.image_url, "data:image/jpeg;base64,START");
-  assert.equal((body.reference_image_urls as string[]).length, 7);
-  assert.equal(body.duration, 7);
-  assert.match(String(body.prompt), /do not restyle/i);
+  assert.equal(body.last_frame_url, "data:image/jpeg;base64,END");
+  assert.equal(body.reference_image_urls, undefined);
   assert.equal(snapGrokDuration(0), 1);
   assert.equal(snapGrokDuration(99), 15);
 });
@@ -204,23 +204,23 @@ test("Grok motion prompt does not restyle the start frame", () => {
   assert.match(p, /slow dolly in/i);
 });
 
-test("resolveClipFrames treats lastFrameUrl as continuity first-frame, not image_tail", () => {
+test("resolveClipFrames treats lastFrameUrl as official last/end frame, not start", () => {
   const frames = resolveClipFrames({
-    imageUrl: "https://cdn/prev-last.jpg",
+    imageUrl: "https://cdn/shot-still.jpg",
     lastFrameUrl: "https://cdn/prev-last.jpg",
     endFrameUrl: "https://cdn/next-still.jpg",
     referenceImageUrls: ["https://cdn/face.png", "https://cdn/prev-last.jpg"],
   });
-  assert.equal(frames.firstFrameUrl, "https://cdn/prev-last.jpg");
+  assert.equal(frames.firstFrameUrl, "https://cdn/shot-still.jpg");
   assert.equal(frames.endFrameUrl, "https://cdn/next-still.jpg");
   assert.deepEqual(frames.referenceImageUrls, ["https://cdn/face.png"]);
 });
 
-test("resolveClipFrames uses lastFrameUrl as first frame when imageUrl is omitted", () => {
+test("resolveClipFrames does not promote lastFrameUrl to first frame", () => {
   const frames = resolveClipFrames({
     lastFrameUrl: "https://cdn/extracted-last.jpg",
     endFrameUrl: "https://cdn/next-still.jpg",
   });
-  assert.equal(frames.firstFrameUrl, "https://cdn/extracted-last.jpg");
+  assert.equal(frames.firstFrameUrl, undefined);
   assert.equal(frames.endFrameUrl, "https://cdn/next-still.jpg");
 });

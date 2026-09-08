@@ -18,6 +18,10 @@ export interface AIExecutionOptions {
   durationSec?: number;
   lastFrameUrl?: string;
   endFrameUrl?: string;
+  firstFrameUrl?: string;
+  productionId?: string;
+  brandId?: string;
+  shotIndex?: number;
 }
 
 export interface AIProviderPlugin {
@@ -216,8 +220,7 @@ export class AIProviderOrchestrator {
             try {
               const res = await fetch(fetchUrl, { headers });
               if (!res.ok) {
-                console.warn(`[Veo Download] Download failed ${res.status}:`, fetchUrl.slice(0, 120));
-                return rawUri;
+                throw new Error(`Veo download failed ${res.status}: ${fetchUrl.slice(0, 120)}`);
               }
               const buf = await res.arrayBuffer();
               const bytes = new Uint8Array(buf);
@@ -230,42 +233,36 @@ export class AIProviderOrchestrator {
               const b64 = btoa(binary);
               return `data:video/mp4;base64,${b64}`;
             } catch (err) {
-              console.warn("[Veo Download] Binary conversion notice:", err);
-              return rawUri;
+              throw new Error(
+                `Veo persist requires MP4 bytes, not a provider URI (${err instanceof Error ? err.message : String(err)})`
+              );
             }
           };
 
           let opName = "";
           let finalVideoUrl = "";
 
-          const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
-          const rawDuration = options.durationSec || 8;
-          const snappedVeoDuration = (rawDuration && [4, 6, 8].includes(rawDuration))
-            ? rawDuration
-            : (rawDuration <= 4 ? 4 : rawDuration <= 6 ? 6 : 8);
+          const { buildOfficialVeoPayload } = await import("./veoI2vClient");
+          const shotStill = options.firstFrameUrl || options.referenceImageUrl;
+          const continuityLast = options.lastFrameUrl || options.endFrameUrl;
+          const veoBuilt = await buildOfficialVeoPayload({
+            prompt: options.prompt,
+            firstFrameUrl: shotStill,
+            lastFrameUrl: continuityLast && continuityLast !== shotStill ? continuityLast : undefined,
+            aspectRatio: options.aspectRatio,
+            durationSec: options.durationSec,
+          });
+          const videoPayload = {
+            instances: veoBuilt.instances,
+            parameters: veoBuilt.parameters,
+          };
+          const snappedVeoDuration = veoBuilt.parameters.durationSeconds;
+          const targetAspect = veoBuilt.parameters.aspectRatio;
+          console.log(
+            `[Gemini Provider] Official Veo i2v: image bytes + ${veoBuilt.lastFrameDataUri ? "lastFrame" : "no lastFrame"} duration=${snappedVeoDuration}s`
+          );
 
           for (const videoModel of candidateVeoModels) {
-            const instanceObj: any = { prompt: options.prompt };
-            if (options.referenceImageUrl) {
-              if (options.referenceImageUrl.startsWith("data:")) {
-                instanceObj.image = { imageBytes: options.referenceImageUrl.split(",")[1] };
-              } else if (options.referenceImageUrl.startsWith("gs://")) {
-                instanceObj.image = { gcsUri: options.referenceImageUrl };
-              } else if (options.referenceImageUrl.startsWith("http")) {
-                // Pass as uri (never invent gcsUri from http URL)
-                instanceObj.image = { uri: options.referenceImageUrl };
-              }
-              console.log(`[Gemini Provider] Conditioning Veo video generation on scene still reference (duration: ${snappedVeoDuration}s)`);
-            }
-
-            const videoPayload = {
-              instances: [instanceObj],
-              parameters: {
-                aspectRatio: targetAspect,
-                sampleCount: 1,
-                durationSeconds: snappedVeoDuration,
-              },
-            };
 
             // 1. Direct Google GenAI SDK or REST call
             if (apiKey) {
@@ -282,8 +279,21 @@ export class AIProviderOrchestrator {
                         durationSeconds: snappedVeoDuration,
                       },
                     };
-                    if (options.referenceImageUrl) {
-                      sdkParams.image = { uri: options.referenceImageUrl };
+                    const firstPart = veoBuilt.instances[0]?.image as { imageBytes?: string; bytesBase64Encoded?: string; mimeType?: string; gcsUri?: string } | undefined;
+                    if (firstPart?.gcsUri) {
+                      sdkParams.image = { gcsUri: firstPart.gcsUri };
+                    } else if (firstPart?.bytesBase64Encoded || firstPart?.imageBytes) {
+                      sdkParams.image = {
+                        imageBytes: firstPart.imageBytes || firstPart.bytesBase64Encoded,
+                        mimeType: firstPart.mimeType || "image/jpeg",
+                      };
+                    }
+                    const lastPart = veoBuilt.instances[0]?.lastFrame as { imageBytes?: string; bytesBase64Encoded?: string; mimeType?: string } | undefined;
+                    if (lastPart?.bytesBase64Encoded || lastPart?.imageBytes) {
+                      sdkParams.config.lastFrame = {
+                        imageBytes: lastPart.imageBytes || lastPart.bytesBase64Encoded,
+                        mimeType: lastPart.mimeType || "image/jpeg",
+                      };
                     }
                     const veoRes = await (ai.models as any).generateVideos?.(sdkParams);
                     if (veoRes?.name) opName = veoRes.name;
@@ -396,9 +406,34 @@ export class AIProviderOrchestrator {
 
           if (finalVideoUrl) {
             const playableUrl = await convertToPlayableUrl(finalVideoUrl);
-            console.log("[Gemini Provider] Veo Video generation SUCCESS:", playableUrl.slice(0, 80));
-            if (options.onChunk) options.onChunk(playableUrl);
-            return playableUrl;
+            if (
+              /vidgen\.x\.ai|generativelanguage\.googleapis|files\//i.test(playableUrl) &&
+              !playableUrl.startsWith("data:")
+            ) {
+              throw new Error("Veo returned a provider URI; persist requires MP4 bytes.");
+            }
+            let durableUrl = playableUrl;
+            if (options.productionId && playableUrl) {
+              const { ingestRemoteMediaToSpark } = await import("../production/ingestMediaToSpark");
+              const shot = options.shotIndex && options.shotIndex > 0 ? Math.round(options.shotIndex) : Date.now();
+              const ingested = await ingestRemoteMediaToSpark({
+                url: playableUrl,
+                brandId: options.brandId,
+                productionId: options.productionId,
+                assetType: "video",
+                storagePath: `video/shot-${shot}.mp4`,
+                mimeType: "video/mp4",
+              });
+              if (!ingested?.publicUrl) {
+                throw new Error("Veo clip persist to Spark failed.");
+              }
+              durableUrl = ingested.publicUrl;
+            } else if (!playableUrl.startsWith("data:")) {
+              throw new Error("Veo clip has no Spark persist context and is not MP4 bytes.");
+            }
+            console.log("[Gemini Provider] Veo Video generation SUCCESS:", durableUrl.slice(0, 80));
+            if (options.onChunk) options.onChunk(durableUrl);
+            return durableUrl;
           }
 
           throw new Error("Gemini Video Generation timed out or returned no URI.");
@@ -1169,96 +1204,31 @@ export class AIProviderOrchestrator {
           throw new Error("Grok image generation failed and no fallback available.");
         }
 
-        // 4B. Grok Video Generation — grok-imagine-video via production adapter (image_url + reference faces)
+        // 4B. Grok Video Generation — official i2v (image + optional last/end). Never refs on the same body.
         if (options.capability === "Video Generation") {
           const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-          const identityRefs = (options.referenceImageUrls || []).filter(
-            (u) => u && u !== options.referenceImageUrl
-          );
-          try {
-            const clip = await requestProductionVideoClip({
-              provider: "grok",
-              prompt: options.prompt,
-              firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
-              endFrameUrl: options.endFrameUrl,
-              referenceImageUrls: identityRefs,
-              aspectRatio: options.aspectRatio,
-              durationSec: options.durationSec,
-              model: options.model || "grok-imagine-video",
-            });
-            if (clip.videoUrl) {
-              if (options.onChunk) options.onChunk(clip.videoUrl);
-              return clip.videoUrl;
-            }
-          } catch (apiErr) {
-            console.warn("[Grok Provider] Production video adapter notice, trying direct SDK payload:", apiErr);
+          const firstFrame = options.firstFrameUrl || options.referenceImageUrl;
+          if (!firstFrame) {
+            throw new Error("Grok i2v requires this shot's still as frame 1.");
           }
-
-          const candidateVideoModels = [
-            options.model,
-            "grok-imagine-video",
-            "grok-imagine-video-1.5",
-          ].filter(Boolean) as string[];
-
-          const targetAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
-          const rawGrokDuration = options.durationSec || 5;
-          const snappedGrokDuration = Math.min(15, Math.max(1, Math.round(rawGrokDuration)));
-          const firstFrame = options.referenceImageUrl || options.referenceImageUrls?.[0];
-          const faceRefs = identityRefs.slice(0, 7);
-
-          for (const videoModel of candidateVideoModels) {
-            const grokVideoPayload: any = {
-              model: videoModel,
-              prompt: options.prompt,
-              aspect_ratio: targetAspect,
-              duration: snappedGrokDuration,
-              resolution: "720p",
-            };
-            if (firstFrame) {
-              grokVideoPayload.image_url = firstFrame;
-              console.log(`[Grok Provider] Conditioning Grok video on start frame + ${faceRefs.length} reference face(s) (duration: ${snappedGrokDuration}s)`);
-            }
-            if (faceRefs.length > 0) {
-              grokVideoPayload.reference_image_urls = faceRefs;
-            }
-
-            if (apiKey) {
-              try {
-                const vRes = await fetch("https://api.x.ai/v1/videos/generations", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${apiKey}`,
-                  },
-                  body: JSON.stringify(grokVideoPayload),
-                });
-
-                if (vRes.ok) {
-                  const vData = await vRes.json();
-                  const immediate = extractGrokVideoUrl(vData);
-                  if (immediate) {
-                    if (options.onChunk) options.onChunk(immediate);
-                    return immediate;
-                  }
-                  throw new Error(
-                    `Grok Video Generation returned OK but no video URL in payload (model=${videoModel}).`
-                  );
-                } else {
-                  const errTxt = await vRes.text().catch(() => "");
-                  console.warn(`[Grok Provider] Direct video.generate failed (${videoModel} - ${vRes.status}):`, errTxt.slice(0, 300));
-                  throw new Error(
-                    `Grok Video Generation HTTP ${vRes.status}: ${errTxt.slice(0, 180) || "no body"}`
-                  );
-                }
-              } catch (vErr: any) {
-                if (String(vErr?.message || "").startsWith("Grok Video Generation")) throw vErr;
-                console.warn(`[Grok Provider] Direct video.generate notice (${videoModel}):`, vErr);
-                throw new Error(`Grok Video Generation request failed: ${vErr?.message || String(vErr)}`);
-              }
-            }
+          const clip = await requestProductionVideoClip({
+            provider: "grok",
+            prompt: options.prompt,
+            firstFrameUrl: firstFrame,
+            endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
+            referenceImageUrls: [],
+            aspectRatio: options.aspectRatio,
+            durationSec: options.durationSec,
+            model: options.model || "grok-imagine-video",
+            productionId: options.productionId,
+            brandId: options.brandId,
+            shotIndex: options.shotIndex,
+          });
+          if (!clip.videoUrl) {
+            throw new Error("Grok Video Generation returned no Spark video URL.");
           }
-
-          throw new Error("Grok Video Generation timed out or returned no video URL.");
+          if (options.onChunk) options.onChunk(clip.videoUrl);
+          return clip.videoUrl;
         }
 
         // 4C. Grok Voice / TTS (/v1/tts)
@@ -1472,18 +1442,22 @@ export class AIProviderOrchestrator {
           throw new Error("Kling plugin currently supports Video Generation only.");
         }
         const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-        const identityRefs = (options.referenceImageUrls || []).filter(
-          (u) => u && u !== options.referenceImageUrl && u !== options.endFrameUrl
-        );
+        const klingFirst = options.firstFrameUrl || options.referenceImageUrl;
+        if (!klingFirst) {
+          throw new Error("Kling i2v requires this shot's still as frame 1.");
+        }
         const clip = await requestProductionVideoClip({
           provider: "kling",
           prompt: options.prompt,
-          firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
-          endFrameUrl: options.endFrameUrl,
-          referenceImageUrls: identityRefs,
+          firstFrameUrl: klingFirst,
+          endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
+          referenceImageUrls: [],
           aspectRatio: options.aspectRatio,
           durationSec: options.durationSec,
           model: options.model,
+          productionId: options.productionId,
+          brandId: options.brandId,
+          shotIndex: options.shotIndex,
         });
         if (options.onChunk) options.onChunk(clip.videoUrl);
         return clip.videoUrl;
@@ -1501,18 +1475,22 @@ export class AIProviderOrchestrator {
           throw new Error("Seedance plugin currently supports Video Generation only.");
         }
         const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-        const identityRefs = (options.referenceImageUrls || []).filter(
-          (u) => u && u !== options.referenceImageUrl && u !== options.endFrameUrl
-        );
+        const seedanceFirst = options.firstFrameUrl || options.referenceImageUrl;
+        if (!seedanceFirst) {
+          throw new Error("Seedance i2v requires this shot's still as frame 1.");
+        }
         const clip = await requestProductionVideoClip({
           provider: "seedance",
           prompt: options.prompt,
-          firstFrameUrl: options.referenceImageUrl || options.referenceImageUrls?.[0],
-          endFrameUrl: options.endFrameUrl,
-          referenceImageUrls: identityRefs,
+          firstFrameUrl: seedanceFirst,
+          endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
+          referenceImageUrls: [],
           aspectRatio: options.aspectRatio,
           durationSec: options.durationSec,
           model: options.model,
+          productionId: options.productionId,
+          brandId: options.brandId,
+          shotIndex: options.shotIndex,
         });
         if (options.onChunk) options.onChunk(clip.videoUrl);
         return clip.videoUrl;
