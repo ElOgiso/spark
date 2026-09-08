@@ -586,7 +586,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
         isOpen={showWipeData}
         onClose={() => setShowWipeData(false)}
         onConfirm={async () => {
-          await spark?.wipeWorkspaceLearning?.();
+          return (await spark?.wipeWorkspaceLearning?.()) === true;
         }}
         brandName={spark?.brand?.name}
       />

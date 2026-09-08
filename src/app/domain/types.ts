@@ -128,6 +128,7 @@ export interface ViralSpark {
    * `draft` is transitional only if auto-prepare fails.
    */
   status?: "draft" | "ready";
+  createdAt?: string;
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
@@ -389,6 +390,7 @@ export interface MemoryItem {
   firstSeenAt?: string;
   lastSeenAt?: string;
   syncCount?: number;
+  createdAt?: string;
 }
 
 export interface ProductionAsset {

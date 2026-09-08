@@ -1452,7 +1452,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
         isOpen={showWipeData}
         onClose={() => setShowWipeData(false)}
         onConfirm={async () => {
-          await wipeWorkspaceLearning?.();
+          return (await wipeWorkspaceLearning?.()) === true;
         }}
         brandName={brand?.name}
       />

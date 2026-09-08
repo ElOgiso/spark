@@ -58,6 +58,12 @@ import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import {
+  applyLearningWipeToArrays,
+  resolveLearningWipeAt,
+  shouldSkipBackgroundResearchSync,
+} from "../backend/learningWipeEpoch";
+import { isInMemorySettingsNewer, readSettingsWrittenAt } from "../backend/brandSettingsFreshness";
+import {
   recordProductionTombstone,
   isProductionTombstoned,
   filterTombstonedProductions,
@@ -374,12 +380,22 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await wipeWorkspaceLearningData(brandId);
       if (res.ok) {
+        const wipeAt = res.wipeAt || new Date().toISOString();
         setState((prev: any) => ({
           ...prev,
           viralSparks: [],
           researchSources: [],
           researchPatterns: [],
           memoryItems: [],
+          brand: prev.brand
+            ? {
+                ...prev.brand,
+                settings: {
+                  ...(prev.brand.settings || {}),
+                  learning_wipe_at: wipeAt,
+                },
+              }
+            : prev.brand,
         }));
         return true;
       }
@@ -393,7 +409,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateAISettings = (newSettings: AISettings) => {
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
     const brandId = getBrandWorkspaceId();
-    persistAISettings(brandId, newSettings);
+    void persistAISettings(brandId, newSettings).then((ok) => {
+      if (ok === false) {
+        NotificationService.addNotification({
+          title: "Save Error",
+          description: "AI settings did not save. Try again.",
+          type: "brand_rule_conflict",
+          priority: "high",
+        });
+      }
+    });
     // Canonical dual-write: keep ModelRouter localStorage aligned with Spark aiSettings
     // so production + Super Spark + mobile/desktop share one routing truth.
     try {
@@ -424,7 +449,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const brandId = getBrandWorkspaceId();
     if (brandId) {
       const { persistCreditSettings } = await import("../backend/workspaceSync");
-      return await persistCreditSettings(brandId, updated);
+      const ok = await persistCreditSettings(brandId, updated);
+      if (!ok) {
+        NotificationService.addNotification({
+          title: "Save Error",
+          description: "Credit settings did not save. Try again.",
+          type: "brand_rule_conflict",
+          priority: "high",
+        });
+      }
+      return ok;
     }
     return true;
   }, [state]);
@@ -450,7 +484,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const brandId = getBrandWorkspaceId();
     if (brandId) {
       const { persistFormatSettings } = await import("../backend/workspaceSync");
-      return await persistFormatSettings(brandId, updated);
+      const ok = await persistFormatSettings(brandId, updated);
+      if (!ok) {
+        NotificationService.addNotification({
+          title: "Save Error",
+          description: "Format settings did not save. Try again.",
+          type: "brand_rule_conflict",
+          priority: "high",
+        });
+      }
+      return ok;
     }
     return true;
   }, [state]);
@@ -689,7 +732,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             (typeof objectivesFormatSettings?.targetDurationSec === "number" ? objectivesFormatSettings.targetDurationSec : undefined) ??
             DEFAULT_FORMAT_SETTINGS.targetDurationSec;
 
-          const mergedFormatSettings: ProductionFormatSettings = {
+          const keepMemorySettings = isInMemorySettingsNewer(
+            prev.brand?.settings?.settings_written_at || readSettingsWrittenAt(activeBrandId),
+            snap.brand?.settings?.settings_written_at
+          );
+
+          let mergedFormatSettings: ProductionFormatSettings = {
             ...DEFAULT_FORMAT_SETTINGS,
             ...(objectivesFormatSettings || {}),
             ...(prev.brand?.formatSettings || {}),
@@ -699,12 +747,42 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             targetDurationSec: resolvedDuration,
           };
 
-          const mergedCreditSettings = {
+          let mergedCreditSettings = {
             ...DEFAULT_CREDIT_SETTINGS,
             ...(cloudCreditSettings || {}),
             ...(prev.brand?.creditSettings || {}),
             ...(prev.creditSettings || {}),
           };
+
+          if (keepMemorySettings) {
+            mergedFormatSettings = {
+              ...mergedFormatSettings,
+              ...(prev.brand?.formatSettings || {}),
+              ...(prev.formatSettings || {}),
+            };
+            mergedCreditSettings = {
+              ...mergedCreditSettings,
+              ...(prev.brand?.creditSettings || {}),
+              ...(prev.creditSettings || {}),
+            };
+          }
+
+          const wipeAtForBrand = resolveLearningWipeAt(
+            activeBrandId,
+            snap.brand?.settings || prev.brand?.settings || null
+          );
+          const wipedLearning = applyLearningWipeToArrays({
+            brandId: activeBrandId,
+            brandSettings: {
+              ...(snap.brand?.settings || {}),
+              ...(prev.brand?.settings || {}),
+              ...(wipeAtForBrand ? { learning_wipe_at: wipeAtForBrand } : {}),
+            },
+            memoryItems: snap.memoryItems || [],
+            viralSparks: (snap.viralSparks || []).filter((s: any) => s && !s.id?.startsWith("vs-init-")),
+            researchSources: snap.researchSources || [],
+            researchPatterns: snap.researchPatterns || [],
+          });
 
           // CLOUD IS TRUTH FOR AUTHENTICATED USER — EMPTY CLOUD ARRAYS ARE TRUTH ([])
           const merged = {
@@ -718,18 +796,27 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   productionMode: cloudProductionMode || snap.brand.productionMode || prev.brand?.productionMode,
                   automation_mode: cloudAutomationMode || snap.brand.automation_mode || prev.brand?.automation_mode,
                   productionGenerationEnabled:
-                    typeof snap.brand.productionGenerationEnabled === "boolean"
-                      ? snap.brand.productionGenerationEnabled
-                      : prev.brand?.productionGenerationEnabled,
+                    keepMemorySettings && typeof prev.brand?.productionGenerationEnabled === "boolean"
+                      ? prev.brand.productionGenerationEnabled
+                      : typeof snap.brand.productionGenerationEnabled === "boolean"
+                        ? snap.brand.productionGenerationEnabled
+                        : prev.brand?.productionGenerationEnabled,
                   settings: {
-                    ...(prev.brand?.settings || {}),
-                    ...(snap.brand.settings || {}),
-                    ...(typeof snap.brand.productionGenerationEnabled === "boolean"
+                    ...(keepMemorySettings ? snap.brand.settings || {} : prev.brand?.settings || {}),
+                    ...(keepMemorySettings ? prev.brand?.settings || {} : snap.brand.settings || {}),
+                    ...(typeof (keepMemorySettings
+                      ? prev.brand?.productionGenerationEnabled
+                      : snap.brand.productionGenerationEnabled) === "boolean"
                       ? {
-                          production_generation_enabled: snap.brand.productionGenerationEnabled,
-                          productionGenerationEnabled: snap.brand.productionGenerationEnabled,
+                          production_generation_enabled: keepMemorySettings
+                            ? prev.brand?.productionGenerationEnabled
+                            : snap.brand.productionGenerationEnabled,
+                          productionGenerationEnabled: keepMemorySettings
+                            ? prev.brand?.productionGenerationEnabled
+                            : snap.brand.productionGenerationEnabled,
                         }
                       : {}),
+                    ...(wipeAtForBrand ? { learning_wipe_at: wipeAtForBrand } : {}),
                   },
                 }
               : (prev.brand
@@ -758,19 +845,24 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             accounts: Array.from(byPlatform.values()),
             automationMode: cloudAutomationMode || prev.automationMode,
             productionMode: (cloudProductionMode as any) || prev.productionMode,
-            aiSettings: cloudAiSettings ? { ...prev.aiSettings, ...cloudAiSettings } : prev.aiSettings,
+            aiSettings: keepMemorySettings
+              ? prev.aiSettings
+              : cloudAiSettings
+                ? { ...prev.aiSettings, ...cloudAiSettings }
+                : prev.aiSettings,
             creditSettings: mergedCreditSettings,
             formatSettings: mergedFormatSettings,
 
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
-            memoryItems: snap.memoryItems || [],
-            viralSparks: (snap.viralSparks || []).filter((s: any) => s && !s.id?.startsWith("vs-init-")),
+            // Learning wipe epoch: do not merge pre-wipe sparks/sources/memory back in.
+            memoryItems: wipedLearning.memoryItems,
+            viralSparks: wipedLearning.viralSparks,
+            researchSources: wipedLearning.researchSources,
+            researchPatterns: wipedLearning.researchPatterns,
             productions: filterTombstonedProductions(snap.productions || []),
             reviewItems: filterTombstonedReviews(snap.reviewItems || []),
             publishJobs: snap.publishJobs || [],
             analyticsInsights: snap.analyticsInsights || [],
-            researchSources: snap.researchSources || [],
-            researchPatterns: snap.researchPatterns || [],
           };
 
           savePersistedState(merged, currentUserId, activeBrandId);
@@ -785,6 +877,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     }
   }, [currentUserId, activeBrandId]);
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     const onAccountConnected = (ev: Event) => {
@@ -904,7 +999,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       // Background Research Sources sync with 4-hour quota cooldown
       void import("../services/research/researchSourceService").then(({ ResearchSourceService }) => {
-        const sources = state.researchSources || [];
+        const liveState = stateRef.current || state;
+        const sources = liveState.researchSources || [];
+        if (
+          shouldSkipBackgroundResearchSync({
+            brandId: getBrandWorkspaceId() || liveState.brand?.id,
+            brandSettings: liveState.brand?.settings || null,
+            researchSources: sources,
+          })
+        ) {
+          return;
+        }
         sources.forEach((source: any) => {
           if (ResearchSourceService.isQuotaAllowedForSync(source.lastSyncedAt, false)) {
             void syncResearchSource(source.id);
@@ -926,9 +1031,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       window.removeEventListener("spark-analytics-synced", onAnalyticsSynced);
     };
   }, []);
-
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   // Sync to abstracted persistence helper & start Autonomous Runtime Engine
   useEffect(() => {
@@ -976,6 +1078,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             description: "Profile updates persisted to cloud database.",
             type: "system_update",
             priority: "low",
+          });
+        } else {
+          NotificationService.addNotification({
+            title: "Save Error",
+            description: "Brand profile did not save. Try again.",
+            type: "brand_rule_conflict",
+            priority: "high",
           });
         }
       });
@@ -2589,6 +2698,15 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             production_generation_enabled: next,
             productionGenerationEnabled: next,
           },
+        }).then((ok) => {
+          if (!ok) {
+            NotificationService.addNotification({
+              title: "Save Error",
+              description: "Production Generation setting did not save. Try again.",
+              type: "brand_rule_conflict",
+              priority: "high",
+            });
+          }
         });
       });
     }

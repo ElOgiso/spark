@@ -53,6 +53,17 @@ import {
   productionDeleteCloudSucceeded,
   isCancelOrStatusPatch,
 } from "../services/production/productionPersistGuard";
+import {
+  applyLearningWipeToArrays,
+  learningRowCreatedAt,
+  markUserAddedSourceSinceWipe,
+  persistLearningWipeAtLocal,
+  readLearningWipeAt,
+  rememberSuccessfulLearningWipe,
+  requiredWipeDeleteError,
+  shouldNoOpLearningPersist,
+} from "./learningWipeEpoch";
+import { isInMemorySettingsNewer, readSettingsWrittenAt, stampSettingsWrittenAt } from "./brandSettingsFreshness";
 import type {
   Account,
   AnalyticsInsight,
@@ -333,23 +344,57 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     } catch {}
   }
 
-  const resolvedFormatDuration =
-    (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
-    (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
-    DEFAULT_FORMAT_SETTINGS.targetDurationSec;
+  const cloudSettingsWrittenAt = (brandRes?.data?.settings as any)?.settings_written_at;
+  const keepLocalSettings = isInMemorySettingsNewer(readSettingsWrittenAt(brandId), cloudSettingsWrittenAt);
+
+  const resolvedFormatDuration = keepLocalSettings
+    ? (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
+      (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
+      DEFAULT_FORMAT_SETTINGS.targetDurationSec
+    : (typeof cloudFormatSettings?.targetDurationSec === "number" ? cloudFormatSettings.targetDurationSec : undefined) ??
+      (typeof localCachedFormat?.targetDurationSec === "number" ? localCachedFormat.targetDurationSec : undefined) ??
+      DEFAULT_FORMAT_SETTINGS.targetDurationSec;
 
   const resolvedFormat = (cloudFormatSettings || localCachedFormat)
-    ? {
-        ...DEFAULT_FORMAT_SETTINGS,
-        ...(localCachedFormat || {}),
-        ...(cloudFormatSettings || {}),
-        targetDurationSec: resolvedFormatDuration,
-      }
+    ? keepLocalSettings
+      ? {
+          ...DEFAULT_FORMAT_SETTINGS,
+          ...(cloudFormatSettings || {}),
+          ...(localCachedFormat || {}),
+          targetDurationSec: resolvedFormatDuration,
+        }
+      : {
+          ...DEFAULT_FORMAT_SETTINGS,
+          ...(localCachedFormat || {}),
+          ...(cloudFormatSettings || {}),
+          targetDurationSec: resolvedFormatDuration,
+        }
     : undefined;
 
   if (brand && resolvedFormat) {
     brand.formatSettings = resolvedFormat;
   }
+
+  const cloudWipeAt =
+    (typeof (brand?.settings as any)?.learning_wipe_at === "string" && (brand?.settings as any).learning_wipe_at) ||
+    (typeof (brandRes?.data?.settings as any)?.learning_wipe_at === "string" &&
+      (brandRes?.data?.settings as any).learning_wipe_at) ||
+    null;
+  if (cloudWipeAt) {
+    const localWipe = readLearningWipeAt(brandId);
+    if (!localWipe || Date.parse(cloudWipeAt) >= Date.parse(localWipe)) {
+      persistLearningWipeAtLocal(brandId, cloudWipeAt);
+    }
+  }
+
+  const wipedLearning = applyLearningWipeToArrays({
+    brandId,
+    brandSettings: brand?.settings || (brandRes?.data?.settings as any) || null,
+    memoryItems: (memory.data ?? []).map(memoryRowToDomain),
+    viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
+    researchSources: sourcesRes.data ?? [],
+    researchPatterns: patternsRes.data ?? [],
+  });
 
   return {
     brand,
@@ -358,14 +403,14 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     creditSettings: cloudCreditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...cloudCreditSettings } : undefined,
     formatSettings: resolvedFormat,
     accounts: (accounts.data as AccountRow[] | null)?.map(accountRowToDomain) ?? [],
-    memoryItems: (memory.data ?? []).map(memoryRowToDomain),
-    viralSparks: (sparks.data ?? []).map(viralSparkRowToDomain),
+    memoryItems: wipedLearning.memoryItems,
+    viralSparks: wipedLearning.viralSparks,
     productions: refreshedProductions,
     reviewItems: (reviews.data ?? []).map(reviewRowToDomain),
     publishJobs: (jobs.data ?? []).map(publishJobRowToDomain),
     analyticsInsights: (analytics.data ?? []).map(analyticsRowToDomain),
-    researchSources: sourcesRes.data ?? [],
-    researchPatterns: patternsRes.data ?? [],
+    researchSources: wipedLearning.researchSources,
+    researchPatterns: wipedLearning.researchPatterns,
   };
 }
 
@@ -426,6 +471,16 @@ export async function persistMemoryCreate(brandId: string, item: MemoryItem) {
   if (!isSupabaseConfigured() || !brandId) return null;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(brandId)) {
     console.warn("[workspaceSync] persistMemoryCreate skipped: brandId is not a valid UUID", brandId);
+    return null;
+  }
+  if (
+    shouldNoOpLearningPersist({
+      brandId,
+      kind: "memory",
+      rowCreatedAt: learningRowCreatedAt(item as any),
+    })
+  ) {
+    console.warn("[workspaceSync] persistMemoryCreate skipped: learning wipe epoch", item.id);
     return null;
   }
   const result = await createMemoryItem(domainMemoryToInsert(brandId, item));
@@ -500,6 +555,16 @@ function attachProductionStorageIdentity(row: ProductionRow, production: Product
 
 export async function persistViralSparkCreate(brandId: string, spark: ViralSpark) {
   if (!isSupabaseConfigured()) return null;
+  if (
+    shouldNoOpLearningPersist({
+      brandId,
+      kind: "viral_spark",
+      rowCreatedAt: learningRowCreatedAt(spark as any),
+    })
+  ) {
+    console.warn("[workspaceSync] persistViralSparkCreate skipped: learning wipe epoch", spark.id);
+    return null;
+  }
   const result = await createViralSpark(domainViralSparkToInsert(brandId, spark));
   return result.data ? viralSparkRowToDomain(result.data) : null;
 }
@@ -978,7 +1043,15 @@ export async function persistResearchSourceCreate(brandId: string, source: Resea
     console.error("[workspaceSync] persistResearchSourceCreate failed: brandId is not a valid UUID", brandId);
     return null;
   }
-  const result = await createResearchSource({ ...source, brand_id: brandId });
+  const rowCreatedAt = learningRowCreatedAt(source as any) || source.createdAt || new Date().toISOString();
+  if (shouldNoOpLearningPersist({ brandId, kind: "research_source", rowCreatedAt })) {
+    console.warn("[workspaceSync] persistResearchSourceCreate skipped: learning wipe epoch", source.id);
+    return null;
+  }
+  const result = await createResearchSource({ ...source, createdAt: rowCreatedAt, brand_id: brandId });
+  if (result.data) {
+    markUserAddedSourceSinceWipe(brandId);
+  }
   return result.data || null;
 }
 
@@ -995,6 +1068,16 @@ export async function persistResearchSourceUpdate(id: string, patch: Partial<Res
 
 export async function persistResearchPatternCreate(brandId: string, pattern: ResearchPattern) {
   if (!isSupabaseConfigured() || !isUuid(brandId)) return null;
+  if (
+    shouldNoOpLearningPersist({
+      brandId,
+      kind: "research_pattern",
+      rowCreatedAt: learningRowCreatedAt(pattern as any),
+    })
+  ) {
+    console.warn("[workspaceSync] persistResearchPatternCreate skipped: learning wipe epoch", pattern.id);
+    return null;
+  }
   const result = await createResearchPattern({ ...pattern, brand_id: brandId });
   return result.data || null;
 }
@@ -1028,10 +1111,12 @@ export async function persistCreditSettings(
         ? { ...brandRow.settings }
         : {};
 
+    const writtenAt = new Date().toISOString();
     existingSettings.credit_settings = { ...settings };
+    existingSettings.settings_written_at = writtenAt;
 
     const { error } = await (supabase.from("brands") as any)
-      .update({ settings: existingSettings, updated_at: new Date().toISOString() })
+      .update({ settings: existingSettings, updated_at: writtenAt })
       .eq("id", brandId);
 
     if (error) {
@@ -1039,6 +1124,7 @@ export async function persistCreditSettings(
       return false;
     }
 
+    stampSettingsWrittenAt(brandId, writtenAt);
     console.log("[workspaceSync] Credit settings persisted to brands.settings in Supabase:", settings);
     return true;
   } catch (err) {
@@ -1057,17 +1143,28 @@ export async function persistFormatSettings(
     targetDurationSec: cleanDuration,
   };
 
-  if (typeof localStorage !== "undefined") {
-    localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(cleanSettings));
-    if (brandId) {
-      localStorage.setItem(`spark_format_settings_active`, JSON.stringify(cleanSettings));
+  const writeLocalFormatCache = () => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(cleanSettings));
+      if (brandId) {
+        localStorage.setItem(`spark_format_settings_active`, JSON.stringify(cleanSettings));
+      }
     }
+  };
+
+  if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) {
+    writeLocalFormatCache();
+    if (brandId) stampSettingsWrittenAt(brandId);
+    return true;
   }
-  if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) return true;
 
   try {
     const supabase = getSupabaseClient();
-    if (!supabase) return true;
+    if (!supabase) {
+      writeLocalFormatCache();
+      stampSettingsWrittenAt(brandId);
+      return true;
+    }
 
     const { data: brandRow } = await (supabase.from("brands") as any)
       .select("settings")
@@ -1079,16 +1176,25 @@ export async function persistFormatSettings(
         ? { ...brandRow.settings }
         : {};
 
+    const writtenAt = new Date().toISOString();
     existingSettings.format_settings = { ...cleanSettings };
+    existingSettings.settings_written_at = writtenAt;
     if (cleanSettings.contentFormat) {
       existingSettings.contentFormat = cleanSettings.contentFormat;
       existingSettings.content_format = cleanSettings.contentFormat;
     }
 
-    await (supabase.from("brands") as any)
-      .update({ settings: existingSettings, updated_at: new Date().toISOString() })
+    const { error } = await (supabase.from("brands") as any)
+      .update({ settings: existingSettings, updated_at: writtenAt })
       .eq("id", brandId);
 
+    if (error) {
+      console.error("[workspaceSync] persistFormatSettings update error:", error.message);
+      return false;
+    }
+
+    writeLocalFormatCache();
+    stampSettingsWrittenAt(brandId, writtenAt);
     console.log("[workspaceSync] Format settings persisted to brands.settings in Supabase:", settings);
     return true;
   } catch (err) {
@@ -1178,7 +1284,9 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
       newSettings.productionGenerationEnabled = Boolean(patch.productionGenerationEnabled);
     }
 
+    const writtenAt = new Date().toISOString();
     if (Object.keys(newSettings).length > 0) {
+      newSettings.settings_written_at = writtenAt;
       rowPatch.settings = newSettings;
     }
 
@@ -1187,6 +1295,7 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
       console.error("[workspaceSync] persistBrandUpdate cloud write error:", res.error);
       return false;
     }
+    stampSettingsWrittenAt(brandId, writtenAt);
     return true;
   } catch (err) {
     console.error("[workspaceSync] Brand update persist notice:", err);
@@ -1752,19 +1861,26 @@ export async function persistExecutiveModeUpdate(brandId: string, patch: { autom
   }
 }
 
-export async function persistAISettings(brandId: string, aiSettings: import("../domain/types").AISettings) {
+export async function persistAISettings(brandId: string, aiSettings: import("../domain/types").AISettings): Promise<boolean> {
   try {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(`spark_ai_settings_${brandId || "default"}`, JSON.stringify(aiSettings));
-    }
     if (isSupabaseConfigured() && isUuid(brandId)) {
-      await executiveSummaryRepository.upsertSummary({
+      const row = await executiveSummaryRepository.upsertSummary({
         brand_id: brandId,
         current_objectives: { ai_settings: aiSettings } as any,
       });
+      if (!row) {
+        console.error("[workspaceSync] persistAISettings failed: executive summary upsert returned null");
+        return false;
+      }
     }
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(`spark_ai_settings_${brandId || "default"}`, JSON.stringify(aiSettings));
+    }
+    if (brandId) stampSettingsWrittenAt(brandId);
+    return true;
   } catch (err) {
-    console.warn("[workspaceSync] AI settings persist notice:", err);
+    console.error("[workspaceSync] AI settings persist error:", err);
+    return false;
   }
 }
 
@@ -1836,17 +1952,61 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
 
 /**
  * Clears learned research & memory data for the active workspace:
- * - viral_sparks, research_sources, research_patterns, memory_items, brand_rules
- * WHERE brand_id = brandId
- * 
+ * - viral_sparks, research_sources, research_patterns, memory_items (required)
+ * - brand_rules (optional — ignore missing table)
+ *
+ * Fail closed: any required DELETE error → ok:false. Does not set wipe epoch.
+ *
  * Does NOT delete:
  * - brands, characters, brand_voices, accounts, productions, review_items,
  *   publish_jobs, profiles, format_settings, credit_settings, contentFormat,
  *   AI prefs, Storage bucket files
  */
+function clearLocalLearningWorkspaceCache(brandId: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const cacheKey = `spark_workspace_${brandId}`;
+    const raw = localStorage.getItem(cacheKey);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    if (cached && typeof cached === "object") {
+      cached.viralSparks = [];
+      cached.researchSources = [];
+      cached.researchPatterns = [];
+      cached.memoryItems = [];
+      cached.brandRules = [];
+      localStorage.setItem(cacheKey, JSON.stringify(cached));
+    }
+  } catch (lsErr) {
+    console.warn("[workspaceSync] Local storage learning cache cleanup notice:", lsErr);
+  }
+}
+
+async function persistLearningWipeAtOnBrand(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  brandId: string,
+  wipeAt: string
+): Promise<void> {
+  const { data: brandRow } = await (supabase.from("brands") as any)
+    .select("settings")
+    .eq("id", brandId)
+    .maybeSingle();
+  const existingSettings =
+    brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
+      ? { ...brandRow.settings }
+      : {};
+  existingSettings.learning_wipe_at = wipeAt;
+  const { error } = await (supabase.from("brands") as any)
+    .update({ settings: existingSettings, updated_at: wipeAt })
+    .eq("id", brandId);
+  if (error) {
+    console.warn("[workspaceSync] learning_wipe_at brand persist notice:", error);
+  }
+}
+
 export async function wipeWorkspaceLearningData(
   brandId: string
-): Promise<{ ok: boolean; deleted: Record<string, number>; error?: string }> {
+): Promise<{ ok: boolean; deleted: Record<string, number>; error?: string; wipeAt?: string }> {
   if (!brandId) {
     return { ok: false, deleted: {}, error: "Missing brand ID" };
   }
@@ -1861,85 +2021,80 @@ export async function wipeWorkspaceLearningData(
 
   console.log(`[workspaceSync] Initiating learning data wipe for workspace brandId: ${brandId}`);
 
-  // 1. Cloud Deletion (if Supabase is configured and brandId is UUID)
   if (isSupabaseConfigured() && isUuid(brandId)) {
     try {
       const supabase = getSupabaseClient();
-      if (supabase) {
-        // Require uuid brandId + signed-in user owns that brand
-        const { data: userData } = await supabase.auth.getUser();
-        const currentUser = userData?.user;
-        if (currentUser) {
-          const { data: brandRow, error: brandFetchErr } = await (supabase.from("brands") as any)
-            .select("id, owner_id")
-            .eq("id", brandId)
-            .maybeSingle();
+      if (!supabase) {
+        return { ok: false, deleted: deletedCounts, error: "Supabase client unavailable" };
+      }
 
-          if (brandFetchErr) {
-            console.warn("[workspaceSync] wipeWorkspaceLearningData brand lookup notice:", brandFetchErr);
-          } else if (brandRow && brandRow.owner_id && brandRow.owner_id !== currentUser.id) {
-            console.warn("[workspaceSync] Unauthorized wipe attempt on brandId:", brandId);
-            return { ok: false, deleted: deletedCounts, error: "Unauthorized: You do not own this workspace" };
-          }
-        }
+      const { data: userData } = await supabase.auth.getUser();
+      const currentUser = userData?.user;
+      if (currentUser) {
+        const { data: brandRow, error: brandFetchErr } = await (supabase.from("brands") as any)
+          .select("id, owner_id")
+          .eq("id", brandId)
+          .maybeSingle();
 
-        const learningTables = [
-          "viral_sparks",
-          "research_sources",
-          "research_patterns",
-          "memory_items",
-          "brand_rules",
-        ];
-
-        for (const table of learningTables) {
-          try {
-            const { error: delErr, count } = await (supabase.from(table as any) as any)
-              .delete({ count: "exact" })
-              .eq("brand_id", brandId);
-
-            if (delErr) {
-              console.warn(`[workspaceSync] Notice wiping from ${table}:`, delErr);
-            } else {
-              deletedCounts[table] = count || 0;
-            }
-          } catch (tErr) {
-            console.warn(`[workspaceSync] Exception wiping from ${table}:`, tErr);
-          }
+        if (brandFetchErr) {
+          console.warn("[workspaceSync] wipeWorkspaceLearningData brand lookup notice:", brandFetchErr);
+        } else if (brandRow && brandRow.owner_id && brandRow.owner_id !== currentUser.id) {
+          console.warn("[workspaceSync] Unauthorized wipe attempt on brandId:", brandId);
+          return { ok: false, deleted: deletedCounts, error: "Unauthorized: You do not own this workspace" };
         }
       }
+
+      const tableResults: Record<string, { error?: { message?: string } | null }> = {};
+      for (const table of ["viral_sparks", "research_sources", "research_patterns", "memory_items"] as const) {
+        try {
+          const { error: delErr, count } = await (supabase.from(table as any) as any)
+            .delete({ count: "exact" })
+            .eq("brand_id", brandId);
+          tableResults[table] = { error: delErr || null };
+          if (!delErr) {
+            deletedCounts[table] = count || 0;
+          }
+        } catch (tErr: any) {
+          tableResults[table] = { error: { message: tErr?.message || String(tErr) } };
+        }
+      }
+
+      try {
+        const { error: rulesErr, count } = await (supabase.from("brand_rules") as any)
+          .delete({ count: "exact" })
+          .eq("brand_id", brandId);
+        if (!rulesErr) {
+          deletedCounts.brand_rules = count || 0;
+        } else {
+          console.warn("[workspaceSync] brand_rules wipe ignored (optional table):", rulesErr);
+        }
+      } catch (rulesEx) {
+        console.warn("[workspaceSync] brand_rules wipe ignored (optional table):", rulesEx);
+      }
+
+      const requiredErr = requiredWipeDeleteError(tableResults);
+      if (requiredErr) {
+        console.error("[workspaceSync] Learning wipe failed closed:", requiredErr);
+        return { ok: false, deleted: deletedCounts, error: requiredErr };
+      }
+
+      const wipeAt = new Date().toISOString();
+      await persistLearningWipeAtOnBrand(supabase, brandId, wipeAt);
+      rememberSuccessfulLearningWipe(brandId, wipeAt);
+      clearLocalLearningWorkspaceCache(brandId);
+      console.log(`[workspaceSync] Successfully wiped learning data for brandId: ${brandId}`, deletedCounts);
+      return { ok: true, deleted: deletedCounts, wipeAt };
     } catch (err: any) {
       console.warn("[workspaceSync] Supabase learning wipe error:", err);
       return { ok: false, deleted: deletedCounts, error: err?.message || "Failed to wipe cloud learning data" };
     }
   }
 
-  // 2. Local Storage Workspace Cache Update (clear learning arrays from cached workspace)
-  try {
-    if (typeof localStorage !== "undefined") {
-      const cacheKey = `spark_workspace_${brandId}`;
-      const raw = localStorage.getItem(cacheKey);
-      if (raw) {
-        try {
-          const cached = JSON.parse(raw);
-          if (cached && typeof cached === "object") {
-            cached.viralSparks = [];
-            cached.researchSources = [];
-            cached.researchPatterns = [];
-            cached.memoryItems = [];
-            cached.brandRules = [];
-            localStorage.setItem(cacheKey, JSON.stringify(cached));
-          }
-        } catch {
-          // ignore cache parse error
-        }
-      }
-    }
-  } catch (lsErr) {
-    console.warn("[workspaceSync] Local storage learning cache cleanup notice:", lsErr);
-  }
-
-  console.log(`[workspaceSync] Successfully wiped learning data for brandId: ${brandId}`, deletedCounts);
-  return { ok: true, deleted: deletedCounts };
+  const wipeAt = new Date().toISOString();
+  rememberSuccessfulLearningWipe(brandId, wipeAt);
+  clearLocalLearningWorkspaceCache(brandId);
+  console.log(`[workspaceSync] Local-only learning wipe for brandId: ${brandId}`);
+  return { ok: true, deleted: deletedCounts, wipeAt };
 }
 
 /**

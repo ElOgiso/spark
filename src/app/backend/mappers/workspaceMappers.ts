@@ -73,6 +73,7 @@ export function memoryRowToDomain(row: MemoryItemRow): MemoryItem {
     type: row.source === "rule" || (String(row.category) === "brand" && row.title.startsWith("Rule")) ? "rule" : "learned",
     text: row.description || row.title,
     dateAdded: (row.created_at || "").slice(0, 10),
+    createdAt: row.created_at || undefined,
     category: memoryCategoryFromDb[String(row.category)] ?? "Brand",
     pinned: Boolean(ev.pinned),
     archived: Boolean(row.archived),
@@ -138,6 +139,8 @@ export function viralSparkRowToDomain(row: ViralSparkRow): ViralSpark {
     suggestedProductionMode: String(evidence.suggestedProductionMode ?? "Autonomous Draft"),
     status: evidence.status === "ready" ? "ready" : evidence.status === "draft" ? "draft" : undefined,
     researchContext: (evidence.researchContext as ViralSpark["researchContext"]) || undefined,
+    createdAt: row.created_at || undefined,
+    firstSeenAt: typeof evidence.firstSeenAt === "string" ? evidence.firstSeenAt : undefined,
   };
 }
 
@@ -174,6 +177,8 @@ export function domainViralSparkToInsert(
       suggestedProductionMode: spark.suggestedProductionMode,
       status: spark.status || "draft",
       researchContext: spark.researchContext,
+      firstSeenAt: spark.firstSeenAt,
+      createdAt: spark.createdAt || spark.firstSeenAt,
     } as Json,
     status: "new",
   };

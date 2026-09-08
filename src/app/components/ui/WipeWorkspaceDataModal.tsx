@@ -15,13 +15,15 @@ export function WipeWorkspaceDataModal({
   onConfirm,
   brandName,
 }: WipeWorkspaceDataModalProps) {
-  const [step, setStep] = useState<"confirm_input" | "final_match" | "wiping">("confirm_input");
+  const [step, setStep] = useState<"confirm_input" | "final_match" | "wiping" | "error">("confirm_input");
   const [confirmInput, setConfirmInput] = useState("");
+  const [wipeError, setWipeError] = useState("");
 
   useEffect(() => {
     if (isOpen) {
       setStep("confirm_input");
       setConfirmInput("");
+      setWipeError("");
     }
   }, [isOpen]);
 
@@ -31,14 +33,21 @@ export function WipeWorkspaceDataModal({
 
   const handleWipe = async () => {
     setStep("wiping");
+    setWipeError("");
     try {
-      await onConfirm();
+      const ok = await onConfirm();
+      if (ok !== true) {
+        setWipeError("Wipe did not finish. Viral Sparks and memory were not cleared. Try again.");
+        setStep("error");
+        return;
+      }
       // Brief visual pause to show the superspark overlay feedback cleanly
       await new Promise((resolve) => setTimeout(resolve, 1400));
       onClose();
     } catch (err) {
       console.error("[WipeWorkspaceDataModal] Error wiping workspace learning data:", err);
-      onClose();
+      setWipeError("Wipe failed. Viral Sparks and memory were not cleared. Try again.");
+      setStep("error");
     }
   };
 
@@ -81,6 +90,50 @@ export function WipeWorkspaceDataModal({
             <div className="space-y-2">
               <p className="text-base font-semibold text-white tracking-wide">Resetting research brain…</p>
               <p className="text-xs text-white/50">SPARK will learn again from new sources</p>
+            </div>
+          </div>
+        )}
+
+        {step === "error" && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-[#F52BFF]">
+                <RotateCcw className="w-5 h-5" />
+                <span className="text-xs font-mono font-bold tracking-wider uppercase">Wipe Failed</span>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-white tracking-tight">
+                Learned data was not cleared.
+              </h2>
+              <p className="text-xs text-white/70 leading-relaxed">
+                {wipeError || "Wipe did not finish. Viral Sparks and memory were not cleared. Try again."}
+              </p>
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-3 rounded-full text-xs font-semibold text-white/90 hover:text-white border border-white/20 hover:bg-white/10 transition-all text-center cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setWipeError("");
+                  setStep("final_match");
+                }}
+                className="flex-1 py-3 rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-xl shadow-[#F52BFF]/30 active:scale-[0.98] transition-all text-center cursor-pointer"
+              >
+                Try again
+              </button>
             </div>
           </div>
         )}
