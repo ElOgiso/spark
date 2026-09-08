@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import fs from "node:fs";
+import path from "path";
+import { fileURLToPath } from "node:url";
+import {
+  proposeContentPillars,
+  proposeAudienceProfile,
+  shouldProposeBrandBible,
+  buildBrandBiblePatch,
+  isPlaceholderAudience,
+  acceptedWatchesFromResearch,
+} from "./proposeBrandBible";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+describe("proposeContentPillars", () => {
+  it("returns 3–5 stable multi-word themes from onboard, not marketing buckets", () => {
+    const a = proposeContentPillars({
+      niche: "Finance & Wealth",
+      archetype: "Educator",
+      contentFormat: "host",
+    });
+    const b = proposeContentPillars({
+      niche: "Finance & Wealth",
+      archetype: "Educator",
+      contentFormat: "host",
+    });
+    assert.deepEqual(a.map((p) => p.label), b.map((p) => p.label));
+    assert.ok(a.length >= 3 && a.length <= 5);
+    for (const p of a) {
+      assert.equal(p.active, true);
+      assert.ok(/\s/.test(p.label));
+      assert.ok(p.label.length <= 48);
+      assert.doesNotMatch(p.label, /^(Educational|Promotional|Behind the Scenes|Motivation|BTS)$/i);
+    }
+  });
+
+  it("uses agreed watch hook topics when two watches share a token", () => {
+    const out = proposeContentPillars({
+      niche: "Finance & Wealth",
+      archetype: "Educator",
+      contentFormat: "host",
+      acceptedWatches: [
+        { hook_formula: "Name the retention drop then show the save", format: "short 9:16", title: "Retention drop" },
+        { hook_formula: "Retention drop then one fix", format: "short 9:16", title: "Fix the drop" },
+      ],
+    });
+    assert.ok(out.some((p) => /retention/i.test(p.label)));
+    assert.doesNotMatch(out.map((p) => p.label).join(" | "), /Viral Format/i);
+  });
+
+  it("does not emit Educational / Promo / BTS unless those words are in niche or hooks", () => {
+    const out = proposeContentPillars({
+      niche: "Crypto & Web3",
+      archetype: "Operator",
+      contentFormat: "faceless",
+    });
+    const blob = out.map((p) => p.label).join(" ").toLowerCase();
+    assert.equal(/educational|promotional|behind the scenes|\bbts\b|motivation/.test(blob), false);
+  });
+});
+
+describe("proposeAudienceProfile", () => {
+  it("is one short who + niche + geo line", () => {
+    const line = proposeAudienceProfile({
+      niche: "AI & Automation",
+      archetype: "Operator",
+      country: "Nigeria",
+      language: "English (NG)",
+    });
+    assert.match(line, /operators/i);
+    assert.match(line, /automation/i);
+    assert.match(line, /Nigeria/);
+    assert.ok(line.length <= 140);
+    assert.doesNotMatch(line, /high-ticket offers/);
+  });
+});
+
+describe("when proposer runs", () => {
+  it("writes once on empty, skips user-edited, upgrades onboard after new watches", () => {
+    const empty = { contentPillars: [], settings: {}, audience: { primary: "", painPoints: [], desires: [] } } as any;
+    assert.equal(shouldProposeBrandBible(empty), "onboard");
+    assert.equal(
+      shouldProposeBrandBible({
+        ...empty,
+        settings: { pillars_user_edited: true },
+      }),
+      "skip"
+    );
+    assert.equal(
+      shouldProposeBrandBible(
+        { contentPillars: [{ label: "Finance wealth breakdowns for Shorts", active: true }], settings: { bible_proposed_from: "onboard" } } as any,
+        { newAcceptedWatchCount: 2 }
+      ),
+      "watches"
+    );
+    assert.equal(
+      shouldProposeBrandBible(
+        { contentPillars: [{ label: "Finance wealth breakdowns for Shorts", active: true }], settings: { bible_proposed_from: "watches" } } as any,
+        { newAcceptedWatchCount: 0 }
+      ),
+      "skip"
+    );
+  });
+
+  it("seeds placeholder audience and skips when user-edited", () => {
+    assert.equal(isPlaceholderAudience("General Audience"), true);
+    assert.equal(isPlaceholderAudience("Nigerian operators learning shorts"), false);
+    const brand = {
+      niche: "Tech & Software",
+      archetype: "Builder",
+      country: "Kenya",
+      language: "English",
+      contentPillars: [{ label: "Tech software breakdowns for Shorts", active: true }],
+      audience: { primary: "General Audience", painPoints: [], desires: [] },
+      settings: { bible_proposed_from: "onboard" },
+    } as any;
+    const patch = buildBrandBiblePatch(brand, { newAcceptedWatchCount: 0 });
+    assert.ok(patch?.audience?.primary);
+    assert.doesNotMatch(patch!.audience!.primary, /General Audience/i);
+    const locked = buildBrandBiblePatch(
+      {
+        ...brand,
+        tone: [{ label: "Authoritative", active: true }],
+        settings: { ...brand.settings, audience_user_edited: true },
+      },
+      { newAcceptedWatchCount: 0 }
+    );
+    assert.equal(locked, null);
+  });
+
+  it("acceptedWatchesFromResearch drops failed / empty hooks", () => {
+    const hints = acceptedWatchesFromResearch([
+      { accepted: false, hook_formula: "nope", title: "x", format: "short" } as any,
+      { accepted: true, hook_formula: "Curiosity then payoff", title: "Real", format: "short 9:16" } as any,
+    ]);
+    assert.equal(hints.length, 1);
+    assert.equal(hints[0].hook_formula, "Curiosity then payoff");
+  });
+});
+
+describe("source laws", () => {
+  it("workspace hydrate does not inject template pillars or audience novels", () => {
+    const sync = fs.readFileSync(path.join(__dirname, "../../backend/workspaceSync.ts"), "utf8");
+    assert.doesNotMatch(sync, /label: "AI & Automation"/);
+    assert.doesNotMatch(sync, /Digital creators and forward-thinking professionals/);
+    const brief = fs.readFileSync(path.join(__dirname, "../production/productionBriefService.ts"), "utf8");
+    assert.match(brief, /active !== false/);
+    assert.doesNotMatch(brief, /Strategy, Insights/);
+  });
+});

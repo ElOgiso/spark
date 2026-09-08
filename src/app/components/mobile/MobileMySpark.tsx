@@ -177,6 +177,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         niche: brand?.niche || "AI & Automation",
         archetype: brand?.archetype || "Visionary Creator",
         country: brand?.country || "United States",
+        language: brand?.language,
         characterName: character?.name,
       });
       setEditAudiencePrimary(seeded.primary);
@@ -443,6 +444,9 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
             </h2>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               {((Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).filter((p: any) => p.active !== false).length)} active (3–5 recommended)
+              {brand?.settings?.bible_proposed_at && !brand?.settings?.pillars_user_edited
+                ? " · SPARK drafted these from your setup / sources. Edit or add freely."
+                : ""}
             </p>
           </div>
           <button
@@ -474,11 +478,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         )}
 
         <div className="flex flex-wrap gap-2">
-          {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : [
-            { label: "AI & Automation", active: true },
-            { label: "Digital Strategy", active: true },
-            { label: "Content Creation", active: true },
-          ]).map((pillar: any) => (
+          {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).map((pillar: any) => (
             <button
               key={pillar.label}
               type="button"

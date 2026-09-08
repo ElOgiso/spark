@@ -802,7 +802,7 @@ export class ProductionBriefService {
     const activePillars = Array.isArray(brand.contentPillars)
       ? brand.contentPillars.filter((p) => p.active !== false).map((p) => p.label)
       : [];
-    const pillars = activePillars.length > 0 ? activePillars.join(", ") : (brand.niche || "Strategy, Insights");
+    const pillars = activePillars.length > 0 ? activePillars.join(", ") : (brand.niche || spark.title || "");
 
     const activeTones = Array.isArray(brand.tone)
       ? brand.tone.filter((t) => t.active !== false).map((t) => t.label)

@@ -7,22 +7,11 @@ const defaultBrand: Brand = {
   niche: "Content Creation",
   archetype: "The Expert Guide",
   purpose: "Set up your brand identity during onboarding to personalize Spark.",
-  contentPillars: [
-    { label: "AI & Automation", active: true },
-    { label: "Mobile Technology", active: true },
-    { label: "Digital Marketing", active: true },
-    { label: "Content Creation", active: true },
-    { label: "Tech Entrepreneurship", active: true },
-    { label: "African Tech Ecosystem", active: false },
-  ],
+  contentPillars: [],
   audience: {
-    primary: "Your target audience — configure during onboarding",
-    painPoints: [
-      "Define your audience's challenges during onboarding",
-    ],
-    desires: [
-      "Define your audience's goals during onboarding",
-    ],
+    primary: "",
+    painPoints: [],
+    desires: [],
   },
   tone: [
     { label: "Energetic", active: true },

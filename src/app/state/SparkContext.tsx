@@ -75,6 +75,11 @@ import {
   type PublishingPermission,
 } from "../services/production/publishing/publishPolicy";
 import { ensureViralSparkProductionReady } from "../services/production/viralSparkGate";
+import {
+  acceptedWatchesFromSources,
+  buildBrandBiblePatch,
+  mergeBrandBiblePatch,
+} from "../services/brand/proposeBrandBible";
 import { evaluateSparkForProduction } from "../services/production/productionBriefService";
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { hasCanonicalPlayableMedia } from "../services/production/canonicalProductionMedia";
@@ -128,7 +133,7 @@ interface SparkContextType {
   sessions?: ConversationSession[];
   
   // Actions
-  updateBrand: (data: Partial<Brand>) => void;
+  updateBrand: (data: Partial<Brand>, opts?: { fromProposer?: boolean }) => void;
   updateCharacter: (data: Partial<Character>) => void;
   addSupportCharacter?: (character: Partial<Character>) => Promise<Character | null>;
   deleteSupportCharacter?: (characterId: string) => Promise<boolean>;
@@ -192,22 +197,11 @@ const defaultBrand: Brand = {
   niche: "AI & Technology",
   archetype: "The Expert Guide",
   purpose: "Creating authoritative, engaging digital media content.",
-  contentPillars: [
-    { label: "AI & Automation", active: true },
-    { label: "Digital Strategy", active: true },
-    { label: "Content Creation", active: true },
-    { label: "Growth Marketing", active: true },
-  ],
+  contentPillars: [],
   audience: {
-    primary: "Digital creators and forward-thinking professionals",
-    painPoints: [
-      "Inconsistent publishing workflow",
-      "High time investment required for research",
-    ],
-    desires: [
-      "Scale viral audience reach efficiently",
-      "Maintain high quality brand authority",
-    ],
+    primary: "",
+    painPoints: [],
+    desires: [],
   },
   tone: [
     { label: "Energetic", active: true },
@@ -868,6 +862,31 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           savePersistedState(merged, currentUserId, activeBrandId);
           return merged;
         });
+
+        const hydratedBrand = snap.brand;
+        if (hydratedBrand) {
+          const bible = buildBrandBiblePatch(hydratedBrand, {
+            watches: acceptedWatchesFromSources(snap.researchSources || []),
+            character: snap.character,
+            newAcceptedWatchCount: 0,
+          });
+          if (bible) {
+            void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
+              void persistBrandUpdate(activeBrandId, {
+                contentPillars: bible.contentPillars,
+                audience: bible.audience,
+                tone: bible.tone,
+                settings: bible.settings,
+              });
+            });
+            setState((prev: any) => ({
+              ...prev,
+              brand: prev.brand
+                ? mergeBrandBiblePatch(prev.brand, bible)
+                : mergeBrandBiblePatch(hydratedBrand, bible),
+            }));
+          }
+        }
       }).catch((err) => {
         console.warn("[SparkContext] Workspace hydration notice:", err);
       });
@@ -1048,7 +1067,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [state, currentUserId, activeBrandId]);
 
-  const updateBrand = (brandData: Partial<Brand> & Record<string, any>) => {
+  const updateBrand = (brandData: Partial<Brand> & Record<string, any>, opts?: { fromProposer?: boolean }) => {
     const brandId = auth.brand?.id || getBrandWorkspaceId();
     if (!brandId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(brandId)) {
       console.error("[SparkContext] updateBrand failed: valid UUID brand ID required", brandId);
@@ -1061,17 +1080,29 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
+    const markPillars = !opts?.fromProposer && brandData.contentPillars !== undefined;
+    const markAudience = !opts?.fromProposer && brandData.audience !== undefined;
+    const settingsPatch = {
+      ...(brandData.settings || {}),
+      ...(markPillars ? { pillars_user_edited: true } : {}),
+      ...(markAudience ? { audience_user_edited: true } : {}),
+    };
+
     setState((prev: any) => ({
       ...prev,
       brand: {
         ...prev.brand,
         ...brandData,
         audience: typeof brandData.audience === "object" ? { ...prev.brand?.audience, ...brandData.audience } : prev.brand?.audience,
+        settings: {
+          ...(prev.brand?.settings || {}),
+          ...settingsPatch,
+        },
       },
     }));
 
     void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
-      void persistBrandUpdate(brandId, brandData).then((success) => {
+      void persistBrandUpdate(brandId, { ...brandData, settings: settingsPatch }).then((success) => {
         if (success) {
           NotificationService.addNotification({
             title: "Brand Profile Saved",
@@ -1482,6 +1513,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
     };
 
+    let genesisBrand: Brand = {
+      id: brandId || undefined,
+      name: brandName,
+      niche,
+      archetype: data.archetype || "Visionary Creator",
+      purpose: vision,
+      country: data.country,
+      language: data.language,
+      contentFormat: resolvedContentFormat,
+      formatSettings: resolvedFormatSettings,
+      contentPillars: [],
+      audience: {
+        primary: audience,
+        painPoints: [],
+        desires: [],
+      },
+      tone: tone ? [{ label: tone, active: true }] : [],
+      settings: {},
+    };
+    const genesisBible = buildBrandBiblePatch(genesisBrand, { forceFrom: "onboard" });
+    if (genesisBible) {
+      genesisBrand = mergeBrandBiblePatch(genesisBrand, genesisBible);
+    }
+
     // Upload & persist optional support characters (max 2) for story/anime formats
     const initialSupportCharacters: Character[] = [];
     if (Array.isArray(data.supportCharacters) && brandId && isUuid(brandId)) {
@@ -1527,13 +1582,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           review_required: reviewRequired,
           formatSettings: resolvedFormatSettings,
           creditSettings: DEFAULT_CREDIT_SETTINGS,
-          audience: {
-            primary: audience,
-            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
-            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
-          },
-          tone: [{ label: tone, active: true }],
-          content_pillars: [],
+          audience: genesisBrand.audience,
+          tone: genesisBrand.tone,
+          contentPillars: genesisBrand.contentPillars,
+          settings: genesisBrand.settings,
+          archetype: genesisBrand.archetype,
+          country: genesisBrand.country,
+          language: genesisBrand.language,
         },
         character: {
           name: creatorName,
@@ -1593,11 +1648,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           automation_mode: automationMode,
           review_required: reviewRequired,
           formatSettings: resolvedFormatSettings,
-          audience: {
-            ...prev.brand?.audience,
-            primary: audience,
-          },
-          tone: [{ label: tone, active: true }],
+          audience: genesisBrand.audience,
+          tone: genesisBrand.tone,
+          contentPillars: genesisBrand.contentPillars,
+          settings: genesisBrand.settings,
+          archetype: genesisBrand.archetype,
+          country: genesisBrand.country,
+          language: genesisBrand.language,
         },
         formatSettings: resolvedFormatSettings,
         character: {
@@ -1651,15 +1708,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
+          archetype: genesisBrand.archetype,
           purpose: vision,
           contentFormat: resolvedContentFormat,
           locationPlateUrl: durablePlateUrl,
-          audience: {
-            primary: audience,
-            painPoints: ["Inconsistent publishing workflow", "High time investment required for research"],
-            desires: ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
-          },
-          tone: [{ label: tone, active: true }],
+          country: genesisBrand.country,
+          language: genesisBrand.language,
+          audience: genesisBrand.audience,
+          tone: genesisBrand.tone,
+          contentPillars: genesisBrand.contentPillars,
+          settings: genesisBrand.settings,
           automation_mode: automationMode,
           review_required: reviewRequired,
         });
@@ -1756,18 +1814,25 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleContentPillar = (label: string) => {
     let updatedPillars: any[] = [];
     setState((prev: any) => {
-      updatedPillars = prev.brand.contentPillars.map((p: any) =>
+      updatedPillars = (prev.brand.contentPillars || []).map((p: any) =>
         p.label === label ? { ...p, active: !p.active } : p
       );
       return {
         ...prev,
-        brand: { ...prev.brand, contentPillars: updatedPillars }
+        brand: {
+          ...prev.brand,
+          contentPillars: updatedPillars,
+          settings: { ...(prev.brand?.settings || {}), pillars_user_edited: true },
+        }
       };
     });
     const brandId = getBrandWorkspaceId();
     if (brandId && updatedPillars.length > 0) {
       void import("../backend/workspaceSync").then(({ persistBrandUpdate }) => {
-        void persistBrandUpdate(brandId, { contentPillars: updatedPillars });
+        void persistBrandUpdate(brandId, {
+          contentPillars: updatedPillars,
+          settings: { pillars_user_edited: true },
+        });
       });
     }
   };
@@ -3452,7 +3517,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     if (!result) return;
 
-    const { source, patterns, videoSparks = [], videoMemories = [] } = result;
+    const { source, patterns, videoSparks = [], videoMemories = [], brandPatch } = result;
 
     setState((prev: any) => {
       const { memoryItems: newMemoryItems, viralSparks: newSparks, updatedSparks, updatedMemories } =
@@ -3497,6 +3562,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       return {
         ...prev,
+        brand: brandPatch && prev.brand ? mergeBrandBiblePatch(prev.brand, brandPatch) : prev.brand,
         researchSources: [source, ...(prev.researchSources || []).filter((s: any) => s.id !== source.id)],
         researchPatterns: [...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== source.id)],
         memoryItems: [...uniqueVideoMemories, ...newMemoryItems, ...mergedMemories],
@@ -3533,7 +3599,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { ResearchDepartmentService } = await import("../services/research/researchDepartmentService");
       const brandId = getBrandWorkspaceId();
 
-      const { source, patterns, videoSparks = [], videoMemories = [] } = await ResearchSourceService.syncSource(
+      const { source, patterns, videoSparks = [], videoMemories = [], brandPatch } = await ResearchSourceService.syncSource(
         existing,
         brandId,
         forceManual,
@@ -3587,6 +3653,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         return {
           ...prev,
+          brand: brandPatch && prev.brand ? mergeBrandBiblePatch(prev.brand, brandPatch) : prev.brand,
           researchSources: (prev.researchSources || []).map((s: any) => (s.id === id ? source : s)),
           researchPatterns: [...(prev.researchPatterns || []).filter((p: any) => p.sourceId !== id)],
           memoryItems: [...uniqueVideoMemories, ...newMemoryItems, ...mergedMemories],

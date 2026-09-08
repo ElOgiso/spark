@@ -16,8 +16,14 @@ import {
   persistResearchSourceCreate,
   persistResearchSourceDelete,
   persistResearchSourceUpdate,
+  persistBrandUpdate,
 } from "../../backend/workspaceSync";
 import { generateUuid } from "../../backend/mappers/workspaceMappers";
+import {
+  acceptedWatchesFromResearch,
+  buildBrandBiblePatch,
+  type BrandBiblePatch,
+} from "../brand/proposeBrandBible";
 
 export interface ResearchWatchContext {
   existingSparks?: ViralSpark[];
@@ -136,7 +142,7 @@ export class ResearchSourceService {
     source: ResearchSource;
     watches: VideoResearch[];
     ctx?: ResearchWatchContext;
-  }): { videoSparks: ViralSpark[]; videoMemories: MemoryItem[] } {
+  }): { videoSparks: ViralSpark[]; videoMemories: MemoryItem[]; brandPatch?: BrandBiblePatch | null } {
     const videoSparks: ViralSpark[] = [];
     const videoMemories: MemoryItem[] = [];
     const seenSparkFp = new Set(
@@ -163,7 +169,27 @@ export class ResearchSourceService {
         videoMemories.push(mem);
       }
     }
-    return { videoSparks, videoMemories };
+
+    let brandPatch: BrandBiblePatch | null = null;
+    const watchHints = acceptedWatchesFromResearch(params.watches || []);
+    if (params.ctx?.brand && watchHints.length > 0) {
+      brandPatch = buildBrandBiblePatch(params.ctx.brand, {
+        watches: watchHints,
+        newAcceptedWatchCount: watchHints.length,
+      });
+      if (brandPatch && params.brandId) {
+        persistBrandUpdate(params.brandId, {
+          contentPillars: brandPatch.contentPillars,
+          audience: brandPatch.audience,
+          tone: brandPatch.tone,
+          settings: brandPatch.settings,
+        }).catch((err) =>
+          console.warn("[ResearchSourceService] Brand bible persist notice:", err)
+        );
+      }
+    }
+
+    return { videoSparks, videoMemories, brandPatch };
   }
 
   static async registerAndExtract(
@@ -177,6 +203,7 @@ export class ResearchSourceService {
     isExisting?: boolean;
     videoSparks?: ViralSpark[];
     videoMemories?: MemoryItem[];
+    brandPatch?: BrandBiblePatch | null;
   } | null> {
     const cleanUrl = url.trim();
     if (!cleanUrl) return null;
@@ -272,10 +299,12 @@ export class ResearchSourceService {
 
       let videoSparks: ViralSpark[] = [];
       let videoMemories: MemoryItem[] = [];
+      let brandPatch: BrandBiblePatch | null = null;
       if (accepted) {
         const tickets = this.applyWatchTickets({ brandId, source, watches: [vRes], ctx });
         videoSparks = tickets.videoSparks;
         videoMemories = tickets.videoMemories;
+        brandPatch = tickets.brandPatch || null;
       }
       if (brandId) {
         persistResearchSourceCreate(brandId, source).catch((err) =>
@@ -283,7 +312,7 @@ export class ResearchSourceService {
         );
       }
 
-      return { source, patterns: [], isExisting: false, videoSparks, videoMemories };
+      return { source, patterns: [], isExisting: false, videoSparks, videoMemories, brandPatch };
     }
 
     let extracted: ExtractedSourceResult;
@@ -357,6 +386,7 @@ export class ResearchSourceService {
       isExisting: false,
       videoSparks: tickets.videoSparks,
       videoMemories: tickets.videoMemories,
+      brandPatch: tickets.brandPatch,
     };
   }
 
@@ -370,6 +400,7 @@ export class ResearchSourceService {
     patterns: ResearchPattern[];
     videoSparks?: ViralSpark[];
     videoMemories?: MemoryItem[];
+    brandPatch?: BrandBiblePatch | null;
   }> {
     if (!this.isQuotaAllowedForSync(source.lastSyncedAt, forceManual)) {
       console.log(`[ResearchSourceService] Quota policy: skipping full sync for ${source.username} (synced < 4h ago)`);
@@ -414,10 +445,12 @@ export class ResearchSourceService {
 
       let videoSparks: ViralSpark[] = [];
       let videoMemories: MemoryItem[] = [];
+      let brandPatch: BrandBiblePatch | null = null;
       if (vRes && VideoUnderstandingProvider.isAcceptedVideoResearch(vRes)) {
         const tickets = this.applyWatchTickets({ brandId, source: updatedSource, watches: [vRes], ctx });
         videoSparks = tickets.videoSparks;
         videoMemories = tickets.videoMemories;
+        brandPatch = tickets.brandPatch || null;
       }
       if (brandId) {
         persistResearchSourceUpdate(source.id, {
@@ -428,7 +461,7 @@ export class ResearchSourceService {
           videoResearch: vRes,
         }).catch((err) => console.warn("[ResearchSourceService] Video source sync persist notice:", err));
       }
-      return { source: updatedSource, patterns: [], videoSparks, videoMemories };
+      return { source: updatedSource, patterns: [], videoSparks, videoMemories, brandPatch };
     }
 
     let extracted: ExtractedSourceResult;
@@ -485,6 +518,7 @@ export class ResearchSourceService {
       patterns: [],
       videoSparks: tickets.videoSparks,
       videoMemories: tickets.videoMemories,
+      brandPatch: tickets.brandPatch,
     };
   }
 

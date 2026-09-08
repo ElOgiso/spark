@@ -172,6 +172,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
         niche: brand?.niche || "AI & Automation",
         archetype: brand?.archetype || "Visionary Creator",
         country: brand?.country || "United States",
+        language: brand?.language,
         characterName: character?.name,
       });
       setEditAudiencePrimary(seeded.primary);
@@ -625,6 +626,11 @@ export function MySpark({ onNavigate }: MySparkProps) {
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Pillars are the 3–5 repeatable themes your channel owns (not vague one-word categories).
+              {brand?.settings?.bible_proposed_at && !brand?.settings?.pillars_user_edited ? (
+                <span className="block mt-1 text-muted-foreground/80">
+                  SPARK drafted these from your setup / sources. Edit or add freely.
+                </span>
+              ) : null}
             </p>
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="flex items-center justify-between mb-4">
@@ -659,11 +665,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : [
-                  { label: "AI & Automation", active: true },
-                  { label: "Digital Strategy", active: true },
-                  { label: "Content Creation", active: true },
-                ]).map((pillar: any) => (
+                {(Array.isArray(brand?.contentPillars) ? brand.contentPillars : []).map((pillar: any) => (
                   <button
                     key={pillar.label}
                     type="button"

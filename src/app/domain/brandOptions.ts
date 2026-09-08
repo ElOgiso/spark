@@ -3,6 +3,8 @@
  * Source of truth for selects, searchable pickers, tones, styles, and audience defaults.
  */
 
+import { proposeAudienceProfile } from "../services/brand/proposeBrandBible";
+
 export const BRAND_ARCHETYPES = [
   "Visionary Creator",
   "Educator",
@@ -136,26 +138,24 @@ export const BRAND_STYLE_OPTIONS = [
 ] as const;
 
 /**
- * Seed sensible default audience profile if fields are empty after onboard
+ * Seed a short audience line if Edit Profile opens on an empty field.
+ * Not a persona novel. Pain/desires stay empty unless the user writes them.
  */
 export function seedDefaultAudience(params: {
   niche?: string;
   archetype?: string;
   country?: string;
+  language?: string;
   characterName?: string;
 }) {
-  const nicheLabel = params.niche || "digital business & creation";
   return {
-    primary: `Ambitious operators, creators, and professionals in ${nicheLabel}`,
-    painPoints: [
-      `Inconsistent publishing cadence and fragmented research`,
-      `Low viewer retention and high production friction`,
-      `Difficulty translating deep expertise into high-performing short & long-form video`,
-    ],
-    desires: [
-      `Build undeniable category authority in ${nicheLabel}`,
-      `Scale high-retention video output with predictable compounding growth`,
-      `Monetize audience trust through high-ticket offers and consistent distribution`,
-    ],
+    primary: proposeAudienceProfile({
+      niche: params.niche,
+      archetype: params.archetype,
+      country: params.country,
+      language: params.language,
+    }),
+    painPoints: [] as string[],
+    desires: [] as string[],
   };
 }

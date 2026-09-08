@@ -180,29 +180,18 @@ function brandRowToDomain(row: BrandRow): Brand {
     creditSettings: creditSettings ? { ...DEFAULT_CREDIT_SETTINGS, ...creditSettings } : undefined,
     contentPillars: Array.isArray(row.content_pillars)
       ? (row.content_pillars as any[]).map((p) => typeof p === "string" ? { label: p, active: true } : p)
-      : [
-          { label: "AI & Automation", active: true },
-          { label: "Digital Strategy", active: true },
-          { label: "Content Creation", active: true },
-        ],
+      : [],
     audience: {
-      primary: audienceObj.primary || "Digital creators and forward-thinking professionals",
-      painPoints: Array.isArray(audienceObj.painPoints) ? audienceObj.painPoints : ["Inconsistent publishing workflow", "High time investment required for research"],
-      desires: Array.isArray(audienceObj.desires) ? audienceObj.desires : ["Scale viral audience reach efficiently", "Maintain high quality brand authority"],
+      primary: typeof audienceObj.primary === "string" ? audienceObj.primary : "",
+      painPoints: Array.isArray(audienceObj.painPoints) ? audienceObj.painPoints : [],
+      desires: Array.isArray(audienceObj.desires) ? audienceObj.desires : [],
     },
     tone: Array.isArray(rawToneList)
       ? (rawToneList as any[]).map((t) => typeof t === "string" ? { label: t, active: true } : t)
-      : [
-          { label: "Authoritative", active: true },
-          { label: "Conversational", active: true },
-          { label: "Bold", active: true },
-        ],
+      : [],
     style: Array.isArray(rawStyleList)
       ? (rawStyleList as any[]).map((s) => typeof s === "string" ? { label: s, active: true } : s)
-      : [
-          { label: "Direct-to-camera", active: true },
-          { label: "Story-driven", active: true },
-        ],
+      : [],
     automation_mode: row.automation_mode || "balanced",
     review_required: row.review_required ?? true,
     publish_requires_approval: row.publish_requires_approval ?? true,
