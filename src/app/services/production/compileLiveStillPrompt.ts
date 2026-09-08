@@ -201,7 +201,7 @@ export function compileLiveStillPrompt(params: {
     cinematicCraft,
   });
 
-  const laws = buildRankedBrandLaws(memoryItems).lawsBlock;
+  const laws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;
   const styleSummary = [
     formatLaw,
     genreLaw,

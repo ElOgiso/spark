@@ -213,8 +213,13 @@ export class ModelRouter {
     const capability = options.capability || this.mapCategoryToCapability(category);
     const resolvedModel = options.model || this.resolveModel(category, preferredProvider, capability, userModelSelectionConfig);
 
+    // Memory is case law for the brief compiler only — never a Video / Image / TTS option.
+    const { memoryItems: _omitMemoryItems, ...safeOptions } = options as AIExecutionOptions & {
+      memoryItems?: unknown;
+    };
+
     return AIProviderOrchestrator.execute({
-      ...options,
+      ...safeOptions,
       preferredProvider,
       capability,
       model: resolvedModel || options.model,

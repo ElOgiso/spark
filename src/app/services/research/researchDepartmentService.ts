@@ -19,6 +19,32 @@ export function sparkFingerprintForWatch(platform: string, videoId: string, hook
   return computeFingerprint(`${key}:${String(hookFormula || "").trim()}`);
 }
 
+const LAW_MAX_CHARS = 200;
+
+/** Static once-per-source engagement law. Not a recap. */
+export const SOURCE_TRADEMARK_LAW = "[LAW] NEVER: copy their face, logo, or trademark.";
+
+function clipLawText(text: string): string {
+  const t = String(text || "").trim().replace(/\s+/g, " ");
+  if (t.length <= LAW_MAX_CHARS) return t;
+  return `${t.slice(0, LAW_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+/** Engagement case law — hook + format, optional CTA on the same short line. */
+export function formatHookPreferLaw(hookFormula: string, format: string, ctaLine?: string): string {
+  const hook = String(hookFormula || "").trim();
+  const fmt = String(format || "").trim();
+  const cta = String(ctaLine || "").trim();
+  const body = cta
+    ? `[LAW] PREFER: ${hook} in ${fmt}. CTA: ${cta}.`
+    : `[LAW] PREFER: ${hook} in ${fmt}.`;
+  return clipLawText(body);
+}
+
+export function formatCtaPreferLaw(ctaLine: string): string {
+  return clipLawText(`[LAW] PREFER: ${String(ctaLine || "").trim()}.`);
+}
+
 export class ResearchDepartmentService {
   /**
    * Title / duration / tags are not a watch. Do not invent hook, format, or CTA.
@@ -183,58 +209,62 @@ export class ResearchDepartmentService {
       }
     }
 
-    const lawText = `[Inspiration — ${source.displayName || videoResearch.creatorName || "watch"}] ${hookFormula} | CTA: ${ctaLine} | ${format}`;
-    const lawFp = computeFingerprint(`mem:${watchedVideoKey}:law`);
-    const existingLaw = existingMemories.find((m) => m.fingerprint === lawFp);
-    if (existingLaw) {
-      existingLaw.lastSeenAt = now;
-      existingLaw.syncCount = (existingLaw.syncCount || 1) + 1;
-    } else if (!this.isDuplicateMemory(existingMemories, lawText)) {
+    const knownMemories = [...existingMemories];
+    const persistLaw = (
+      fingerprint: string,
+      text: string,
+      id: string,
+      category: MemoryItem["category"],
+      type: MemoryItem["type"] = "learned"
+    ) => {
+      const existing = knownMemories.find((m) => m.fingerprint === fingerprint);
+      if (existing) {
+        existing.lastSeenAt = now;
+        existing.syncCount = (existing.syncCount || 1) + 1;
+        return;
+      }
+      if (this.isDuplicateMemory([...knownMemories, ...memoryItems], text)) return;
       const mem: MemoryItem = {
-        id: `m-vid-${videoResearch.videoId}-law`,
-        type: "learned",
-        text: lawText,
+        id,
+        type,
+        text,
         dateAdded: dateStr,
-        category: "Winning hooks",
-        fingerprint: lawFp,
+        category,
+        fingerprint,
         firstSeenAt: now,
         lastSeenAt: now,
         syncCount: 1,
       };
       memoryItems.push(mem);
+      knownMemories.push(mem);
       if (brandId) {
         persistMemoryCreate(brandId, mem).catch((err) =>
           console.warn("[ResearchDepartmentService] Video memory persist notice:", err)
         );
       }
-    }
+    };
 
-    const beatsText = spokenBeats.join(" → ");
-    const beatsFp = computeFingerprint(`mem:${watchedVideoKey}:beats`);
-    if (
-      beatsText &&
-      !existingMemories.some((m) => m.fingerprint === beatsFp) &&
-      !this.isDuplicateMemory(existingMemories, beatsText) &&
-      !memoryItems.some((m) => m.fingerprint === beatsFp)
-    ) {
-      const beatsMem: MemoryItem = {
-        id: `m-vid-${videoResearch.videoId}-beats`,
-        type: "learned",
-        text: `[Inspiration beats — ${source.displayName || videoResearch.title}] ${beatsText}`,
-        dateAdded: dateStr,
-        category: "Audience preferences",
-        fingerprint: beatsFp,
-        firstSeenAt: now,
-        lastSeenAt: now,
-        syncCount: 1,
-      };
-      memoryItems.push(beatsMem);
-      if (brandId) {
-        persistMemoryCreate(brandId, beatsMem).catch((err) =>
-          console.warn("[ResearchDepartmentService] Video beats memory persist notice:", err)
-        );
-      }
+    persistLaw(
+      computeFingerprint(`mem:${watchedVideoKey}:hook`),
+      formatHookPreferLaw(hookFormula, format, ctaLine),
+      `m-vid-${videoResearch.videoId}-hook`,
+      "Winning hooks"
+    );
+    if (ctaLine) {
+      persistLaw(
+        computeFingerprint(`mem:${watchedVideoKey}:cta`),
+        formatCtaPreferLaw(ctaLine),
+        `m-vid-${videoResearch.videoId}-cta`,
+        "Audience preferences"
+      );
     }
+    persistLaw(
+      computeFingerprint(`mem:${source.id}:never-copy`),
+      SOURCE_TRADEMARK_LAW,
+      `m-src-${source.id}-never-copy`,
+      "Audience preferences",
+      "rule"
+    );
 
     return { memoryItems, viralSparks, updatedSparks };
   }

@@ -140,16 +140,14 @@ export function getProductionPromptPack(options: PromptPackOptions): ModePromptP
   const contentFormat = getEffectiveContentFormat({ production, brief, brand, character });
 
   const environmentStr = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
-  const rankedLaws = buildRankedBrandLaws(memoryItems).lawsBlock;
+  const rankedLaws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;
 
   const globalLockBlock = `
 ${voiceIdentityLockBlock({ contentFormat, character, characterRefUrl })}
 ENVIRONMENT (LOCKED SET): Location is "${environmentStr}".
 BRAND IDENTITY: ${brand.name} (${brand.niche || "Media OS"}).
 ASPECT RATIO: ${aspectRatio}.
-RANKED BRAND MEMORY & EXECUTIVE LAWS:
-${rankedLaws}
-${ANTI_SLOP_RULES}
+${rankedLaws ? `RANKED BRAND MEMORY LAWS:\n${rankedLaws}\n` : ""}${ANTI_SLOP_RULES}
 `.trim();
 
   const effectiveTargetDurationSec =

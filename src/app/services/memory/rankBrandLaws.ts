@@ -8,7 +8,8 @@ export interface RankedBrandLawsResult {
   droppedCount: number;
 }
 
-export const MAX_BRAND_LAWS = 12;
+/** Brief / still compilers read at most 10 ranked laws. Empty Memory → empty block. */
+export const MAX_BRAND_LAWS = 10;
 
 const CATEGORY_PRIORITY: Record<string, number> = {
   brand: 1,
@@ -42,8 +43,55 @@ function getTimestamp(item: MemoryItem): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
+function isHookLaw(item: MemoryItem): boolean {
+  const cat = (item.category || "").trim().toLowerCase();
+  return cat === "winning hooks" || cat === "hook";
+}
+
+function clipLaw(text: string, max = 200): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1).trimEnd()}…`;
+}
+
+function formatLawLine(item: MemoryItem): { line: string; hard: boolean; text: string } {
+  const rawCat = (item.category || "Rule").trim().toUpperCase();
+  const text = clipLaw(item.text || "");
+  const isHardRule =
+    item.type === "rule" ||
+    Boolean(item.pinned) ||
+    rawCat.includes("NEVER") ||
+    rawCat.includes("LEGAL") ||
+    rawCat.includes("CLAIMS") ||
+    /\[LAW\]\s+NEVER:/i.test(text);
+
+  if (/^\[LAW\]\s+(ALWAYS|NEVER|PREFER):/i.test(text) || /^\[LAW\]/i.test(text)) {
+    return { line: `- ${text}`, hard: isHardRule, text };
+  }
+
+  const looksNever =
+    rawCat.includes("NEVER") ||
+    /\b(never|don't|do not|avoid)\b/i.test(text);
+
+  if (looksNever) {
+    const body = text.replace(/^(never|avoid|do not|don't)\s*:?\s+/i, "");
+    return { line: `- [LAW] NEVER: ${body}`, hard: true, text };
+  }
+
+  if (item.type === "rule" || item.pinned) {
+    if (/^(always|prefer):/i.test(text)) {
+      return { line: `- [LAW] ${text}`, hard: true, text };
+    }
+    return { line: `- [LAW] ALWAYS: ${text}`, hard: true, text };
+  }
+
+  const preferBody = text.replace(/^prefer:\s*/i, "");
+  return { line: `- [LAW] PREFER: ${preferBody}`, hard: false, text };
+}
+
 /**
- * Shared helper to rank, cap, deduplicate, and format brand memory items into strict executive laws.
+ * Rank Memory as engagement case law. Pinned and hook laws first. Cap 10.
+ * Empty Memory returns an empty laws block — never invents executive-authority filler.
  */
 export function buildRankedBrandLaws(
   memoryItems: MemoryItem[] = [],
@@ -51,15 +99,14 @@ export function buildRankedBrandLaws(
 ): RankedBrandLawsResult {
   if (!memoryItems || memoryItems.length === 0) {
     return {
-      lawsBlock: "- [BRAND LAW] ALWAYS: Maintain sharp executive authority, high-contrast framing, and zero filler words.",
-      hardLaws: ["Maintain sharp executive authority, high-contrast framing, and zero filler words."],
+      lawsBlock: "",
+      hardLaws: [],
       softLaws: [],
       used: [],
       droppedCount: 0,
     };
   }
 
-  // 1. Deduplicate by fingerprint or normalized text
   const seenMap = new Set<string>();
   const uniqueItems: MemoryItem[] = [];
 
@@ -73,22 +120,22 @@ export function buildRankedBrandLaws(
     }
   }
 
-  // 2. Priority Sort: Pinned -> Type (rule > learned) -> Category Weight -> Recency
   const sorted = [...uniqueItems].sort((a, b) => {
-    // Pinned rules always top
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
 
-    // Hard rules over soft learned insights
+    const hookA = isHookLaw(a);
+    const hookB = isHookLaw(b);
+    if (hookA && !hookB) return -1;
+    if (!hookA && hookB) return 1;
+
     if (a.type === "rule" && b.type !== "rule") return -1;
     if (a.type !== "rule" && b.type === "rule") return 1;
 
-    // Category constraints
     const weightA = getCategoryWeight(a.category);
     const weightB = getCategoryWeight(b.category);
     if (weightA !== weightB) return weightA - weightB;
 
-    // Recency tie breaker
     return getTimestamp(b) - getTimestamp(a);
   });
 
@@ -97,33 +144,11 @@ export function buildRankedBrandLaws(
 
   const hardLaws: string[] = [];
   const softLaws: string[] = [];
-
   const formattedLines = used.map((m) => {
-    const rawCat = (m.category || "Rule").trim().toUpperCase();
-    let text = m.text.trim();
-
-    // Cap text to ~120 chars
-    if (text.length > 120) {
-      text = text.slice(0, 117).trim() + "…";
-    }
-
-    const isHardRule = m.type === "rule" || m.pinned || rawCat.includes("NEVER") || rawCat.includes("LEGAL") || rawCat.includes("CLAIMS");
-
-    if (isHardRule) {
-      hardLaws.push(text);
-    } else {
-      softLaws.push(text);
-    }
-
-    if (/^(always|never|hook|law)/i.test(text)) {
-      return `- [${rawCat} LAW]: ${text}`;
-    }
-
-    if (rawCat.includes("NEVER") || text.toLowerCase().includes("don't") || text.toLowerCase().includes("never") || text.toLowerCase().includes("avoid")) {
-      return `- [${rawCat} LAW] NEVER: ${text}`;
-    }
-
-    return `- [${rawCat} LAW] ALWAYS: ${text}`;
+    const formatted = formatLawLine(m);
+    if (formatted.hard) hardLaws.push(formatted.text);
+    else softLaws.push(formatted.text);
+    return formatted.line;
   });
 
   return {
@@ -150,7 +175,6 @@ export function validateAgainstHardLaws(
   for (const law of hardLaws) {
     const lowerLaw = law.toLowerCase();
     if (lowerLaw.includes("never") || lowerLaw.includes("avoid") || lowerLaw.includes("do not")) {
-      // Extract key prohibited phrase if evident
       const forbiddenPhrase = lowerLaw.replace(/^(never|avoid|do not|don't)\s+/i, "").trim();
       if (forbiddenPhrase.length > 6 && lowerText.includes(forbiddenPhrase)) {
         violations.push(law);

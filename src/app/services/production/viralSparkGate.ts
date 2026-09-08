@@ -297,7 +297,7 @@ export async function rewriteSparkForProduction(params: {
     return autoRepairViralSparkDeterministic(spark, brand);
   }
 
-  const rankedLaws = buildRankedBrandLaws(memoryItems).lawsBlock;
+  const rankedLaws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;
 
   const systemInstruction = `You are SPARK's Senior Production Architect.
 Your job is to REWRITE a weak or meta Viral Spark into an exact PRODUCTION-READY SPARK for "${brand.name}".

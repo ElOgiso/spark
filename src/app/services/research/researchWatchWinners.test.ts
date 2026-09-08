@@ -8,8 +8,16 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { VideoUnderstandingProvider } from "./providers/VideoUnderstandingProvider";
 import { YouTubeResearchProvider } from "./providers/YouTubeResearchProvider";
-import { ResearchDepartmentService, computeFingerprint, sparkFingerprintForWatch } from "./researchDepartmentService";
+import {
+  ResearchDepartmentService,
+  computeFingerprint,
+  sparkFingerprintForWatch,
+  formatHookPreferLaw,
+  formatCtaPreferLaw,
+  SOURCE_TRADEMARK_LAW,
+} from "./researchDepartmentService";
 import { ResearchSourceService } from "./researchSourceService";
+import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -121,12 +129,31 @@ describe("C — fail loud, no canned analysis", () => {
   });
 });
 
-describe("D/E — one ticket per watch, no title templates", () => {
-  it("accepted watch writes at most two memories and one spark; second pass updates lastSeenAt", () => {
+describe("D/E — one ticket per watch, laws only", () => {
+  it("accepted watch writes PREFER/NEVER laws and one spark; second pass updates lastSeenAt", () => {
     const source = { id: "src-1", displayName: "Chan", username: "@c", platform: "youtube", url: "https://youtube.com/@c" } as any;
     const first = ResearchDepartmentService.processVideoResearch("", source, acceptedWatch());
     assert.equal(first.viralSparks.length, 1);
-    assert.ok(first.memoryItems.length <= 2);
+    assert.ok(first.memoryItems.length <= 3);
+    assert.ok(first.memoryItems.length >= 1);
+    for (const mem of first.memoryItems) {
+      assert.match(mem.text, /^\[LAW\] (PREFER|NEVER):/);
+      assert.ok(mem.text.length <= 200);
+      assert.doesNotMatch(mem.text, /Adaptation:|transcript|view count|Inspiration beats/i);
+    }
+    const hookLaw = first.memoryItems.find((m) => m.category === "Winning hooks");
+    assert.ok(hookLaw);
+    assert.equal(
+      hookLaw!.text,
+      formatHookPreferLaw("Curiosity then payoff in one breath", "short 9:16", "Comment FIX if you want the checklist")
+    );
+    const ctaLaw = first.memoryItems.find((m) => m.text === formatCtaPreferLaw("Comment FIX if you want the checklist"));
+    assert.ok(ctaLaw);
+    assert.equal(ctaLaw!.category, "Audience preferences");
+    assert.equal(
+      first.memoryItems.filter((m) => m.text === SOURCE_TRADEMARK_LAW).length,
+      1
+    );
     assert.equal(first.viralSparks[0].researchContext?.watchedVideoKey, "youtube:abcdefghijk");
     assert.equal(first.viralSparks[0].hook, "Stop scrolling if your retention dies at second three.");
     const second = ResearchDepartmentService.processVideoResearch(
@@ -138,7 +165,22 @@ describe("D/E — one ticket per watch, no title templates", () => {
       first.viralSparks
     );
     assert.equal(second.viralSparks.length, 0);
+    assert.equal(second.memoryItems.length, 0);
     assert.equal(second.updatedSparks.length, 1);
+    const otherVideo = ResearchDepartmentService.processVideoResearch(
+      "",
+      source,
+      acceptedWatch({
+        videoId: "otherVideo1",
+        url: "https://www.youtube.com/watch?v=otherVideo1",
+        hook_formula: "Name the loss then show the save",
+        opening_line: "Your last ten videos died at the same second.",
+      }),
+      first.memoryItems,
+      undefined,
+      first.viralSparks
+    );
+    assert.equal(otherVideo.memoryItems.filter((m) => m.text === SOURCE_TRADEMARK_LAW).length, 0);
   });
 
   it("processPatterns does not mint Viral Format title sparks", () => {
@@ -164,7 +206,7 @@ describe("D/E — one ticket per watch, no title templates", () => {
   });
 });
 
-describe("source laws", () => {
+describe("source laws + memory feed", () => {
   it("removes canned persist paths and Viral Format pattern persist", () => {
     const dept = read("researchDepartmentService.ts");
     const yt = read("providers/YouTubeResearchProvider.ts");
@@ -179,5 +221,55 @@ describe("source laws", () => {
     assert.doesNotMatch(src, /persistResearchPatternCreate/);
     assert.match(src, /watchLedger/);
     assert.match(vu, /hook_formula/);
+  });
+
+  it("empty Memory does not invent executive-authority filler", () => {
+    const empty = buildRankedBrandLaws([]);
+    assert.equal(empty.lawsBlock, "");
+    assert.deepEqual(empty.hardLaws, []);
+    const brief = read("../production/productionBriefService.ts");
+    const ranker = read("../memory/rankBrandLaws.ts");
+    assert.doesNotMatch(brief, /sharp executive authority/);
+    assert.doesNotMatch(ranker, /sharp executive authority/);
+    assert.doesNotMatch(brief, /zero filler words/);
+    assert.doesNotMatch(ranker, /zero filler words/);
+  });
+
+  it("ranker puts pinned and hook laws first and caps at 10", () => {
+    const items = [
+      { id: "a", type: "learned" as const, text: "Audience likes longer outros", dateAdded: "2026-01-01", category: "Audience preferences" as const },
+      { id: "h", type: "learned" as const, text: "[LAW] PREFER: name the drop in short 9:16.", dateAdded: "2026-01-02", category: "Winning hooks" as const },
+      { id: "p", type: "rule" as const, text: "[LAW] NEVER: promise fake view counts.", dateAdded: "2026-01-03", category: "Brand" as const, pinned: true },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        id: `x${i}`,
+        type: "learned" as const,
+        text: `[LAW] PREFER: filler law ${i}.`,
+        dateAdded: "2026-01-04",
+        category: "Audience preferences" as const,
+      })),
+    ];
+    const ranked = buildRankedBrandLaws(items, 10);
+    assert.equal(ranked.used.length, 10);
+    assert.match(ranked.lawsBlock.split("\n")[0], /NEVER: promise fake view counts/);
+    assert.match(ranked.lawsBlock.split("\n")[1], /PREFER: name the drop/);
+    assert.doesNotMatch(ranked.lawsBlock, /sharp executive authority/);
+  });
+
+  it("Video / Image / TTS execute options do not take memoryItems", () => {
+    const pas = fs.readFileSync(path.join(__dirname, "../production/productionAssetService.ts"), "utf8");
+    const orch = fs.readFileSync(path.join(__dirname, "../runtime/AIProviderOrchestrator.ts"), "utf8");
+    const router = fs.readFileSync(path.join(__dirname, "../runtime/modelRouter.ts"), "utf8");
+    const videoBlocks = pas.match(/executeCategoryRequest\(\s*"videoGeneration"[\s\S]*?\}\)/g) || [];
+    assert.ok(videoBlocks.length >= 1);
+    for (const block of videoBlocks) {
+      assert.doesNotMatch(block, /memoryItems/);
+    }
+    const imageBlocks = pas.match(/executeCategoryRequest\(\s*"storyboardImages"[\s\S]*?\}\)/g) || [];
+    for (const block of imageBlocks) {
+      assert.doesNotMatch(block, /memoryItems/);
+    }
+    assert.match(orch, /export interface AIExecutionOptions/);
+    assert.doesNotMatch(orch.slice(orch.indexOf("export interface AIExecutionOptions"), orch.indexOf("export interface AIProviderPlugin")), /memoryItems/);
+    assert.match(router, /memoryItems: _omitMemoryItems/);
   });
 });

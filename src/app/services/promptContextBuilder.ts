@@ -5,6 +5,7 @@
  */
 
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "./geminiService";
+import { buildRankedBrandLaws } from "./memory/rankBrandLaws";
 import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 
 export interface PromptContextParams {
@@ -72,10 +73,12 @@ export class PromptContextBuilder {
       contextParts.push(`HOST CHARACTER BIBLE: Name="${char.name}", Style="${char.style || "Executive"}", Traits="${(char.traits || []).join(", ")}"`);
     }
 
-    // 3. Long-Term Memory Rules
+    // 3. Ranked engagement laws only (cap 10). Empty Memory → omit. Never dump diaries.
     if (workspaceState?.memoryItems && Array.isArray(workspaceState.memoryItems) && workspaceState.memoryItems.length > 0) {
-      const activeRules = workspaceState.memoryItems.slice(0, 5).map((m: any) => `• ${m.text}`).join("\n");
-      contextParts.push(`STRATEGY & BRAND MEMORY RULES:\n${activeRules}`);
+      const ranked = buildRankedBrandLaws(workspaceState.memoryItems, 10).lawsBlock;
+      if (ranked) {
+        contextParts.push(`STRATEGY & BRAND MEMORY LAWS:\n${ranked}`);
+      }
     }
 
     // 4. Current Workspace State

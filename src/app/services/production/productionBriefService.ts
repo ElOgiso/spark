@@ -194,33 +194,10 @@ function asText(value: unknown, fallback = ""): string {
 }
 
 /**
- * Pre-processes and ranks memory items so high-priority brand rules,
- * pinned directives, and hook laws appear at the top, capped at 10 items max.
+ * Ranked engagement laws only. Empty Memory → empty block (no invented filler).
  */
 function rankAndFormatMemory(memoryItems: MemoryItem[] = []): string {
-  if (!memoryItems || memoryItems.length === 0) {
-    return "- [BRAND LAW] ALWAYS: Maintain sharp executive authority, high-contrast framing, and zero filler words.";
-  }
-
-  const sorted = [...memoryItems].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    if (a.type === "rule" && b.type !== "rule") return -1;
-    if (a.type !== "rule" && b.type === "rule") return 1;
-    return 0;
-  });
-
-  const capped = sorted.slice(0, 10);
-  return capped
-    .map((m) => {
-      const cat = m.category ? `[${m.category.toUpperCase()}]` : "[RULE]";
-      const text = m.text.trim();
-      if (/^(always|never|hook|law)/i.test(text)) {
-        return `- ${cat}: ${text}`;
-      }
-      return `- ${cat} ALWAYS: ${text}`;
-    })
-    .join("\n");
+  return buildRankedBrandLaws(memoryItems, 10).lawsBlock;
 }
 
 /**
@@ -817,7 +794,7 @@ export class ProductionBriefService {
 
     ProductionGenerationGuard.assertEnabled("ProductionBriefService.generateBrief", brand?.id);
 
-    const rankedMemory = buildRankedBrandLaws(memoryItems).lawsBlock;
+    const rankedMemory = rankAndFormatMemory(memoryItems);
     const researchPromptBlock = formatResearchContextBlock(resolvedResearch, brand.name);
     const hostStyle = character?.style || character?.name || brand.name;
     const charTraits = character?.traits ? character.traits.join(", ") : "Authoritative, direct, engaging";
@@ -929,9 +906,7 @@ ${researchPromptBlock ? `${researchPromptBlock}\n` : ""}BRAND IDENTITY & ENVIRON
 - Presenter / Host: ${hostStyle} (${charTraits})
 - Production Mode: ${modeKey}
 ${offerPromptSection}
-RANKED BRAND MEMORY & EXECUTIVE LAWS:
-${rankedMemory}
-
+${rankedMemory ? `RANKED BRAND MEMORY LAWS:\n${rankedMemory}\n` : ""}
 Return a valid JSON object matching this exact structure with NO markdown formatting:
 {
   "title": "${spark.title}",
