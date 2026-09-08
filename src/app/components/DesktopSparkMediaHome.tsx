@@ -3,6 +3,7 @@ import { useSpark } from "../state/SparkContext";
 import { useAuth } from "../state/AuthContext";
 import { AIChatModal } from "./AIChatModal";
 import { VideoFullscreenModal } from "./mobile/DonorSparkMediaHome";
+import { openProductionReviewDetail, resolveCardPlayableVideoUrl } from "../services/production/homeReviewCardMedia";
 import {
   ArrowRight,
   CheckCircle2,
@@ -336,12 +337,13 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
       videoUrl?: string;
       score?: number;
       isGenerating?: boolean;
-      targetPath: string;
+      productionId?: string;
+      kind: "production" | "viral_spark";
     }> = [];
 
     // Add completed review items / productions first
     productions.forEach((p: any) => {
-      const vUrl = p.videoUrl || p.brief?.videoUrl || p.brief?.generatedAssets?.generatedVideos?.[0];
+      const vUrl = resolveCardPlayableVideoUrl(p);
       const imgUrl = p.scenes?.[0]?.image || p.brief?.generatedAssets?.generatedFrames?.[0] || p.brief?.generatedAssets?.thumbnails?.[0]?.image;
 
       list.push({
@@ -349,9 +351,10 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
         title: p.title,
         sub: p.status === "Approved" ? "Approved • Ready" : p.status === "Ready for Review" ? "Review Pending" : "In Production",
         imageUrl: imgUrl,
-        videoUrl: typeof vUrl === "string" && vUrl.startsWith("http") ? vUrl : undefined,
+        videoUrl: vUrl,
         isGenerating: p.isGeneratingAssets,
-        targetPath: "/review",
+        productionId: p.id,
+        kind: "production",
       });
     });
 
@@ -363,7 +366,7 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
           title: s.title,
           sub: `${s.timeWindow || "Hot Trend"} • ${s.platformFit || "Vertical Short"}`,
           score: s.brandFitScore || 92,
-          targetPath: "/viral-sparks",
+          kind: "viral_spark",
         });
       }
     });
@@ -472,16 +475,35 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {mixedItems.map((item) => (
+            {mixedItems.map((item) => {
+              const isPlayable = Boolean(item.videoUrl && !item.isGenerating);
+              return (
               <div
                 key={item.id}
-                onClick={() => onNavigate(item.targetPath)}
-                className="d-press relative rounded-2xl bg-white/[0.035] border border-white/10 hover:border-purple-500/40 p-4 flex flex-col justify-between overflow-hidden group shadow-lg"
+                className="relative rounded-2xl bg-white/[0.035] border border-white/10 hover:border-purple-500/40 p-4 flex flex-col justify-between overflow-hidden group shadow-lg"
               >
                 {/* Media Image / Aspect Thumbnail Box */}
-                <div className="relative w-full aspect-video rounded-xl bg-black/60 border border-white/10 overflow-hidden mb-3.5 flex items-center justify-center">
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <div
+                  className="relative w-full aspect-video rounded-xl bg-black/60 border border-white/10 overflow-hidden mb-3.5 flex items-center justify-center"
+                  onClick={() => {
+                    if (!isPlayable || !item.videoUrl) return;
+                    setActiveFullscreenVideo({ videoUrl: item.videoUrl, title: item.title });
+                  }}
+                  role={isPlayable ? "button" : undefined}
+                  style={{ cursor: isPlayable ? "pointer" : "default" }}
+                >
+                  {isPlayable ? (
+                    <video
+                      src={item.videoUrl}
+                      poster={item.imageUrl || undefined}
+                      muted
+                      loop
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  ) : item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="flex flex-col items-center justify-center p-4 text-center">
                       <Tv className="w-8 h-8 text-white/30 mb-1.5" />
@@ -490,8 +512,9 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
                   )}
 
                   {/* Play Video Button on cards with playable videoUrl */}
-                  {item.videoUrl && !item.isGenerating ? (
+                  {isPlayable ? (
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setActiveFullscreenVideo({ videoUrl: item.videoUrl!, title: item.title });
@@ -546,13 +569,35 @@ export function DesktopSparkMediaHome({ onNavigate }: DesktopSparkMediaHomeProps
 
                 {/* Info Text */}
                 <div className="space-y-1">
-                  <h3 className="text-sm font-semibold leading-snug text-white line-clamp-2 group-hover:text-purple-300 transition-colors">
+                  <h3 className="text-sm font-semibold leading-snug text-white line-clamp-2">
                     {item.title}
                   </h3>
-                  <p className="text-xs text-white/40 truncate">{item.sub}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-white/40 truncate">{item.sub}</p>
+                    {item.kind === "production" ? (
+                      <button
+                        type="button"
+                        onClick={() => openProductionReviewDetail(onNavigate, item.productionId)}
+                        className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 flex-shrink-0"
+                      >
+                        Review
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate("/viral-sparks")}
+                        className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 flex-shrink-0"
+                      >
+                        Open
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

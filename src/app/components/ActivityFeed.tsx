@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { VideoFullscreenModal } from "./mobile/DonorSparkMediaHome";
+import { openProductionReviewDetail } from "../services/production/homeReviewCardMedia";
 
 export interface Activity {
   id: string;
@@ -179,13 +180,33 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
             return (
               <div
                 key={activity.id}
-                onClick={() => onNavigate?.(getRouteForActivity(activity))}
-                className="flex items-center justify-between gap-3.5 p-2.5 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/[0.03] active:bg-white/[0.05] transition-all cursor-pointer group"
+                className="flex items-center justify-between gap-3.5 p-2.5 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/[0.03] active:bg-white/[0.05] transition-all group"
               >
                 {/* Left: Compact thumbnail (w-20 sm:w-24, aspect 16:10 / 4:3) */}
                 <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                  <div className="relative w-20 h-13 sm:w-24 sm:h-14 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
-                    {thumb ? (
+                  <div
+                    className="relative w-20 h-13 sm:w-24 sm:h-14 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0"
+                    onClick={() => {
+                      if (!isPlayable) return;
+                      setActiveFullscreenVideo({
+                        videoUrl: activity.videoUrl!,
+                        title: activity.title,
+                      });
+                    }}
+                    role={isPlayable ? "button" : undefined}
+                    style={{ cursor: isPlayable ? "pointer" : "default" }}
+                  >
+                    {isPlayable ? (
+                      <video
+                        src={activity.videoUrl}
+                        poster={thumb || undefined}
+                        muted
+                        loop
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                    ) : thumb ? (
                       <img
                         src={thumb}
                         alt={activity.title}
@@ -264,10 +285,20 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
                   </div>
                 </div>
 
-                {/* Right: Quick action hint */}
-                <div className="flex items-center gap-2 flex-shrink-0 text-white/30 group-hover:text-white/70 transition-colors">
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
+                {activity.productionId ? (
+                  <button
+                    type="button"
+                    onClick={() => openProductionReviewDetail(onNavigate, activity.productionId)}
+                    className="flex items-center gap-1 flex-shrink-0 text-[11px] font-semibold text-purple-400 hover:text-purple-300"
+                  >
+                    Review
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 flex-shrink-0 text-white/30 group-hover:text-white/70 transition-colors">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                )}
               </div>
             );
           })}
