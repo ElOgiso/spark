@@ -167,7 +167,7 @@ export function useXaiRealtime() {
 
     // Provider-Native Premium TTS Execution (OpenAI 'coral' / Gemini 'Aoede')
     try {
-      const audioUri = await generateSuperSparkVoice(spokenText, providerId);
+      const audioUri = await generateSuperSparkVoice(spokenText, providerId, { superSparkChat: true });
       if (audioUri) {
         const audio = new Audio(audioUri);
         audioRef.current = audio;

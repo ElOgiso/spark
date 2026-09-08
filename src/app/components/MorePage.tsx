@@ -355,7 +355,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
           <div>
             <h2 className="text-xs font-medium tracking-wide text-muted-foreground mb-3">Production</h2>
             <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-sm text-muted-foreground mb-4">Controls media rendering and autonomous generation</p>
+              <p className="text-sm text-muted-foreground mb-4">When OFF, only Super Spark chat works — no briefs, images, or credit spend</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -369,7 +369,7 @@ export function MorePage({ onNavigate }: MorePageProps) {
                   }`}
                 >
                   <p className="text-sm font-semibold text-foreground">Off</p>
-                  <p className="text-xs text-muted-foreground mt-1">no media generation</p>
+                  <p className="text-xs text-muted-foreground mt-1">chat only — no credits</p>
                 </button>
                 <button
                   type="button"

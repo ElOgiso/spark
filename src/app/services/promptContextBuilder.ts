@@ -87,11 +87,11 @@ export class PromptContextBuilder {
     }
 
     const prodEnabled = ProductionGenerationGuard.isEnabled();
-    contextParts.push(`PRODUCTION GENERATION STATUS: ${prodEnabled ? "ENABLED (Drafting & Media Rendering Active)" : "DISABLED (Planning & Advisory Mode Only - Zero AI Media Generation)"}`);
+    contextParts.push(`PRODUCTION GENERATION STATUS: ${prodEnabled ? "ENABLED (Drafting & Media Rendering Active)" : "DISABLED (Super Spark chat only — zero briefs, images, video, or other credit spend)"}`);
 
     if (!prodEnabled) {
       contextParts.push(
-        `CRITICAL SYSTEM GUARD: Production Generation is currently OFF. If the user asks to generate/create/render a video, brief, script, or image, do NOT attempt generation. Reply: "Production Generation is currently turned off. No drafting or asset generation can run while it's disabled. Would you like me to enable Production Generation first?"`
+        `CRITICAL SYSTEM GUARD: Production Generation is currently OFF. Super Spark chat is the only allowed spend path. Do NOT create a production, brief, script, storyboard, image, or video. Do NOT spend credits. Reply: "Production Generation is currently turned off. Super Spark chat still works. Turn Production ON in Settings to create briefs, generate images, or spend credits."`
       );
     }
 

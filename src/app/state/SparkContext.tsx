@@ -58,6 +58,12 @@ import { isSupabaseConfigured } from "../backend/supabaseClient";
 import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import {
+  recordProductionTombstone,
+  clearProductionTombstones,
+  filterTombstonedProductions,
+  filterTombstonedReviews,
+} from "../services/production/productionTombstone";
+import {
   evaluatePublishGate,
   buildPublishAuditRecord,
   type PublishingPermission,
@@ -759,8 +765,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // CLOUD ARRAYS OVERWRITE LOCAL ARRAYS ON HYDRATION TO PREVENT ACCOUNT CROSS-POLLUTION
             memoryItems: snap.memoryItems || [],
             viralSparks: (snap.viralSparks || []).filter((s: any) => s && !s.id?.startsWith("vs-init-")),
-            productions: snap.productions || [],
-            reviewItems: snap.reviewItems || [],
+            productions: filterTombstonedProductions(snap.productions || []),
+            reviewItems: filterTombstonedReviews(snap.reviewItems || []),
             publishJobs: snap.publishJobs || [],
             analyticsInsights: snap.analyticsInsights || [],
             researchSources: snap.researchSources || [],
@@ -1009,8 +1015,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { uploadCharacterSheetToStorage, persistCharacterCreate } = await import("../backend/workspaceSync");
       const charId = characterData.id || crypto.randomUUID();
       let sheetUrl = characterData.characterSheetUrl || characterData.imageUrl || null;
-      if (sheetUrl && (sheetUrl.startsWith("data:") || sheetUrl.startsWith("blob:"))) {
-        sheetUrl = await uploadCharacterSheetToStorage(brandId, sheetUrl, charId);
+      if (sheetUrl) {
+        const { needsLocationPlateStorageUpload } = await import("../services/production/locationPlatePersistence");
+        if (needsLocationPlateStorageUpload(sheetUrl)) {
+          sheetUrl = await uploadCharacterSheetToStorage(brandId, sheetUrl, charId);
+        }
       }
 
       const created = await persistCharacterCreate(brandId, {
@@ -1374,8 +1383,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (!sc) continue;
           const scId = sc.id || crypto.randomUUID();
           let scSheet = sc.characterSheetUrl || sc.imageUrl || null;
-          if (scSheet && (scSheet.startsWith("data:") || scSheet.startsWith("blob:"))) {
-            scSheet = await uploadCharacterSheetToStorage(brandId, scSheet, scId);
+          if (scSheet) {
+            const { needsLocationPlateStorageUpload } = await import("../services/production/locationPlatePersistence");
+            if (needsLocationPlateStorageUpload(scSheet)) {
+              scSheet = await uploadCharacterSheetToStorage(brandId, scSheet, scId);
+            }
           }
           const createdSupport = await persistCharacterCreate(brandId, {
             ...sc,
@@ -1702,6 +1714,19 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const createProductionFromSpark = (sparkOrId: string | ViralSpark) => {
+    if (!ProductionGenerationGuard.isEnabled()) {
+      NotificationService.addNotification({
+        title: "Production Generation is OFF",
+        description:
+          "Turn Production ON in Settings to create briefs, generate images, or spend credits. Super Spark chat still works.",
+        type: "system_update",
+        priority: "high",
+        relatedRoute: "/more/production-settings",
+        actionLabel: "Open Settings",
+      });
+      return;
+    }
+
     let spark =
       typeof sparkOrId === "string"
         ? state.viralSparks.find((s: any) => s.id === sparkOrId) || state.viralSparks[0]
@@ -2363,6 +2388,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const mergeProductionScenes = useCallback(
     async (productionId: string) => {
+      if (!ProductionGenerationGuard.isEnabled()) {
+        console.warn("[SparkContext] Scene merge blocked: Production Generation is OFF.");
+        return null;
+      }
       const prod = state.productions?.find((p: any) => p.id === productionId);
       if (!prod) return null;
 
@@ -3012,6 +3041,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const targetProd = (state.productions || []).find((p: any) => p.id === productionId);
     const targetTitle = targetProd?.title;
+    const removedProductions = (state.productions || []).filter(
+      (p: any) => p.id === productionId || (targetTitle && p.title === targetTitle && !isUuid(p.id))
+    );
+    const removedReviewItems = (state.reviewItems || []).filter(
+      (r: any) =>
+        r.productionId === productionId ||
+        r.id === productionId ||
+        r.id === `rev-${productionId}` ||
+        (targetTitle && r.title === targetTitle && !isUuid(r.id))
+    );
+
+    recordProductionTombstone(
+      productionId,
+      ...removedProductions.map((p: any) => p.id),
+      ...removedReviewItems.map((r: any) => r.id),
+      ...removedReviewItems.map((r: any) => r.productionId)
+    );
 
     setState((prev: any) => {
       const updatedProductions = (prev.productions || []).filter(
@@ -3033,7 +3079,32 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const bId = getBrandWorkspaceId();
     if (isSupabaseConfigured() && bId) {
-      void deleteProductionCascade(bId, productionId, targetTitle);
+      void deleteProductionCascade(bId, productionId, targetTitle).then((result) => {
+        if (result?.ok !== false) return;
+        clearProductionTombstones(
+          productionId,
+          ...removedProductions.map((p: any) => p.id),
+          ...removedReviewItems.map((r: any) => r.id),
+          ...removedReviewItems.map((r: any) => r.productionId)
+        );
+        setState((prev: any) => ({
+          ...prev,
+          productions: [...removedProductions, ...(prev.productions || []).filter((p: any) => p.id !== productionId)],
+          reviewItems: [
+            ...removedReviewItems,
+            ...(prev.reviewItems || []).filter(
+              (r: any) => r.id !== productionId && r.productionId !== productionId
+            ),
+          ],
+        }));
+        NotificationService.addNotification({
+          title: "Delete failed",
+          description: result?.error || "Production could not be deleted from the cloud. It was restored locally.",
+          type: "system_update",
+          priority: "high",
+          relatedRoute: "/review",
+        });
+      });
     }
   };
 
@@ -3583,7 +3654,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         id: `prod-off-${Date.now()}`,
         title: "Production Generation Disabled",
         status: "Disabled",
-        meta: "Lightweight brief mode active. Automatic media rendering paused.",
+        meta: "Super Spark chat only. No briefs, images, or credit spend until you turn Production ON.",
       };
     } else if (isProdCancel) {
       const activeProd = state.productions?.find((p: any) => p.status !== "Cancelled") || state.productions?.[0];
@@ -3718,7 +3789,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       let audioUrl: string | null = null;
       try {
-        audioUrl = await generateSuperSparkVoice(responseText, providerId);
+        audioUrl = await generateSuperSparkVoice(responseText, providerId, { superSparkChat: true });
       } catch (err) {
         console.warn("[SparkContext] Executive voice generation notice:", err);
       }

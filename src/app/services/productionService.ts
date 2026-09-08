@@ -103,6 +103,7 @@ export class ProductionService implements IProductionService {
     /** Phase 11 — optional prior learnings for Creative Director (soft influence only). */
     creativeLearnings?: CreativeLearning[];
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
+    ProductionGenerationGuard.assertEnabled("createProductionFromSpark");
     const prodId = params.productionId || generateUuid();
     const reviewId = params.reviewId || generateUuid();
     const dateStr = new Date().toISOString().split("T")[0];

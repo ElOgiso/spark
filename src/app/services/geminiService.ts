@@ -2,6 +2,7 @@ import { PromptContextBuilder } from "./promptContextBuilder";
 import { ModelRouter } from "./runtime/modelRouter";
 import { AIProviderOrchestrator, resolveProviderKey } from "./runtime/AIProviderOrchestrator";
 import type { ThinkingState, AIProviderId } from "../domain/types";
+import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 
 /**
  * Immutable Executive Director Voice & Identity Configuration
@@ -276,8 +277,15 @@ GUIDANCE RULES FOR ONBOARDING CHAT:
  */
 export async function generateSuperSparkVoice(
   text: string,
-  providerId?: AIProviderId
+  providerId?: AIProviderId,
+  options?: { superSparkChat?: boolean }
 ): Promise<string | null> {
+  if (options?.superSparkChat) {
+    ProductionGenerationGuard.assertAccessActive("generateSuperSparkVoice.chat");
+  } else {
+    ProductionGenerationGuard.assertEnabled("generateSuperSparkVoice");
+  }
+
   const preferred = providerId || AIProviderOrchestrator.getLastUsedProviderId() || "openai";
 
   const cleanText = text

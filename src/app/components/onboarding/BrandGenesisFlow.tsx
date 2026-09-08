@@ -10,6 +10,7 @@ import chatLogo from "@/imports/CHAT_LOGO.png";
 import { useAuth } from "../../state/AuthContext";
 import { useSpark } from "../../state/SparkContext";
 import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId } from "../../services/socialIntegrationService";
+import { isUuid } from "../../backend/mappers/workspaceMappers";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -38,6 +39,28 @@ import {
 } from "../../domain/types";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
+
+async function persistGenesisMediaIfBrandReady(
+  rawUrl: string,
+  kind: "plate" | "sheet",
+  charId?: string
+): Promise<string> {
+  const brandId = getBrandWorkspaceId();
+  if (!rawUrl || !brandId || !isUuid(brandId)) return rawUrl;
+  try {
+    const { needsLocationPlateStorageUpload } = await import("../../services/production/locationPlatePersistence");
+    if (!needsLocationPlateStorageUpload(rawUrl)) return rawUrl;
+    if (kind === "plate") {
+      const { uploadLocationPlateToStorage } = await import("../../backend/workspaceSync");
+      return await uploadLocationPlateToStorage(brandId, rawUrl);
+    }
+    const { uploadCharacterSheetToStorage } = await import("../../backend/workspaceSync");
+    return await uploadCharacterSheetToStorage(brandId, rawUrl, charId);
+  } catch (err) {
+    console.warn("[BrandGenesisFlow] Immediate storage persist notice:", err);
+    return rawUrl;
+  }
+}
 
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
 export interface BrandGenesisData {
@@ -1103,7 +1126,8 @@ function FrameCharacter({
         capability: "Image Generation",
       });
       if (imgUrl && typeof imgUrl === "string") {
-        onChange({ locationPlateUrl: imgUrl });
+        const durable = await persistGenesisMediaIfBrandReady(imgUrl, "plate");
+        onChange({ locationPlateUrl: durable });
       }
     } catch (err) {
       console.warn("[FrameCharacter] Set plate generation notice:", err);
@@ -1116,9 +1140,12 @@ function FrameCharacter({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const uri = ev.target?.result as string;
-      if (uri) onChange({ locationPlateUrl: uri });
+      if (uri) {
+        const durable = await persistGenesisMediaIfBrandReady(uri, "plate");
+        onChange({ locationPlateUrl: durable });
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -1144,12 +1171,14 @@ function FrameCharacter({
       });
 
       if (imgUrl && typeof imgUrl === "string") {
+        const scId = crypto.randomUUID();
+        const durable = await persistGenesisMediaIfBrandReady(imgUrl, "sheet", scId);
         const newSupport = {
-          id: crypto.randomUUID(),
+          id: scId,
           name: `Supporting Character ${currentSupportCount + 1}`,
           role: "support",
-          characterSheetUrl: imgUrl,
-          imageUrl: imgUrl,
+          characterSheetUrl: durable,
+          imageUrl: durable,
           personality: "Companion / Co-star",
         };
         const updatedList = [...(data.supportCharacters || []), newSupport].slice(0, 2);
@@ -1166,16 +1195,18 @@ function FrameCharacter({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const uri = ev.target?.result as string;
       if (uri) {
         const currentSupportCount = (data.supportCharacters || []).length;
+        const scId = crypto.randomUUID();
+        const durable = await persistGenesisMediaIfBrandReady(uri, "sheet", scId);
         const newSupport = {
-          id: crypto.randomUUID(),
+          id: scId,
           name: `Supporting Character ${currentSupportCount + 1}`,
           role: "support",
-          characterSheetUrl: uri,
-          imageUrl: uri,
+          characterSheetUrl: durable,
+          imageUrl: durable,
           personality: "Companion / Co-star",
         };
         const updatedList = [...(data.supportCharacters || []), newSupport].slice(0, 2);

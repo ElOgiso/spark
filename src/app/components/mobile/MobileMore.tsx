@@ -69,6 +69,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     removeMemoryItem,
     brand,
     character,
+    characters,
     accounts: contextAccounts,
     offers = [],
     aiSettings,
@@ -120,6 +121,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
 
   const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; url?: string }[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
+  const [assetsEpoch, setAssetsEpoch] = useState(0);
 
   const { productions, reviewItems } = useSpark() as any;
 
@@ -153,6 +155,34 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
           size: "Cloud Persisted",
           url: character.voice.previewUrl,
         });
+      }
+
+      const plateUrl = brand?.locationPlateUrl || brand?.settings?.locationPlateUrl || brand?.settings?.location_plate_url;
+      if (plateUrl && !seenUrls.has(plateUrl)) {
+        seenUrls.add(plateUrl);
+        items.push({
+          id: "location-plate-asset-m",
+          name: `${brand?.name || "Brand"}_Set_Plate.png`,
+          type: "Environment / Set Plate",
+          size: "Cloud Persisted",
+          url: plateUrl,
+        });
+      }
+
+      if (Array.isArray(characters)) {
+        for (const sc of characters) {
+          if (!sc || sc.role !== "support") continue;
+          const url = sc.characterSheetUrl || sc.imageUrl;
+          if (!url || seenUrls.has(url)) continue;
+          seenUrls.add(url);
+          items.push({
+            id: `support-char-asset-m-${sc.id}`,
+            name: `${sc.name || "Support"}_Character_Sheet.png`,
+            type: "Supporting Cast Image",
+            size: "Cloud Persisted",
+            url,
+          });
+        }
       }
 
       const prodList = Array.isArray(productions) && productions.length > 0 ? productions : reviewItems || [];
@@ -210,7 +240,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     return () => {
       isMounted = false;
     };
-  }, [auth.brand?.id, character, productions, reviewItems]);
+  }, [auth.brand?.id, character, brand, characters, productions, reviewItems, assetsEpoch]);
 
   const [platformAccountMap, setPlatformAccountMap] = useState<Map<string, CanonicalPlatformAccount>>(() =>
     buildPlatformAccountMap(contextAccounts)
@@ -523,6 +553,8 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                             if (
                               id === "char-sheet-asset-m" ||
                               id === "voice-preview-asset-m" ||
+                              id === "location-plate-asset-m" ||
+                              id.startsWith("support-char-asset-m-") ||
                               id.startsWith("prod-vid-m-") ||
                               id.startsWith("prod-aud-m-")
                             ) {
@@ -538,7 +570,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
                                 window.alert(result.reason || "Delete failed — asset kept.");
                                 return;
                               }
-                              setAssets((prev) => prev.filter((a) => a.id !== id));
+                              setAssetsEpoch((n) => n + 1);
                             }).catch(() => {
                               window.alert("Delete unavailable — asset kept.");
                             });
@@ -1190,7 +1222,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
               }`}
             >
               <div className="text-xs font-semibold">Off</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">no media generation</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">chat only — no credits</div>
             </button>
             <button
               type="button"

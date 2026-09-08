@@ -185,7 +185,8 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
     setIsSaving(true);
     setErrorMsg(null);
     try {
-      const { persistBrandUpdate } = await import("../../backend/workspaceSync");
+      const { persistBrandUpdate, deleteLocationPlateFromStorage } = await import("../../backend/workspaceSync");
+      await deleteLocationPlateFromStorage(activeBrandId);
       if (updateBrand) {
         updateBrand({ locationPlateUrl: null });
       }

@@ -6,6 +6,7 @@ import { Button, WhySparkRecommends } from "./ds";
 import { InteractiveVideoPlayer, ThumbnailVariantCard, MiniMediaThumbnail } from "./MediaPreviewHelper";
 import { ReviewIntelligencePanel } from "./ReviewIntelligencePanel";
 import { buildReviewProductionView } from "../services/production/reviewPresentation";
+import { resolveProductionDeleteTargetId } from "../services/production/productionDeleteTarget";
 import {
   ArrowLeft,
   TrendingUp,
@@ -299,7 +300,10 @@ export function CreativeReview({ onNavigate, onBack }: CreativeReviewProps) {
   };
 
   const handleDeleteProduction = () => {
-    const targetId = activeProd?.id || activeReview?.productionId || activeReview?.id;
+    const targetId = resolveProductionDeleteTargetId({
+      productionId: activeProd?.id,
+      reviewProductionId: activeReview?.productionId,
+    });
     if (!targetId) return;
     if (window.confirm("Delete this production? Cannot be undone.")) {
       if (deleteProduction) {

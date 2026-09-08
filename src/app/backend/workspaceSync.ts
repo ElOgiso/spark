@@ -34,6 +34,7 @@ import { executiveSessionRepository } from "./repositories/executiveSessionRepos
 import { executiveSummaryRepository } from "./repositories/executiveSummaryRepository";
 import { executiveTimelineRepository } from "./repositories/executiveTimelineRepository";
 import { listByBrand } from "./repositories/repositoryUtils";
+import { listMediaAssetsByBrandId } from "./repositories/productionAssetRepository";
 import type { AccountRow, BrandRow, CharacterRow, ExecutiveConversationMessageRow, MediaAssetRow } from "./database.types";
 import { refreshProductionMediaAssets, refreshCharacterMediaAssets } from "../services/production/productionAssetService";
 import type {
@@ -256,7 +257,7 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     listAnalyticsSnapshots(brandId),
     listResearchSources(brandId),
     listResearchPatterns(brandId),
-    listByBrand("media_assets", brandId).catch(() => ({ data: [] })),
+    listMediaAssetsByBrandId(brandId).then((data) => ({ data })).catch(() => ({ data: [] })),
   ]);
 
   const brand = brandRes?.data ? brandRowToDomain(brandRes.data) : undefined;
@@ -602,28 +603,87 @@ export async function persistReviewApprove(id: string) {
   } as any);
 }
 
-export async function deleteProductionCascade(brandId: string, productionId: string, title?: string) {
-  if (!isSupabaseConfigured()) return;
+export async function deleteProductionCascade(
+  brandId: string,
+  productionId: string,
+  _title?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: true };
+  if (!productionId || !isUuid(productionId)) {
+    return { ok: false, error: "Invalid production id" };
+  }
   const supabase = getSupabaseClient();
-  if (!supabase) return;
+  if (!supabase) return { ok: false, error: "Supabase unavailable" };
 
   try {
-    if (isUuid(productionId)) {
-      // 1. Delete review items where production_id = id OR id = id
-      await (supabase.from("review_items") as any).delete().or(`production_id.eq.${productionId},id.eq.${productionId}`);
-      // 2. Delete production assets
-      await (supabase.from("production_assets") as any).delete().eq("production_id", productionId).catch(() => {});
-      // 3. Delete production row
-      await (supabase.from("productions") as any).delete().eq("id", productionId);
+    const reviewDel = await (supabase.from("review_items") as any).delete().eq("production_id", productionId);
+    if (reviewDel?.error) {
+      console.warn("[workspaceSync] deleteProductionCascade review_items:", reviewDel.error);
+      return { ok: false, error: reviewDel.error.message || "Failed to delete review items" };
     }
-    
-    // If legacy non-UUID id or cleanup by title + brand
-    if (brandId && isUuid(brandId) && title) {
-      await (supabase.from("review_items") as any).delete().eq("brand_id", brandId).eq("reasoning->>title", title);
-      await (supabase.from("productions") as any).delete().eq("brand_id", brandId).eq("title", title);
+
+    await (supabase.from("production_assets") as any).delete().eq("production_id", productionId).catch(() => {});
+
+    await (supabase.from("media_assets") as any).delete().like("storage_path", `${productionId}/%`);
+    if (brandId && isUuid(brandId)) {
+      await (supabase.from("media_assets") as any)
+        .delete()
+        .like("storage_path", `brands/${brandId}/${productionId}/%`);
     }
-  } catch (err) {
+
+    await removeSparkStoragePrefix(supabase, productionId);
+    if (brandId && isUuid(brandId)) {
+      await removeSparkStoragePrefix(supabase, `brands/${brandId}/${productionId}`);
+    }
+
+    const { error: prodDelErr } = await (supabase.from("productions") as any).delete().eq("id", productionId);
+    if (prodDelErr) {
+      console.warn("[workspaceSync] deleteProductionCascade productions:", prodDelErr);
+      return { ok: false, error: prodDelErr.message || "Failed to delete production row" };
+    }
+
+    return { ok: true };
+  } catch (err: any) {
     console.warn("[workspaceSync] deleteProductionCascade error:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+async function removeSparkStoragePrefix(supabase: any, prefix: string): Promise<void> {
+  const folder = String(prefix || "").replace(/\/+$/, "");
+  if (!folder) return;
+  const paths: string[] = [];
+
+  const walk = async (current: string, depth: number) => {
+    if (depth > 8) return;
+    const { data, error } = await supabase.storage.from("Spark").list(current, { limit: 1000 });
+    if (error || !Array.isArray(data)) return;
+    for (const f of data) {
+      if (!f?.name || String(f.name).startsWith(".")) continue;
+      const child = `${current}/${f.name}`;
+      const isFile = Boolean(f.metadata && typeof f.metadata.size === "number");
+      if (isFile) paths.push(child);
+      else await walk(child, depth + 1);
+    }
+  };
+
+  await walk(folder, 0);
+  if (paths.length > 0) {
+    const { error } = await supabase.storage.from("Spark").remove(paths);
+    if (error) {
+      console.warn("[workspaceSync] removeSparkStoragePrefix notice:", error);
+    }
+  }
+}
+
+export async function deleteLocationPlateFromStorage(brandId: string): Promise<void> {
+  if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) return;
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  const paths = ["png", "jpg", "jpeg", "webp"].map((ext) => `brands/${brandId}/set/location_plate.${ext}`);
+  const { error } = await supabase.storage.from("Spark").remove(paths);
+  if (error) {
+    console.warn("[workspaceSync] deleteLocationPlateFromStorage notice:", error);
   }
 }
 
@@ -1102,7 +1162,7 @@ export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: st
   const seenPaths = new Set<string>();
 
   const listFolderRecursive = async (folderPath: string, depth = 0) => {
-    if (depth > 3) return;
+    if (depth > 5) return;
     try {
       const { data: files, error } = await supabase.storage.from("Spark").list(folderPath, {
         limit: 100,

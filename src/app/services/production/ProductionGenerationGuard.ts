@@ -73,12 +73,27 @@ export class ProductionGenerationGuard {
     }
   }
 
+  /** Super Spark chat is the only spend path allowed when Production Generation is OFF. */
+  static isExemptCategory(category?: string | null): boolean {
+    return category === "superSpark";
+  }
+
   static assertEnabled(actionName: string, brandId?: string): void {
+    this.assertSpendAllowed(actionName, undefined, brandId);
+  }
+
+  /**
+   * Credit firewall. When Production is OFF, only category "superSpark" may spend.
+   * All other ModelRouter categories, briefs, images, video, and research analysis throw.
+   */
+  static assertSpendAllowed(actionName: string, category?: string | null, brandId?: string): void {
     this.assertAccessActive(actionName);
+
+    if (this.isExemptCategory(category)) return;
 
     if (!this.isEnabled(brandId)) {
       throw new Error(
-        `[ProductionGenerationGuard] Action "${actionName}" blocked: Production Generation is currently OFF. Planning and read-only mode active.`
+        `[ProductionGenerationGuard] Action "${actionName}" blocked: Production Generation is currently OFF. Super Spark chat is the only allowed spend path.`
       );
     }
   }

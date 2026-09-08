@@ -654,7 +654,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
         lower.includes("storyboard");
 
       if (isGenerationIntent) {
-        const blockedText = "Production Generation is currently turned off. No drafting or asset generation can run while it's disabled. Would you like me to enable Production Generation first?";
+        const blockedText = "Production Generation is currently turned off. Super Spark chat still works. Turn Production ON in Settings to create briefs, generate images, or spend credits. Would you like me to enable it first?";
         addChatMessage({
           sender: "spark",
           text: blockedText,
@@ -708,7 +708,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
       if (!audioUrl && finalText && !isMuted) {
         try {
           const { generateSuperSparkVoice } = await import("../services/geminiService");
-          audioUrl = await generateSuperSparkVoice(finalText, providerId);
+          audioUrl = await generateSuperSparkVoice(finalText, providerId, { superSparkChat: true });
         } catch (err) {
           console.warn("[AIChatModal] Voice fallback notice:", err);
         }
@@ -744,7 +744,7 @@ function parseCreditSettingsCommand(text: string, current: GenerationCreditSetti
             if (!isMuted && providerId === "gemini") {
               try {
                 const { generateSuperSparkVoice } = await import("../services/geminiService");
-                const fallbackUrl = await generateSuperSparkVoice(finalText, "openai");
+                const fallbackUrl = await generateSuperSparkVoice(finalText, "openai", { superSparkChat: true });
                 if (fallbackUrl) {
                   const fallbackAudio = new Audio(fallbackUrl);
                   activeAudioRef.current = fallbackAudio;

@@ -3,6 +3,7 @@ import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../do
 import { ModelRouter } from "../runtime/modelRouter";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
+import { brandProductionStoragePath } from "./brandProductionStoragePath";
 import { getProductionPromptPack } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
 import { resolveDurationPolicy } from "./durationPolicy";
@@ -794,10 +795,16 @@ export class ProductionAssetService {
     };
 
     try {
-      const { persistProductionAssetCreate } = await import("../../backend/workspaceSync");
-      void persistProductionAssetCreate(brandId, prodAsset);
+      if (uploadSuccess) {
+        const { persistProductionAssetCreate } = await import("../../backend/workspaceSync");
+        await persistProductionAssetCreate(brandId, prodAsset);
+      }
     } catch (dbErr) {
       console.warn("[ProductionAssetService] Media asset record persist notice:", dbErr);
+    }
+
+    if (!uploadSuccess) {
+      return { publicUrl: "", storagePath, assetId, driveFileId, driveWebViewLink, uploadSuccess: false };
     }
 
     return { publicUrl: finalPublicUrl, storagePath, assetId, driveFileId, driveWebViewLink, uploadSuccess };
@@ -998,7 +1005,7 @@ export class ProductionAssetService {
     let lastError: string | undefined = undefined;
 
     const bId = (brand as any)?.id || "default-brand";
-    const getStoragePath = (sub: string) => `brands/${bId}/${production.id}/${sub}`;
+    const getStoragePath = (sub: string) => brandProductionStoragePath(bId, production.id, sub);
 
     let latestProgressSnapshot: import("../../domain/types").GenerationProgress | undefined = undefined;
 
@@ -1291,7 +1298,7 @@ export class ProductionAssetService {
                 productionId: production.id,
                 brandId: (brand as any).id,
                 assetType: "audio",
-                storagePath: `${production.id}/audio/voice.mp3`,
+                storagePath: getStoragePath("audio/voice.mp3"),
                 dataUrlOrBlob: elevenVoice,
                 mimeType: "audio/mpeg",
                 prompt: voiceScript,
@@ -1319,7 +1326,7 @@ export class ProductionAssetService {
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "audio",
-                  storagePath: `${production.id}/audio/voice.mp3`,
+                  storagePath: getStoragePath("audio/voice.mp3"),
                   dataUrlOrBlob: synthesizedVoice,
                   mimeType: "audio/wav",
                   prompt: voiceScript,
@@ -1429,7 +1436,7 @@ export class ProductionAssetService {
                 productionId: production.id,
                 brandId: (brand as any).id,
                 assetType: "storyboard",
-                storagePath: `${production.id}/storyboard/sheet-01.png`,
+                storagePath: getStoragePath("storyboard/sheet-01.png"),
                 dataUrlOrBlob: sheetImgUrl,
                 mimeType: "image/png",
                 prompt: sheetCompiled.prompt,
@@ -1507,7 +1514,7 @@ export class ProductionAssetService {
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "image",
-                  storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                  storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
                   dataUrlOrBlob: finalStill,
                   mimeType: "image/jpeg",
                   prompt: `Frame-locked storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio})`,
@@ -1680,7 +1687,7 @@ export class ProductionAssetService {
                 productionId: production.id,
                 brandId: (brand as any).id,
                 assetType: "image",
-                storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
                 dataUrlOrBlob: finalStill,
                 mimeType: "image/png",
                 prompt: "Locked set plate reuse (subject=set)",
@@ -1806,7 +1813,7 @@ export class ProductionAssetService {
                   productionId: production.id,
                   brandId: (brand as any).id,
                   assetType: "image",
-                  storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.png`,
+                  storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
                   dataUrlOrBlob: stillImgUrl,
                   mimeType: "image/png",
                   prompt: stillPrompt,
@@ -1906,7 +1913,7 @@ export class ProductionAssetService {
                 productionId: production.id,
                 brandId: (brand as any).id,
                 assetType: "audio",
-                storagePath: `${production.id}/audio/sfx.mp3`,
+                storagePath: getStoragePath("audio/sfx.mp3"),
                 dataUrlOrBlob: sfxResult,
                 mimeType: "audio/mpeg",
                 prompt: "Narrator slide transition whoosh",
@@ -2093,7 +2100,7 @@ export class ProductionAssetService {
                         productionId: production.id,
                         brandId: (brand as any).id,
                         assetType: "image",
-                        storagePath: `${production.id}/scenes/scene-0${globalSceneNum}-last.jpg`,
+                        storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}-last.jpg`),
                         dataUrlOrBlob: extracted.blob,
                         mimeType: "image/jpeg",
                         prompt: `Last frame of Scene ${globalSceneNum}`,
@@ -2129,7 +2136,7 @@ export class ProductionAssetService {
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "image",
-                      storagePath: `${production.id}/scenes/scene-0${sIdx}-last.jpg`,
+                      storagePath: getStoragePath(`scenes/scene-0${sIdx}-last.jpg`),
                       dataUrlOrBlob: extractedPrev.blob,
                       mimeType: "image/jpeg",
                       prompt: `Last frame of Scene ${sIdx} (pre-continuation extract)`,
@@ -2421,7 +2428,7 @@ export class ProductionAssetService {
                       productionId: production.id,
                       brandId: (brand as any).id,
                       assetType: "video",
-                      storagePath: `${production.id}/scenes/scene-0${globalSceneNum}.mp4`,
+                      storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.mp4`),
                       dataUrlOrBlob: generated.url,
                       mimeType: "video/mp4",
                       prompt: sceneMotionPrompt,
@@ -2447,7 +2454,7 @@ export class ProductionAssetService {
                         productionId: production.id,
                         brandId: (brand as any).id,
                         assetType: "image",
-                        storagePath: `${production.id}/scenes/scene-0${globalSceneNum}-last.jpg`,
+                        storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}-last.jpg`),
                         dataUrlOrBlob: lastFrameBlob,
                         mimeType: "image/jpeg",
                         prompt: `Last frame of Scene ${globalSceneNum}`,
@@ -2668,7 +2675,7 @@ export class ProductionAssetService {
                     productionId: production.id,
                     brandId: (brand as any).id,
                     assetType: "audio",
-                    storagePath: `${production.id}/audio/voice-fallback.mp3`,
+                    storagePath: getStoragePath("audio/voice-fallback.mp3"),
                     dataUrlOrBlob: emergencyVoice,
                     mimeType: "audio/mpeg",
                     prompt: voiceScript,
@@ -3503,7 +3510,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any).id,
               assetType: "image",
-              storagePath: `${productionId}/scenes/scene-0${targetSceneIdx}-last.jpg`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `scenes/scene-0${targetSceneIdx}-last.jpg`),
               dataUrlOrBlob: extractedPrev.blob,
               mimeType: "image/jpeg",
               prompt: `Last frame of Scene ${targetSceneIdx} (fix-path pre-continuation)`,
@@ -3627,7 +3634,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any).id,
               assetType: "image",
-              storagePath: `${productionId}/scenes/scene-0${sceneIndex}.png`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `scenes/scene-0${sceneIndex}.png`),
               dataUrlOrBlob: generatedStill,
               mimeType: "image/png",
               prompt: compiledStill.prompt,
@@ -3819,7 +3826,7 @@ export class ProductionAssetService {
             productionId,
             brandId: (brand as any).id,
             assetType: "video",
-            storagePath: `${productionId}/scenes/scene-0${sceneIndex}.mp4`,
+            storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `scenes/scene-0${sceneIndex}.mp4`),
             dataUrlOrBlob: generatedClip,
             mimeType: "video/mp4",
             prompt: motionPrompt,
@@ -3836,7 +3843,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any).id,
               assetType: "image",
-              storagePath: `${productionId}/scenes/scene-0${sceneIndex}-last.jpg`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `scenes/scene-0${sceneIndex}-last.jpg`),
               dataUrlOrBlob: lastPayload,
               mimeType: "image/jpeg",
               prompt: `Revised last frame of Scene ${sceneIndex}`,
@@ -3880,6 +3887,7 @@ export class ProductionAssetService {
     production: Production;
     brand: Brand;
   }): Promise<string | null> {
+    ProductionGenerationGuard.assertEnabled("ProductionAssetService.mergeProductionScenes");
     const { productionId, production, brand } = params;
     const brief = production.brief || ({} as ProductionBrief);
     const scenes = (production.productionScenes && production.productionScenes.length > 0)
@@ -3920,7 +3928,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any)?.id,
               assetType: "video",
-              storagePath: `brands/${(brand as any)?.id || "default-brand"}/${productionId}/video/scene-${sceneIdx}.mp4`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/scene-${sceneIdx}.mp4`),
               dataUrlOrBlob: clipUrl,
               mimeType: "video/mp4",
               prompt: `Scene ${sceneIdx} durable video clip`,
@@ -3972,7 +3980,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any).id,
               assetType: "video",
-              storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.${ext}`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/master.${ext}`),
               dataUrlOrBlob: compileRes.blob,
               mimeType: compileRes.mimeType,
               prompt: "Narrator compiled master video",
@@ -4034,7 +4042,7 @@ export class ProductionAssetService {
               productionId,
               brandId: (brand as any).id,
               assetType: "video",
-              storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.${ext}`,
+              storagePath: brandProductionStoragePath((brand as any)?.id, productionId, `video/master.${ext}`),
               dataUrlOrBlob: hybridResult.blob,
               mimeType: hybridResult.mimeType,
               prompt: "Merged Hybrid Master Video (Hook Video + Narrator Stills)",
@@ -4141,7 +4149,7 @@ export class ProductionAssetService {
           productionId,
           brandId: (brand as any).id,
           assetType: "video",
-          storagePath: `brands/${(brand as any).id || "default-brand"}/${productionId}/video/master.mp4`,
+          storagePath: brandProductionStoragePath((brand as any)?.id, productionId, "video/master.mp4"),
           dataUrlOrBlob: mergeResult.blob,
           mimeType: mergeResult.mimeType,
           prompt: "Merged Master Video from Approved Scene Sequence",

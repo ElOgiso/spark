@@ -815,15 +815,7 @@ export class ProductionBriefService {
     const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
     const budget = resolveBeatBudget(effectiveDurationSec);
 
-    if (!ProductionGenerationGuard.isEnabled()) {
-      console.warn("[ProductionBriefService] Generation blocked: Production Generation is OFF.");
-      const fallback = compileDeterministicBrief({ spark, brand, character, characters, defaultOffer, productionMode: modeKey, niche, researchContext: resolvedResearch || undefined, targetDurationSec: effectiveDurationSec });
-      return {
-        ...fallback,
-        contentSource: "template-fallback",
-        scriptOutline: "[PAUSED] Production Generation is turned OFF in settings.",
-      };
-    }
+    ProductionGenerationGuard.assertEnabled("ProductionBriefService.generateBrief");
 
     const rankedMemory = buildRankedBrandLaws(memoryItems).lawsBlock;
     const researchPromptBlock = formatResearchContextBlock(resolvedResearch, brand.name);

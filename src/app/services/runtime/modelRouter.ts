@@ -9,6 +9,7 @@ import { AIProviderOrchestrator, type AIExecutionOptions } from "./AIProviderOrc
 import { getRecommendedModel } from "./modelCatalog";
 
 import { PROVIDER_CAPABILITY_MAP } from "./providerCapabilities";
+import { ProductionGenerationGuard } from "../production/ProductionGenerationGuard";
 
 export class ModelRouter {
   /**
@@ -201,6 +202,8 @@ export class ModelRouter {
     userRoutingConfig?: Partial<AIModelRoutingConfig>,
     userModelSelectionConfig?: AIModelSelectionConfig
   ): Promise<string> {
+    ProductionGenerationGuard.assertSpendAllowed(`modelRouter.${category}`, category);
+
     const activeConfig = userRoutingConfig || this.getUserRoutingConfig();
     // Honor an explicit preferredProvider from the caller (e.g. clip engine) over routing table.
     const preferredProvider =

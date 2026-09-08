@@ -180,4 +180,53 @@ describe("Production Generation ON/OFF preference respect", () => {
     );
     assert.ok(report.preflight || report.ok || errs.length > 0, "lifecycle must run past the generation guard");
   });
+
+  it("credit firewall: Super Spark chat is allowed when OFF; every other category is blocked", () => {
+    ProductionGenerationGuard.setEnabled(false);
+    assert.doesNotThrow(() =>
+      ProductionGenerationGuard.assertSpendAllowed("modelRouter.superSpark", "superSpark")
+    );
+    assert.throws(
+      () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.storyboardImages", "storyboardImages"),
+      /Super Spark chat is the only allowed spend path/
+    );
+    assert.throws(
+      () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.production", "production"),
+      /currently OFF/
+    );
+    assert.throws(
+      () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.research", "research"),
+      /currently OFF/
+    );
+    assert.throws(
+      () => ProductionGenerationGuard.assertEnabled("createProductionFromSpark"),
+      /currently OFF/
+    );
+  });
+
+  it("blocks ModelRouter spend categories when OFF before any provider call", async () => {
+    ProductionGenerationGuard.setEnabled(false);
+    const { ModelRouter } = await import("../runtime/modelRouter");
+    await assert.rejects(
+      () => ModelRouter.executeCategoryRequest("storyboardImages", { prompt: "do not spend" }),
+      /currently OFF/
+    );
+    await assert.rejects(
+      () => ModelRouter.executeCategoryRequest("videoGeneration", { prompt: "do not spend" }),
+      /currently OFF/
+    );
+  });
+
+  it("rejects createProductionFromSpark when Production Generation is OFF", async () => {
+    ProductionGenerationGuard.setEnabled(false);
+    const { productionService } = await import("../productionService");
+    await assert.rejects(
+      () =>
+        productionService.createProductionFromSpark({
+          spark: { id: "s1", title: "t", hook: "h", angle: "a", whyNow: "w" } as any,
+          brand: { name: "B", niche: "N" } as any,
+        }),
+      /currently OFF/
+    );
+  });
 });

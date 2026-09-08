@@ -127,11 +127,14 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   // Assets states — loaded dynamically from Supabase Storage, Character & Production assets
   const [assets, setAssets] = useState<{ id: string; name: string; type: string; size: string; date: string; url?: string }[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
+  const [assetsEpoch, setAssetsEpoch] = useState(0);
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     const brandId = auth.brand?.id || getBrandWorkspaceId();
+    const brand = spark?.brand;
+    const characters = spark?.characters;
 
     async function loadAssets() {
       setAssetsLoading(true);
@@ -163,6 +166,38 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
           date: "Current Voice",
           url: character.voice.previewUrl,
         });
+      }
+
+      // 2b. Environment / set plate (same persistence contract as host sheet)
+      const plateUrl = brand?.locationPlateUrl || brand?.settings?.locationPlateUrl || brand?.settings?.location_plate_url;
+      if (plateUrl && !seenUrls.has(plateUrl)) {
+        seenUrls.add(plateUrl);
+        items.push({
+          id: "location-plate-asset",
+          name: `${brand?.name || "Brand"}_Set_Plate.png`,
+          type: "Environment / Set Plate",
+          size: "Cloud Persisted",
+          date: "Current Set",
+          url: plateUrl,
+        });
+      }
+
+      // 2c. Supporting cast sheets
+      if (Array.isArray(characters)) {
+        for (const sc of characters) {
+          if (!sc || sc.role !== "support") continue;
+          const url = sc.characterSheetUrl || sc.imageUrl;
+          if (!url || seenUrls.has(url)) continue;
+          seenUrls.add(url);
+          items.push({
+            id: `support-char-asset-${sc.id}`,
+            name: `${sc.name || "Support"}_Character_Sheet.png`,
+            type: "Supporting Cast Image",
+            size: "Cloud Persisted",
+            date: "Current Cast",
+            url,
+          });
+        }
       }
 
       // 3. Rendered Productions / Review Items (canonical URLs when present)
@@ -224,7 +259,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
     return () => {
       isMounted = false;
     };
-  }, [auth.brand?.id, character, productions, reviewItems]);
+  }, [auth.brand?.id, character, productions, reviewItems, spark?.brand, spark?.characters, assetsEpoch]);
 
   // Accounts — unified single-source platform map
   const [platformAccountMap, setPlatformAccountMap] = useState<Map<string, CanonicalPlatformAccount>>(() =>
@@ -655,7 +690,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <div>
                     <h3 className="text-base font-semibold text-foreground">Production Generation</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Controls whether SPARK synthesizes full multi-scene storyboards, voiceovers, and visual assets when initializing a Production.
+                      When ON, SPARK can create productions, briefs, images, and video — and spend credits. When OFF, only Super Spark chat works.
                     </p>
                   </div>
                   <button
@@ -673,10 +708,10 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                 <div className="p-4 rounded-xl border border-border/50 bg-background/50 space-y-2 text-xs text-muted-foreground">
                   <p className="font-semibold text-foreground">Executive Workflow Rule:</p>
                   <p>
-                    When <strong>ON</strong> (Default), SPARK creates complete Production Briefs and automatically schedules background multi-scene storyboard & voiceover synthesis.
+                    When <strong>ON</strong> (Default), SPARK can create productions and spend credits on briefs, storyboards, stills, motion, and voice.
                   </p>
                   <p>
-                    When <strong>OFF</strong>, SPARK generates lightweight Production Briefs only, deferring media rendering until you explicitly request asset synthesis.
+                    When <strong>OFF</strong>, only Super Spark chat works. No production rows, no briefs, no image or video generation, and no other credit spend.
                   </p>
                 </div>
               </div>
@@ -863,6 +898,8 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                               if (
                                 id === "char-sheet-asset" ||
                                 id === "voice-preview-asset" ||
+                                id === "location-plate-asset" ||
+                                id.startsWith("support-char-asset-") ||
                                 id.startsWith("prod-vid-") ||
                                 id.startsWith("prod-aud-")
                               ) {
@@ -894,7 +931,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                                   window.alert(result.reason || "Delete failed — asset kept.");
                                   return;
                                 }
-                                setAssets((prev) => prev.filter((a) => a.id !== id));
+                                setAssetsEpoch((n) => n + 1);
                               }).catch(() => {
                                 window.alert("Delete unavailable — asset kept.");
                               });

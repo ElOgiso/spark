@@ -1,5 +1,5 @@
 import type { MediaAssetRow, ProductionAssetRow } from "../database.types";
-import { deleteRow, insertRow, listByBrand, updateRow } from "./repositoryUtils";
+import { deleteRow, insertRow, updateRow } from "./repositoryUtils";
 import type { RepositoryResult } from "./repositoryTypes";
 import { getSupabaseClient } from "../supabaseClient";
 
@@ -32,20 +32,56 @@ export async function createProductionAsset(values: Partial<ProductionAssetRow |
 
 export async function listMediaAssetsByProductionId(productionId: string): Promise<MediaAssetRow[]> {
   const supabase = getSupabaseClient();
-  if (!supabase) return [];
+  if (!supabase || !productionId) return [];
+  try {
+    const [legacyRes, brandedRes] = await Promise.all([
+      supabase
+        .from("media_assets")
+        .select("*")
+        .like("storage_path", `${productionId}/%`)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("media_assets")
+        .select("*")
+        .like("storage_path", `%/${productionId}/%`)
+        .order("created_at", { ascending: true }),
+    ]);
+    if (legacyRes.error) {
+      console.warn("[mediaAssetRepository] list legacy error:", legacyRes.error);
+    }
+    if (brandedRes.error) {
+      console.warn("[mediaAssetRepository] list branded error:", brandedRes.error);
+    }
+    const seen = new Set<string>();
+    const merged: MediaAssetRow[] = [];
+    for (const row of [...((legacyRes.data || []) as MediaAssetRow[]), ...((brandedRes.data || []) as MediaAssetRow[])]) {
+      if (!row?.id || seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+    }
+    return merged;
+  } catch (err) {
+    console.warn("[mediaAssetRepository] query notice:", err);
+    return [];
+  }
+}
+
+export async function listMediaAssetsByBrandId(brandId: string): Promise<MediaAssetRow[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !brandId) return [];
   try {
     const { data, error } = await supabase
       .from("media_assets")
       .select("*")
-      .like("storage_path", `${productionId}/%`)
+      .eq("uploaded_by", brandId)
       .order("created_at", { ascending: true });
     if (error) {
-      console.warn("[mediaAssetRepository] list error:", error);
+      console.warn("[mediaAssetRepository] list by brand error:", error);
       return [];
     }
     return (data || []) as MediaAssetRow[];
   } catch (err) {
-    console.warn("[mediaAssetRepository] query notice:", err);
+    console.warn("[mediaAssetRepository] list by brand notice:", err);
     return [];
   }
 }
@@ -69,7 +105,25 @@ export async function listProductionAssetsByProductionId(productionId: string): 
 }
 
 export async function listProductionAssets(brandId: string): Promise<RepositoryResult<ProductionAssetRow[]>> {
-  return listByBrand("media_assets", brandId) as any;
+  const rows = await listMediaAssetsByBrandId(brandId);
+  return {
+    data: rows.map((m) => ({
+      id: m.id,
+      brand_id: m.uploaded_by || null,
+      production_id: null,
+      asset_type: (m.file_type as any) || "image",
+      provider: m.source_tool || null,
+      storage_bucket: m.storage_bucket,
+      storage_path: m.storage_path,
+      public_url: m.public_url,
+      mime_type: m.mime_type,
+      generation_prompt: m.source_prompt,
+      status: "completed",
+      created_at: m.created_at,
+    })),
+    error: null,
+    source: "supabase",
+  } as any;
 }
 
 export async function updateProductionAsset(id: string, values: Partial<ProductionAssetRow | MediaAssetRow>): Promise<RepositoryResult<any>> {
