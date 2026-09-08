@@ -118,11 +118,38 @@ describe("server persist source contract", () => {
     assert.match(src, /brands\/\$\{bId\}\/\$\{prodId\}\/\$\{cleanSub\}/);
   });
 
+  it("Hobby serverless function count stays at 12 (ingest-media is not a 13th function)", () => {
+    const apiRoot = path.join(__dirname, "../../../../api");
+    function collect(dir: string, acc: string[] = []): string[] {
+      for (const name of fs.readdirSync(dir)) {
+        const full = path.join(dir, name);
+        const st = fs.statSync(full);
+        if (st.isDirectory()) collect(full, acc);
+        else if (
+          name.endsWith(".ts") &&
+          !name.startsWith("_") &&
+          !name.endsWith(".test.ts")
+        ) {
+          acc.push(path.relative(apiRoot, full));
+        }
+      }
+      return acc;
+    }
+    const fns = collect(apiRoot).sort();
+    assert.equal(fns.length, 12, `expected 12 functions, got ${fns.length}: ${fns.join(", ")}`);
+    assert.ok(!fns.includes("runtime/ingest-media.ts"));
+    assert.ok(fns.includes("runtime/video.ts"));
+    assert.equal(fs.existsSync(path.join(apiRoot, "runtime/_ingestMedia.ts")), true);
+  });
+
   it("ingest-media endpoint fetches remote bytes and uploads to Spark", () => {
-    const src = fs.readFileSync(path.join(__dirname, "../../../../api/runtime/ingest-media.ts"), "utf8");
+    const src = fs.readFileSync(path.join(__dirname, "../../../../api/runtime/_ingestMedia.ts"), "utf8");
+    const videoSrc = fs.readFileSync(path.join(__dirname, "../../../../api/runtime/video.ts"), "utf8");
     assert.match(src, /persistBufferToSpark/);
     assert.match(src, /productionId is required/);
     assert.doesNotMatch(src, /videoUrl:\s*url/);
+    assert.match(videoSrc, /isIngestMediaRequest/);
+    assert.match(videoSrc, /handleIngestMedia/);
   });
 });
 

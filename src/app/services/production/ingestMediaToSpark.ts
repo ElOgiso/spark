@@ -13,10 +13,11 @@ export async function ingestRemoteMediaToSpark(params: {
   const url = String(params.url || "").trim();
   if (!url || !params.productionId || !params.storagePath) return null;
   try {
-    const res = await fetch("/api/runtime/ingest-media", {
+    const res = await fetch("/api/runtime/video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "ingest-media",
         url,
         brandId: params.brandId,
         productionId: params.productionId,

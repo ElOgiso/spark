@@ -33,6 +33,9 @@ function apiServerPlugin(): Plugin {
           const possibleFiles = [
             path.resolve(__dirname, 'api', `${relPath}.ts`),
             path.resolve(__dirname, 'api', relPath, 'index.ts'),
+            ...(pathname === '/api/runtime/ingest-media'
+              ? [path.resolve(__dirname, 'api/runtime/_ingestMedia.ts')]
+              : []),
           ]
 
           let filePath = ''

@@ -1,13 +1,12 @@
 /**
  * Server-side copy of a remote provider URL into bucket "Spark".
  * Avoids browser CORS. Never returns the provider URL as the playable identity.
+ *
+ * Not a Vercel function (underscore prefix). Dispatched from /api/runtime/video
+ * so Hobby stays at the 12-function limit.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { persistBufferToSpark, sparkBrandMediaPath } from "./_sparkStorage.js";
-
-export const config = {
-  maxDuration: 60,
-};
 
 function guessMime(urlOrHeader?: string, assetType?: string): string {
   const v = (urlOrHeader || "").toLowerCase();
@@ -29,7 +28,16 @@ function defaultSubpath(assetType: string): string {
   return `images/${assetType || "image"}-${Date.now()}.png`;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export function isIngestMediaRequest(req: VercelRequest): boolean {
+  const body = req.body || {};
+  if (body.action === "ingest-media") return true;
+  const ingestQ = req.query?.ingest;
+  if (ingestQ === "1" || ingestQ === "true") return true;
+  const url = String(req.url || "");
+  return url.includes("ingest-media");
+}
+
+export async function handleIngestMedia(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -114,3 +122,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
+
+export default handleIngestMedia;
