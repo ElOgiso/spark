@@ -169,24 +169,30 @@ export function shouldNoOpLearningPersist(opts: {
   return Boolean(wipeAt && isLearningRowBeforeWipe(opts.rowCreatedAt, wipeAt));
 }
 
-export function applyLearningWipeToArrays<T extends Record<string, any>>(opts: {
+export function applyLearningWipeToArrays<
+  S extends Record<string, any>,
+  R extends Record<string, any>,
+  P extends Record<string, any>,
+  M extends Record<string, any>,
+>(opts: {
   brandId: string;
   brandSettings?: Record<string, any> | null;
-  viralSparks?: T[] | null;
-  researchSources?: T[] | null;
-  researchPatterns?: T[] | null;
-  memoryItems?: T[] | null;
+  viralSparks?: S[] | null;
+  researchSources?: R[] | null;
+  researchPatterns?: P[] | null;
+  memoryItems?: M[] | null;
 }): {
-  viralSparks: T[];
-  researchSources: T[];
-  researchPatterns: T[];
-  memoryItems: T[];
+  viralSparks: S[];
+  researchSources: R[];
+  researchPatterns: P[];
+  memoryItems: M[];
 } {
   const wipeAt = resolveLearningWipeAt(opts.brandId, opts.brandSettings);
   if (isSessionWipeActive(opts.brandId) && !hasUserAddedSourceSinceWipe(opts.brandId)) {
     return { viralSparks: [], researchSources: [], researchPatterns: [], memoryItems: [] };
   }
-  const keep = (row: T) => !isLearningRowBeforeWipe(learningRowCreatedAt(row), wipeAt);
+  const keep = <T extends Record<string, any>>(row: T) =>
+    !isLearningRowBeforeWipe(learningRowCreatedAt(row), wipeAt);
   return {
     viralSparks: (opts.viralSparks || []).filter(keep),
     researchSources: (opts.researchSources || []).filter(keep),
