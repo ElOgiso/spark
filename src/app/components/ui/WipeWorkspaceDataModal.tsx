@@ -52,9 +52,9 @@ export function WipeWorkspaceDataModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto">
       {/* Onboard sheet container */}
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0B0F17] text-white p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+      <div className="w-full max-w-md max-h-[92dvh] overflow-y-auto rounded-3xl border border-white/10 bg-[#0B0F17] text-white p-5 sm:p-8 shadow-2xl space-y-5 relative">
         
         {/* Step 3: Brief Superspark Overlay on Confirm */}
         {step === "wiping" && (
@@ -120,7 +120,7 @@ export function WipeWorkspaceDataModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-3 rounded-full text-xs font-semibold text-white/90 hover:text-white border border-white/20 hover:bg-white/10 transition-all text-center cursor-pointer"
+                className="flex-1 py-3 min-h-[44px] rounded-full text-xs font-semibold text-white/90 hover:text-white border border-white/20 hover:bg-white/10 transition-all text-center cursor-pointer"
               >
                 Close
               </button>
@@ -130,7 +130,7 @@ export function WipeWorkspaceDataModal({
                   setWipeError("");
                   setStep("final_match");
                 }}
-                className="flex-1 py-3 rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-xl shadow-[#F52BFF]/30 active:scale-[0.98] transition-all text-center cursor-pointer"
+                className="flex-1 py-3 min-h-[44px] rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-xl shadow-[#F52BFF]/30 active:scale-[0.98] transition-all text-center cursor-pointer"
               >
                 Try again
               </button>
@@ -166,12 +166,25 @@ export function WipeWorkspaceDataModal({
             </div>
 
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2.5">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-white/60 block">
-                Type <span className="text-[#F52BFF] font-bold">WIPE</span> to enable
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-white/60 block">
+                  Type <span className="text-[#F52BFF] font-bold">WIPE</span> to enable
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setConfirmInput("WIPE")}
+                  className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-[#F52BFF]/15 text-[#F52BFF] border border-[#F52BFF]/30 hover:bg-[#F52BFF]/25 active:scale-95 transition-all cursor-pointer font-bold"
+                >
+                  Quick Fill "WIPE"
+                </button>
+              </div>
               <input
                 type="text"
                 autoFocus
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck="false"
                 value={confirmInput}
                 onChange={(e) => setConfirmInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -180,7 +193,7 @@ export function WipeWorkspaceDataModal({
                   }
                 }}
                 placeholder="WIPE"
-                className="w-full px-4 py-2.5 rounded-xl bg-[#070A0F] border border-white/15 text-sm font-mono text-white placeholder:text-white/25 focus:outline-none focus:border-[#F52BFF] focus:ring-1 focus:ring-[#F52BFF] transition-all"
+                className="w-full px-4 py-3 min-h-[44px] rounded-xl bg-[#070A0F] border border-white/15 text-sm font-mono text-white placeholder:text-white/25 focus:outline-none focus:border-[#F52BFF] focus:ring-1 focus:ring-[#F52BFF] transition-all"
               />
             </div>
 
@@ -188,7 +201,7 @@ export function WipeWorkspaceDataModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-full text-xs font-semibold text-white/70 hover:text-white border border-white/15 hover:bg-white/5 transition-all cursor-pointer"
+                className="px-5 py-2.5 min-h-[44px] rounded-full text-xs font-semibold text-white/70 hover:text-white border border-white/15 hover:bg-white/5 transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -196,7 +209,7 @@ export function WipeWorkspaceDataModal({
                 type="button"
                 disabled={!isWipeMatched}
                 onClick={() => setStep("final_match")}
-                className="px-6 py-2.5 rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-lg shadow-[#F52BFF]/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] transition-all cursor-pointer"
+                className="px-6 py-2.5 min-h-[44px] rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-lg shadow-[#F52BFF]/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] transition-all cursor-pointer"
               >
                 Continue
               </button>
@@ -240,14 +253,14 @@ export function WipeWorkspaceDataModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-3 rounded-full text-xs font-semibold text-white/90 hover:text-white border border-white/20 hover:bg-white/10 transition-all text-center cursor-pointer"
+                className="flex-1 py-3 min-h-[44px] rounded-full text-xs font-semibold text-white/90 hover:text-white border border-white/20 hover:bg-white/10 transition-all text-center cursor-pointer"
               >
                 Keep data
               </button>
               <button
                 type="button"
                 onClick={handleWipe}
-                className="flex-1 py-3 rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-xl shadow-[#F52BFF]/30 active:scale-[0.98] transition-all text-center cursor-pointer"
+                className="flex-1 py-3 min-h-[44px] rounded-full text-xs font-semibold text-white bg-[#F52BFF] hover:bg-[#F52BFF]/90 shadow-xl shadow-[#F52BFF]/30 active:scale-[0.98] transition-all text-center cursor-pointer"
               >
                 Wipe now
               </button>

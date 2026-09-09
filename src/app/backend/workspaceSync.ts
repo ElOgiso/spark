@@ -1954,17 +1954,46 @@ export async function cleanupExpiredWorkingStorage(brandId: string): Promise<num
 function clearLocalLearningWorkspaceCache(brandId: string): void {
   try {
     if (typeof localStorage === "undefined") return;
+    // 1. Legacy cache key
     const cacheKey = `spark_workspace_${brandId}`;
     const raw = localStorage.getItem(cacheKey);
-    if (!raw) return;
-    const cached = JSON.parse(raw);
-    if (cached && typeof cached === "object") {
-      cached.viralSparks = [];
-      cached.researchSources = [];
-      cached.researchPatterns = [];
-      cached.memoryItems = [];
-      cached.brandRules = [];
-      localStorage.setItem(cacheKey, JSON.stringify(cached));
+    if (raw) {
+      try {
+        const cached = JSON.parse(raw);
+        if (cached && typeof cached === "object") {
+          cached.viralSparks = [];
+          cached.researchSources = [];
+          cached.researchPatterns = [];
+          cached.memoryItems = [];
+          cached.brandRules = [];
+          localStorage.setItem(cacheKey, JSON.stringify(cached));
+        }
+      } catch {}
+    }
+
+    // 2. Scoped persistence keys: spark_state_${brandId} and spark_state_${userId}_${brandId}
+    const matchingKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("spark_state_") && (k.endsWith(`_${brandId}`) || k === `spark_state_${brandId}`)) {
+        matchingKeys.push(k);
+      }
+    }
+    for (const k of matchingKeys) {
+      try {
+        const item = localStorage.getItem(k);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed && typeof parsed === "object") {
+            parsed.viralSparks = [];
+            parsed.researchSources = [];
+            parsed.researchPatterns = [];
+            parsed.memoryItems = [];
+            parsed.brandRules = [];
+            localStorage.setItem(k, JSON.stringify(parsed));
+          }
+        }
+      } catch {}
     }
   } catch (lsErr) {
     console.warn("[workspaceSync] Local storage learning cache cleanup notice:", lsErr);
@@ -2031,6 +2060,17 @@ export async function wipeWorkspaceLearningData(
           console.warn("[workspaceSync] Unauthorized wipe attempt on brandId:", brandId);
           return { ok: false, deleted: deletedCounts, error: "Unauthorized: You do not own this workspace" };
         }
+      }
+
+      // Unlink productions.viral_spark_id foreign key references so viral_sparks delete succeeds
+      // without violating the productions_viral_spark_id_fkey constraint (productions remain intact)
+      try {
+        await (supabase.from("productions") as any)
+          .update({ viral_spark_id: null })
+          .eq("brand_id", brandId)
+          .not("viral_spark_id", "is", null);
+      } catch (fkeyErr) {
+        console.warn("[workspaceSync] productions.viral_spark_id unlink notice:", fkeyErr);
       }
 
       const tableResults: Record<string, { error?: { message?: string } | null }> = {};

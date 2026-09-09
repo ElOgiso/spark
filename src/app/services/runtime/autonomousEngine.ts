@@ -9,6 +9,7 @@ import { ViralSpark, Production, ReviewItem, MemoryItem, getEffectiveFormatSetti
 import { resolveProductionMode } from "../production/resolveProductionMode";
 import { liveIntelligenceService } from "../liveIntelligenceService";
 import { ProductionGenerationGuard } from "../production/ProductionGenerationGuard";
+import { isSessionWipeActive, hasUserAddedSourceSinceWipe } from "../../backend/learningWipeEpoch";
 
 export class AutonomousEngine {
   private static instance: AutonomousEngine;
@@ -28,13 +29,12 @@ export class AutonomousEngine {
   ) {
     if (this.isRunning) return;
     this.isRunning = true;
+    console.log("[AutonomousEngine] Initialized continuous background executive loop");
 
-    // Run initial execution cycle immediately on start
-    void this.runExecutionCycle(getWorkspaceState, updateWorkspaceState);
-
-    // Run execution cycle every 45 seconds
+    // Run first loop iteration immediately, then every 45s
+    this.runAutonomousCycle(getWorkspaceState, updateWorkspaceState);
     this.timerId = setInterval(() => {
-      this.runExecutionCycle(getWorkspaceState, updateWorkspaceState);
+      this.runAutonomousCycle(getWorkspaceState, updateWorkspaceState);
     }, 45000);
   }
 
@@ -44,9 +44,10 @@ export class AutonomousEngine {
       this.timerId = null;
     }
     this.isRunning = false;
+    console.log("[AutonomousEngine] Stopped continuous background executive loop");
   }
 
-  async runExecutionCycle(
+  private async runAutonomousCycle(
     getWorkspaceState: () => any,
     updateWorkspaceState: (updater: (prev: any) => any) => void
   ) {
@@ -56,6 +57,12 @@ export class AutonomousEngine {
     const { automationMode, viralSparks, productions, reviewItems, brand, character, researchSources } = state;
     if (automationMode === "manual") return;
 
+    const brandId = (state as any)?.brandId || (brand as any)?.id || (typeof localStorage !== "undefined" ? localStorage.getItem("spark_current_brand_id") : null);
+
+    // Respect Learning Wipe Epoch: if the user wiped learned data, do NOT synthesize heuristic trend sparks
+    // until the user explicitly adds a new research source.
+    const isWiped = brandId ? isSessionWipeActive(brandId) && !hasUserAddedSourceSinceWipe(brandId) : false;
+
     // Step 1: Autonomous Trend & Opportunity Discovery.
     // Prefer the CONFIGURED, PROVEN research path: if the brand has connected research sources, rely
     // on real research-backed sparks and do NOT synthesize heuristic trend sparks (which are not
@@ -63,7 +70,7 @@ export class AutonomousEngine {
     // no real research source to draw from — and even then it is clearly labeled Unverified/TREND.
     const currentSparks = viralSparks || [];
     const hasConnectedResearchSources = Array.isArray(researchSources) && researchSources.length > 0;
-    if (currentSparks.length < 5 && !hasConnectedResearchSources) {
+    if (!isWiped && currentSparks.length < 5 && !hasConnectedResearchSources) {
       const liveSignals = await liveIntelligenceService.fetchLiveTrendSignals(brand.niche || "AI & Technology");
       const signal = liveSignals[0];
 

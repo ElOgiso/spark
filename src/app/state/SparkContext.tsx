@@ -286,6 +286,23 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const local = loadPersistedState<any>(currentUserId || undefined, activeBrandId || undefined);
     if (local) {
+      let wipedLearning = {
+        viralSparks: local.viralSparks || [],
+        researchSources: local.researchSources || [],
+        researchPatterns: local.researchPatterns || [],
+        memoryItems: local.memoryItems || [],
+      };
+      if (activeBrandId) {
+        wipedLearning = applyLearningWipeToArrays({
+          brandId: activeBrandId,
+          brandSettings: local.brand?.settings,
+          viralSparks: local.viralSparks,
+          researchSources: local.researchSources,
+          researchPatterns: local.researchPatterns,
+          memoryItems: local.memoryItems,
+        });
+      }
+
       const effectiveFmt = getEffectiveFormatSettings({
         ...local,
         formatSettings: local.formatSettings || localFormatSettings,
@@ -293,6 +310,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const effectiveCrd = getEffectiveCreditSettings(local);
       return {
         ...local,
+        ...wipedLearning,
         formatSettings: effectiveFmt,
         creditSettings: effectiveCrd,
         brand: local.brand ? { ...local.brand, formatSettings: effectiveFmt, creditSettings: effectiveCrd } : local.brand,
@@ -375,22 +393,34 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const res = await wipeWorkspaceLearningData(brandId);
       if (res.ok) {
         const wipeAt = res.wipeAt || new Date().toISOString();
-        setState((prev: any) => ({
-          ...prev,
+        const nextBrand = state.brand
+          ? {
+              ...state.brand,
+              settings: {
+                ...(state.brand.settings || {}),
+                learning_wipe_at: wipeAt,
+              },
+            }
+          : state.brand;
+
+        const nextState = {
+          ...state,
           viralSparks: [],
           researchSources: [],
           researchPatterns: [],
           memoryItems: [],
-          brand: prev.brand
-            ? {
-                ...prev.brand,
-                settings: {
-                  ...(prev.brand.settings || {}),
-                  learning_wipe_at: wipeAt,
-                },
-              }
-            : prev.brand,
-        }));
+          brand: nextBrand,
+        };
+
+        setState(nextState);
+
+        // Immediately update persistent local storage cache so reloads don't resurrect wiped data
+        try {
+          savePersistedState(nextState, currentUserId || undefined, brandId);
+        } catch (saveErr) {
+          console.warn("[SparkContext] savePersistedState notice after wipe:", saveErr);
+        }
+
         return true;
       }
       return false;
@@ -398,7 +428,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.error("[SparkContext] Failed to wipe workspace learning data:", err);
       return false;
     }
-  }, [state.brand?.id]);
+  }, [state, state.brand?.id, currentUserId]);
 
   const updateAISettings = (newSettings: AISettings) => {
     setState((prev: any) => ({ ...prev, aiSettings: newSettings }));
