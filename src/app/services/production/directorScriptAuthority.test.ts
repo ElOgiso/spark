@@ -14,10 +14,13 @@ import {
 import { compileLiveMotionPrompt } from "./compileLiveMotionPrompt";
 import { buildSceneMotionPrompt } from "./productionPromptPacks";
 
-test("isPlannerMetaText catches Host presents / hook templates", () => {
+test("isPlannerMetaText catches Host presents / hook templates / brackets / spoken address", () => {
   assert.equal(isPlannerMetaText("Host presents key insight with authoritative gestures"), true);
   assert.equal(isPlannerMetaText("Open with a strong hook about: AI tools"), true);
   assert.equal(isPlannerMetaText("SAVE THIS NOW"), true);
+  assert.equal(isPlannerMetaText("[HOOK] [MAIN] Stop wasting mornings on broken workflows."), true);
+  assert.equal(isPlannerMetaText("[PROBLEM] [INSERT] Most teams suffer from communication debt."), true);
+  assert.equal(isPlannerMetaText("If you're still doing manual reviews, stop scrolling right now."), true);
   assert.equal(
     isPlannerMetaText("Subject leans forward and points at the whiteboard with left hand"),
     false
@@ -148,3 +151,100 @@ test("assertDirectorScriptReadyForMotion rejects Host presents", () => {
     )
   );
 });
+
+test("resolveDirectorSceneScript rejects [HOOK] [MAIN] visualDescription and repairs to physical action", () => {
+  const script = resolveDirectorSceneScript({
+    scene: {
+      visualDescription: "[HOOK] [MAIN] Stop wasting mornings on broken workflows.",
+      spokenLines: "Stop wasting mornings on broken workflows.",
+      cameraDirection: "Push-in medium shot",
+    },
+    sceneIndexZeroBased: 0,
+  });
+  assert.equal(script.repaired, true);
+  assert.ok(!script.physicalAction.includes("[HOOK]"));
+  assert.ok(!script.physicalAction.includes("Stop wasting mornings"));
+  assert.match(script.physicalAction, /performs a clear, continuous physical action/i);
+  assert.equal(script.spokenLines, "Stop wasting mornings on broken workflows.");
+});
+
+test("storyboard frame prompt compiler does NOT emit compile notes", async () => {
+  const { compileIndividualStoryboardFramePrompt } = await import("./preproduction/storyboardFrame");
+  const prompt = compileIndividualStoryboardFramePrompt({
+    panel: {
+      panelId: "p-1",
+      shotId: "s-1",
+      sequenceIndex: 1,
+      purpose: "Open with a strong hook",
+      dramaticBeat: "Hook",
+      visualObjective: "Grab audience attention",
+      editorialRole: "hook",
+      composition: "Presenter centered",
+      framing: "Medium shot",
+      camera: {
+        shotType: "Medium shot",
+        position: "eye-level",
+        movement: "static",
+        lensIntent: "cinematic prime",
+        depthOfField: "shallow",
+      },
+      characters: [],
+      locations: [],
+      props: [],
+      products: [],
+      blocking: "Presenter gestures toward lens",
+      subjectAction: "Presenter gestures toward lens",
+      environmentAction: "High-contrast studio set",
+      lightingIntent: "Cinematic key light",
+      temporalBeat: { startSec: 0, endSec: 5, pace: "fast" },
+      startState: "Host established in framing",
+      endState: "Host gestures outward",
+      incomingState: { wardrobe: [], propsHeld: [], lighting: "", subjectPosition: "", notes: [] },
+      outgoingState: { wardrobe: [], propsHeld: [], lighting: "", subjectPosition: "", notes: [] },
+      referenceRequirements: [],
+      referenceAssignments: [],
+      continuityRequirements: [],
+      generationIntent: { complexity: "standard", priority: "critical", requiresMultiPass: false },
+    },
+    aspectRatio: "9:16",
+  });
+
+  assert.ok(!prompt.includes("Shot purpose:"));
+  assert.ok(!prompt.includes("Dramatic beat:"));
+  assert.ok(!prompt.includes("Visual objective:"));
+  assert.ok(!prompt.includes("Start state:"));
+  assert.ok(!prompt.includes("End state:"));
+  assert.match(prompt, /Subject action: Presenter gestures toward lens/);
+  assert.match(prompt, /NO TEXT, NO LOGOS, NO WATERMARKS/);
+});
+
+test("compileLiveStillPrompt does NOT dump BRAND LAWS into image prompt", async () => {
+  const { compileLiveStillPrompt } = await import("./compileLiveStillPrompt");
+  const res = compileLiveStillPrompt({
+    scene: {
+      scene: 1,
+      physicalAction: "Host stands at desk pointing at tablet screen",
+      spokenLines: "Never waste your time with manual process.",
+      cameraDirection: "Medium shot",
+    },
+    sceneIndexZeroBased: 0,
+    aspectRatio: "9:16",
+    memoryItems: [
+      {
+        id: "mem-1",
+        brandId: "b-1",
+        rule: "Always emphasize 10x ROI and clear pipeline velocity",
+        category: "brand_voice",
+        confidence: 0.95,
+        source: "manual",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      },
+    ] as any,
+  });
+
+  assert.ok(!res.prompt.includes("BRAND LAWS:"));
+  assert.ok(!res.prompt.includes("Always emphasize 10x ROI"));
+  assert.match(res.prompt, /Host stands at desk pointing at tablet screen/);
+});
+

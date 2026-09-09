@@ -31,6 +31,12 @@ function strategyToMode(strategy: GenerationStrategy | string | undefined): Gene
 }
 
 function collectReferenceTypes(shot: ShotSpec): ReferenceType[] {
+  if (shot.generationStrategy === "text_to_image" || shot.generationStrategy === "slideshow_still") {
+    const types: ReferenceType[] = [];
+    if (shot.references?.firstFrameUrl || shot.references?.lastFrameUrl) types.push("image");
+    if (shot.references?.styleRefs?.length) types.push("style");
+    return types;
+  }
   const types: ReferenceType[] = [];
   const refs = shot.references;
   if (!refs) return types;

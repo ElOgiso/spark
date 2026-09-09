@@ -22,7 +22,12 @@ function principle(
   };
 }
 
-function genreSkill(input: Parameters<typeof skill>[0]): FilmmakingSkill {
+type GenreSkillInput = Omit<Parameters<typeof skill>[0], "domain" | "stages"> & {
+  domain?: Parameters<typeof skill>[0]["domain"];
+  stages?: Parameters<typeof skill>[0]["stages"];
+};
+
+function genreSkill(input: GenreSkillInput): FilmmakingSkill {
   return skill({
     domain: "cinematography",
     stages: ["planning", "shot_planning", "prompt_compilation", "generation_strategy"],

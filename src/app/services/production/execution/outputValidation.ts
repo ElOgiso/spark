@@ -137,5 +137,6 @@ export function expectationsFromPrepared(
     durationSec: prepared.durationSec,
     durationToleranceSec: mediaType === "video" ? 2 : 1,
     minFileSizeBytes: 64,
+    allowNormalization: mediaType === "image",
   };
 }

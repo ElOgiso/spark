@@ -131,7 +131,7 @@ describe("server persist source contract", () => {
           !name.startsWith("_") &&
           !name.endsWith(".test.ts")
         ) {
-          acc.push(path.relative(apiRoot, full));
+          acc.push(path.relative(apiRoot, full).replace(/\\/g, "/"));
         }
       }
       return acc;

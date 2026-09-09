@@ -138,6 +138,9 @@ export function getProductionPromptPack(options: PromptPackOptions): ModePromptP
   // Single source of mode truth — honors production/brand/brief preference + legacy synonyms.
   const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
   const contentFormat = getEffectiveContentFormat({ production, brief, brand, character });
+  const charName = character?.name || "Host";
+  const charStyle = character?.style || "Executive Creator";
+  const charTraits = character?.traits?.join(", ") || "authoritative, articulate, magnetic";
 
   const environmentStr = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
   const rankedLaws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;

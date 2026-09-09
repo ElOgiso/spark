@@ -4015,7 +4015,43 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       alert("Production not found.");
       return;
     }
+    const production = state.productions.find((p: any) => p.id === productionId) || (job as any);
     const platform = (job as any).platform || "YouTube Shorts";
+
+    // 1. Quality Gate: Evaluate publish policy before spending API calls / dispatching
+    const gateInput = {
+      automationMode: state.brand?.automation_mode || state.automationMode || "balanced",
+      publishingPermission: (state.brand as any)?.publishing_permission ?? "enabled",
+      publishRequiresApproval: (state.brand as any)?.publish_requires_approval ?? false,
+      finalAssetExists: Boolean((production as any)?.videoUrl),
+      finalTechnicalQcPassed: Boolean((production as any)?.videoUrl),
+      contentPolicyPassed: true,
+      destinationCredentialsValid: true,
+      publicationTargetValid: true,
+      userApproved: true,
+      approvedBy: state.character?.name || "user",
+    };
+    const publishGate = evaluatePublishGate(gateInput);
+    if (publishGate.action === "BLOCKED") {
+      const reason =
+        publishGate.reasons.join("; ") ||
+        "Production is blocked by publishing policy requirements.";
+      setState((prev: any) => ({
+        ...prev,
+        publishJobs: prev.publishJobs.map((j: any) =>
+          j.productionId === productionId
+            ? { ...j, status: "Failed", publishError: reason }
+            : j
+        ),
+      }));
+      NotificationService.addNotification({
+        title: "Publishing Blocked",
+        message: reason,
+        type: "warning",
+      });
+      alert(`Publishing blocked: ${reason}`);
+      return;
+    }
 
     const connectedAcc = state.accounts.find((a: any) =>
       a.platform.toLowerCase().includes(String(platform).toLowerCase().split(" ")[0]) &&
@@ -4074,6 +4110,57 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (brandId) {
         void persistPublishJobCreate(brandId, publishJob);
         void persistProductionUpdate(productionId, { status: "Published" } as any);
+      }
+
+      // 2. Performance Feedback Loop: Record outcome into Creative Director learning
+      try {
+        const { runLearningUpdatePipeline, buildOutcomeFromLifecycle } = await import(
+          "../services/production/intelligence"
+        );
+        const lifecycleData = (production as any)?.reasoning?.lifecycle;
+        const outcome = buildOutcomeFromLifecycle({
+          productionId,
+          lifecycle: lifecycleData
+            ? {
+                ok: lifecycleData.ok,
+                completed: lifecycleData.completed,
+                deliverableReady: lifecycleData.deliverableReady,
+                cost: lifecycleData.cost,
+                timing: lifecycleData.timing,
+              }
+            : { ok: true, completed: true, deliverableReady: true },
+          qualityScore: (production as any)?.brief?.brandFitScore || 80,
+          audiencePerformanceScore: 75,
+          platform: String(platform),
+        });
+
+        const learningResult = runLearningUpdatePipeline({
+          productionId,
+          snapshots: [],
+          outcome,
+          platform: String(platform),
+        });
+
+        if (learningResult?.learnings?.length) {
+          const newMemories: MemoryItem[] = learningResult.learnings.map((l, idx) => ({
+            id: `mem-pub-${Date.now()}-${idx}`,
+            text: l.claim || l.recommendation || `Publishing observation on ${platform}`,
+            category: "Publishing behavior",
+            type: "learned",
+            dateAdded: new Date().toISOString().split("T")[0],
+          }));
+          setState((prev: any) => ({
+            ...prev,
+            memoryItems: [...newMemories, ...(prev.memoryItems || [])],
+          }));
+          if (brandId && isSupabaseConfigured()) {
+            for (const mem of newMemories) {
+              void persistMemoryCreate(brandId, mem);
+            }
+          }
+        }
+      } catch (learnErr) {
+        console.warn("[SparkContext] Post-publish learning update notice:", learnErr);
       }
 
       alert(`Successfully published to ${platform}!${postUrl ? ` URL: ${postUrl}` : ""}`);

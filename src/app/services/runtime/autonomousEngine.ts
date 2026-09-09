@@ -117,8 +117,8 @@ export class AutonomousEngine {
       eventBus.emit("OPPORTUNITY_CREATED", { title: newSpark.title }, brand.name);
     }
 
-    // Step 2: Autonomous Production Storyboard Drafting
-    // Respect the Production Generation ON/OFF switch — when OFF, no autonomous drafting.
+    // Step 2: Autonomous Production Planning & Execution
+    // Respect the Production Generation ON/OFF switch — when OFF, no autonomous drafting or generation.
     if (automationMode === "autonomous" && ProductionGenerationGuard.isEnabled(brand?.id)) {
       const pendingReview = (reviewItems || []).filter((r: ReviewItem) => r.status === "Pending Review");
       if (pendingReview.length === 0 && currentSparks.length > 0) {
@@ -127,67 +127,72 @@ export class AutonomousEngine {
         const prodId = generateUuid();
         const reviewId = generateUuid();
 
-        const { ProductionBriefService } = await import("../production/productionBriefService");
+        const { buildAutonomousPlan } = await import("../production/intelligence/autonomy/autonomousLoop");
+        const { shouldExecuteAutonomously } = await import("../production/intelligence/autonomy/autonomyPolicy");
+        const autoPlan = buildAutonomousPlan({
+          objective: sparkToDraft.title,
+          brandId: brand.id,
+          platform: "YouTube Shorts",
+          estimatedCostUsd: 0.20,
+          confidence: (sparkToDraft.brandFitScore || 80) / 100,
+        });
+
+        if (!shouldExecuteAutonomously(autoPlan.gate)) {
+          console.log(`[AutonomousEngine] Autonomous planning gate held: ${autoPlan.gate.reasons.join("; ")}`);
+          return;
+        }
+
+        const effectiveFormat = getEffectiveFormatSettings(state);
         const resolvedProductionMode = resolveProductionMode({
           modeOverride: state.productionMode,
           brand,
+          spark: sparkToDraft,
         });
-        const effectiveFormat = getEffectiveFormatSettings(state);
         const targetDurationSec =
           typeof effectiveFormat?.targetDurationSec === "number" ? effectiveFormat.targetDurationSec : 60;
-        const brief = await ProductionBriefService.generateBrief({
+
+        // 2. Create Spec-driven Production from Spark using Creative Director
+        const { productionService } = await import("../productionService");
+        const created = await productionService.createProductionFromSpark({
           spark: sparkToDraft,
           brand,
           character,
           characters: state.characters || [],
+          niche: brand.niche,
           memoryItems: state.memoryItems || [],
           productionMode: resolvedProductionMode,
+          productionId: prodId,
+          reviewId: reviewId,
+          researchContext: sparkToDraft.researchContext,
           targetDurationSec,
+          creativeLearnings: autoPlan.relevantLearning,
         }).catch((err: any) => {
-          console.warn("[AutonomousEngine] generateBrief skipped:", err?.message || err);
+          console.warn("[AutonomousEngine] createProductionFromSpark skipped:", err?.message || err);
           return null;
         });
-        if (!brief) return;
+
+        if (!created) return;
 
         if (!ProductionGenerationGuard.isEnabled(brand?.id)) {
           return;
         }
 
         const newProduction: Production = {
+          ...created.production,
           id: prodId,
-          title: brief.title || sparkToDraft.title,
-          sparkId: sparkToDraft.id,
-          status: "Ready for Review",
-          mode: resolvedProductionMode,
-          dateCreated: new Date().toISOString().split("T")[0],
-          aspectRatio: "9:16",
-          formats: ["YouTube Shorts", "TikTok"],
-          brief,
-          scenes: brief.beats?.map((b, idx) => ({
-            scene: idx + 1,
-            description: `[${b.valueJob.toUpperCase()}] ${b.spokenLines}`,
-            duration: b.timecode,
-          })) || [
-            { scene: 1, description: `Hook: ${brief.hook}`, duration: "0-5s" },
-            { scene: 2, description: `Body: Strategy deep dive into ${sparkToDraft.angle}`, duration: "5-25s" },
-            { scene: 3, description: `CTA: ${brief.spokenCta || `Follow ${brand.name}`}`, duration: "25-30s" },
-          ],
+          status: "Generating",
+          isGeneratingAssets: true,
+          reasoning: {
+            ...(typeof created.production.reasoning === "object" ? created.production.reasoning : {}),
+            autonomousPlan: autoPlan,
+          },
         };
 
         const newReviewItem: ReviewItem = {
+          ...created.reviewItem,
           id: reviewId,
           productionId: prodId,
-          title: brief.title || sparkToDraft.title,
-          account: "YouTube Shorts",
-          series: "Autonomous Daily Series",
           status: "Pending Review",
-          dateCreated: new Date().toISOString().split("T")[0],
-          scriptSnippet: brief.hook || sparkToDraft.hook,
-          conceptText: brief.whyThisWorks || sparkToDraft.whyNow,
-          openingMoment: sparkToDraft.angle,
-          brief,
-          whyThisWorks: brief.whyThisWorks,
-          qualityCheck: { brandSafety: "Passed", policyCheck: "Passed", technicalCheck: "Passed" },
         };
 
         updateWorkspaceState((prev) => ({
@@ -206,6 +211,49 @@ export class AutonomousEngine {
         eventBus.emit("SCRIPT_READY", { title: newProduction.title }, brand.name);
         eventBus.emit("STORYBOARD_READY", { title: newProduction.title }, brand.name);
         eventBus.emit("REVIEW_REQUIRED", { title: newProduction.title }, brand.name);
+
+        // 3. Autonomous Asset Generation Execution
+        void productionService
+          .generateAssetsForProduction({
+            production: newProduction,
+            brand,
+            character,
+            characters: state.characters || [],
+            memoryItems: state.memoryItems || [],
+            automationMode: "autonomous",
+          })
+          .then(({ production: finishedProd }) => {
+            updateWorkspaceState((prev) => ({
+              ...prev,
+              productions: (prev.productions || []).map((p: any) =>
+                p.id === prodId ? { ...p, ...finishedProd, isGeneratingAssets: false } : p
+              ),
+              reviewItems: (prev.reviewItems || []).map((r: any) =>
+                r.productionId === prodId
+                  ? {
+                      ...r,
+                      videoUrl: finishedProd.videoUrl || r.videoUrl,
+                      audioUrl: finishedProd.audioUrl || r.audioUrl,
+                      status: finishedProd.videoUrl ? "Ready for Review" : r.status,
+                    }
+                  : r
+              ),
+            }));
+
+            if (brand?.id) {
+              void import("../../backend/workspaceSync").then(({ persistProductionUpdate, persistReviewUpdate }) => {
+                void persistProductionUpdate(prodId, finishedProd as any);
+                void persistReviewUpdate(reviewId, {
+                  videoUrl: finishedProd.videoUrl,
+                  audioUrl: finishedProd.audioUrl,
+                  status: finishedProd.videoUrl ? "Ready for Review" : "Pending Review",
+                } as any);
+              });
+            }
+          })
+          .catch((genErr) => {
+            console.warn("[AutonomousEngine] Autonomous asset generation error:", genErr);
+          });
       }
     }
   }

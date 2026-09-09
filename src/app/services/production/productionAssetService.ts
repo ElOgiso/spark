@@ -21,6 +21,7 @@ import {
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
+import { resolveDirectorSceneScript } from "./directorScriptAuthority";
 import { collectSparkShotClipUrls } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
 import {
@@ -3510,6 +3511,14 @@ export class ProductionAssetService {
         }
       }
 
+      const dirScript = resolveDirectorSceneScript({
+        scene: sbItem,
+        beat: beatItem,
+        environment: brief.visualDirection,
+        sceneIndexZeroBased: i,
+      });
+      const resolvedPhysicalAction = sbItem?.physicalAction || dirScript.physicalAction;
+
       scenesList.push({
         scene: idx,
         duration: `${perSceneSec}s`,
@@ -3521,21 +3530,24 @@ export class ProductionAssetService {
         scriptSnippet: resolvedSpoken,
         spokenLines: resolvedSpoken,
         audio: resolvedAudio,
-        visualDescription: sbItem?.visualDescription || `${continuousTimecode} [${(beatItem?.valueJob || "beat").toUpperCase()}] ${resolvedSpoken}`,
+        physicalAction: resolvedPhysicalAction,
+        visualDescription: sbItem?.visualDescription && !sbItem.visualDescription.startsWith("[")
+          ? sbItem.visualDescription
+          : resolvedPhysicalAction,
         startState: sbItem?.startState || `Scene ${idx} start state (${formatTime(sceneStartSec)})`,
         endState: sbItem?.endState || `Scene ${idx} end state (${formatTime(sceneEndSec)})`,
-        primaryChange: sbItem?.primaryChange || resolvedSpoken,
-        image: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
+        primaryChange: resolvedPhysicalAction,
+        image: sbItem?.image || undefined,
         videoUrl: clipUrl,
         id: `scene-${production.id}-${idx}`,
         productionId: production.id,
         brandId: (brand as any).id,
         index: idx,
         durationSec: perSceneSec,
-        action: sbItem?.primaryChange || resolvedSpoken,
+        action: resolvedPhysicalAction,
         camera: resolvedCamera,
         scriptBeat: resolvedSpoken,
-        keyframeImageUrl: sbItem?.image || (brief.generatedAssets?.thumbnails?.[i] as any)?.image || undefined,
+        keyframeImageUrl: sbItem?.image || undefined,
         status: clipUrl ? "ready" : "pending",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

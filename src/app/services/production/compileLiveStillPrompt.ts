@@ -201,12 +201,24 @@ export function compileLiveStillPrompt(params: {
     cinematicCraft,
   });
 
-  const laws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;
+function cleanStillCompiledPrompt(compiled: string): string {
+  return compiled
+    .split("\n")
+    .filter((line) => {
+      const l = line.trim();
+      if (!l) return false;
+      if (/^(SCENE\s*\(|SHOT PURPOSE:|WHY:|DIALOGUE PERFORMANCE:|NARRATION CONTEXT)/i.test(l)) {
+        return false;
+      }
+      return true;
+    })
+    .join("\n");
+}
+
   const styleSummary = [
     formatLaw,
     genreLaw,
     directorLockLaws,
-    laws ? `BRAND LAWS:\n${laws}` : "",
     subjectLine || "",
   ]
     .filter(Boolean)
@@ -221,14 +233,15 @@ export function compileLiveStillPrompt(params: {
         (s: ShotSpec) => s.id === shotId || (s as any).shotId === shotId
       );
       if (shot) {
-        const compiled =
+        const rawCompiled =
           (shot as any).compiledPrompt ||
           compileShotPrompt(spec, sc as SceneSpec, shot as ShotSpec).prompt;
+        const compiled = cleanStillCompiledPrompt(rawCompiled);
         const prompt = [
           refPromptHeader,
           styleSummary,
           compiled,
-          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides SHOT PURPOSE / WHY / valueJob for the picture.",
+          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides any narrative notes for the picture.",
           "Generate a SINGLE clean still frame (not a multi-panel sheet).",
           "NO TEXT, NO LETTERS, NO CAPTIONS on image. Full-bleed only.",
           `Aspect ratio: ${aspectRatio}.`,
@@ -249,14 +262,15 @@ export function compileLiveStillPrompt(params: {
         (s.shots || []).some((x: any) => x.id === shot.id)
       );
       if (sc) {
-        const compiled =
+        const rawCompiled =
           shot.compiledPrompt ||
           compileShotPrompt(spec, sc as SceneSpec, shot as ShotSpec).prompt;
+        const compiled = cleanStillCompiledPrompt(rawCompiled);
         const prompt = [
           refPromptHeader,
           styleSummary,
           compiled,
-          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides SHOT PURPOSE / WHY / valueJob for the picture.",
+          "PHYSICAL ACTION in DIRECTOR STILL LOCK overrides any narrative notes for the picture.",
           "Generate a SINGLE clean still frame (not a multi-panel sheet).",
           "NO TEXT, NO LETTERS, NO CAPTIONS on image. Full-bleed only.",
           `Aspect ratio: ${aspectRatio}.`,

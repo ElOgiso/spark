@@ -199,23 +199,20 @@ export function compileIndividualStoryboardFramePrompt(params: {
   styleSummary?: string;
 }): string {
   const { panel, aspectRatio, styleSummary } = params;
+  const cameraLine = panel.camera
+    ? `Camera: ${panel.camera.shotType || panel.framing || "Medium shot"}; ${panel.camera.position || "eye-level"}; lens ${panel.camera.lensIntent || "cinematic prime"}.`
+    : `Framing: ${panel.framing || "Medium shot"}.`;
+
   return [
     "Generate a SINGLE clean cinematic storyboard FRAME (not a multi-panel sheet).",
-    "No panel borders, no panel numbers, no captions, no grid, no text overlays.",
+    "No panel borders, no panel numbers, no captions, no grid, no text overlays, no letters, no subtitles.",
     `Aspect ratio: ${aspectRatio}.`,
-    `Shot purpose: ${panel.purpose}.`,
-    `Dramatic beat: ${panel.dramaticBeat}.`,
-    `Visual objective: ${panel.visualObjective}.`,
-    `Composition: ${panel.composition}.`,
-    `Framing: ${panel.framing}.`,
-    `Camera: ${panel.camera.shotType}; ${panel.camera.position}; ${panel.camera.movement}; lens ${panel.camera.lensIntent}.`,
+    cameraLine,
     `Subject action: ${panel.subjectAction}.`,
     `Environment: ${panel.environmentAction}.`,
     `Lighting: ${panel.lightingIntent}.`,
-    `Start state: ${panel.startState}.`,
-    `End state: ${panel.endState}.`,
     styleSummary ? `Visual treatment: ${styleSummary}.` : "",
-    "Preserve character/location/product identity. One composition only.",
+    "Preserve character/location/product identity. One composition only. NO TEXT, NO LOGOS, NO WATERMARKS.",
   ]
     .filter(Boolean)
     .join("\n");

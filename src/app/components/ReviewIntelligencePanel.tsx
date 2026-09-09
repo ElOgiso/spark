@@ -530,6 +530,82 @@ export function ReviewIntelligencePanel({
           </div>
         ) : null}
       </div>
+
+      {reviewView.lifecycle ? (
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold">Production Lifecycle & Execution</h3>
+            <span
+              className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                reviewView.lifecycle.ok
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : reviewView.lifecycle.completed
+                    ? "bg-amber-500/20 text-amber-400"
+                    : "bg-red-500/20 text-red-400"
+              }`}
+            >
+              {reviewView.lifecycle.phase ?? "Lifecycle Complete"}
+            </span>
+          </div>
+          {reviewView.lifecycle.summary ? (
+            <p className="text-xs text-muted-foreground">{reviewView.lifecycle.summary}</p>
+          ) : null}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-lg bg-background border border-border/70">
+              <p className="text-[10px] text-muted-foreground">Deliverable</p>
+              <p className="font-medium mt-0.5">
+                {reviewView.lifecycle.deliverableReady ? "Ready" : "Pending"}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-background border border-border/70">
+              <p className="text-[10px] text-muted-foreground">QC Verdict</p>
+              <p className="font-medium mt-0.5 capitalize">
+                {reviewView.lifecycle.qcVerdict || "Passed"}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-background border border-border/70">
+              <p className="text-[10px] text-muted-foreground">Cost</p>
+              <p className="font-medium mt-0.5">
+                {reviewView.lifecycle.cost?.actualTotalUsd != null
+                  ? `$${reviewView.lifecycle.cost.actualTotalUsd.toFixed(3)}`
+                  : reviewView.lifecycle.cost?.estimatedTotalUsd != null
+                    ? `~$${reviewView.lifecycle.cost.estimatedTotalUsd.toFixed(3)}`
+                    : "Included"}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-background border border-border/70">
+              <p className="text-[10px] text-muted-foreground">Wall Clock</p>
+              <p className="font-medium mt-0.5">
+                {reviewView.lifecycle.timing?.wallClockMs != null
+                  ? `${(reviewView.lifecycle.timing.wallClockMs / 1000).toFixed(1)}s`
+                  : "—"}
+              </p>
+            </div>
+          </div>
+          {reviewView.lifecycle.preflightSummary ? (
+            <div className="p-3 rounded-lg bg-background border border-border/70 text-xs">
+              <span className="text-muted-foreground font-medium">Preflight: </span>
+              <span>{reviewView.lifecycle.preflightSummary}</span>
+            </div>
+          ) : null}
+          {reviewView.lifecycle.editorialDecision ? (
+            <div className="p-3 rounded-lg bg-background border border-border/70 text-xs">
+              <span className="text-muted-foreground font-medium">Editorial Decision: </span>
+              <span className="capitalize">{reviewView.lifecycle.editorialDecision}</span>
+            </div>
+          ) : null}
+          {reviewView.lifecycle.errors && reviewView.lifecycle.errors.length > 0 ? (
+            <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300">
+              <p className="font-semibold mb-1">Errors encountered:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {reviewView.lifecycle.errors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

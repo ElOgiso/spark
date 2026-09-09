@@ -880,7 +880,9 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                 evidence: proposal.whyThisWorks.slice(1).length
                   ? proposal.whyThisWorks.slice(1)
                   : ["Only facts stored on the production brief/Spec are shown here."],
-                confidence: proposal.aiConfidence != null ? "Stored brand-fit score" : "Unavailable",
+                confidence: proposal.aiConfidence != null
+                  ? (proposal.aiConfidence >= 80 ? "High" : proposal.aiConfidence >= 50 ? "Medium" : "Low")
+                  : "Low",
                 confidencePercent: proposal.aiConfidence,
                 expectedOutcome: "Reach unavailable — live analytics connector not configured.",
                 risk: proposal.riskFlags.some((f) => f.level === "medium") ? "Medium" : "Low",

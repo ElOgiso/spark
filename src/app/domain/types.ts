@@ -177,6 +177,8 @@ export interface ProductionScene {
   lastFrameUrl?: string;
   subject?: "main" | "support" | "set" | "insert" | string;
   subjectType?: "main" | "support" | "set" | "insert" | string;
+  motionLock?: any;
+  physicalAction?: string;
   status?: SceneStatus;
   editNotes?: string;
   lastError?: string;
@@ -228,6 +230,7 @@ export interface ProductionBriefBeat {
   spokenLines: string;
   onScreenText: string;
   cameraDirection?: string;
+  physicalAction?: string;
   startState?: string;
   endState?: string;
   audio?: "vo" | "talent";

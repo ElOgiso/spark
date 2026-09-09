@@ -115,6 +115,33 @@ export interface ReviewReadinessItem {
   detail?: string;
 }
 
+export interface ReviewLifecycleView {
+  phase?: string;
+  ok?: boolean;
+  completed?: boolean;
+  deliverableReady?: boolean;
+  summary?: string;
+  errors?: string[];
+  warnings?: string[];
+  eventCount?: number;
+  cost?: {
+    estimatedTotalUsd?: number;
+    actualTotalUsd?: number;
+    currency?: string;
+  };
+  timing?: {
+    wallClockMs?: number;
+    startedAt?: string;
+    completedAt?: string;
+  };
+  preflightSummary?: string;
+  qcVerdict?: string;
+  editorialDecision?: string;
+  masterOk?: boolean;
+  masterUrl?: string;
+  checkpointId?: string;
+}
+
 export interface ReviewProductionView {
   productionId: string;
   name: string;
@@ -132,6 +159,7 @@ export interface ReviewProductionView {
   qcSummary: ReviewNamedCheck[];
   brandFitScore: number | null;
   brandFitUnavailableReason: string | null;
+  lifecycle?: ReviewLifecycleView;
 }
 
 export const EDIT_REQUEST_CATEGORIES = [
@@ -866,6 +894,36 @@ export function buildReviewProductionView(
     asNumber(asRecord(production.brief)?.brandFitScore) ??
     null;
 
+  const reasoning = asRecord(production.reasoning);
+  const rawLifecycle = asRecord(reasoning?.lifecycle) ?? asRecord(production.lifecycle);
+  const lifecycle: ReviewLifecycleView | undefined = rawLifecycle
+    ? {
+        phase: asText(rawLifecycle.phase) ?? undefined,
+        ok: typeof rawLifecycle.ok === "boolean" ? rawLifecycle.ok : undefined,
+        completed: typeof rawLifecycle.completed === "boolean" ? rawLifecycle.completed : undefined,
+        deliverableReady:
+          typeof rawLifecycle.deliverableReady === "boolean"
+            ? rawLifecycle.deliverableReady
+            : undefined,
+        summary: asText(rawLifecycle.summary) ?? undefined,
+        errors: Array.isArray(rawLifecycle.errors)
+          ? rawLifecycle.errors.map(String)
+          : undefined,
+        warnings: Array.isArray(rawLifecycle.warnings)
+          ? rawLifecycle.warnings.map(String)
+          : undefined,
+        eventCount: asNumber(rawLifecycle.eventCount) ?? undefined,
+        cost: asRecord(rawLifecycle.cost) as any,
+        timing: asRecord(rawLifecycle.timing) as any,
+        preflightSummary: asText(rawLifecycle.preflightSummary) ?? undefined,
+        qcVerdict: asText(rawLifecycle.qcVerdict) ?? undefined,
+        editorialDecision: asText(rawLifecycle.editorialDecision) ?? undefined,
+        masterOk: typeof rawLifecycle.masterOk === "boolean" ? rawLifecycle.masterOk : undefined,
+        masterUrl: asText(rawLifecycle.masterUrl) ?? undefined,
+        checkpointId: asText(rawLifecycle.checkpointId) ?? undefined,
+      }
+    : undefined;
+
   return {
     productionId: String(production.id ?? ""),
     name: asText(production.title) ?? "Untitled production",
@@ -888,6 +946,7 @@ export function buildReviewProductionView(
     brandFitScore: brandFit,
     brandFitUnavailableReason:
       brandFit == null ? "Brand-fit score unavailable for this production" : null,
+    lifecycle,
   };
 }
 

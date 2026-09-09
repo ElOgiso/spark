@@ -190,7 +190,10 @@ export class GenerationExecutionEngine {
     tasks = tasks.map((t) => {
       if (t.status === "failed") return t;
       if (this.cancelled.has(t.id)) return { ...t, status: "skipped", lastError: "cancelled" };
-      return { ...t, status: t.dependsOn.length ? "blocked" : "queued" };
+      if (t.status === "queued" || t.status === "succeeded") return t;
+      const dagNode = dag?.nodes?.find((n) => n.id === t.id);
+      const effectiveDeps = dagNode ? dagNode.dependsOn : t.dependsOn;
+      return { ...t, status: effectiveDeps.length ? "blocked" : "queued" };
     });
 
     let guard = 0;
@@ -201,13 +204,21 @@ export class GenerationExecutionEngine {
       tasks = tasks.map((t) => {
         if (t.status !== "blocked" && t.status !== "planned") return t;
         if (this.cancelled.has(t.id)) return { ...t, status: "skipped", lastError: "cancelled" };
-        if (t.dependsOn.some((d) => tasks.find((x) => x.id === d)?.status === "failed")) {
+        const dagNode = dag?.nodes?.find((n) => n.id === t.id);
+        const effectiveDeps = dagNode ? dagNode.dependsOn : t.dependsOn;
+        if (effectiveDeps.some((d) => tasks.find((x) => x.id === d)?.status === "failed")) {
           return { ...t, status: "skipped", lastError: "dependency_failed" };
         }
-        if (t.dependsOn.every((d) => {
-          const dep = tasks.find((x) => x.id === d);
-          return dep?.status === "succeeded" || dep?.status === "skipped";
-        })) {
+        if (
+          effectiveDeps.every((d) => {
+            const dep = tasks.find((x) => x.id === d);
+            if (!dep) {
+              const dagDep = dag?.nodes?.find((n) => n.id === d);
+              return !dagDep || dagDep.status === "done" || dagDep.status === "ready";
+            }
+            return dep.status === "succeeded" || dep.status === "skipped";
+          })
+        ) {
           return { ...t, status: "queued" };
         }
         return t;
@@ -592,7 +603,7 @@ export class GenerationExecutionEngine {
             execution = { ...execution, status: "retrying" };
             logExecutionTransition(this.logger, execution, { fallbackUsed: nextProvider });
             provider = nextProvider;
-            attempt++;
+            attempt = 1;
             await (this.opts.sleep || sleepMs)(computeBackoffDelayMs(attempt, this.opts.backoff));
             continue;
           }

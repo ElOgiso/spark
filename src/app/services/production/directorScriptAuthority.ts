@@ -23,6 +23,8 @@ export interface DirectorSceneScript {
 
 /** Lexicon that must not drive live image/video generation as "action". */
 export const PLANNER_META_PATTERNS: RegExp[] = [
+  /^\[[A-Z_]+\]/,
+  /\b(HOOK|PROBLEM|PROOF|CTA|INSERT|MAIN|SUPPORT|SET)\b.*\b(MAIN|INSERT|SUPPORT|SET)\b/i,
   /\bhost presents\b/i,
   /\bkey (core )?insight\b/i,
   /\bopen with a strong hook\b/i,
@@ -36,12 +38,17 @@ export const PLANNER_META_PATTERNS: RegExp[] = [
   /\bproduction reason\b/i,
   /\bnarrative function\b/i,
   /\bauthoritative gestures\b/i,
-  /\bsave this now\b/i,
+  /\bsave this (now|post)\b/i,
   /\bconversion prompt\b/i,
   /\bsystematic leverage\b/i,
+  /\bcompounding leverage\b/i,
   /\bthe non-obvious shift\b/i,
   /\bthe core bottleneck\b/i,
+  /\bsystemic friction audit\b/i,
+  /\bexecutive briefing\b/i,
   /\bwhat if\b.+\?/i,
+  /\b(if you('re| are)|don't learn|stop scrolling|listen up|here's why|in this video|let's talk about|i'm going to show|watch till the end)\b/i,
+  /\b(let me break down|we will deconstruct|here is the root|in this strategic breakdown|when teams scale|step one is|step two is)\b/i,
 ];
 
 export function isPlannerMetaText(text?: string | null): boolean {
@@ -53,24 +60,42 @@ export function isPlannerMetaText(text?: string | null): boolean {
 
 /**
  * Prefer concrete physical / visual description over planner purpose.
- * Rejects meta strings.
+ * Rejects meta strings and exact/partial spoken script matches.
  */
-export function pickPhysicalAction(candidates: Array<string | undefined | null>): {
+export function pickPhysicalAction(
+  candidates: Array<string | undefined | null>,
+  rejectedTexts?: Array<string | undefined | null>
+): {
   action: string;
   wasMeta: boolean;
   sourceIndex: number;
 } {
+  const isRejected = (text: string): boolean => {
+    if (!rejectedTexts || rejectedTexts.length === 0) return false;
+    const cleanCandidate = text.toLowerCase().trim();
+    for (const rej of rejectedTexts) {
+      const cleanRej = String(rej || "").toLowerCase().trim();
+      if (cleanRej.length >= 8) {
+        if (cleanCandidate === cleanRej || cleanCandidate.includes(cleanRej) || cleanRej.includes(cleanCandidate)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   for (let i = 0; i < candidates.length; i++) {
     const c = String(candidates[i] || "").trim();
     if (!c) continue;
     if (isPlannerMetaText(c)) continue;
+    if (isRejected(c)) continue;
     // Prefer strings that look like visible action / environment
     return { action: c, wasMeta: false, sourceIndex: i };
   }
   // All meta or empty — return first non-empty for repair downstream
   for (let i = 0; i < candidates.length; i++) {
     const c = String(candidates[i] || "").trim();
-    if (c) return { action: c, wasMeta: true, sourceIndex: i };
+    if (c && !isRejected(c)) return { action: c, wasMeta: true, sourceIndex: i };
   }
   return { action: "", wasMeta: true, sourceIndex: -1 };
 }
@@ -122,6 +147,19 @@ export function resolveDirectorSceneScript(params: {
     scene.onScreenText || beat.onScreenText || shot.onScreenText || ""
   ).trim();
 
+  const rejected = [
+    spoken,
+    scene.spokenLines,
+    scene.scriptSnippet,
+    beat.spokenLines,
+    shot.dialogue,
+    shot.narration,
+    onScreen,
+    scene.onScreenText,
+    beat.onScreenText,
+    shot.onScreenText,
+  ];
+
   // Physical action candidates — NEVER use spoken lines / onScreen as visual action
   const picked = pickPhysicalAction([
     scene.physicalAction,
@@ -138,7 +176,7 @@ export function resolveDirectorSceneScript(params: {
     shot.subjectMovement,
     scene.purpose,
     beat.purpose,
-  ]);
+  ], rejected);
 
   let physicalAction = picked.action;
   let repaired = false;
@@ -146,14 +184,20 @@ export function resolveDirectorSceneScript(params: {
   let source: DirectorSceneScript["source"] = picked.sourceIndex >= 0 ? "scene" : "empty";
 
   if (!physicalAction || wasMeta) {
+    const candidateEnvs = [
+      params.environment,
+      scene.environment,
+      shot.environment,
+      (!isPlannerMetaText(scene.visualDescription) && !(spoken && String(scene.visualDescription || "").toLowerCase().includes(spoken.toLowerCase().slice(0, 20))))
+        ? scene.visualDescription
+        : undefined,
+    ];
+    const safeEnv = candidateEnvs.find((e) => Boolean(e && !isPlannerMetaText(e)));
+
     physicalAction = repairPhysicalAction({
       metaOrEmpty: physicalAction,
       cameraDirection: scene.cameraDirection || shot.camera?.shotType,
-      environment:
-        params.environment ||
-        scene.environment ||
-        shot.environment ||
-        scene.visualDescription,
+      environment: safeEnv,
       sceneIndex: params.sceneIndexZeroBased,
       contentFormat: params.contentFormat,
     });

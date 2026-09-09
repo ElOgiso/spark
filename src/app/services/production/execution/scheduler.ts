@@ -85,9 +85,21 @@ export function selectReadyBatch(params: {
     if (params.runningTaskIds.has(t.id)) return false;
     if (t.status === "succeeded" || t.status === "failed" || t.status === "skipped") return false;
     if (t.status === "running") return false;
-    // Hard edges only (dependsOn is the hard projection)
-    if (t.dependsOn.some((d) => failed.has(d))) return false;
-    if (!t.dependsOn.every((d) => succeeded.has(d))) return false;
+    const dagNode = params.dag?.nodes?.find((n) => n.id === t.id);
+    const effectiveDeps = dagNode ? dagNode.dependsOn : t.dependsOn;
+    if (effectiveDeps.some((d) => failed.has(d))) return false;
+    if (
+      !effectiveDeps.every((d) => {
+        if (succeeded.has(d)) return true;
+        if (!taskById.has(d)) {
+          const dagDep = params.dag?.nodes?.find((n) => n.id === d);
+          return !dagDep || dagDep.status === "done" || dagDep.status === "ready";
+        }
+        return false;
+      })
+    ) {
+      return false;
+    }
     return true;
   });
 

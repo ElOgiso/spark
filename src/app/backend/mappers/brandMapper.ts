@@ -101,7 +101,12 @@ export function brandRowToDomain(row: BrandRow): Brand {
         contentFormat: contentFormat || rawFormatSettings.contentFormat,
       }
     : contentFormat
-      ? { contentFormat }
+      ? {
+          aspectMode: "portrait" as const,
+          targetDurationSec: 60,
+          preferredVideoProvider: "auto" as const,
+          contentFormat,
+        }
       : undefined;
 
   const creditSettings = settingsObj.credit_settings || (row.audience as any)?.credit_settings;

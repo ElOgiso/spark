@@ -17,6 +17,7 @@ import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { resolveProductionMode } from "./resolveProductionMode";
 import { getEffectiveContentFormat } from "./characterSheetGate";
 import { ensureViralSparkProductionReady } from "./viralSparkGate";
+import { repairPhysicalAction, isPlannerMetaText } from "./directorScriptAuthority";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -716,25 +717,40 @@ export function compileDeterministicBrief(params: {
       }
     : undefined;
 
-  const storyboardScenes: ProductionScene[] = beats.map((b, idx) => ({
-    scene: idx + 1,
-    duration: `${Math.max(3, Math.round(durationSec / beats.length))}s`,
-    shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
-    cameraDirection: b.cameraDirection || "Presenter centered",
-    transitions: "Continuous flow",
-    onScreenText: b.onScreenText,
-    pacing: durationSec <= 30 ? "Fast" : "Balanced",
-    scriptSnippet: b.spokenLines,
-    spokenLines: b.spokenLines,
-    audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
-    valueJob: b.valueJob,
-    subject: b.subject,
-    subjectType: b.subject,
-    visualDescription: `[${b.valueJob.toUpperCase()}] [${(b.subject || "main").toUpperCase()}] ${b.spokenLines}`,
-    startState: b.startState,
-    endState: b.endState,
-    primaryChange: b.spokenLines,
-  }));
+  const storyboardScenes: ProductionScene[] = beats.map((b, idx) => {
+    const rawAction = String(b.physicalAction || "").trim();
+    const action = rawAction && !isPlannerMetaText(rawAction)
+      ? rawAction
+      : repairPhysicalAction({
+          metaOrEmpty: "",
+          cameraDirection: b.cameraDirection,
+          environment: visualDirection || `${brand.name} studio set`,
+          sceneIndex: idx,
+          contentFormat,
+        });
+
+    return {
+      scene: idx + 1,
+      duration: `${Math.max(3, Math.round(durationSec / beats.length))}s`,
+      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
+      cameraDirection: b.cameraDirection || "Presenter centered",
+      transitions: "Continuous flow",
+      onScreenText: b.onScreenText,
+      pacing: durationSec <= 30 ? "Fast" : "Balanced",
+      scriptSnippet: b.spokenLines,
+      spokenLines: b.spokenLines,
+      audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
+      valueJob: b.valueJob,
+      subject: b.subject,
+      subjectType: b.subject,
+      physicalAction: action,
+      action,
+      visualDescription: action,
+      startState: b.startState,
+      endState: b.endState,
+      primaryChange: action,
+    };
+  });
 
   return {
     title: spark.title || "Production Brief",
@@ -874,6 +890,7 @@ WORD LAW & ANTI-SLOP COMPILER LAWS (MANDATORY):
        - faceless: "insert" for all B-roll/graphics/data shots.
        - story / anime: "main" for hook/payoff, "insert" or "set" for environment/product details, and "support" only if a supporting character is present.
      * spokenLines: 2-4 complete substantive ready-to-speak sentences that thoroughly execute that beat's valueJob. NO fluff.
+     * physicalAction: Concrete physical blocking and visible environment action only. What the camera sees (body motion, gestures, props, set). NEVER include spoken script, valueJob brackets, or dialogue.
      * onScreenText: <= 6 words in uppercase.
      * cameraDirection: Specific camera framing / movement.
      * startState & endState: Beat N's startState MUST open EXACTLY on Beat N-1's endState.
@@ -929,6 +946,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
       "valueJob": "hook",
       "subject": "main",
       "spokenLines": "Exact multi-sentence substantive spoken lines for host/VO",
+      "physicalAction": "Physical description of what the camera sees — body language, gestures, props, and set without spoken words or brackets",
       "onScreenText": "TEXT OVERLAY (MAX 6 WORDS)",
       "cameraDirection": "Slow push-in zoom on host",
       "startState": "Host established in framing with initial posture",
@@ -1139,25 +1157,40 @@ ${prompt}`;
       parsedOutline = fallback.scriptOutline;
     }
 
-    const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => ({
-      scene: idx + 1,
-      duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
-      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
-      cameraDirection: b.cameraDirection || "Presenter centered",
-      transitions: "Continuous flow",
-      onScreenText: b.onScreenText,
-      pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
-      scriptSnippet: b.spokenLines,
-      spokenLines: b.spokenLines,
-      audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
-      valueJob: b.valueJob,
-      subject: b.subject,
-      subjectType: b.subject,
-      visualDescription: `[${b.valueJob.toUpperCase()}] [${(b.subject || "main").toUpperCase()}] ${b.spokenLines}`,
-      startState: b.startState,
-      endState: b.endState,
-      primaryChange: b.spokenLines,
-    }));
+    const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => {
+      const rawAction = String(b.physicalAction || "").trim();
+      const action = rawAction && !isPlannerMetaText(rawAction)
+        ? rawAction
+        : repairPhysicalAction({
+            metaOrEmpty: "",
+            cameraDirection: b.cameraDirection,
+            environment: asText(parsedJson?.visualDirection, fallback.visualDirection),
+            sceneIndex: idx,
+            contentFormat,
+          });
+
+      return {
+        scene: idx + 1,
+        duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
+        shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
+        cameraDirection: b.cameraDirection || "Presenter centered",
+        transitions: "Continuous flow",
+        onScreenText: b.onScreenText,
+        pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
+        scriptSnippet: b.spokenLines,
+        spokenLines: b.spokenLines,
+        audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
+        valueJob: b.valueJob,
+        subject: b.subject,
+        subjectType: b.subject,
+        physicalAction: action,
+        action,
+        visualDescription: action,
+        startState: b.startState,
+        endState: b.endState,
+        primaryChange: action,
+      };
+    });
 
     return {
       title: asText(parsedJson?.title, spark.title),

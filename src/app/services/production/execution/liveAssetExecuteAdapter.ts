@@ -96,6 +96,8 @@ export function createLiveAssetExecuteAdapter(
       maxAttempts: 3,
       startedAt: now,
       completedAt: t.status === "succeeded" || t.status === "failed" ? now : undefined,
+      inputAssets: [],
+      outputAssets: [],
       error: t.lastError
         ? {
             code: "generation_failed" as const,

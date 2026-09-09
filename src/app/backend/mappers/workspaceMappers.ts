@@ -100,7 +100,7 @@ export function domainMemoryToInsert(
     description: item.text,
     source: item.type,
     confidence: "medium",
-    evidence,
+    evidence: evidence as any,
     affected_systems: [],
     archived: Boolean(item.archived),
   };
