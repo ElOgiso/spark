@@ -184,89 +184,70 @@ function generateSmartFallbackResponse(
 }
 
 /**
- * Generates live Super Spark AI responses specifically for Onboarding / Brand Genesis.
- * Defaults strictly to Gemini (using env keys via resolveProviderKey) without altering global user AI preferences.
+ * Live Super Spark for Brand Genesis — same ModelRouter path as dashboard Super Spark.
+ * Returns spoken `say` plus a chip `patch`. Throws when the router cannot answer.
  */
 export async function generateOnboardAssistantResponse(params: {
   prompt: string;
   stepName: string;
   stepNumber: number;
-  brandData?: {
-    brandName?: string;
-    creatorName?: string;
-    niche?: string;
-    goal?: string;
-    characterGenre?: string;
-    selectedVoice?: string;
-    connectedPlatforms?: string[];
-  };
+  genesis?: Record<string, unknown>;
+  brandData?: Record<string, unknown>;
   history?: { role: "user" | "spark" | "model"; text: string }[];
-}): Promise<string> {
-  const { prompt, stepName, stepNumber, brandData, history = [] } = params;
-  const geminiKey = resolveProviderKey("gemini");
-
-  const brandSummary = [
-    brandData?.brandName ? `Brand Name: "${brandData.brandName}"` : null,
-    brandData?.niche ? `Niche: "${brandData.niche}"` : null,
-    brandData?.goal ? `Goal: "${brandData.goal}"` : null,
-    brandData?.characterGenre ? `Visual Style: "${brandData.characterGenre}"` : null,
-    brandData?.selectedVoice ? `Selected Voice: "${brandData.selectedVoice}"` : null,
-    brandData?.connectedPlatforms?.length ? `Connected Platforms: ${brandData.connectedPlatforms.join(", ")}` : null,
-  ].filter(Boolean).join(" | ");
+  aiSettings?: { routing?: any; customApiKeys?: Record<string, string> };
+}): Promise<{ say: string; patch: Record<string, unknown>; raw: string }> {
+  const { parseGenesisAssistantTurn } = await import("./brand/proposeBrandBible");
+  const { prompt, stepName, stepNumber, genesis, brandData, history = [], aiSettings } = params;
+  const genesisJson = genesis || brandData || {};
 
   const systemInstruction = `${SUPER_SPARK_SYSTEM_INSTRUCTION}
 
-ONBOARDING EXECUTIVE CONTEXT:
-You are acting as the Executive Creative Director guiding the creator through Brand Genesis onboarding (Step ${stepNumber}: "${stepName}").
-${brandSummary ? `Current Brand Setup: ${brandSummary}` : ""}
+THIS FRAME: ${stepNumber} — ${stepName}
+CURRENT GENESIS JSON:
+${JSON.stringify(genesisJson)}
 
-GUIDANCE RULES FOR ONBOARDING CHAT:
-1. Keep replies concise, helpful, friendly, leisure, relaxed, laid-back, and calm (1-3 sentences maximum).
-2. Answer the user's specific question or comment about this step, their brand, or creative strategy directly.
-3. If they ask for recommendations (e.g. brand names, niche ideas, styles, hooks), give 2-3 sharp, modern creator suggestions.
-4. If they indicate readiness or tell you their choice (e.g. "I want comedy", "Let's continue", "Call it Apex Studio"), validate and encourage them.
-5. Sound like a human creative director, never like a corporate robot.`;
+You are Super Spark in Brand Genesis. Help the executive. Do not recite a script.
+
+Reply in 1–3 spoken sentences, then end with ONLY this JSON (nothing after it):
+{"say":"1–3 sentence reply","patch":{"niche":"...","audience":"...","contentFormat":"faceless|host|story|anime","visualGenre":"<VisualGenreId>","targetDurationSec":15,"country":"...","language":"...","archetype":"...","productionMode":"...","researchUrl":"https://..."}}
+
+PATCH RULES:
+- Include only fields the user or connected account actually implied. Omit the rest.
+- visualGenre must be a real VisualGenreId (anime, cinematic, documentary, …) or omit.
+- targetDurationSec must be a catalog length in seconds (15, 30, 60, 180, 300, 600, 900, 1200, 1800, 2700, 3600) or omit.
+- Never patch: Content Creation, General Audience, Creator Economy, Energetic & Relatable, Spark Studio.
+- Never mention models, compile, JSON, or providers. say is what is spoken.`;
 
   const chatHistory = history.map((msg) => ({
     role: (msg.role === "user" ? "user" : "model") as "user" | "model",
     parts: [{ text: msg.text }],
   }));
 
-  // Force onboard routing to Gemini only (does not alter global user AI settings)
-  const forcedGeminiRouting = {
-    superSpark: "gemini" as AIProviderId,
-  };
+  const userRoutingConfig = aiSettings?.routing || ModelRouter.getUserRoutingConfig();
+  const customApiKeys = aiSettings?.customApiKeys;
 
-  try {
-    const text = await ModelRouter.executeCategoryRequest(
-      "superSpark",
-      {
-        prompt,
-        systemInstruction,
-        history: chatHistory,
-        customApiKeys: geminiKey ? { gemini: geminiKey } : undefined,
-      },
-      forcedGeminiRouting
-    );
+  const text = await ModelRouter.executeCategoryRequest(
+    "superSpark",
+    {
+      prompt,
+      systemInstruction,
+      history: chatHistory,
+      context: genesisJson,
+      customApiKeys,
+    },
+    userRoutingConfig,
+    ModelRouter.getUserModelSelectionConfig()
+  );
 
-    const cleaned = cleanEchoingPrefix(text, prompt);
-    if (cleaned && cleaned.length > 0) return cleaned;
-  } catch (err: any) {
-    console.warn("[OnboardAI] Live Gemini generation notice:", err?.message || err);
+  const cleaned = cleanEchoingPrefix(text, prompt);
+  if (!cleaned) {
+    throw new Error("Onboard Super Spark returned empty text");
   }
-
-  // Fallback if live AI call fails
-  const stepFallbacks: Record<number, string> = {
-    1: "Connect any account that's live — YouTube and X are ready now. The rest are coming soon.",
-    2: "Your brand name sets the tone for everything. Pick something punchy that fits your niche.",
-    3: "Lock in a signature host style you want to keep consistent across all your videos.",
-    4: "Voice is identity. Choose the cadence that matches your channel's energy.",
-    5: "Paste channels or profiles SPARK should learn from to calibrate your production style.",
-    6: "Production mode sets the visual depth, while automation sets how much I handle autonomously.",
-    7: "Everything looks set. When you're ready, tap to launch into your executive dashboard.",
-  };
-
-  return stepFallbacks[stepNumber] || "Got it — I'll factor that into your brand setup as we move forward.";
+  const turn = parseGenesisAssistantTurn(cleaned);
+  if (!turn.say) {
+    throw new Error("Onboard Super Spark returned no say");
+  }
+  return { say: turn.say, patch: turn.patch, raw: cleaned };
 }
 
 /**

@@ -3,7 +3,7 @@
  * Domain helper only. Not an agent. Not a UI component.
  */
 import type { Brand, Character, ContentFormat, ResearchSource, VideoResearch, VisualGenreSetting } from "../../domain/types";
-import { VIDEO_LENGTH_OPTIONS } from "../../domain/types";
+import { VIDEO_LENGTH_OPTIONS, VISUAL_GENRE_OPTIONS } from "../../domain/types";
 import { inferVisualGenreFromText, normalizeVisualGenre } from "../../domain/visualGenre";
 
 export type AcceptedWatchHint = {
@@ -369,11 +369,41 @@ export type GenesisDirectorCompile = {
   targetDurationSec?: number;
   country?: string;
   language?: string;
+  archetype?: string;
+  productionMode?: string;
+  researchUrl?: string;
+  brandName?: string;
+};
+
+export type GenesisAssistantTurn = {
+  say: string;
+  patch: GenesisDirectorCompile;
+};
+
+const GENESIS_SLOP = new Set([
+  "content creation",
+  "general audience",
+  "creator economy",
+  "energetic & relatable",
+  "spark studio",
+  "to build a leading media brand.",
+  "to build a leading media brand",
+]);
+
+const CONTENT_FORMAT_IDS = new Set<ContentFormat>(["faceless", "host", "story", "anime"]);
+const PRODUCTION_MODE_MAP: Record<string, string> = {
+  narrator: "Narrator",
+  express: "Narrator",
+  hybrid: "Hybrid",
+  standard: "Hybrid",
+  cinematic: "Cinematic",
+  deep: "Cinematic",
 };
 
 const COUNTRY_TOKEN: Record<string, string> = {
   ng: "Nigeria",
   nigeria: "Nigeria",
+  lagos: "Nigeria",
   uk: "United Kingdom",
   gb: "United Kingdom",
   us: "United States",
@@ -402,10 +432,10 @@ const LANGUAGE_FOR_COUNTRY: Record<string, string> = {
 
 const DURATION_SPEECH: Array<[RegExp, number]> = [
   [/\b15\s*(m|min|mins|minutes)\b/i, 900],
-  [/\b15\s*(s|sec|secs|seconds)\b|\b15s\b/i, 15],
+  [/\b15\s*(s|sec|secs|second|seconds)\b|\b15s\b/i, 15],
   [/\b30\s*(m|min|mins|minutes)\b/i, 1800],
-  [/\b30\s*(s|sec|secs|seconds)\b|\b30s\b/i, 30],
-  [/\b60\s*(s|sec|secs|seconds)\b|\b60s\b/i, 60],
+  [/\b30\s*(s|sec|secs|second|seconds)\b|\b30s\b/i, 30],
+  [/\b60\s*(s|sec|secs|second|seconds)\b|\b60s\b/i, 60],
   [/\b1\s*(m|min|mins|minutes)\b|\b1m\b/i, 60],
   [/\b3\s*(m|min|mins|minutes)\b|\b3m\b/i, 180],
   [/\b5\s*(m|min|mins|minutes)\b|\b5m\b/i, 300],
@@ -515,4 +545,121 @@ export function nextDirectorInterviewQuestion(state: {
   }
   if (!state.durationChosen) return "How long should a typical piece be? Tap a length chip.";
   return null;
+}
+
+function isGenesisSlop(value?: string): boolean {
+  return GENESIS_SLOP.has(String(value || "").trim().toLowerCase());
+}
+
+function asCatalogDuration(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : Number(String(value || "").trim());
+  if (!Number.isFinite(n)) return undefined;
+  return VIDEO_LENGTH_OPTIONS.some((o) => o.sec === n) ? n : undefined;
+}
+
+function asCatalogGenre(value: unknown): VisualGenreSetting | undefined {
+  if (value == null) return undefined;
+  const raw = String(value).trim();
+  if (!raw) return undefined;
+  const normalized = normalizeVisualGenre(raw);
+  if (normalized) return normalized;
+  return inferVisualGenreFromText(raw);
+}
+
+function asContentFormat(value: unknown): ContentFormat | undefined {
+  const raw = String(value || "").trim().toLowerCase();
+  return CONTENT_FORMAT_IDS.has(raw as ContentFormat) ? (raw as ContentFormat) : undefined;
+}
+
+/** Drop slop, prose genres, and durations that are not VIDEO_LENGTH_OPTIONS. */
+export function sanitizeGenesisPatch(raw: unknown): GenesisDirectorCompile {
+  if (!raw || typeof raw !== "object") return {};
+  const src = raw as Record<string, unknown>;
+  const out: GenesisDirectorCompile = {};
+  const niche = typeof src.niche === "string" ? src.niche.trim() : "";
+  if (niche && !isGenesisSlop(niche)) out.niche = niche.slice(0, 80);
+  const audience = typeof src.audience === "string" ? src.audience.trim() : "";
+  if (audience && !isGenesisSlop(audience)) out.audience = audience.slice(0, 140);
+  const genre = asCatalogGenre(src.visualGenre);
+  if (genre) out.visualGenre = genre;
+  const format = asContentFormat(src.contentFormat);
+  if (format) out.contentFormat = format;
+  const duration = asCatalogDuration(src.targetDurationSec);
+  if (typeof duration === "number") out.targetDurationSec = duration;
+  const country = typeof src.country === "string" ? src.country.trim() : "";
+  if (country && !isGenesisSlop(country)) out.country = country.slice(0, 80);
+  const language = typeof src.language === "string" ? src.language.trim() : "";
+  if (language && !isGenesisSlop(language)) out.language = language.slice(0, 80);
+  const archetype = typeof src.archetype === "string" ? src.archetype.trim() : "";
+  if (archetype && !isGenesisSlop(archetype)) out.archetype = archetype.slice(0, 60);
+  const modeKey = String(src.productionMode || "").trim().toLowerCase();
+  if (PRODUCTION_MODE_MAP[modeKey]) out.productionMode = PRODUCTION_MODE_MAP[modeKey];
+  const researchUrl = typeof src.researchUrl === "string" ? src.researchUrl.trim() : "";
+  if (/^https?:\/\//i.test(researchUrl)) out.researchUrl = researchUrl;
+  const brandName = typeof src.brandName === "string" ? src.brandName.trim() : "";
+  if (brandName && !isGenesisSlop(brandName)) out.brandName = brandName.slice(0, 80);
+  return out;
+}
+
+export function mergeGenesisPatches(...patches: GenesisDirectorCompile[]): GenesisDirectorCompile {
+  const out: GenesisDirectorCompile = {};
+  for (const patch of patches) {
+    Object.assign(out, sanitizeGenesisPatch(patch));
+  }
+  return out;
+}
+
+function extractTrailingJson(text: string): { prefix: string; json?: unknown } {
+  const blob = String(text || "").trim();
+  if (!blob) return { prefix: "" };
+  const fence = blob.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence && fence.index != null) {
+    try {
+      return { prefix: blob.slice(0, fence.index).trim(), json: JSON.parse(fence[1]) };
+    } catch {
+      /* fall through */
+    }
+  }
+  let found: { prefix: string; json?: unknown } | undefined;
+  for (let i = blob.indexOf("{"); i >= 0; i = blob.indexOf("{", i + 1)) {
+    try {
+      found = { prefix: blob.slice(0, i).trim(), json: JSON.parse(blob.slice(i)) };
+    } catch {
+      /* keep scanning for a complete trailing object */
+    }
+  }
+  return found || { prefix: blob };
+}
+
+/** Parse live Super Spark text into spoken `say` + chip `patch`. Never expose JSON. */
+export function parseGenesisAssistantTurn(raw: string): GenesisAssistantTurn {
+  const { prefix, json } = extractTrailingJson(raw);
+  const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+  const nestedPatch = obj.patch && typeof obj.patch === "object" ? obj.patch : obj;
+  const sayFromJson = typeof obj.say === "string" ? obj.say.trim() : "";
+  const say = (sayFromJson || prefix).replace(/```[\s\S]*$/g, "").trim();
+  return {
+    say,
+    patch: sanitizeGenesisPatch(nestedPatch),
+  };
+}
+
+export function describeGenesisChipPatch(patch: GenesisDirectorCompile): string | null {
+  const bits: string[] = [];
+  if (patch.visualGenre && patch.visualGenre !== "auto") {
+    const label = VISUAL_GENRE_OPTIONS.find((g) => g.id === patch.visualGenre)?.label || patch.visualGenre;
+    bits.push(`genre to ${label}`);
+  }
+  if (typeof patch.targetDurationSec === "number") {
+    const label = VIDEO_LENGTH_OPTIONS.find((d) => d.sec === patch.targetDurationSec)?.label || `${patch.targetDurationSec}s`;
+    bits.push(`length to ${label}`);
+  }
+  if (patch.niche) bits.push(`niche to ${patch.niche}`);
+  if (!bits.length) return null;
+  return `I set ${bits.join(" and ")} — change any chip.`;
+}
+
+export function spokenUrlFromText(text: string): string | undefined {
+  const match = String(text || "").match(/https?:\/\/[^\s)]+/i);
+  return match?.[0];
 }

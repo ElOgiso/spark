@@ -22,11 +22,7 @@ import {
 import { ResearchSourceService } from "../../services/research/researchSourceService";
 import { uploadCharacterSheetToStorage } from "../../backend/workspaceSync";
 import { MainLogoAnimated } from "../ui/SparkAnimatedLogo";
-import {
-  onboardDirectorVoiceService,
-  FRAME_TO_SCRIPT_KEY,
-  ONBOARD_SCRIPT_KEYS,
-} from "../../services/onboarding/onboardDirectorVoiceService";
+import { onboardDirectorVoiceService } from "../../services/onboarding/onboardDirectorVoiceService";
 import {
   VIDEO_LENGTH_OPTIONS,
   VISUAL_GENRE_OPTIONS,
@@ -39,7 +35,13 @@ import {
   type VisualGenreSetting,
 } from "../../domain/types";
 import { BRAND_ARCHETYPES, BRAND_NICHES, BRAND_COUNTRIES, BRAND_LANGUAGES } from "../../domain/brandOptions";
-import { compileGenesisDirectorReply, nextDirectorInterviewQuestion } from "../../services/brand/proposeBrandBible";
+import {
+  compileGenesisDirectorReply,
+  mergeGenesisPatches,
+  describeGenesisChipPatch,
+  spokenUrlFromText,
+  type GenesisDirectorCompile,
+} from "../../services/brand/proposeBrandBible";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
 
@@ -480,21 +482,7 @@ const FRAME_NAMES: Record<number, string> = {
   7: "Review & Launch",
 };
 
-const SPARK_REPLIES: Record<number, string[]> = {
-  1: ["Connect any account that's live — YouTube and X are ready now. The rest are coming soon.", "Once connected, I'll use the handle for identity — you confirm the chips."],
-  2: ["Name the brand. Tell me what it should make — I'll pre-select chips, you confirm.", "Who is it for? One line. Leave a field blank if you have not decided."],
-  3: ["Show format is who is on camera. Visual genre is the look of the show.", "Tap a length chip for the real timers — 15s through 60m."],
-  4: ["The character is the face on camera. Faceless shows can skip this.", "After generating, tap the sheet to check the details."],
-  5: ["Voice is identity. Choose the one that feels most like your brand.", "You can describe a custom voice in the field and I'll build it."],
-  6: ["Paste any channel you want me to learn from. I'll extract what makes them work.", "Production mode and automation can wait — change them any time in My Spark."],
-  7: ["Confirm the chips. You can still edit everything in My Spark after you enter.", "When you're ready, enter."],
-};
-const DEFAULT_REPLIES = ["Got it — I'll factor that in.", "Noted. Moving forward with that.", "Good call. I'll apply that across your brand setup."];
-
-function getSparkReply(frame: number, msgIndex: number): string {
-  const pool = SPARK_REPLIES[frame] || DEFAULT_REPLIES;
-  return pool[msgIndex % pool.length];
-}
+const ONBOARD_PROVIDER_FAIL = "I couldn't reach SPARK just now. Pick a chip or try again.";
 
 interface ChatPanelProps {
   history: ChatMessage[];
@@ -869,6 +857,27 @@ const DEFAULT_STATE: GenesisInternalState = {
   targetDurationSec: undefined,
   preferredVideoProvider: "auto",
 };
+
+function genesisPatchToState(patch: GenesisDirectorCompile): Partial<GenesisInternalState> {
+  const next: Partial<GenesisInternalState> = {};
+  if (patch.niche) next.niche = patch.niche;
+  if (patch.audience) next.audience = patch.audience;
+  if (patch.visualGenre) {
+    next.visualGenre = patch.visualGenre;
+    next.lookChosen = true;
+  }
+  if (patch.contentFormat) next.contentFormat = patch.contentFormat;
+  if (typeof patch.targetDurationSec === "number") {
+    next.targetDurationSec = patch.targetDurationSec;
+    next.durationChosen = true;
+  }
+  if (patch.country) next.country = patch.country;
+  if (patch.language) next.language = patch.language;
+  if (patch.archetype) next.archetype = patch.archetype;
+  if (patch.productionMode) next.productionMode = patch.productionMode;
+  if (patch.brandName) next.brandName = patch.brandName;
+  return next;
+}
 
 const DIRECTORS: Record<number, string> = {
   1: "Connect the social accounts you want SPARK to manage. I'll use them for identity, publishing, and distribution.",
@@ -2198,7 +2207,7 @@ export function BrandGenesisFlow({
   onCancel,
 }: BrandGenesisFlowProps) {
   const auth = useAuth();
-  const { initializeBrandGenesis } = useSpark();
+  const { initializeBrandGenesis, aiSettings } = useSpark();
 
   const [frame, setFrame] = useState(0);
   const [prevFrame, setPrevFrame] = useState(0);
@@ -2233,53 +2242,65 @@ export function BrandGenesisFlow({
     onDraftChange?.(toGenesisData(data, mode));
   }, [data, mode, onDraftChange]);
 
-  useEffect(() => {
-    if (frame !== 2) return;
-    if (chatHistory.length > 0) return;
-    const q = nextDirectorInterviewQuestion(data);
-    if (!q) return;
-    setChatHistory([{ id: ++_msgId, role: "spark", text: q }]);
-    setChatExpanded(true);
-  }, [frame]);
+  const spokenLiveFrames = useRef<Set<number>>(new Set());
 
-  // Subscribe to onboard director voice updates & cleanup on unmount; warm up initial speech
+  // Subscribe to onboard director voice updates & cleanup on unmount
   useEffect(() => {
     const unsubscribe = onboardDirectorVoiceService.subscribe((state) => {
       setVoiceMuted(state.isMuted);
       setVoiceSpeaking(state.isSpeaking);
     });
-
-    // Preload first step director speech immediately on mount
-    void onboardDirectorVoiceService.preload("Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.", ONBOARD_SCRIPT_KEYS.welcome_super_spark);
-    if (DIRECTORS[1]) {
-      void onboardDirectorVoiceService.preload(DIRECTORS[1], FRAME_TO_SCRIPT_KEY[1]);
-    }
-
     return () => {
       unsubscribe();
       onboardDirectorVoiceService.stop();
     };
   }, []);
 
-  // Auto-speak director lines when entering frames
+  // One short live line per frame — never loop ONBOARD_FIXED_SCRIPTS
   useEffect(() => {
     if (legalMode) {
       onboardDirectorVoiceService.stop();
       return;
     }
+    if (spokenLiveFrames.current.has(frame)) return;
+    spokenLiveFrames.current.add(frame);
 
     if (frame === 0) {
-      void onboardDirectorVoiceService.speak(
-        "Welcome. I'm Super Spark, your executive creative director. Let's build the brand SPARK will run.",
-        ONBOARD_SCRIPT_KEYS.welcome_super_spark
-      );
-    } else if (DIRECTORS[frame]) {
-      void onboardDirectorVoiceService.speak(DIRECTORS[frame], FRAME_TO_SCRIPT_KEY[frame]);
-      // Preload next step line
-      if (DIRECTORS[frame + 1]) {
-        void onboardDirectorVoiceService.preload(DIRECTORS[frame + 1], FRAME_TO_SCRIPT_KEY[frame + 1]);
-      }
+      void onboardDirectorVoiceService.speak("Welcome. I'm Super Spark. Let's set the brand.");
+      return;
     }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { generateOnboardAssistantResponse } = await import("../../services/geminiService");
+        const turn = await generateOnboardAssistantResponse({
+          prompt: "FRAME_ENTER: one short sentence for this frame only. Empty patch unless a connected handle implies a brand name.",
+          stepName: FRAME_NAMES[frame] || `Step ${frame}`,
+          stepNumber: frame,
+          genesis: {
+            brandName: data.brandName,
+            niche: data.niche,
+            audience: data.audience,
+            platforms: data.connectedPlatforms,
+            handles: data.connectedHandles,
+            contentFormat: data.contentFormat,
+            visualGenre: data.visualGenre,
+            targetDurationSec: data.targetDurationSec,
+            hasSheet: Boolean(data.characterSheetUrl),
+            voice: data.selectedVoice,
+          },
+          aiSettings,
+        });
+        if (cancelled || !turn.say) return;
+        void onboardDirectorVoiceService.speak(turn.say);
+      } catch {
+        /* stay silent — do not recite a step script */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [frame, legalMode]);
 
   // Load ElevenLabs voices & restore OAuth state on mount
@@ -2569,7 +2590,7 @@ export function BrandGenesisFlow({
     }
   };
 
-  // Super Spark Interactive Chat — director compile maps only what they said
+  // Live Super Spark — ModelRouter + say/patch compile.
   const sendChat = async () => {
     if (!askValue.trim() || chatThinking) return;
     const msg = askValue.trim();
@@ -2579,27 +2600,10 @@ export function BrandGenesisFlow({
     setChatExpanded(true);
     setChatThinking(true);
 
-    const compiled = compileGenesisDirectorReply(msg);
-    const patch: Partial<GenesisInternalState> = {};
-    if (compiled.niche) patch.niche = compiled.niche;
-    if (compiled.audience) patch.audience = compiled.audience;
-    if (compiled.visualGenre) {
-      patch.visualGenre = compiled.visualGenre;
-      patch.lookChosen = true;
-    }
-    if (compiled.contentFormat) patch.contentFormat = compiled.contentFormat;
-    if (typeof compiled.targetDurationSec === "number") {
-      patch.targetDurationSec = compiled.targetDurationSec;
-      patch.durationChosen = true;
-    }
-    if (compiled.country) patch.country = compiled.country;
-    if (compiled.language) patch.language = compiled.language;
-    if (Object.keys(patch).length > 0) update(patch);
-    const nextState = { ...data, ...patch };
-    const nextQ = nextDirectorInterviewQuestion(nextState);
-    const isAsk = /\?/.test(msg) || /^(what|how|why|who|when|where|can you|explain)\b/i.test(msg);
+    const localCompile = compileGenesisDirectorReply(msg);
+    const pastedUrl = spokenUrlFromText(msg);
+    if (pastedUrl) localCompile.researchUrl = pastedUrl;
 
-    // Custom voice design lives on the voice frame
     if (frame === 5 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound") || msg.toLowerCase().includes("narrator") || msg.toLowerCase().includes("tone") || msg.toLowerCase().includes("accent"))) {
       try {
         const preview = await designElevenLabsVoice({
@@ -2657,52 +2661,50 @@ export function BrandGenesisFlow({
       }
     }
 
-    if (!isAsk && nextQ) {
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: nextQ };
-      setChatHistory((h) => [...h, reply]);
-      setChatThinking(false);
-      void onboardDirectorVoiceService.speak(nextQ);
-      return;
-    }
-
-    if (!isAsk && Object.keys(patch).length > 0 && !nextQ) {
-      const confirm = "Locked from what you said. Confirm the chips, then continue.";
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: confirm };
-      setChatHistory((h) => [...h, reply]);
-      setChatThinking(false);
-      void onboardDirectorVoiceService.speak(confirm);
-      return;
-    }
+    const applyPatch = (patch: GenesisDirectorCompile) => {
+      const internal = genesisPatchToState(patch);
+      if (Object.keys(internal).length > 0) update(internal);
+      if (patch.researchUrl) void handleAddSource(patch.researchUrl);
+    };
 
     try {
       const { generateOnboardAssistantResponse } = await import("../../services/geminiService");
-      const replyText = await generateOnboardAssistantResponse({
+      const turn = await generateOnboardAssistantResponse({
         prompt: msg,
         stepName: FRAME_NAMES[frame] || `Step ${frame}`,
         stepNumber: frame,
-        brandData: {
-          brandName: nextState.brandName,
-          creatorName: nextState.creatorName,
-          niche: nextState.niche,
-          goal: nextState.goal,
-          characterGenre: nextState.characterGenre,
-          selectedVoice: nextState.selectedVoice,
-          connectedPlatforms: nextState.connectedPlatforms,
+        genesis: {
+          brandName: data.brandName,
+          niche: data.niche,
+          audience: data.audience,
+          platforms: data.connectedPlatforms,
+          handles: data.connectedHandles,
+          contentFormat: data.contentFormat,
+          visualGenre: data.visualGenre,
+          targetDurationSec: data.targetDurationSec,
+          hasSheet: Boolean(data.characterSheetUrl),
+          voice: data.selectedVoice,
+          country: data.country,
+          language: data.language,
         },
         history: chatHistory.map((m) => ({ role: m.role, text: m.text })),
+        aiSettings,
       });
-
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: replyText };
+      const merged = mergeGenesisPatches(turn.patch, localCompile);
+      applyPatch(merged);
+      const chipLine = describeGenesisChipPatch(merged);
+      const say = [turn.say, chipLine].filter(Boolean).join(" ");
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: say };
       setChatHistory((h) => [...h, reply]);
       setChatThinking(false);
-      void onboardDirectorVoiceService.speak(replyText);
+      void onboardDirectorVoiceService.speak(say);
     } catch (chatErr) {
       console.warn("[BrandGenesisFlow] Live Chat generation error:", chatErr);
-      const fallbackText = nextQ || getSparkReply(frame, chatHistory.filter((m) => m.role === "spark").length);
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: fallbackText };
+      applyPatch(localCompile);
+      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: ONBOARD_PROVIDER_FAIL };
       setChatHistory((h) => [...h, reply]);
       setChatThinking(false);
-      void onboardDirectorVoiceService.speak(fallbackText);
+      void onboardDirectorVoiceService.speak(ONBOARD_PROVIDER_FAIL);
     }
   };
 

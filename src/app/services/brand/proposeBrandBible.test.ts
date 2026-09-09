@@ -11,6 +11,9 @@ import {
   isPlaceholderAudience,
   acceptedWatchesFromResearch,
   compileGenesisDirectorReply,
+  parseGenesisAssistantTurn,
+  sanitizeGenesisPatch,
+  describeGenesisChipPatch,
 } from "./proposeBrandBible";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -159,6 +162,31 @@ describe("compileGenesisDirectorReply", () => {
     assert.equal(out.visualGenre, undefined);
     assert.equal(out.targetDurationSec, undefined);
   });
+
+  it("maps 15 second anime shorts about lagos street food", () => {
+    const out = compileGenesisDirectorReply("15 second anime shorts about lagos street food");
+    assert.match(out.niche || "", /street food/i);
+    assert.equal(out.visualGenre, "anime");
+    assert.equal(out.targetDurationSec, 15);
+    assert.equal(out.contentFormat, "anime");
+    assert.equal(out.country, "Nigeria");
+    assert.doesNotMatch(out.niche || "", /Creator Economy/i);
+  });
+});
+
+describe("parseGenesisAssistantTurn", () => {
+  it("reads say + patch and drops slop", () => {
+    const turn = parseGenesisAssistantTurn(
+      'Lagos street food, anime, 15s.\n{"say":"I set genre to Anime and length to 15s — change any chip.","patch":{"niche":"lagos street food","visualGenre":"anime","targetDurationSec":15,"contentFormat":"anime","audience":"General Audience"}}'
+    );
+    assert.match(turn.say, /Anime/);
+    assert.equal(turn.patch.niche, "lagos street food");
+    assert.equal(turn.patch.visualGenre, "anime");
+    assert.equal(turn.patch.targetDurationSec, 15);
+    assert.equal(turn.patch.audience, undefined);
+    assert.equal(sanitizeGenesisPatch({ niche: "Creator Economy", visualGenre: "a moody paragraph" }).niche, undefined);
+    assert.match(describeGenesisChipPatch(turn.patch) || "", /Anime/);
+  });
 });
 
 describe("source laws", () => {
@@ -192,5 +220,23 @@ describe("source laws", () => {
     assert.match(flow, /compileGenesisDirectorReply/);
     assert.match(flow, /section="look"/);
     assert.match(flow, /contentFormat === "faceless"/);
+  });
+
+  it("sendChat is live ModelRouter and never recites a reply pool", () => {
+    const flow = fs.readFileSync(path.join(__dirname, "../../components/onboarding/BrandGenesisFlow.tsx"), "utf8");
+    const start = flow.indexOf("const sendChat");
+    assert.ok(start >= 0);
+    const slice = flow.slice(start, start + 9000);
+    assert.doesNotMatch(slice, /getSparkReply/);
+    assert.doesNotMatch(slice, /SPARK_REPLIES/);
+    assert.match(slice, /generateOnboardAssistantResponse/);
+    assert.match(slice, /ONBOARD_PROVIDER_FAIL/);
+    const gem = fs.readFileSync(path.join(__dirname, "../geminiService.ts"), "utf8");
+    const onboardStart = gem.indexOf("export async function generateOnboardAssistantResponse");
+    const onboard = gem.slice(onboardStart, gem.indexOf("export async function generateSuperSparkVoice"));
+    assert.match(onboard, /ModelRouter\.executeCategoryRequest/);
+    assert.match(onboard, /"superSpark"/);
+    assert.doesNotMatch(onboard, /forcedGemini/);
+    assert.doesNotMatch(onboard, /stepFallbacks/);
   });
 });
