@@ -84,6 +84,7 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   // Modals state
   const [creditTargetUser, setCreditTargetUser] = useState<AdminUserListItem | null>(null);
@@ -94,6 +95,7 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
+      setOperationError(null);
       const [pendingRes, peopleRes, ledgerRes, couponsRes] = await Promise.all([
         getPendingApprovals(),
         getAllPeople(searchQuery),
@@ -105,8 +107,9 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
       if (peopleRes.data) setPeople(peopleRes.data);
       if (ledgerRes.data) setCreditLedger(ledgerRes.data);
       if (couponsRes.data) setCoupons(couponsRes.data);
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[AdminShell] loadData notice:", err);
+      setOperationError(err?.message || "Failed to load admin data");
     } finally {
       setIsLoading(false);
     }
@@ -119,14 +122,20 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
   // Actions
   const handleApprove = async (user: AdminUserListItem) => {
     try {
+      setOperationError(null);
       setActionLoadingId(user.id);
-      await approveUser(user.id, actorId);
+      const res = await approveUser(user.id, actorId);
+      if (res.error) {
+        setOperationError(`Approval failed: ${res.error}`);
+        return;
+      }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
       setPeople((prev) =>
         prev.map((p) => (p.id === user.id ? { ...p, access_status: "active" } : p))
       );
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[Admin] handleApprove notice:", err);
+      setOperationError(err?.message || "Failed to approve user");
     } finally {
       setActionLoadingId(null);
     }
@@ -134,14 +143,20 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
 
   const handleReject = async (user: AdminUserListItem) => {
     try {
+      setOperationError(null);
       setActionLoadingId(user.id);
-      await rejectUser(user.id, actorId, "Rejected by administrator");
+      const res = await rejectUser(user.id, actorId, "Rejected by administrator");
+      if (res.error) {
+        setOperationError(`Reject failed: ${res.error}`);
+        return;
+      }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
       setPeople((prev) =>
         prev.map((p) => (p.id === user.id ? { ...p, access_status: "rejected" } : p))
       );
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[Admin] handleReject notice:", err);
+      setOperationError(err?.message || "Failed to reject user");
     } finally {
       setActionLoadingId(null);
     }
@@ -149,14 +164,20 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
 
   const handleBan = async (user: AdminUserListItem) => {
     try {
+      setOperationError(null);
       setActionLoadingId(user.id);
-      await banUser(user.id, actorId, "Banned by administrator");
+      const res = await banUser(user.id, actorId, "Banned by administrator");
+      if (res.error) {
+        setOperationError(`Ban failed: ${res.error}`);
+        return;
+      }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
       setPeople((prev) =>
         prev.map((p) => (p.id === user.id ? { ...p, access_status: "banned" } : p))
       );
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[Admin] handleBan notice:", err);
+      setOperationError(err?.message || "Failed to ban user");
     } finally {
       setActionLoadingId(null);
     }
@@ -164,13 +185,19 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
 
   const handleUnban = async (user: AdminUserListItem) => {
     try {
+      setOperationError(null);
       setActionLoadingId(user.id);
-      await unbanUser(user.id, actorId);
+      const res = await unbanUser(user.id, actorId);
+      if (res.error) {
+        setOperationError(`Unban failed: ${res.error}`);
+        return;
+      }
       setPeople((prev) =>
         prev.map((p) => (p.id === user.id ? { ...p, access_status: "active" } : p))
       );
-    } catch (err) {
+    } catch (err: any) {
       console.warn("[Admin] handleUnban notice:", err);
+      setOperationError(err?.message || "Failed to unban user");
     } finally {
       setActionLoadingId(null);
     }
@@ -178,7 +205,11 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
 
   const handleConfirmCredits = async (delta: number, reason: string) => {
     if (!creditTargetUser) return;
+    setOperationError(null);
     const res = await adjustCredits(creditTargetUser.id, delta, reason, actorId);
+    if (res.error) {
+      throw new Error(res.error);
+    }
     if (res.data !== null && res.data !== undefined) {
       const newBal = res.data;
       setPeople((prev) =>
@@ -333,6 +364,18 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
 
       {/* Main Admin Content Canvas */}
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 space-y-6">
+        {operationError && (
+          <div className="p-4 rounded-xl bg-destructive/15 border border-destructive/30 text-xs text-destructive flex items-center justify-between animate-in fade-in duration-200">
+            <span>{operationError}</span>
+            <button
+              onClick={() => setOperationError(null)}
+              className="text-white/60 hover:text-white ml-2 cursor-pointer font-bold px-1.5 py-0.5 rounded hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Tab 1: Inbox (Default Landing) */}
         {activeTab === "inbox" && (
           <div className="space-y-6 animate-in fade-in duration-200">

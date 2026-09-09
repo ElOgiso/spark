@@ -18,13 +18,31 @@ async function verifyAdminCaller(actorId: string): Promise<boolean> {
   if (!supabase) return true;
 
   try {
-    const { data, error } = await (supabase.from("profiles") as any)
-      .select("role, is_super_admin")
+    // 1. Check role = 'admin' first (role column exists across all schema revisions)
+    const { data: roleData, error: roleErr } = await (supabase.from("profiles") as any)
+      .select("role")
       .eq("id", actorId)
       .maybeSingle();
 
-    if (error || !data) return false;
-    return data.role === "admin" || Boolean(data.is_super_admin);
+    if (!roleErr && roleData?.role === "admin") {
+      return true;
+    }
+
+    // 2. Check is_super_admin if available
+    try {
+      const { data: superData } = await (supabase.from("profiles") as any)
+        .select("is_super_admin")
+        .eq("id", actorId)
+        .maybeSingle();
+
+      if (Boolean(superData?.is_super_admin)) {
+        return true;
+      }
+    } catch {
+      // is_super_admin column not yet migrated
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -71,7 +89,14 @@ export async function getPendingApprovals(): Promise<RepositoryResult<AdminUserL
       .eq("access_status", "pending_approval")
       .order("created_at", { ascending: false });
 
-    if (error) return repositoryError<AdminUserListItem[]>(error.message);
+    if (error) {
+      // If access_status column does not exist yet (code 42703 / PGRST204), handle gracefully
+      if (error.code === "42703" || error.code === "PGRST204" || error.message?.includes("access_status")) {
+        console.warn("[AdminRepository] access_status column pending migration, returning empty inbox list.");
+        return { data: [], error: null, source: "supabase" };
+      }
+      return repositoryError<AdminUserListItem[]>(error.message);
+    }
 
     // Fetch brands owned by these profiles to enrich context
     const userIds = (profiles || []).map((p: any) => p.id);

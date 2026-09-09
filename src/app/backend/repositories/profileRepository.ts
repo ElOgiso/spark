@@ -53,24 +53,40 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       id: user.id,
       display_name: displayNameFromUser(user),
       role: "executive",
-      is_super_admin: false,
       avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
       email: user.email ?? null,
       onboarding_complete: initialOnboarding,
       active_brand_id: null,
     };
 
-    const { data, error } = await (supabase
+    let { data, error } = await (supabase
       .from("profiles") as any)
       .upsert(payload, { onConflict: "id" })
       .select("*")
       .single();
 
     if (error) {
-      // If error occurs, try fetching existing row once more before failing
-      const retry = await (supabase.from("profiles") as any).select("*").eq("id", user.id).maybeSingle();
-      if (retry.data) return { data: retry.data, error: null, source: "supabase" };
-      return repositoryError<ProfileRow>(error.message);
+      console.warn("[profileRepository] upsertProfile initial notice, attempting minimal fallback:", error.message);
+      // If error occurs due to missing columns in schema cache, retry with minimal foundation columns
+      const minimalPayload = {
+        id: user.id,
+        display_name: payload.display_name,
+        email: payload.email,
+        role: "executive",
+      };
+      const retryUpsert = await (supabase.from("profiles") as any)
+        .upsert(minimalPayload, { onConflict: "id" })
+        .select("*")
+        .single();
+
+      if (!retryUpsert.error && retryUpsert.data) {
+        data = retryUpsert.data;
+        error = null;
+      } else {
+        const retry = await (supabase.from("profiles") as any).select("*").eq("id", user.id).maybeSingle();
+        if (retry.data) return { data: retry.data, error: null, source: "supabase" };
+        return repositoryError<ProfileRow>(error.message);
+      }
     }
     return { data, error: null, source: "supabase" };
   } catch (err: any) {
@@ -99,11 +115,27 @@ export async function markProfileOnboardingComplete(
       patch.access_status = accessStatus;
     }
 
-    const { data, error } = await (supabase.from("profiles") as any)
+    let { data, error } = await (supabase.from("profiles") as any)
       .update(patch)
       .eq("id", userId)
       .select("*")
       .maybeSingle();
+
+    if (error && patch.access_status) {
+      // If access_status column does not exist or is guarded by RLS, retry without it
+      const safePatch = { ...patch };
+      delete safePatch.access_status;
+      const retryUpdate = await (supabase.from("profiles") as any)
+        .update(safePatch)
+        .eq("id", userId)
+        .select("*")
+        .maybeSingle();
+
+      if (!retryUpdate.error) {
+        data = retryUpdate.data;
+        error = null;
+      }
+    }
 
     if (error) {
       // If update fails because profile row doesn't exist yet, perform upsert
