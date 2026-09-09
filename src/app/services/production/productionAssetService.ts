@@ -1338,13 +1338,12 @@ export class ProductionAssetService {
 
       const shouldSynthesizeExternalVoice =
         mode === "express" ||
-        mode === "standard";
+        (mode === "standard" && scenesNeedVo(currentStoryboard));
 
       if (!shouldSynthesizeExternalVoice) {
         console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic per-scene dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
-        // Mark done for progress UX, but leave audioUrl empty — recovery path synthesizes emergency VO if I2V fails.
-        markStage("voice", "done");
+        markStage("voice", "skipped");
         emitProgress(12, "Voice", `Skipped external VO bed for ${mode} (dialogue expected inside motion clips)`);
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         realVoiceUrl = production.audioUrl || brief.audioUrl;
@@ -1356,9 +1355,21 @@ export class ProductionAssetService {
         startHeartbeat("Voice");
         checkAborted();
         try {
-          const voiceScript = promptPack.voiceScript;
+          let voiceScript = promptPack.voiceScript;
+          if (mode === "standard") {
+            const voScenes = currentStoryboard.filter((s) => s.audio === "vo");
+            if (voScenes.length > 0 && voScenes.length < currentStoryboard.length) {
+              const voLines = voScenes
+                .map((s) => (s as any).spokenLines || (s as any).scriptSnippet || "")
+                .filter(Boolean)
+                .join(" ");
+              if (voLines.trim()) {
+                voiceScript = voLines.trim();
+              }
+            }
+          }
           const snapshotVoiceId = generationSettings.snapshot?.voice?.voiceId;
-              const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
+          const targetVoiceId = snapshotVoiceId || character?.voice?.voiceId || (brand as any)?.voice?.voiceId;
           const { generateElevenLabsVoice } = await import("../runtime/providers/elevenLabsTTS");
           const elevenVoice = await withTimeout(
             generateElevenLabsVoice(voiceScript, targetVoiceId, undefined, signal),
@@ -1612,10 +1623,35 @@ export class ProductionAssetService {
                   prompt: `Storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio}, ${sourceStill})`,
                   provider: "storyboardPanelExtract",
                 });
-                if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+                if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
+                  finalStill = storedStill.publicUrl;
+                } else if (isEphemeralMediaUrl(finalStill)) {
+                  try {
+                    const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+                    const ingested = await ingestRemoteMediaToSpark({
+                      url: finalStill,
+                      brandId: (brand as any).id,
+                      productionId: production.id,
+                      assetType: "image",
+                      storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
+                      mimeType: "image/jpeg",
+                    });
+                    if (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) {
+                      finalStill = ingested.publicUrl;
+                    }
+                  } catch (ingestErr) {
+                    console.warn(`[SPARK Pipeline] Fallback ingest notice for scene ${globalSceneNum} panel crop:`, ingestErr);
+                  }
+                }
+                if (isEphemeralMediaUrl(finalStill)) {
+                  throw new Error(`Scene ${globalSceneNum} panel crop could not be persisted to durable storage. Refusing to leak ephemeral media URL.`);
+                }
                 console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} panel crop -> ${finalStill}`);
               } catch (storageErr) {
                 console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} panel crop upload notice:`, storageErr);
+                if (isEphemeralMediaUrl(finalStill)) {
+                  throw storageErr;
+                }
               }
               sheetPanelSceneUrls[pIdx] = finalStill;
               const s = currentStoryboard[pIdx];
@@ -1793,10 +1829,35 @@ export class ProductionAssetService {
                 prompt: "Locked set plate reuse (subject=set)",
                 provider: "locationPlate",
               });
-              if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+              if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
+                finalStill = storedStill.publicUrl;
+              } else if (isEphemeralMediaUrl(finalStill)) {
+                try {
+                  const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+                  const ingested = await ingestRemoteMediaToSpark({
+                    url: finalStill,
+                    brandId: (brand as any).id,
+                    productionId: production.id,
+                    assetType: "image",
+                    storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
+                    mimeType: "image/png",
+                  });
+                  if (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) {
+                    finalStill = ingested.publicUrl;
+                  }
+                } catch (ingestErr) {
+                  console.warn(`[SPARK Pipeline] Fallback ingest notice for scene ${globalSceneNum} set plate:`, ingestErr);
+                }
+              }
+              if (isEphemeralMediaUrl(finalStill)) {
+                throw new Error(`Scene ${globalSceneNum} set plate could not be persisted to durable storage.`);
+              }
               console.log(`[SPARK Pipeline] Set still reuses location plate Scene ${globalSceneNum} -> ${finalStill}`);
             } catch (storageErr) {
               console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} set-plate copy notice:`, storageErr);
+              if (isEphemeralMediaUrl(finalStill)) {
+                throw storageErr;
+              }
             }
             sceneImages.push(finalStill);
             if (sIdx === 0 && !hasRealStoryboardSheet) realGridUrl = finalStill;
@@ -1919,10 +1980,35 @@ export class ProductionAssetService {
                   prompt: stillPrompt,
                   provider: "ModelRouter",
                 });
-                if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
+                if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
+                  finalStill = storedStill.publicUrl;
+                } else if (isEphemeralMediaUrl(finalStill)) {
+                  try {
+                    const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+                    const ingested = await ingestRemoteMediaToSpark({
+                      url: finalStill,
+                      brandId: (brand as any).id,
+                      productionId: production.id,
+                      assetType: "image",
+                      storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}.png`),
+                      mimeType: "image/png",
+                    });
+                    if (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) {
+                      finalStill = ingested.publicUrl;
+                    }
+                  } catch (ingestErr) {
+                    console.warn(`[SPARK Pipeline] Fallback ingest notice for scene ${globalSceneNum} still:`, ingestErr);
+                  }
+                }
+                if (isEphemeralMediaUrl(finalStill)) {
+                  throw new Error(`Scene ${globalSceneNum} still could not be persisted to durable storage. Refusing to leak ephemeral provider URL.`);
+                }
                 console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Still -> ${finalStill}`);
               } catch (storageErr) {
                 console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} Still upload notice:`, storageErr);
+                if (isEphemeralMediaUrl(finalStill)) {
+                  throw storageErr;
+                }
               }
 
               sceneImages.push(finalStill);
@@ -2415,6 +2501,13 @@ export class ProductionAssetService {
               }
 
               const identityRefs: string[] = [];
+              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
+                identityRefs.push(sceneCharSheetUrl);
+              }
+              if (validPlate && isValidMediaData(validPlate) && validPlate !== sceneFirstFrame && !identityRefs.includes(validPlate)) {
+                identityRefs.push(validPlate);
+              }
+
               const continuity = evaluateVisualContinuity({
                 sceneIndex: sIdx,
                 firstFrameUrl: sceneFirstFrame,
@@ -2423,7 +2516,7 @@ export class ProductionAssetService {
               });
               const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
               console.log(
-                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Official i2v still + lastFrame=${Boolean(sceneLastFrame)}, Duration: ${sceneTargetDuration}s]...`
+                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Official i2v still + lastFrame=${Boolean(sceneLastFrame)}, Duration: ${sceneTargetDuration}s, Refs: ${identityRefs.length}]...`
               );
               if (!continuity.ok || continuityPlan.continuityGap) {
                 console.warn(
@@ -2444,7 +2537,7 @@ export class ProductionAssetService {
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
                       endFrameUrl: sceneEndFrame,
-                      referenceImageUrls: [],
+                      referenceImageUrls: identityRefs,
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
                       model: preferredVideoModel,
@@ -2483,7 +2576,7 @@ export class ProductionAssetService {
                         prompt: sceneMotionPrompt,
                         firstFrameUrl: sceneFirstFrame,
                         referenceImageUrl: sceneFirstFrame,
-                        referenceImageUrls: [],
+                        referenceImageUrls: identityRefs,
                         aspectRatio: identityPack.aspectRatio,
                         durationSec: sceneTargetDuration,
                         lastFrameUrl: sceneLastFrame,
@@ -2502,7 +2595,7 @@ export class ProductionAssetService {
                     prompt: sceneMotionPrompt,
                     firstFrameUrl: sceneFirstFrame,
                     referenceImageUrl: sceneFirstFrame,
-                    referenceImageUrls: [],
+                    referenceImageUrls: identityRefs,
                     aspectRatio: identityPack.aspectRatio,
                     durationSec: sceneTargetDuration,
                     lastFrameUrl: sceneLastFrame,
@@ -2680,8 +2773,8 @@ export class ProductionAssetService {
             } else if (isAutonomous && sceneClips.length > 1) {
               emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4 (autonomous mode)...`);
               try {
-                const allScenesVo = currentStoryboard.length > 0 && currentStoryboard.every((s) => s.audio === "vo");
-                const mergeAudioUrl = allScenesVo ? realVoiceUrl : undefined;
+                const hasVoScenes = currentStoryboard.length > 0 && currentStoryboard.some((s) => s.audio === "vo");
+                const mergeAudioUrl = (mode === "express" || hasVoScenes) ? realVoiceUrl : undefined;
                 const targetMergeTexts = collectSceneCaptionLines(
                   currentStoryboard,
                   brief.beats,
@@ -2870,72 +2963,78 @@ export class ProductionAssetService {
       markStage("video", isVideoSuccess ? "done" : "failed");
       await persistCurrentStage("Video");
 
-      markStage("captions", "active");
-      emitProgress(84, "Captions", "Applying captions overlay on compiled video...");
-      void persistCurrentStage("Captions");
-      startHeartbeat("Captions");
       const captionLines = collectSceneCaptionLines(
         currentStoryboard,
         brief.beats,
         brief.hook,
         formatBurnedOnScreenText
       );
-      const hasCaptions = captionLines.some((t) => t && t.trim().length > 0);
-      if (mode === "express" && isVideoSuccess && hasCaptions && realVoiceUrl) {
-        try {
-          const captionImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
-          const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
-          const captioned = await withTimeout(
-            compileNarratorSlideshowVideo({
-              imageUrls: captionImages,
-              audioUrl: realVoiceUrl,
-              sfxUrl: realSfxUrl,
-              onScreenTexts: captionLines,
-              totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
-              width: compileWidth,
-              height: compileHeight,
-            }),
-            60000,
-            "Caption overlay compile timed out after 60s",
-            signal
-          );
-          if (captioned?.blob && captioned.blob.size > 0) {
-            const ext = captioned.extension || "mp4";
-            const storedCaptioned = await this.uploadAssetToStorage({
-              productionId: production.id,
-              brandId: (brand as any).id,
-              assetType: "video",
-              storagePath: getStoragePath(`video/master.${ext}`),
-              dataUrlOrBlob: captioned.blob,
-              mimeType: captioned.mimeType || `video/${ext}`,
-              prompt: "Narrator master with caption overlay",
-              provider: "NarratorSlideshowCompiler",
-            });
-            if (storedCaptioned?.publicUrl && isDurableMasterVideoReady(storedCaptioned.publicUrl)) {
-              realVideoUrl = storedCaptioned.publicUrl;
+
+      if (!isVideoSuccess) {
+        markStage("captions", "skipped");
+        emitProgress(84, "Captions", "Skipped captions overlay (video generation was not successful)");
+      } else {
+        markStage("captions", "active");
+        emitProgress(84, "Captions", "Applying captions overlay on compiled video...");
+        void persistCurrentStage("Captions");
+        startHeartbeat("Captions");
+        const hasCaptions = captionLines.some((t) => t && t.trim().length > 0);
+        if (mode === "express" && hasCaptions && realVoiceUrl) {
+          try {
+            const captionImages = sceneImages.length > 0 ? sceneImages : (currentStoryboard.map((s) => s.image).filter(Boolean) as string[]);
+            const { compileNarratorSlideshowVideo } = await import("./narratorVideoCompiler");
+            const captioned = await withTimeout(
+              compileNarratorSlideshowVideo({
+                imageUrls: captionImages,
+                audioUrl: realVoiceUrl,
+                sfxUrl: realSfxUrl,
+                onScreenTexts: captionLines,
+                totalDurationSec: activeFormatSettings?.targetDurationSec || 60,
+                width: compileWidth,
+                height: compileHeight,
+              }),
+              60000,
+              "Caption overlay compile timed out after 60s",
+              signal
+            );
+            if (captioned?.blob && captioned.blob.size > 0) {
+              const ext = captioned.extension || "mp4";
+              const storedCaptioned = await this.uploadAssetToStorage({
+                productionId: production.id,
+                brandId: (brand as any).id,
+                assetType: "video",
+                storagePath: getStoragePath(`video/master.${ext}`),
+                dataUrlOrBlob: captioned.blob,
+                mimeType: captioned.mimeType || `video/${ext}`,
+                prompt: "Narrator master with caption overlay",
+                provider: "NarratorSlideshowCompiler",
+              });
+              if (storedCaptioned?.publicUrl && isDurableMasterVideoReady(storedCaptioned.publicUrl)) {
+                realVideoUrl = storedCaptioned.publicUrl;
+              }
             }
+            markStage("captions", "done");
+          } catch (capErr: any) {
+            if (capErr?.name === "AbortError" || signal?.aborted) throw capErr;
+            console.warn("[SPARK Pipeline] Caption overlay notice:", capErr);
+            markStage("captions", "done");
           }
+        } else if ((mode === "standard" || mode === "deep") && hasCaptions) {
+          // Cinematic/hybrid: captions burned at assembleMaster (onScreenTexts). Record lineage.
+          if (!brief.generatedAssets) brief.generatedAssets = {};
+          (brief.generatedAssets as any).captionsAppliedAt = realVideoUrl ? "master_assemble" : "pending_merge";
+          (brief.generatedAssets as any).captionMode = "on_screen_burn";
+          console.log(
+            `[SPARK Pipeline] Captions for ${mode}: ${
+              realVideoUrl
+                ? "applied via master assemble onScreenTexts"
+                : "queued for Approve & merge (same assembleMaster spine)"
+            }`
+          );
           markStage("captions", "done");
-        } catch (capErr: any) {
-          if (capErr?.name === "AbortError" || signal?.aborted) throw capErr;
-          console.warn("[SPARK Pipeline] Caption overlay notice:", capErr);
+        } else {
           markStage("captions", "done");
         }
-      } else if ((mode === "standard" || mode === "deep") && isVideoSuccess && hasCaptions) {
-        // Cinematic/hybrid: captions burned at assembleMaster (onScreenTexts). Record lineage.
-        if (!brief.generatedAssets) brief.generatedAssets = {};
-        (brief.generatedAssets as any).captionsAppliedAt = realVideoUrl ? "master_assemble" : "pending_merge";
-        (brief.generatedAssets as any).captionMode = "on_screen_burn";
-        console.log(
-          `[SPARK Pipeline] Captions for ${mode}: ${
-            realVideoUrl
-              ? "applied via master assemble onScreenTexts"
-              : "queued for Approve & merge (same assembleMaster spine)"
-          }`
-        );
-        markStage("captions", "done");
-      } else {
-        markStage("captions", "done");
       }
       if (!brief.generatedAssets) brief.generatedAssets = {};
       (brief.generatedAssets as any).captionLines = captionLines;
@@ -4041,8 +4140,8 @@ export class ProductionAssetService {
     ];
     const readyClips = collectSparkShotClipUrls(clipCandidates);
 
-    const allScenesVo = scenes.length > 0 && scenes.every((s) => s.audio === "vo");
-    const mergeAudioUrl = allScenesVo ? (brief.audioUrl || production.audioUrl) : undefined;
+    const hasVoScenes = scenes.length > 0 && scenes.some((s) => s.audio === "vo");
+    const mergeAudioUrl = (isNarrator || hasVoScenes) ? (brief.audioUrl || production.audioUrl) : undefined;
 
     const failMerge = (message: string) => {
       production.status = "Failed";

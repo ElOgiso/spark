@@ -562,35 +562,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fileListContent = downloadedFiles.map((f) => `file '${f.replace(/\\/g, "/")}'`).join("\n");
         fs.writeFileSync(concatListPath, fileListContent, "utf-8");
 
+        // Probe downloaded scene clips to check for native audio streams (e.g. dialogue/sound)
+        let hasInputAudio = false;
+        for (const file of downloadedFiles) {
+          try {
+            await execFileAsync(ffmpegPath, ["-i", file]);
+          } catch (probeErr: any) {
+            const stderr = probeErr?.stderr || "";
+            if (/Audio:/i.test(stderr)) {
+              hasInputAudio = true;
+              break;
+            }
+          }
+        }
+
         const outputFilePath = path.join(tmpDir, "output.mp4");
         const ffmpegArgs: string[] = ["-y", "-f", "concat", "-safe", "0", "-i", concatListPath];
 
         if (audioFilePath && fs.existsSync(audioFilePath)) {
-          ffmpegArgs.push(
-            "-i",
-            audioFilePath,
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-preset",
-            "fast",
-            "-crf",
-            "22",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-            outputFilePath
-          );
+          if (hasInputAudio) {
+            // Mix native clip audio with external VO narration so neither is lost
+            ffmpegArgs.push(
+              "-i",
+              audioFilePath,
+              "-filter_complex",
+              "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+              "-c:v",
+              "libx264",
+              "-pix_fmt",
+              "yuv420p",
+              "-preset",
+              "fast",
+              "-crf",
+              "22",
+              "-c:a",
+              "aac",
+              "-b:a",
+              "192k",
+              "-map",
+              "0:v:0",
+              "-map",
+              "[aout]",
+              "-shortest",
+              "-movflags",
+              "+faststart",
+              outputFilePath
+            );
+          } else {
+            // Clips are silent; map external audio directly
+            ffmpegArgs.push(
+              "-i",
+              audioFilePath,
+              "-c:v",
+              "libx264",
+              "-pix_fmt",
+              "yuv420p",
+              "-preset",
+              "fast",
+              "-crf",
+              "22",
+              "-c:a",
+              "aac",
+              "-b:a",
+              "192k",
+              "-map",
+              "0:v:0",
+              "-map",
+              "1:a:0",
+              "-shortest",
+              "-movflags",
+              "+faststart",
+              outputFilePath
+            );
+          }
         } else {
+          // No external VO: preserve native audio if present, otherwise encode video only
           ffmpegArgs.push(
             "-c:v",
             "libx264",
@@ -599,15 +645,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             "-preset",
             "fast",
             "-crf",
-            "22",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            outputFilePath
+            "22"
           );
+          if (hasInputAudio) {
+            ffmpegArgs.push(
+              "-c:a",
+              "aac",
+              "-b:a",
+              "192k",
+              "-map",
+              "0:v:0",
+              "-map",
+              "0:a:0?"
+            );
+          } else {
+            ffmpegArgs.push("-map", "0:v:0");
+          }
+          ffmpegArgs.push("-movflags", "+faststart", outputFilePath);
         }
 
         await execFileAsync(ffmpegPath, ffmpegArgs, { timeout: 120000 });

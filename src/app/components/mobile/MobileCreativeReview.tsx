@@ -12,6 +12,7 @@ import {
   RotateCw,
   XCircle,
   AlertTriangle,
+  MinusCircle,
   Play,
   Trash2,
   X,
@@ -334,6 +335,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
               {genProgress.stages.map((stg: any) => (
                 <div key={stg.id} className="flex items-center gap-1.5 text-[10px]">
                   {stg.status === "done" && <CheckCircle2 className="w-3 h-3 text-success flex-shrink-0" />}
+                  {stg.status === "skipped" && <MinusCircle className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />}
                   {stg.status === "active" && <RotateCw className="w-3 h-3 text-accent animate-spin flex-shrink-0" />}
                   {stg.status === "failed" && <AlertTriangle className="w-3 h-3 text-warning flex-shrink-0" />}
                   {stg.status === "pending" && <div className="w-3 h-3 rounded-full border border-border flex-shrink-0" />}
@@ -343,10 +345,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
                         ? "text-foreground font-medium"
                         : stg.status === "done"
                         ? "text-muted-foreground"
+                        : stg.status === "skipped"
+                        ? "text-muted-foreground/50 italic"
                         : "text-muted-foreground/60"
                     }`}
                   >
-                    {stg.label}
+                    {stg.label}{stg.status === "skipped" ? " (skipped)" : ""}
                   </span>
                 </div>
               ))}

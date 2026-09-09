@@ -189,7 +189,7 @@ export interface ProductionScene {
 export interface GenerationProgressStage {
   id: string;
   label: string;
-  status: "pending" | "active" | "done" | "failed";
+  status: "pending" | "active" | "done" | "failed" | "skipped";
 }
 
 export interface GenerationProgress {

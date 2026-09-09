@@ -20,6 +20,7 @@ import {
   Video,
   Shield,
   AlertTriangle,
+  MinusCircle,
   Brain,
   Target,
   Calendar,
@@ -621,6 +622,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                   {activeProd.generationProgress.stages.map((stg: any) => (
                     <div key={stg.id} className="flex items-center gap-2 text-xs">
                       {stg.status === "done" && <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />}
+                      {stg.status === "skipped" && <MinusCircle className="w-3.5 h-3.5 text-muted-foreground/50 flex-shrink-0" />}
                       {stg.status === "active" && <RotateCw className="w-3.5 h-3.5 text-accent animate-spin flex-shrink-0" />}
                       {stg.status === "failed" && <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0" />}
                       {stg.status === "pending" && <div className="w-3.5 h-3.5 rounded-full border border-border flex-shrink-0" />}
@@ -630,10 +632,12 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                             ? "text-foreground font-medium"
                             : stg.status === "done"
                             ? "text-muted-foreground"
+                            : stg.status === "skipped"
+                            ? "text-muted-foreground/50 italic"
                             : "text-muted-foreground/60"
                         }`}
                       >
-                        {stg.label}
+                        {stg.label}{stg.status === "skipped" ? " (skipped)" : ""}
                       </span>
                     </div>
                   ))}

@@ -38,11 +38,11 @@ export function normalizeModeString(rawMode?: string | null): ResolvedMode | und
   ) {
     return "deep";
   }
+  // Content-format tokens like "host", "talking-head", "faceless" belong to formatSettings,
+  // NOT production mode. Do not let them contaminate mode resolution.
   if (
     clean.includes("standard") ||
-    clean.includes("hybrid") ||
-    clean.includes("host") ||
-    clean.includes("talking-head")
+    clean.includes("hybrid")
   ) {
     return "standard";
   }

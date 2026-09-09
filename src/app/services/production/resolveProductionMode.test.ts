@@ -18,11 +18,39 @@ test("legacy synonyms normalize to the three canonical modes", () => {
   assert.equal(normalizeModeString("faceless"), undefined); // content-format token, not a mode
   assert.equal(normalizeModeString("vo"), undefined); // bare substring must not flip cinematic
   assert.equal(normalizeModeString("hybrid"), "standard");
-  assert.equal(normalizeModeString("talking-head host"), "standard");
+  assert.equal(normalizeModeString("host"), undefined); // content-format token, must NOT be treated as standard mode
+  assert.equal(normalizeModeString("talking-head"), undefined); // content-format token, must NOT be treated as standard mode
   assert.equal(normalizeModeString("cinematic"), "deep");
   assert.equal(normalizeModeString("one-take filmic"), "deep");
   assert.equal(normalizeModeString("gibberish"), undefined);
   assert.equal(normalizeModeString(""), undefined);
+});
+
+test("contentFormat does not contaminate productionMode", () => {
+  // Even if spark or brief format is "host" or "talking-head", deep productionMode remains deep!
+  const sparkHost = {
+    suggestedFormat: "host",
+    suggestedMode: "deep",
+  } as unknown as ViralSpark;
+  assert.equal(resolveProductionMode({ spark: sparkHost }), "deep");
+
+  const brandHost = {
+    productionMode: "cinematic",
+    formatSettings: { contentFormat: "host" },
+  } as unknown as Brand;
+  assert.equal(resolveProductionMode({ brand: brandHost }), "deep");
+
+  const sparkTalkingHead = {
+    suggestedFormat: "talking-head",
+    suggestedMode: "deep",
+  } as unknown as ViralSpark;
+  assert.equal(resolveProductionMode({ spark: sparkTalkingHead }), "deep");
+
+  const briefTalkingHead = {
+    productionMode: "deep",
+    formatSettings: { contentFormat: "talking-head" },
+  } as unknown as ProductionBrief;
+  assert.equal(resolveProductionMode({ brief: briefTalkingHead }), "deep");
 });
 
 test("user preference priority: override > production > brand > brief > spark > default", () => {

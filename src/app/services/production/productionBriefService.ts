@@ -160,7 +160,7 @@ export function resolveResearchContext(
   return null;
 }
 
-function formatResearchContextBlock(context: StructuredResearchContext | null, brandName: string): string {
+export function formatResearchContextBlock(context: StructuredResearchContext | null, brandName: string): string {
   if (!context) {
     return `RESEARCH CONTEXT: None attached. (Do NOT fabricate source metrics or claim external inspiration in whyThisWorks).`;
   }
@@ -172,6 +172,16 @@ function formatResearchContextBlock(context: StructuredResearchContext | null, b
   if (context.format) lines.push(`- Content Format that Worked: ${context.format}`);
   if (context.ctaStyle) lines.push(`- CTA Style that Worked: "${context.ctaStyle}"`);
   if (context.provenStructure) lines.push(`- Proven Storytelling Structure: ${context.provenStructure}`);
+  if (context.openingLine) lines.push(`- Researched Opening Line: "${context.openingLine}"`);
+  if (context.spokenBeats && context.spokenBeats.length > 0) {
+    lines.push(`- Researched Spoken Beats:`);
+    context.spokenBeats.forEach((b, i) => lines.push(`  [Beat ${i + 1}] ${b}`));
+  }
+  if (context.visualActions && context.visualActions.length > 0) {
+    lines.push(`- Researched Physical Visual Actions:`);
+    context.visualActions.forEach((a, i) => lines.push(`  [Scene ${i + 1}] ${a}`));
+  }
+  if (context.ctaLine) lines.push(`- Researched CTA Line: "${context.ctaLine}"`);
   if (context.nicheLanguage && context.nicheLanguage.length > 0) {
     lines.push(`- High-Value Niche Language to Prefer: ${context.nicheLanguage.join(", ")}`);
   }
@@ -180,9 +190,10 @@ function formatResearchContextBlock(context: StructuredResearchContext | null, b
   }
 
   lines.push(`COMPILER ORDERS:`);
-  lines.push(`- Translate this engagement STRUCTURE into niche-authentic spoken lines for ${brandName}.`);
+  lines.push(`- Translate this engagement STRUCTURE and maintain the researched spoken beat progression for ${brandName}.`);
   lines.push(`- Adapt to brand tone, pillars, character, and offer — do NOT copy the source creator's identity.`);
-  lines.push(`- Hook output must be ready-to-speak, not a meta description of the pattern.`);
+  lines.push(`- Hook output must be ready-to-speak, incorporating the researched opening line/pattern.`);
+  lines.push(`- Visual descriptions must show physical scenes and actions (not instructions or meta text).`);
   lines.push(`- whyThisWorks must cite the research evidence in 1-3 sentences.`);
 
   return lines.join("\n");
@@ -441,7 +452,71 @@ export function compileDeterministicBrief(params: {
     timeIntervals.push({ start: startSec, end: endSec });
   }
 
-  if (totalBeats === 3) {
+  const researchedSpokenBeats = Array.isArray(researchContext?.spokenBeats) && researchContext.spokenBeats.length > 0
+    ? researchContext.spokenBeats.map((b) => String(b || "").trim()).filter(Boolean)
+    : [];
+  const researchedVisualActions = Array.isArray(researchContext?.visualActions)
+    ? researchContext.visualActions.map((a) => String(a || "").trim()).filter(Boolean)
+    : [];
+
+  if (researchedSpokenBeats.length > 0) {
+    const rCount = Math.max(3, Math.min(totalBeats, researchedSpokenBeats.length));
+    const rIntervals: { start: number; end: number }[] = [];
+    let rElapsed = 0;
+    for (let i = 0; i < rCount; i++) {
+      const isLast = i === rCount - 1;
+      const beatDur = isLast ? durationSec - rElapsed : Math.max(3, Math.round(durationSec / rCount));
+      const startSec = rElapsed;
+      const endSec = isLast ? durationSec : rElapsed + beatDur;
+      rElapsed = endSec;
+      rIntervals.push({ start: startSec, end: endSec });
+    }
+
+    const valueJobs: ProductionBriefBeat["valueJob"][] =
+      rCount === 3
+        ? ["hook", "proof", "cta"]
+        : rCount === 4
+        ? ["hook", "problem", "proof", "cta"]
+        : ["hook", "problem", "context", "proof", "cta"];
+
+    for (let i = 0; i < rCount; i++) {
+      const isFirst = i === 0;
+      const isLast = i === rCount - 1;
+      const job = valueJobs[i] || (isFirst ? "hook" : isLast ? "cta" : "proof");
+
+      let spoken = researchedSpokenBeats[i] || "";
+      if (isFirst && researchContext?.openingLine) {
+        spoken = researchContext.openingLine;
+      } else if (isLast && researchContext?.ctaLine) {
+        spoken = researchContext.ctaLine;
+      } else if (isLast && !spoken) {
+        spoken = spokenCta;
+      }
+
+      const visualAction = researchedVisualActions[i] || undefined;
+      const onScreen = isFirst
+        ? (activePillar ? activePillar.toUpperCase().slice(0, 20) : "THE CORE REVELATION")
+        : isLast
+        ? onScreenCta
+        : pillarBadge;
+
+      beats.push({
+        timecode: `[${formatTime(rIntervals[i].start)}-${formatTime(rIntervals[i].end)}]`,
+        valueJob: job,
+        spokenLines: spoken,
+        onScreenText: onScreen,
+        cameraDirection: isFirst
+          ? (modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy")
+          : isLast
+          ? "Static lock-off direct to lens"
+          : "Medium authority framing",
+        startState: states[i]?.start || `Presenter delivers stage ${i + 1}`,
+        endState: states[i]?.end || `Presenter transitions to stage ${i + 2}`,
+        audio: resolveBeatAudio(i, job),
+        physicalAction: visualAction,
+      });
+    }
+  } else if (totalBeats === 3) {
     // 15s: 3 Beats (Hook, One Value/Proof, CTA) -> Target ~36-45 words
     const t0 = timeIntervals[0];
     const t1 = timeIntervals[1];
@@ -973,6 +1048,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
       defaultOffer,
       productionMode: modeKey,
       niche,
+      researchContext: resolvedResearch || spark.researchContext,
       targetDurationSec: effectiveDurationSec,
     });
 
