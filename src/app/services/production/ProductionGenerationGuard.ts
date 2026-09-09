@@ -61,6 +61,8 @@ export class ProductionGenerationGuard {
       if (role === "admin") return; // Admins bypass access status checks
 
       const status = localStorage.getItem("spark_access_status");
+      // If no status stored yet (first load / cleared), default to allowing access
+      if (!status || status === "active") return;
       if (status === "pending_approval" || status === "banned" || status === "rejected") {
         throw new Error(
           `[SPARK Security Guard] Action "${actionName}" refused: Account access is "${status}". Waiting for executive administrator clearance.`

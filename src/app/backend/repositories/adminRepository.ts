@@ -187,6 +187,21 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
     });
 
     if (!rpcRes.error) {
+      // Guarantee at least 50 starter credits on approval
+      try {
+        const { data: prof } = await (supabase.from("profiles") as any)
+          .select("credit_balance")
+          .eq("id", targetUserId)
+          .maybeSingle();
+        if (!prof || (Number(prof.credit_balance) || 0) < 50) {
+          await (supabase.from("profiles") as any)
+            .update({ credit_balance: 50, updated_at: new Date().toISOString() })
+            .eq("id", targetUserId);
+        }
+      } catch (creditErr) {
+        console.warn("[adminRepository] starter credit grant notice:", creditErr);
+      }
+      await logAdminAction(actorId, "APPROVE_USER", targetUserId);
       return { data: true, error: null, source: "supabase" };
     }
 
@@ -194,6 +209,7 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
     const { error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "active",
+        credit_balance: 50,
         access_reviewed_at: new Date().toISOString(),
         access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),

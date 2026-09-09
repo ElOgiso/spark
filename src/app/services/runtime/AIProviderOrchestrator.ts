@@ -441,10 +441,11 @@ export class AIProviderOrchestrator {
 
         // 1B. Handle Gemini Native Image Generation (gemini-3.1-flash-image-preview / 2.5 / 3-pro / Imagen fallback)
         if (options.capability === "Image Generation") {
+          const validGeminiModel = options.model && (options.model.startsWith("gemini") || options.model.startsWith("imagen")) ? options.model : null;
           const candidateNativeModels = [
-            options.model,
-            "gemini-3.1-flash-image-preview",
+            validGeminiModel,
             "gemini-2.5-flash-image",
+            "gemini-3.1-flash-image-preview",
             "gemini-3-pro-image-preview",
           ].filter(Boolean) as string[];
 
@@ -687,7 +688,7 @@ export class AIProviderOrchestrator {
           throw new Error("Gemini image generation failed across native and Imagen models.");
         }
 
-        const chatModel = options.model || "gemini-2.0-flash";
+        const chatModel = (options.model && options.model.startsWith("gemini")) ? options.model : "gemini-2.0-flash";
 
         if (apiKey) {
           try {
@@ -772,9 +773,11 @@ export class AIProviderOrchestrator {
 
         // Handle OpenAI Image Generation (GPT-Image-1.5 / GPT-Image-1 / GPT-Image-1-Mini / DALL-E 3)
         if (options.capability === "Image Generation") {
-          const requestedModel = options.model || "gpt-image-1.5";
+          const validOpenAiModel = (options.model && (options.model.startsWith("gpt-image") || options.model.startsWith("dall-e") || options.model.startsWith("chatgpt-image")))
+            ? options.model
+            : "gpt-image-1.5";
           const candidateModels = [
-            requestedModel,
+            validOpenAiModel,
             "gpt-image-1.5",
             "gpt-image-1",
             "gpt-image-1-mini",
@@ -881,7 +884,9 @@ export class AIProviderOrchestrator {
           throw new Error("OpenAI image generation failed across all candidate models.");
         }
 
-        const chatModel = options.model || "gpt-5.6";
+        const chatModel = (options.model && (options.model.startsWith("gpt") || options.model.startsWith("o1") || options.model.startsWith("o3") || options.model.startsWith("o4") || options.model.startsWith("chatgpt")))
+          ? options.model
+          : "gpt-5.6";
 
         if (apiKey) {
           try {
@@ -994,9 +999,9 @@ export class AIProviderOrchestrator {
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("claude", options.customApiKeys);
-        const requestedModel = options.model || "claude-sonnet-5";
+        const validClaudeModel = options.model && options.model.startsWith("claude") ? options.model : "claude-sonnet-5";
         const candidateModels = [
-          requestedModel,
+          validClaudeModel,
           "claude-sonnet-5",
           "claude-3-5-sonnet-20241022",
           "claude-3-5-haiku-20241022",
@@ -1117,7 +1122,9 @@ export class AIProviderOrchestrator {
 
         // 4A. Grok Image Generation (grok-imagine-image-quality 9:16)
         if (options.capability === "Image Generation") {
-          const imageModel = options.model || "grok-imagine-image-quality";
+          const imageModel = (options.model && (options.model.startsWith("grok") || options.model.includes("imagine")))
+            ? options.model
+            : "grok-imagine-image-quality";
           const grokImagePayload: any = {
             model: imageModel,
             prompt: options.prompt,
@@ -1293,7 +1300,8 @@ export class AIProviderOrchestrator {
         }
 
         // 4D. Grok Chat / Reasoning (/v1/responses preferred, /v1/chat/completions fallback)
-        const chatModel = options.model || "grok-4.5";
+        const validGrokChat = options.model && options.model.toLowerCase().startsWith("grok");
+        const chatModel = validGrokChat ? options.model! : "grok-4.5";
 
         if (apiKey) {
           // 1. Try official /v1/responses endpoint

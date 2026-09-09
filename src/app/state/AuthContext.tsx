@@ -570,6 +570,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [userRole, userAccessStatus]);
 
+  // Realtime access-status sync: subscribe to profile changes + poll while pending_approval
+  useEffect(() => {
+    const userId = currentUser?.id || session?.user?.id;
+    if (!userId || !isConfigured) return;
+
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let channelRef: any = null;
+
+    const refreshAccessStatus = async () => {
+      try {
+        const { getSupabaseClient: getSb } = await import("../backend/supabaseClient");
+        const sb = getSb();
+        if (!sb) return;
+        const { data } = await (sb.from("profiles") as any)
+          .select("access_status, credit_balance, role")
+          .eq("id", userId)
+          .maybeSingle();
+        if (data?.access_status) {
+          setProfile((prev) => prev ? { ...prev, access_status: data.access_status, credit_balance: data.credit_balance ?? prev.credit_balance, role: data.role ?? prev.role } : prev);
+        }
+      } catch (err) {
+        console.warn("[AuthContext] realtime access poll notice:", err);
+      }
+    };
+
+    // Setup Supabase Realtime subscription on user's profile row
+    (async () => {
+      try {
+        const { getSupabaseClient: getSb } = await import("../backend/supabaseClient");
+        const sb = getSb();
+        if (!sb) return;
+        channelRef = sb.channel(`profile-access-${userId}`)
+          .on(
+            "postgres_changes" as any,
+            { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+            (payload: any) => {
+              const row = payload?.new;
+              if (row?.access_status) {
+                setProfile((prev) => prev ? { ...prev, ...row } : prev);
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn("[AuthContext] realtime channel setup notice:", err);
+      }
+    })();
+
+    // Poll every 8s while still pending_approval, and on window focus
+    if (userAccessStatus === "pending_approval") {
+      pollTimer = setInterval(refreshAccessStatus, 8000);
+      window.addEventListener("focus", refreshAccessStatus);
+    }
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (userAccessStatus === "pending_approval") {
+        window.removeEventListener("focus", refreshAccessStatus);
+      }
+      if (channelRef) {
+        (async () => {
+          try {
+            const { getSupabaseClient: getSb } = await import("../backend/supabaseClient");
+            const sb = getSb();
+            if (sb) sb.removeChannel(channelRef);
+          } catch {}
+        })();
+      }
+    };
+  }, [currentUser?.id, session?.user?.id, isConfigured, userAccessStatus]);
+
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;

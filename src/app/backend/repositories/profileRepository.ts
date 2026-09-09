@@ -37,10 +37,29 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       .maybeSingle();
 
     if (existing && !fetchErr) {
+      // Profile exists — refresh display fields (name/email/avatar) but never reset access/onboarding state
+      try {
+        const refreshPayload: Record<string, any> = {
+          display_name: displayNameFromUser(user),
+          email: user.email ?? null,
+          updated_at: new Date().toISOString(),
+        };
+        if (typeof user.user_metadata?.avatar_url === "string") {
+          refreshPayload.avatar_url = user.user_metadata.avatar_url;
+        }
+        const { data: refreshed, error: refreshError } = await (supabase.from("profiles") as any)
+          .update(refreshPayload)
+          .eq("id", user.id)
+          .select("*")
+          .single();
+        if (!refreshError && refreshed) {
+          return { data: refreshed, error: null, source: "supabase" };
+        }
+      } catch {}
       return { data: existing, error: null, source: "supabase" };
     }
 
-    // Check cached onboarding status if available
+    // Check cached onboarding status for new user insert
     let initialOnboarding = false;
     try {
       if (typeof localStorage !== "undefined") {
@@ -49,6 +68,7 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       }
     } catch {}
 
+    // New user — full insert with safe defaults
     const payload: Partial<ProfileRow> & { id: string } = {
       id: user.id,
       display_name: displayNameFromUser(user),
