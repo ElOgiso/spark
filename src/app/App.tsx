@@ -22,6 +22,7 @@ import { SparkLogo } from "./components/SparkLogo";
 import { GoogleCallbackPage } from "./components/auth/GoogleCallbackPage";
 import { XCallbackPage } from "./components/auth/XCallbackPage";
 import { AdminPlaceholderPage } from "./components/admin/AdminPlaceholderPage";
+import { AdminLoginPage } from "./components/admin/AdminLoginPage";
 import { AccessGateFreeze } from "./components/auth/AccessGateFreeze";
 import { getBrandWorkspaceId } from "./services/socialIntegrationService";
 import { isUuid } from "./backend/mappers/workspaceMappers";
@@ -102,7 +103,26 @@ function AppContent() {
     reviewRequired: true,
   });
 
-  const [currentPage, setCurrentPage] = useState("/");
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname.replace(/\/$/, "") || "/";
+      if (path.startsWith("/admin")) {
+        return path;
+      }
+      return path || "/";
+    }
+    return "/";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/\/$/, "") || "/";
+      setCurrentPage(path);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   const deviceType = useDeviceType();
 
   // Social Media OAuth detection (YouTube Shorts / X publishing connect ONLY — NOT Supabase Login)
@@ -238,15 +258,19 @@ function AppContent() {
       }));
       auth.updateProfile(creatorName, email);
     }
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", "/");
-    }
 
-    if (auth.isAdmin) {
+    if (auth.isAdmin || currentPage.startsWith("/admin")) {
       console.log("[SPARK AUTH] routing → Admin Console");
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, "", "/admin/inbox");
+      }
       setCurrentPage("/admin/inbox");
       setViewState("dashboard");
       return;
+    }
+
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", "/");
     }
 
     const isComplete = auth.isOnboardingComplete;
@@ -456,6 +480,24 @@ function AppContent() {
     }
 
     // 3. Unauthenticated / No Session (Logged out / strangers)
+    const isAdminRoute = currentPage.startsWith("/admin") ||
+      (typeof window !== "undefined" && window.location.pathname.startsWith("/admin"));
+
+    if (isAdminRoute) {
+      return (
+        <PublicRoute>
+          <AdminLoginPage
+            onSuccess={() => {
+              if (window.history && window.history.replaceState) {
+                window.history.replaceState({}, "", "/admin/inbox");
+              }
+              setCurrentPage("/admin/inbox");
+            }}
+          />
+        </PublicRoute>
+      );
+    }
+
     // Optional donor marketing splash reel once per cold start (sessionStorage), then Login
     if (!splashDone) {
       return (
