@@ -266,10 +266,12 @@ function AppContent() {
         genesisCompletedInSessionRef.current = true;
       }
       try {
-        await Promise.race([
-          initializeBrandGenesis(finalData),
-          new Promise((resolve) => setTimeout(resolve, 8000)),
-        ]);
+        if (!finalData.alreadyInitialized) {
+          await Promise.race([
+            initializeBrandGenesis(finalData),
+            new Promise((resolve) => setTimeout(resolve, 8000)),
+          ]);
+        }
         const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
         if (!isAdditional && targetBrandId && isUuid(targetBrandId)) {
           await auth.markOnboardingComplete(targetBrandId);

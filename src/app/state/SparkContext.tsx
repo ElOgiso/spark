@@ -1477,13 +1477,25 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
+    const rawVoiceName =
+      (typeof data.voiceProfile === "object" && data.voiceProfile?.name)
+        ? String(data.voiceProfile.name).trim()
+        : typeof data.voiceProfile === "string" && data.voiceProfile.trim()
+        ? data.voiceProfile.trim()
+        : data.voiceName ? String(data.voiceName).trim() : "Executive Presenter";
+
+    const rawVoiceId =
+      (typeof data.voiceProfile === "object" && (data.voiceProfile?.voiceId || data.voiceProfile?.id))
+        ? String(data.voiceProfile.voiceId || data.voiceProfile.id).trim()
+        : data.voiceId ? String(data.voiceId).trim() : "21m00Tcm4TlvDq8ikWAM";
+
     const voiceProfileObj = {
-      name: data.voiceProfile?.name || data.voiceName || "Executive Presenter",
-      language: data.voiceProfile?.language || "English",
+      name: rawVoiceName || "Executive Presenter",
+      language: (typeof data.voiceProfile === "object" && data.voiceProfile?.language) || "English",
       tone: tone,
       locked: true,
-      voiceId: data.voiceProfile?.id || data.voiceId || "21m00Tcm4TlvDq8ikWAM",
-      description: data.voiceProfile?.accent || data.voiceProfile?.description || data.voiceDescription || "Executive narrator voice",
+      voiceId: rawVoiceId || "21m00Tcm4TlvDq8ikWAM",
+      description: (typeof data.voiceProfile === "object" && (data.voiceProfile?.accent || data.voiceProfile?.description)) || data.voiceDescription || `${rawVoiceName || "Executive"} narrator voice`,
     };
 
     let genesisBrand: Brand = {

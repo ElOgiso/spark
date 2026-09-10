@@ -9,7 +9,7 @@ import mainLogo from "@/imports/MAIN_LOGO.png";
 import chatLogo from "@/imports/CHAT_LOGO.png";
 import { useAuth } from "../../state/AuthContext";
 import { useSpark } from "../../state/SparkContext";
-import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId } from "../../services/socialIntegrationService";
+import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId, setActiveSessionBrand } from "../../services/socialIntegrationService";
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import {
   getElevenLabsVoices,
@@ -92,8 +92,9 @@ export interface BrandGenesisData {
   hairStyle?: string;
   wardrobe?: string;
   personality?: string;
-  voiceProfile?: string;
+  voiceProfile?: any;
   voiceId?: string;
+  voiceName?: string;
   audioEnergy?: string;
   researchSources?: string[];
   connectedAccounts?: Array<{ platform: string; username: string; connected: boolean }>;
@@ -107,6 +108,7 @@ export interface BrandGenesisData {
   country?: string;
   language?: string;
   mode?: "first_user" | "additional_workspace";
+  alreadyInitialized?: boolean;
 }
 
 export interface BrandGenesisFlowProps {
@@ -2183,8 +2185,15 @@ function toGenesisData(data: GenesisInternalState, mode?: "first_user" | "additi
     hairStyle: data.characterHair,
     wardrobe: data.characterWardrobe,
     personality: data.characterPersonality,
-    voiceProfile: data.selectedVoice,
-    voiceId: data.selectedVoiceId,
+    voiceProfile: {
+      id: data.selectedVoiceId || "21m00Tcm4TlvDq8ikWAM",
+      voiceId: data.selectedVoiceId || "21m00Tcm4TlvDq8ikWAM",
+      name: data.selectedVoice || "Rachel",
+      language: "English",
+      description: data.selectedVoice ? `${data.selectedVoice} production voice` : "Production narrator voice",
+    },
+    voiceId: data.selectedVoiceId || "21m00Tcm4TlvDq8ikWAM",
+    voiceName: data.selectedVoice || undefined,
     researchSources: data.researchSources,
     connectedAccounts,
     contentFormat: data.contentFormat,
@@ -2428,6 +2437,26 @@ export function BrandGenesisFlow({
     }, 10000);
 
     try {
+      let currentBrandId = getBrandWorkspaceId();
+      if (!currentBrandId) {
+        if (auth.currentUser?.id) {
+          const { ensureDefaultBrand } = await import("../../backend/repositories/brandRepository");
+          const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
+            name: data.brandName.trim() || "My Brand",
+            niche: data.niche.trim() || undefined,
+          });
+          if (defaultBrandRes.data?.id) {
+            currentBrandId = defaultBrandRes.data.id;
+            auth.setBrand(defaultBrandRes.data);
+            setActiveSessionBrand(currentBrandId, auth.currentUser.id);
+          }
+        } else if (auth.mode === "demo" || !currentBrandId) {
+          const demoBrandId = crypto.randomUUID();
+          setActiveSessionBrand(demoBrandId, "demo-user");
+          currentBrandId = demoBrandId;
+        }
+      }
+
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("spark_onboarding_resume_state", JSON.stringify(data));
       }
@@ -2714,6 +2743,7 @@ export function BrandGenesisFlow({
 
     try {
       await initializeBrandGenesis(genesisData);
+      genesisData.alreadyInitialized = true;
       const brandId = getBrandWorkspaceId();
       if (brandId) {
         const { persistFormatSettings } = await import("../../backend/workspaceSync");
