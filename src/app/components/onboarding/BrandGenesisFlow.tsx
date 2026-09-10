@@ -2742,23 +2742,28 @@ export function BrandGenesisFlow({
     const genesisData = toGenesisData(data, mode);
 
     try {
-      await initializeBrandGenesis(genesisData);
-      genesisData.alreadyInitialized = true;
-      const brandId = getBrandWorkspaceId();
-      if (brandId) {
-        const { persistFormatSettings } = await import("../../backend/workspaceSync");
-        await persistFormatSettings(brandId, {
-          aspectMode: genesisData.aspectMode || "portrait",
-          targetDurationSec: typeof genesisData.targetDurationSec === "number" ? genesisData.targetDurationSec : 60,
-          contentFormat: genesisData.contentFormat || "host",
-          visualGenre: genesisData.visualGenre || "auto",
-          cinematicCraft: genesisData.cinematicCraft !== false,
-          preferredVideoProvider: genesisData.preferredVideoProvider && genesisData.preferredVideoProvider !== "auto" ? genesisData.preferredVideoProvider : "auto",
-        });
-      }
-      if (mode !== "additional_workspace") {
-        await auth.markOnboardingComplete(auth.brand?.id);
-      }
+      await Promise.race([
+        (async () => {
+          await initializeBrandGenesis(genesisData);
+          genesisData.alreadyInitialized = true;
+          const brandId = getBrandWorkspaceId();
+          if (brandId) {
+            const { persistFormatSettings } = await import("../../backend/workspaceSync");
+            await persistFormatSettings(brandId, {
+              aspectMode: genesisData.aspectMode || "portrait",
+              targetDurationSec: typeof genesisData.targetDurationSec === "number" ? genesisData.targetDurationSec : 60,
+              contentFormat: genesisData.contentFormat || "host",
+              visualGenre: genesisData.visualGenre || "auto",
+              cinematicCraft: genesisData.cinematicCraft !== false,
+              preferredVideoProvider: genesisData.preferredVideoProvider && genesisData.preferredVideoProvider !== "auto" ? genesisData.preferredVideoProvider : "auto",
+            });
+          }
+          if (mode !== "additional_workspace") {
+            await auth.markOnboardingComplete(auth.brand?.id);
+          }
+        })(),
+        new Promise((resolve) => setTimeout(resolve, 8000)),
+      ]);
     } catch (persistErr) {
       console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);
     }

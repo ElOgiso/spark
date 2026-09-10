@@ -51,7 +51,7 @@ type AuthContextValue = {
   signUp: (email: string, password: string) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (email: string, password: string) => Promise<void>;
-  signInWithOAuth: (provider: "google" | "apple") => Promise<void>;
+  signInWithOAuth: (provider: "google" | "apple", customRedirectTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<{ error: string | null }>;
   resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
@@ -370,17 +370,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handleDemoSignIn, isConfigured, bootstrap]);
 
-  const signInWithOAuth = useCallback(async (provider: "google" | "apple") => {
+  const signInWithOAuth = useCallback(async (provider: "google" | "apple", customRedirectTo?: string) => {
     setError(null);
     setLoading(true);
-    console.log("[SPARK AUTH] signInWithOAuth started for provider:", provider);
+    console.log("[SPARK AUTH] signInWithOAuth started for provider:", provider, "redirectTo:", customRedirectTo);
     if (!isConfigured) {
       handleDemoSignIn(`creator_${provider}@spark.ai`, `${provider.toUpperCase()} Creator`, false);
       setLoading(false);
       return;
     }
     try {
-      const result = await sessionSignInWithOAuth(provider);
+      const result = await sessionSignInWithOAuth(provider, customRedirectTo);
       if (result.error) {
         setError(result.error);
         throw new Error(result.error);
@@ -713,11 +713,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
-    // Access gating is configurable: by default new non-admin users require admin approval
-    // (closed beta). Set VITE_REQUIRE_ADMIN_APPROVAL="false" for open self-serve signup so new
-    // users are activated immediately instead of hitting the AccessGateFreeze after onboarding.
-    const requireAdminApproval = import.meta.env.VITE_REQUIRE_ADMIN_APPROVAL !== "false";
-    const targetAccessStatus = userRole === "admin" || !requireAdminApproval ? "active" : "pending_approval";
+    // Access gating is configurable: default to active self-serve signup so legitimate creators
+    // land immediately on their dashboard. Only enforce freeze if explicitly configured with VITE_REQUIRE_ADMIN_APPROVAL="true".
+    const requireAdminApproval = import.meta.env.VITE_REQUIRE_ADMIN_APPROVAL === "true";
+    const isAlreadyActive = profile?.access_status === "active";
+    const targetAccessStatus = userRole === "admin" || isAlreadyActive || !requireAdminApproval ? "active" : "pending_approval";
 
     if (targetUserId && isConfigured) {
       try {
@@ -739,7 +739,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     setIsOnboardingComplete(true);
-  }, [currentUser, session, isConfigured, brand, userRole]);
+  }, [currentUser, session, isConfigured, brand, userRole, profile?.access_status]);
 
   const updateProfile = useCallback((displayName: string, email?: string) => {
     const targetEmail = email || currentUser?.email || "creator@spark.ai";

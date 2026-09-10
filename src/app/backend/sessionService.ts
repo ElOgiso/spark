@@ -71,12 +71,12 @@ export async function signUp(email: string, password: string): Promise<{ user: U
   return { user: result.data, error: result.error, needsEmailConfirmation: result.needsEmailConfirmation };
 }
 
-export async function signInWithOAuth(provider: "google" | "apple"): Promise<{ error: string | null }> {
+export async function signInWithOAuth(provider: "google" | "apple", customRedirectTo?: string): Promise<{ error: string | null }> {
   if (!isAuthBackendReady()) {
     return { error: null };
   }
 
-  const result = await authSignInWithOAuth(provider);
+  const result = await authSignInWithOAuth(provider, customRedirectTo);
   return { error: result.error };
 }
 

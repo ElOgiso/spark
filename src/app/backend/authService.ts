@@ -68,11 +68,11 @@ export function getEnvironmentAwareRedirectUrl(): string {
   return "https://spark-media-os-v1-test-20260701.vercel.app/";
 }
 
-export async function signInWithOAuth(provider: "google" | "apple"): Promise<AuthResult<true>> {
+export async function signInWithOAuth(provider: "google" | "apple", customRedirectTo?: string): Promise<AuthResult<true>> {
   const supabase = getSupabaseClient();
   if (!supabase) return unavailable<true>();
 
-  const redirectTo = getEnvironmentAwareRedirectUrl();
+  const redirectTo = customRedirectTo || getEnvironmentAwareRedirectUrl();
   console.log(`[SPARK AUTH] Initiating ${provider} OAuth with redirectTo:`, redirectTo);
 
   const options: {

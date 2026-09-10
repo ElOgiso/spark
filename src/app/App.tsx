@@ -198,15 +198,7 @@ function AppContent() {
 
       if (isUserAuthenticated) {
         if (pathname.startsWith("/admin")) {
-          if (!auth.isAdmin) {
-            console.log("[SPARK AUTH] Non-admin attempted /admin access -> redirecting to executive home");
-            if (window.history && window.history.replaceState) {
-              window.history.replaceState({}, "", "/");
-            }
-            setCurrentPage("/");
-          } else {
-            setCurrentPage(pathname);
-          }
+          setCurrentPage(pathname);
         } else if (window.history && window.history.replaceState && !pathname.startsWith("/auth/")) {
           if (!search.includes("resume_onboarding") && pathname !== "/") {
             window.history.replaceState({}, "", "/");
@@ -396,12 +388,26 @@ function AppContent() {
 
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
-      // A. Admin standalone route check
+      // A1. Admin standalone route check for verified admin
       if (auth.isAdmin && (currentPage.startsWith("/admin") || (!auth.isOnboardingComplete && !auth.brand))) {
         return (
           <ProtectedRoute>
             <AdminPlaceholderPage currentPath={currentPage.startsWith("/admin") ? currentPage : "/admin/inbox"} onNavigate={setCurrentPage} />
           </ProtectedRoute>
+        );
+      }
+
+      // A2. Admin standalone route access for authenticated non-admin -> Show dedicated rejection screen with switch-account button
+      if (currentPage.startsWith("/admin")) {
+        return (
+          <AdminLoginPage
+            onSuccess={() => {
+              if (window.history && window.history.replaceState) {
+                window.history.replaceState({}, "", "/admin/inbox");
+              }
+              setCurrentPage("/admin/inbox");
+            }}
+          />
         );
       }
 
