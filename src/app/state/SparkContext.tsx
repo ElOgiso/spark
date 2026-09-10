@@ -30,12 +30,15 @@ import {
   ConversationSession,
   Offer,
   OfferType,
+  ProductionSeries,
+  StoryCanon,
 } from "../domain/types";
 import { normalizeHandle } from "../domain/accountUtils";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
 import { eventBus } from "../services/runtime/eventBus";
-import { resolveSeriesBible } from "../services/memory/seriesBibleService";
+import { resolveSeriesBible, advanceSeriesCanon } from "../services/memory/seriesBibleService";
+import { interpretProductionIntent } from "../services/production/intent/productionIntentInterpreter";
 import {
   hydrateWorkspace,
   persistAccountToken,
@@ -127,6 +130,9 @@ interface SparkContextType {
   creditSettings: GenerationCreditSettings;
   formatSettings: ProductionFormatSettings;
   thinkingState?: ThinkingState | null;
+  activeSeries?: ProductionSeries | null;
+  seriesList?: ProductionSeries[];
+  setActiveSeries?: (series: ProductionSeries | null) => void;
   
   chatMessages?: ChatMessage[];
   activeSessionId?: string | null;
@@ -343,6 +349,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       creditSettings: DEFAULT_CREDIT_SETTINGS,
       formatSettings: initialFormatSettings,
       thinkingState: null,
+      activeSeries: null,
+      seriesList: [],
       chatMessages: [],
     };
   });
@@ -378,6 +386,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       creditSettings: DEFAULT_CREDIT_SETTINGS,
       formatSettings: DEFAULT_FORMAT_SETTINGS,
       thinkingState: null,
+      activeSeries: null,
+      seriesList: [],
       chatMessages: [],
     });
 
@@ -1915,11 +1925,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const platformFit = spark.platformFit || (resolvedMode === "deep" ? "YouTube Long-form" : "YouTube Shorts");
     const formats = platformFit.split(" + ").map((s: string) => s.trim()).filter(Boolean);
 
+    const resolvedSeriesContext = (spark as any).seriesContext || (state.activeSeries ? {
+      series: state.activeSeries,
+      canon: state.activeSeries.storyCanon,
+      episodeNumber: state.activeSeries.currentEpisode || 1,
+    } : undefined);
+
     // Initial optimistic state creation
     const initialProduction: Production = {
       id: prodId,
       title: spark.title,
       sparkId: spark.id,
+      seriesId: resolvedSeriesContext?.series?.id,
+      seasonNumber: resolvedSeriesContext?.series ? 1 : undefined,
+      episodeNumber: resolvedSeriesContext?.episodeNumber,
+      canonState: resolvedSeriesContext?.canon?.worldState,
       status: status,
       mode: resolvedMode as any,
       dateCreated: new Date().toISOString().split("T")[0],
@@ -1949,7 +1969,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       productionId: prodId,
       title: spark.title,
       account: formats[0] || "YouTube Shorts",
-      series: "Viral Concept Series",
+      series: resolvedSeriesContext?.series?.title || "Viral Concept Series",
+      seriesId: resolvedSeriesContext?.series?.id,
+      episodeNumber: resolvedSeriesContext?.episodeNumber,
       status: "Pending Review",
       dateCreated: new Date().toISOString().split("T")[0],
       scriptSnippet: spark.hook,
@@ -1990,6 +2012,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         characters: state.characters,
         memoryItems: state.memoryItems || [],
         formatSettings: effectiveFormat,
+        series: resolvedSeriesContext?.series,
+        canon: resolvedSeriesContext?.canon,
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
@@ -2009,6 +2033,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           reviewId: reviewId,
           researchContext: spark.researchContext,
           targetDurationSec: effectiveDuration,
+          seriesContext: resolvedSeriesContext,
         })
         .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
           if (isProductionTombstoned(prodId) || isProductionTombstoned(reviewId)) {
@@ -3157,8 +3182,26 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const targetProd = prev.productions.find((p: any) => p.id === review.productionId);
       let updatedMemories = prev.memoryItems;
+      let nextActiveSeries = prev.activeSeries;
+      let nextSeriesList = prev.seriesList || [];
 
       if (targetProd) {
+        // Advance story canon if targetProd belongs to an active series or seriesList
+        const matchingSeries = (targetProd.seriesId
+          ? nextSeriesList.find((s: any) => s.id === targetProd.seriesId)
+          : undefined) || (prev.activeSeries && (!targetProd.seriesId || targetProd.seriesId === prev.activeSeries.id) ? prev.activeSeries : undefined);
+
+        if (matchingSeries) {
+          const advancedSeries = advanceSeriesCanon(matchingSeries, targetProd);
+          nextSeriesList = nextSeriesList.map((s: any) => (s.id === advancedSeries.id ? advancedSeries : s));
+          if (!nextSeriesList.some((s: any) => s.id === advancedSeries.id)) {
+            nextSeriesList = [...nextSeriesList, advancedSeries];
+          }
+          if (prev.activeSeries && prev.activeSeries.id === advancedSeries.id) {
+            nextActiveSeries = advancedSeries;
+          }
+        }
+
         const bId = getBrandWorkspaceId() || "default-brand";
         const winRes = recordBrandPerformanceWin({
           brandId: bId,
@@ -3182,7 +3225,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         reviewItems: updatedReviewItems,
         productions: updatedProductions,
         publishJobs: newPublishJobs,
-        exportPackages: newExportPackages
+        exportPackages: newExportPackages,
+        activeSeries: nextActiveSeries,
+        seriesList: nextSeriesList,
       };
     });
 
@@ -3714,25 +3759,203 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return confirmationPrompt;
     }
 
+    let effectiveState = state;
+
+    // Self-Aware Intent Interpretation (Scoped Authority: Creator vs Series vs Episode vs Scene)
+    let intentResult: import("../services/production/intent/productionIntentInterpreter").ProductionIntentResult | null = null;
+    try {
+      intentResult = await interpretProductionIntent(prompt, state.activeSeries, {
+        activeProductionId: state.productions?.[0]?.id,
+      });
+    } catch (err) {
+      console.warn("[SparkContext] Production intent interpretation notice:", err);
+    }
+
+    if (intentResult?.intent === "configure_series" || intentResult?.intentType === "configure_series") {
+      const cfg = intentResult.seriesConfig || {};
+      const recurringChars = cfg.recurringCharacters || intentResult.series?.recurringCharacters || (state.character ? [state.character.name] : []);
+      const newSeries: ProductionSeries = {
+        id: cfg.id || `series-${Date.now()}`,
+        title: cfg.title || intentResult.series?.title || "Untitled Series",
+        format: cfg.format || intentResult.productionType || "serialized_narrative",
+        medium: cfg.medium || intentResult.medium || "animation",
+        genre: cfg.genre || intentResult.genre || "action",
+        logline: cfg.logline || intentResult.series?.universeNotes || prompt,
+        releaseCadence: cfg.releaseCadence || intentResult.cadence || "weekly",
+        totalEpisodesPlanned: cfg.totalEpisodesPlanned || intentResult.series?.episodeTarget || 10,
+        currentEpisode: 1,
+        recurringCharacters: recurringChars,
+        storyCanon: {
+          seriesId: cfg.id || `series-${Date.now()}`,
+          establishedFacts: cfg.storyCanon?.establishedFacts || [cfg.logline || prompt],
+          worldState: cfg.storyCanon?.worldState || "Series established.",
+          characterRelationships: {},
+          episodeChronology: [],
+          unresolvedPlotThreads: [],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      setState((prev: any) => ({
+        ...prev,
+        activeSeries: newSeries,
+        seriesList: [...(prev.seriesList || []).filter((s: any) => s.id !== newSeries.id), newSeries],
+      }));
+
+      effectiveState = {
+        ...effectiveState,
+        activeSeries: newSeries,
+        seriesList: [...(effectiveState.seriesList || []).filter((s: any) => s.id !== newSeries.id), newSeries],
+      };
+
+      taskMedia = {
+        type: "series_configured",
+        id: newSeries.id,
+        title: newSeries.title,
+        status: "Active Series",
+        genre: newSeries.genre,
+        medium: newSeries.medium,
+        cadence: newSeries.releaseCadence,
+        meta: `Series bible & story canon initialized. ${(newSeries.recurringCharacters || []).join(", ") || "Main character"} established. Ready for Episode 1.`,
+      };
+    } else if (intentResult?.intent === "create_episode" || intentResult?.intentType === "create_episode") {
+      const epNum = intentResult.episodeDirective?.episodeNumber || intentResult.episode?.episodeNumber || state.activeSeries?.currentEpisode || 1;
+      const seriesTitle = state.activeSeries?.title || "Series";
+      const epTitle = intentResult.episodeDirective?.title || `${seriesTitle} — Episode ${epNum}`;
+      const epHook = intentResult.episodeDirective?.hook || prompt;
+      const epInstructions = intentResult.episodeDirective?.instructions || prompt;
+
+      const epSpark: ViralSpark = {
+        id: `spark-ep-${epNum}-${Date.now()}`,
+        title: epTitle,
+        hook: epHook,
+        views: "120K",
+        velocity: "high",
+        platformFit: "YouTube Shorts",
+        brandFitScore: 95,
+        category: "hot",
+        timeWindow: "7d",
+        productionTime: "3m",
+        whyNow: "Episodic story canon continuation",
+        audienceEmotion: "Anticipation",
+        expectedRetention: "85%",
+        difficulty: "Medium",
+        riskLevel: "Low",
+        suggestedFormat: "Series Episode",
+        suggestedProductionMode: "express",
+        format: "Series Episode",
+        estimatedViews: "120K",
+        confidence: 0.95,
+        angle: epInstructions,
+        whyItWorks: state.activeSeries?.storyCanon?.unresolvedPlotThreads?.length
+          ? `Carries over unresolved narrative threads from previous episode: ${state.activeSeries.storyCanon.unresolvedPlotThreads.slice(-2).join("; ")}`
+          : `Establishes core narrative and conflicts for ${seriesTitle}`,
+        suggestedScript: epInstructions,
+        seriesContext: state.activeSeries ? {
+          series: state.activeSeries,
+          canon: state.activeSeries.storyCanon,
+          episodeNumber: epNum,
+        } : undefined,
+      };
+
+      const created = createProductionFromSpark(epSpark);
+      const realProd = created?.production;
+      const realReview = created?.reviewItem;
+
+      if (realProd) {
+        effectiveState = {
+          ...effectiveState,
+          productions: [realProd, ...(effectiveState.productions || [])],
+          reviewItems: realReview ? [realReview, ...(effectiveState.reviewItems || [])] : effectiveState.reviewItems,
+        };
+      }
+
+      taskMedia = {
+        type: "video",
+        id: realReview?.id || realProd?.id || `prod-${Date.now()}`,
+        title: realProd?.title || epTitle,
+        videoUrl: (realReview as any)?.videoUrl || undefined,
+        status: realReview?.status || "Pending Review",
+        concept: epHook,
+        meta: `Action Executed: Episode ${epNum} of "${seriesTitle}" generated with persistent story canon continuity`,
+      };
+    } else if (intentResult?.intent === "scene_directive" || intentResult?.intentType === "scene_directive") {
+      const activeProd = state.productions?.[0];
+      const directive = prompt;
+      if (activeProd) {
+        setState((prev: any) => {
+          const updatedProductions = prev.productions.map((p: any) => {
+            if (p.id !== activeProd.id) return p;
+            const scenes = (p.productionScenes || p.scenes || []).map((sc: any, idx: number) => {
+              const targetIdx = intentResult?.sceneDirective?.sceneIndex ?? (intentResult?.sceneDirective?.targetScene !== undefined ? intentResult.sceneDirective.targetScene - 1 : 0);
+              if (idx === targetIdx || (!p.productionScenes && idx === 0)) {
+                return {
+                  ...sc,
+                  visualDescription: `${sc.visualDescription || sc.description || ""}. [Scene Directive: ${directive}]`,
+                  lighting: intentResult?.sceneDirective?.lightingOverride || sc.lighting,
+                  action: intentResult?.sceneDirective?.actionOverride || sc.action,
+                };
+              }
+              return sc;
+            });
+            return {
+              ...p,
+              productionScenes: scenes,
+              lastEditNote: `Scene directive applied: ${directive} (Scope: Episode/Scene only — global creator settings untouched)`,
+            };
+          });
+          return { ...prev, productions: updatedProductions };
+        });
+
+        taskMedia = {
+          type: "production_status",
+          id: activeProd.id,
+          productionId: activeProd.id,
+          title: activeProd.title,
+          status: activeProd.status,
+          meta: `Scene directive applied strictly to active episode/scene. Global creator settings left intact.`,
+        };
+      }
+    } else if (intentResult?.intent === "creator_preference" || intentResult?.intentType === "creator_preference") {
+      const formatPatch = intentResult.creatorPreference?.formatPatch || (intentResult.creatorPreferenceCandidate?.aspectRatio ? { aspectMode: intentResult.creatorPreferenceCandidate.aspectRatio.includes("16:9") ? "landscape" : "portrait" } as any : undefined);
+      if (formatPatch) {
+        void updateFormatSettings(formatPatch);
+      }
+      const styleText = intentResult.creatorPreference?.styleDirective || intentResult.creatorPreferenceCandidate?.visualGenre || prompt;
+      addMemoryItem(styleText, "rule", "Style");
+
+      taskMedia = {
+        type: "memory_saved",
+        id: `pref-${Date.now()}`,
+        title: "Creator Preference Saved",
+        rule: styleText || "Updated global creator settings",
+        category: "Style",
+        source: "Executive Chat",
+        meta: "Applied globally across all productions for this creator.",
+      };
+    }
+
     // Universal Natural Language Task Router (Only executed with explicit intent or confirmation)
-    const isApprovalReq = /\b(approve|accept|publish review|ship it|schedule cut)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed);
-    const isEditReq = /\b(needs edit|reject|revision|request edit)\b/i.test(lower);
-    const isCreateReq = /\b(create video|make video|generate video|create short|draft script|create storyboard|generate cut)\b/i.test(lower);
-    const isSampleReq = /\b(generate sample|show sample|preview this|create a one-time example|sample production)\b/i.test(lower);
-    const isProdTurnOn = /\b(turn production on|enable production|resume production)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed && lower.includes("on"));
-    const isProdTurnOff = /\b(turn production off|disable production|pause production)\b/i.test(lower);
-    const isProdCancel = /\b(cancel production|cancel generation|stop generation|abort generation|cancel video)\b/i.test(lower);
-    const isProgressReq = /\b(what'?s generating|what is generating|active jobs|active productions|in[- ]?flight|generation progress|pipeline status|rendering status|render progress)\b/i.test(lower);
-    const isRegenerateReq = /\b(regenerate failed|regenerate video|regenerate cut|regenerate scenes|re-render|retry generation)\b/i.test(lower);
-    const isCharacterReq = /\b(create character|generate character|draw character|new character|design character|character design|character concept)\b/i.test(lower);
-    const isVoiceReq = /\b(list voices|preview voice|brand voice|switch voice|change voice|narrator voice|voice options|voice preview)\b/i.test(lower);
-    const isAccountReq = /\b(is youtube connected|connected accounts|connected platforms|diagnose accounts|analytics status|why is analytics empty|check connection|account status)\b/i.test(lower);
-    const isWorkspaceReq = /\b(switch workspace|switch to workspace|change workspace|create workspace|list workspaces|my workspaces|active workspace)\b/i.test(lower);
+    const isApprovalReq = !taskMedia && (/\b(approve|accept|publish review|ship it|schedule cut)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed));
+    const isEditReq = !taskMedia && /\b(needs edit|reject|revision|request edit)\b/i.test(lower);
+    const isCreateReq = !taskMedia && (/\b(create video|make video|generate video|create short|draft script|create storyboard|generate cut)\b/i.test(lower) || intentResult?.intent === "create_standalone" || intentResult?.intentType === "create_standalone");
+    const isSampleReq = !taskMedia && /\b(generate sample|show sample|preview this|create a one-time example|sample production)\b/i.test(lower);
+    const isProdTurnOn = !taskMedia && (/\b(turn production on|enable production|resume production)\b/i.test(lower) || (isAwaitingConfirmation && isConfirmed && lower.includes("on")));
+    const isProdTurnOff = !taskMedia && /\b(turn production off|disable production|pause production)\b/i.test(lower);
+    const isProdCancel = !taskMedia && /\b(cancel production|cancel generation|stop generation|abort generation|cancel video)\b/i.test(lower);
+    const isProgressReq = !taskMedia && /\b(what'?s generating|what is generating|active jobs|active productions|in[- ]?flight|generation progress|pipeline status|rendering status|render progress)\b/i.test(lower);
+    const isRegenerateReq = !taskMedia && /\b(regenerate failed|regenerate video|regenerate cut|regenerate scenes|re-render|retry generation)\b/i.test(lower);
+    const isCharacterReq = !taskMedia && /\b(create character|generate character|draw character|new character|design character|character design|character concept)\b/i.test(lower);
+    const isVoiceReq = !taskMedia && /\b(list voices|preview voice|brand voice|switch voice|change voice|narrator voice|voice options|voice preview)\b/i.test(lower);
+    const isAccountReq = !taskMedia && /\b(is youtube connected|connected accounts|connected platforms|diagnose accounts|analytics status|why is analytics empty|check connection|account status)\b/i.test(lower);
+    const isWorkspaceReq = !taskMedia && /\b(switch workspace|switch to workspace|change workspace|create workspace|list workspaces|my workspaces|active workspace)\b/i.test(lower);
     const urlMatch = prompt.match(/https?:\/\/[^\s]+/i);
-    const isResearchReq = /\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch;
-    const isMemoryReq = /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
+    const isResearchReq = !taskMedia && (/\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch);
+    const isMemoryReq = !taskMedia && /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
 
     const isFormatCommand =
+      !taskMedia &&
       /\b(landscape|portrait|dynamic|shorts|tiktok|youtube long|16:9|9:16|\d+\s*s\b|\d+\s*sec|\d+\s*seconds|\d+\s*min|\d+\s*minute|\d+\s*m\b|veo|gemini|grok|kling|seedance|runway|luma|higgsfield|clip engine|video model|video engine)\b/i.test(lower) &&
       /\b(format|aspect|duration|length|set|mode|video|style|target|engine|clip|provider|model|switch|use)\b/i.test(lower);
 
@@ -4009,7 +4232,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const responseText = await generateSuperSparkResponse(
         prompt,
         history,
-        state,
+        effectiveState,
         onChunk,
         (thinking) => setThinkingState(thinking)
       );

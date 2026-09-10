@@ -87,6 +87,17 @@ export class PromptContextBuilder {
       const pendingReviews = workspaceState.reviewItems?.filter((r: any) => r.status === "Pending Review")?.length || 0;
       const autoMode = workspaceState.automationMode || "balanced";
       contextParts.push(`WORKSPACE SNAPSHOT: Active Productions=${activeProds}, Pending Reviews=${pendingReviews}, Automation Mode=${autoMode.toUpperCase()}`);
+
+      if (workspaceState.activeSeries) {
+        const s = workspaceState.activeSeries;
+        contextParts.push(
+          `ACTIVE PRODUCTION SERIES: "${s.title}" (${s.format}, ${s.genre}, ${s.medium}, Cadence: ${s.releaseCadence || "weekly"})\n` +
+          `• Current Episode: ${s.currentEpisode || 1} (Planned: ${s.totalEpisodesPlanned || "Ongoing"})\n` +
+          `• Recurring Characters: ${(s.recurringCharacters || []).join(", ") || "Main protagonist"}\n` +
+          `• Story Canon World State: ${s.storyCanon?.worldState || "Series established"}\n` +
+          `• Active Plot Threads: ${(s.storyCanon?.unresolvedPlotThreads || []).join("; ") || "None currently active"}`
+        );
+      }
     }
 
     const prodEnabled = ProductionGenerationGuard.isEnabled(workspaceState?.brand?.id);

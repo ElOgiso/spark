@@ -101,6 +101,12 @@ export class ProductionService implements IProductionService {
     reviewId?: string;
     researchContext?: any;
     targetDurationSec?: number;
+    /** Optional series linkage and story canon context */
+    seriesContext?: {
+      series?: import("../domain/types").ProductionSeries;
+      canon?: import("../domain/types").StoryCanon;
+      episodeNumber?: number;
+    };
     /** Phase 11 — optional prior learnings for Creative Director (soft influence only). */
     creativeLearnings?: CreativeLearning[];
   }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
@@ -218,6 +224,10 @@ export class ProductionService implements IProductionService {
       dateCreated: dateStr,
       aspectRatio,
       formats,
+      seriesId: params.seriesContext?.series?.id,
+      seasonNumber: params.seriesContext?.series?.currentSeason,
+      episodeNumber: params.seriesContext?.episodeNumber || params.seriesContext?.series?.currentEpisode,
+      canonState: params.seriesContext?.canon || params.seriesContext?.series?.storyCanon,
       brief,
       productionScenes: brief.storyboard,
       scenes: (brief.storyboard || []).slice(0, 3).map((s, i) => ({
@@ -273,7 +283,7 @@ export class ProductionService implements IProductionService {
       productionId: prodId,
       title: brief.title || params.spark.title,
       account: formats[0] || "YouTube Shorts",
-      series: "Viral Concept Series",
+      series: params.seriesContext?.series?.title || (brief as any)?.series || "Viral Concept Series",
       status: "Pending Review",
       dateCreated: dateStr,
       scriptSnippet: brief.hook,

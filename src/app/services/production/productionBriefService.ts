@@ -883,6 +883,11 @@ export class ProductionBriefService {
     productionMode?: string;
     researchContext?: StructuredResearchContext;
     targetDurationSec?: number;
+    seriesContext?: {
+      series?: import("../../domain/types").ProductionSeries;
+      canon?: import("../../domain/types").StoryCanon;
+      episodeNumber?: number;
+    };
   }): Promise<ProductionBrief> {
     const { spark: rawSpark, brand, character, characters, niche, memoryItems = [], productionMode = "standard", researchContext = rawSpark.researchContext, targetDurationSec } = params;
 
@@ -1002,6 +1007,24 @@ WORD LAW & ANTI-SLOP COMPILER LAWS (MANDATORY):
 5. MEMORY LAW: Obey all ranked brand laws and hard NEVER rules.
 6. OUTPUT LAW: Return valid JSON matching the schema with zero introductory chatter.`;
 
+    let seriesPromptBlock = "";
+    if (params.seriesContext?.series) {
+      const s = params.seriesContext.series;
+      const canon = params.seriesContext.canon || s.storyCanon;
+      const epNum = params.seriesContext.episodeNumber || s.currentEpisode || 1;
+      const historyList = (canon?.episodeChronology || [])
+        .slice(-3)
+        .map((e) => `[Ep ${e.episodeNumber}: ${e.title}] Ending: ${e.endingState}`);
+      seriesPromptBlock = `
+SERIES CONTINUITY & STORY CANON LAW (EPISODE ${epNum} OF "${s.title}"):
+- Series Genre / Medium: ${s.genre} (${s.medium})
+- World Rules: ${(canon?.worldRules || ["Cohesive world setting"]).join("; ")}
+- Active Unresolved Narrative Threads to address or build upon: ${(canon?.unresolvedPlotThreads || ["Introduce opening mystery or inciting event"]).join("; ")}
+- Prior Episode Chronology: ${historyList.length > 0 ? historyList.join(" -> ") : "Opening pilot episode of the series."}
+- CRITICAL CONTINUITY LAW: Do NOT start a new universe from scratch. Seamlessly continue established characters, relationships, lore, and unresolved events.
+`;
+    }
+
     const prompt = `
 COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
@@ -1031,6 +1054,7 @@ ${researchPromptBlock ? `${researchPromptBlock}\n` : ""}BRAND IDENTITY & ENVIRON
 - Presenter / Host: ${hostStyle} (${charTraits})
 - Production Mode: ${modeKey}
 ${offerPromptSection}
+${seriesPromptBlock}
 ${rankedMemory ? `RANKED BRAND MEMORY LAWS:\n${rankedMemory}\n` : ""}
 Return a valid JSON object matching this exact structure with NO markdown formatting:
 {

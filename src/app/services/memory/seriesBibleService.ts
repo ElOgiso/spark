@@ -4,12 +4,18 @@ import type {
   MemoryItem,
   ProductionMode,
   ProductionFormatSettings,
+  ProductionSeries,
+  StoryCanon,
+  Production,
+  EpisodeChronologyEntry,
 } from "../../domain/types";
 import { buildRankedBrandLaws } from "./rankBrandLaws";
 
 export interface SeriesBible {
   brandId: string;
   brandName: string;
+  series?: ProductionSeries;
+  canon?: StoryCanon;
   character?: Character;
   characterSheetUrls: string[];
   defaultVoice?: {
@@ -41,6 +47,8 @@ export function resolveSeriesBible(params: {
   characters?: Character[];
   memoryItems?: MemoryItem[];
   formatSettings?: ProductionFormatSettings;
+  series?: ProductionSeries;
+  canon?: StoryCanon;
 }): SeriesBible {
   const {
     brand,
@@ -119,6 +127,8 @@ export function resolveSeriesBible(params: {
   return {
     brandId,
     brandName: brand?.name || "Brand",
+    series: params.series,
+    canon: params.canon || params.series?.storyCanon,
     character: primaryChar,
     characterSheetUrls,
     defaultVoice,
@@ -130,3 +140,56 @@ export function resolveSeriesBible(params: {
     rankedSeriesLawsBlock,
   };
 }
+
+/**
+ * Advances the series story canon upon completion/approval of an episode:
+ * - Appends episode to episodeChronology
+ * - Updates world state and records newly established lore
+ * - Carries forward unresolved narrative threads
+ * - Increments currentEpisode counter for Episode N+1
+ */
+export function advanceSeriesCanon(
+  series: ProductionSeries,
+  completedProduction: Production
+): ProductionSeries {
+  const epNum = completedProduction.episodeNumber || series.currentEpisode || 1;
+  const title = completedProduction.title || `Episode ${epNum}`;
+  const brief = completedProduction.brief;
+
+  // Extract ending state from last scene or brief
+  const endingScene = completedProduction.productionScenes?.[completedProduction.productionScenes.length - 1];
+  const endingState = endingScene?.physicalAction || endingScene?.visualDescription || "Episode concluded.";
+  const summary = brief?.scriptOutline || brief?.hook || "Story advanced.";
+
+  const newEntry: EpisodeChronologyEntry = {
+    episodeNumber: epNum,
+    title,
+    summary,
+    endingState,
+    productionId: completedProduction.id,
+    unresolvedHooks: brief?.beats?.map((b) => b.spokenLines).filter(Boolean).slice(-2) || [],
+    keyAssetUrls: [completedProduction.videoUrl, completedProduction.thumbnailUrl].filter(Boolean) as string[],
+    completedAt: new Date().toISOString(),
+  };
+
+  const updatedCanon: StoryCanon = {
+    ...series.storyCanon,
+    episodeChronology: [
+      ...(series.storyCanon?.episodeChronology || []).filter((e) => e.episodeNumber !== epNum),
+      newEntry,
+    ],
+    worldState: `${series.storyCanon?.worldState || ""}\nAfter Ep ${epNum} (${title}): ${endingState}`.trim(),
+    unresolvedPlotThreads: [
+      ...(series.storyCanon?.unresolvedPlotThreads || []),
+      ...(newEntry.unresolvedHooks || []),
+    ].slice(-5), // Keep top 5 active narrative threads
+  };
+
+  return {
+    ...series,
+    currentEpisode: epNum + 1,
+    storyCanon: updatedCanon,
+    updatedAt: new Date().toISOString(),
+  };
+}
+

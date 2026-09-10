@@ -70,3 +70,9 @@ export {
   assertExecutableCapability,
   type RouteMediaOptions,
 } from "./router";
+export {
+  SPARK_SYSTEM_CAPABILITIES,
+  getSparkCapability,
+  listSparkCapabilities,
+  type SparkSystemCapability,
+} from "./sparkCapabilities";

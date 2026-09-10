@@ -139,6 +139,12 @@ export interface ViralSpark {
    */
   status?: "draft" | "ready";
   createdAt?: string;
+  format?: string;
+  seriesContext?: any;
+  confidence?: number;
+  estimatedViews?: string;
+  whyItWorks?: string;
+  suggestedScript?: string;
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
@@ -335,7 +341,64 @@ export interface Production {
   isGeneratingAssets?: boolean;
   generationProgress?: GenerationProgress;
   lastError?: string;
+  /** Series linkage and persistent episode canon */
+  seriesId?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  canonState?: StoryCanon;
 }
+
+export interface EpisodeChronologyEntry {
+  episodeNumber: number;
+  title: string;
+  summary: string;
+  endingState: string;
+  productionId?: string;
+  unresolvedHooks?: string[];
+  keyAssetUrls?: string[];
+  completedAt: string;
+}
+
+export interface StoryCanon {
+  seriesId?: string;
+  establishedFacts?: string[];
+  characterRelationships?: Record<string, string>;
+  worldState: string;
+  worldRules?: string[];
+  establishedLocations?: Array<{ name: string; description: string; plateUrl?: string }>;
+  keyProps?: Array<{ name: string; description: string }>;
+  unresolvedPlotThreads: string[];
+  episodeChronology: EpisodeChronologyEntry[];
+}
+
+export interface ProductionSeries {
+  id: string;
+  brandId?: string;
+  title: string;
+  productionType?: "serialized_narrative" | "episodic_show" | "standalone" | "talking_head" | "documentary" | "music_video";
+  format?: string;
+  medium?: "animation" | "live_action" | "mixed_media" | "graphic_novel";
+  genre?: string;
+  cadence?: "daily" | "weekly" | "biweekly" | "monthly" | "standalone";
+  releaseCadence?: "daily" | "weekly" | "biweekly" | "monthly" | "standalone";
+  logline?: string;
+  totalEpisodesPlanned?: number;
+  currentSeason?: number;
+  currentEpisode: number;
+  targetEpisodeCount?: number;
+  recurringCharacters?: string[];
+  characters?: Array<{
+    name: string;
+    role: string;
+    description: string;
+    characterSheetUrl?: string;
+    status: string;
+  }>;
+  storyCanon: StoryCanon;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 export interface QualityCheck {
   brandSafety: "Passed" | "Warning" | "Failed";
@@ -349,6 +412,8 @@ export interface ReviewItem {
   title: string;
   account: string;
   series: string;
+  seriesId?: string;
+  episodeNumber?: number;
   status: "Pending Review" | "Approved" | "Needs Edit";
   dateCreated: string;
   scriptSnippet: string;
