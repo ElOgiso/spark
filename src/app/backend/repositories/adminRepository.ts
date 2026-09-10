@@ -186,27 +186,26 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
       new_status: "active",
     });
 
-    if (!rpcRes.error) {
-      // Guarantee at least 50 starter credits on approval
-      try {
-        const { data: prof } = await (supabase.from("profiles") as any)
-          .select("credit_balance")
-          .eq("id", targetUserId)
-          .maybeSingle();
-        if (!prof || (Number(prof.credit_balance) || 0) < 50) {
+    if (!rpcRes.error && rpcRes.data === true) {
+      // Re-verify that target profile exists and has active access_status
+      const { data: verified } = await (supabase.from("profiles") as any)
+        .select("id, access_status, credit_balance")
+        .eq("id", targetUserId)
+        .maybeSingle();
+
+      if (verified && verified.access_status === "active") {
+        if ((Number(verified.credit_balance) || 0) < 50) {
           await (supabase.from("profiles") as any)
             .update({ credit_balance: 50, updated_at: new Date().toISOString() })
             .eq("id", targetUserId);
         }
-      } catch (creditErr) {
-        console.warn("[adminRepository] starter credit grant notice:", creditErr);
+        await logAdminAction(actorId, "APPROVE_USER", targetUserId);
+        return { data: true, error: null, source: "supabase" };
       }
-      await logAdminAction(actorId, "APPROVE_USER", targetUserId);
-      return { data: true, error: null, source: "supabase" };
     }
 
-    // Fallback to direct table update if RPC not present
-    const { error } = await (supabase.from("profiles") as any)
+    // Fallback to direct table update with returned row verification
+    const { data: updated, error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "active",
         credit_balance: 50,
@@ -214,9 +213,14 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
         access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", targetUserId);
+      .eq("id", targetUserId)
+      .select("id, access_status")
+      .maybeSingle();
 
     if (error) return repositoryError<boolean>(error.message);
+    if (!updated || updated.access_status !== "active") {
+      return repositoryError<boolean>(`Failed to activate user ${targetUserId}: profile row not updated`);
+    }
 
     await logAdminAction(actorId, "APPROVE_USER", targetUserId);
     return { data: true, error: null, source: "supabase" };
@@ -242,20 +246,26 @@ export async function rejectUser(targetUserId: string, actorId: string, reason?:
       new_status: "rejected",
     });
 
-    if (!rpcRes.error) {
+    if (!rpcRes.error && rpcRes.data === true) {
+      await logAdminAction(actorId, "REJECT_USER", targetUserId, { reason });
       return { data: true, error: null, source: "supabase" };
     }
 
-    const { error } = await (supabase.from("profiles") as any)
+    const { data: updated, error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "rejected",
         access_reviewed_at: new Date().toISOString(),
         access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", targetUserId);
+      .eq("id", targetUserId)
+      .select("id, access_status")
+      .maybeSingle();
 
     if (error) return repositoryError<boolean>(error.message);
+    if (!updated || updated.access_status !== "rejected") {
+      return repositoryError<boolean>(`Failed to reject user ${targetUserId}: profile row not updated`);
+    }
 
     await logAdminAction(actorId, "REJECT_USER", targetUserId, { reason });
     return { data: true, error: null, source: "supabase" };
@@ -281,20 +291,26 @@ export async function banUser(targetUserId: string, actorId: string, reason?: st
       new_status: "banned",
     });
 
-    if (!rpcRes.error) {
+    if (!rpcRes.error && rpcRes.data === true) {
+      await logAdminAction(actorId, "BAN_USER", targetUserId, { reason });
       return { data: true, error: null, source: "supabase" };
     }
 
-    const { error } = await (supabase.from("profiles") as any)
+    const { data: updated, error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "banned",
         access_reviewed_at: new Date().toISOString(),
         access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", targetUserId);
+      .eq("id", targetUserId)
+      .select("id, access_status")
+      .maybeSingle();
 
     if (error) return repositoryError<boolean>(error.message);
+    if (!updated || updated.access_status !== "banned") {
+      return repositoryError<boolean>(`Failed to ban user ${targetUserId}: profile row not updated`);
+    }
 
     await logAdminAction(actorId, "BAN_USER", targetUserId, { reason });
     return { data: true, error: null, source: "supabase" };

@@ -10,6 +10,19 @@ function normalizeHandle(raw: string | null | undefined): string {
   return "@" + s.replace(/^@+/, "");
 }
 
+function parseStatePayload(state?: string): { brandId?: string; userId?: string } | null {
+  if (!state || typeof state !== "string" || !state.startsWith("spark_oauth_")) return null;
+  const parts = state.split("_");
+  if (parts.length < 4) return null;
+  const b64 = parts.slice(3).join("_");
+  try {
+    const jsonStr = Buffer.from(b64, "base64url").toString("utf8");
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
 async function upsertConnectedAccount(input: {
   brandId: string;
   platform: string;
@@ -216,7 +229,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { code, redirect_uri, workspace_id } = req.body || {};
+    const { code, redirect_uri, workspace_id, state } = req.body || {};
     if (!code) {
       return res.status(400).json({ error: "Missing authorization code" });
     }
@@ -295,11 +308,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const parsedState = parseStatePayload(state);
+    const effectiveBrandId =
+      parsedState?.brandId && UUID_RE.test(parsedState.brandId)
+        ? parsedState.brandId
+        : workspace_id && UUID_RE.test(String(workspace_id))
+        ? String(workspace_id)
+        : "";
+
     let persistResult: { ok: boolean; error?: string } | null = null;
-    if (workspace_id && UUID_RE.test(String(workspace_id))) {
+    if (effectiveBrandId) {
       try {
+        // Enforce brand ownership if state contains authenticating userId
+        if (parsedState?.userId && UUID_RE.test(parsedState.userId)) {
+          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+          const supabaseKey =
+            process.env.SUPABASE_SERVICE_ROLE_KEY ||
+            process.env.SUPABASE_ANON_KEY ||
+            process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+            "";
+          if (supabaseUrl && supabaseKey) {
+            const sb = createClient(supabaseUrl, supabaseKey);
+            const { data: brandRow } = await (sb.from("brands") as any)
+              .select("id, owner_id")
+              .eq("id", effectiveBrandId)
+              .maybeSingle();
+
+            if (brandRow && brandRow.owner_id && brandRow.owner_id !== parsedState.userId) {
+              console.warn("[google/callback] Unauthorized brand attach attempt:", {
+                brandId: effectiveBrandId,
+                brandOwner: brandRow.owner_id,
+                stateUserId: parsedState.userId,
+              });
+              return res.status(403).json({
+                error: "Unauthorized: Brand workspace does not belong to the authenticating user.",
+              });
+            }
+          }
+        }
+
         persistResult = await upsertConnectedAccount({
-          brandId: workspace_id,
+          brandId: effectiveBrandId,
           platform: "YouTube Shorts",
           handle: profile.username,
           displayName: profile.displayName,
@@ -324,7 +373,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     } else {
       console.warn(
-        "[google/callback] No brand UUID workspace_id — tokens returned to client only"
+        "[google/callback] No brand UUID workspace_id or state brandId — tokens returned to client only"
       );
     }
 

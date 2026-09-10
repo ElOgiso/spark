@@ -297,6 +297,111 @@ function unavailableAnalytics(platform: string, reason: string): PlatformAnalyti
   };
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+let _activeSessionBrandId: string = "";
+let _activeSessionUserId: string = "";
+
+/**
+ * Anchors social connection operations to the currently authenticated user and active brand.
+ */
+export function setActiveSessionBrand(
+  brandId: string | null | undefined,
+  userId?: string | null
+): void {
+  _activeSessionBrandId = brandId && UUID_RE.test(brandId) ? brandId : "";
+  if (userId !== undefined) {
+    _activeSessionUserId = userId || "";
+  }
+  if (typeof localStorage !== "undefined") {
+    try {
+      if (_activeSessionBrandId) {
+        localStorage.setItem("spark_current_brand_id", _activeSessionBrandId);
+      } else {
+        localStorage.removeItem("spark_current_brand_id");
+      }
+      if (_activeSessionUserId) {
+        localStorage.setItem("spark_current_user_id", _activeSessionUserId);
+      } else {
+        localStorage.removeItem("spark_current_user_id");
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function getActiveSessionUserId(): string {
+  if (_activeSessionUserId) return _activeSessionUserId;
+  if (typeof localStorage !== "undefined") {
+    try {
+      return localStorage.getItem("spark_current_user_id") || "";
+    } catch {
+      /* ignore */
+    }
+  }
+  return "";
+}
+
+/**
+ * Encodes { brandId, userId, platform, ts } into a secure base64url OAuth state string.
+ */
+export function encodeOAuthState(platform: string, brandId?: string, userId?: string): string {
+  const effectiveBrandId = brandId || getBrandWorkspaceId();
+  const effectiveUserId = userId || getActiveSessionUserId();
+  const payload = {
+    platform,
+    brandId: effectiveBrandId,
+    userId: effectiveUserId,
+    ts: Date.now(),
+  };
+  const jsonStr = JSON.stringify(payload);
+  let b64 = "";
+  if (typeof btoa !== "undefined") {
+    b64 = btoa(jsonStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  } else if (typeof Buffer !== "undefined") {
+    b64 = Buffer.from(jsonStr).toString("base64url");
+  } else {
+    b64 = encodeURIComponent(jsonStr);
+  }
+  return `spark_oauth_${platform.toLowerCase().replace(/[^a-z0-9]/g, "")}_${b64}`;
+}
+
+/**
+ * Parses a base64url OAuth state string back to its components.
+ */
+export function parseOAuthState(state: string): {
+  platform?: string;
+  brandId?: string;
+  userId?: string;
+  ts?: number;
+} | null {
+  if (!state || typeof state !== "string" || !state.startsWith("spark_oauth_")) {
+    return null;
+  }
+  const parts = state.split("_");
+  if (parts.length < 4) {
+    return null;
+  }
+  const b64 = parts.slice(3).join("_");
+  try {
+    let jsonStr = "";
+    if (typeof atob !== "undefined") {
+      let norm = b64.replace(/-/g, "+").replace(/_/g, "/");
+      while (norm.length % 4) norm += "=";
+      jsonStr = atob(norm);
+    } else if (typeof Buffer !== "undefined") {
+      jsonStr = Buffer.from(b64, "base64url").toString("utf8");
+    } else {
+      jsonStr = decodeURIComponent(b64);
+    }
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * YouTube Platform Adapter — server-side token exchange via /api/auth/google/callback
  */
@@ -309,10 +414,18 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
       console.error("[YouTubeAdapter] VITE_GOOGLE_CLIENT_ID not configured");
       return "#";
     }
+    const brandId = getBrandWorkspaceId();
+    if (!brandId) {
+      console.error("[YouTubeAdapter] No active brand workspace id in session");
+      throw new Error(
+        "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
+      );
+    }
     const tokens = socialConnectorFramework.getStoredTokens();
     const existing = tokens["YouTube Shorts"] || tokens["YouTube"] || tokens["youtube"];
     const hasRefreshToken = Boolean(existing?.refreshToken);
 
+    const state = encodeOAuthState("youtube", brandId);
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
@@ -321,7 +434,7 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
       access_type: "offline",
       include_granted_scopes: "true",
       prompt: hasRefreshToken ? "consent select_account" : "consent",
-      state: `spark_oauth_youtube_${Date.now()}`,
+      state,
     });
     return `${config.authUrl}?${params.toString()}`;
   }
@@ -464,6 +577,14 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
       return "#";
     }
 
+    const brandId = getBrandWorkspaceId();
+    if (!brandId) {
+      console.error("[XAdapter] No active brand workspace id in session");
+      throw new Error(
+        "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
+      );
+    }
+
     // Generate PKCE synchronously for URL construction
     // We use plain method here and do proper S256 in the async flow
     const array = new Uint8Array(32);
@@ -477,12 +598,13 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
 
     // For S256, we need async — use plain as fallback for sync getAuthUrl
     // Twitter accepts plain for public clients using PKCE
+    const state = encodeOAuthState("x", brandId);
     const params = new URLSearchParams({
       response_type: "code",
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
       scope: config.scopes.join(" "),
-      state: `spark_oauth_x_${Date.now()}`,
+      state,
       code_challenge: codeVerifier,
       code_challenge_method: "plain",
     });
@@ -629,12 +751,14 @@ class BasePlatformAdapter implements ISocialPlatformAdapter {
       return "#";
     }
 
+    const brandId = getBrandWorkspaceId();
+    const state = encodeOAuthState(this.platform, brandId);
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
       response_type: "code",
       scope: config.scopes.join(" "),
-      state: `spark_oauth_${this.platform.toLowerCase().replace(/[^a-z0-9]/g, "")}_${Date.now()}`,
+      state,
     });
 
     return `${config.authUrl}?${params.toString()}`;
@@ -714,14 +838,23 @@ export interface CanonicalPlatformAccount {
  * Single source of truth for Accounts UI header counts, status badges, and row lookups.
  */
 export function buildPlatformAccountMap(
-  contextAccounts?: any[]
+  contextAccounts?: any[],
+  targetBrandId?: string
 ): Map<string, CanonicalPlatformAccount> {
   const map = new Map<string, CanonicalPlatformAccount>();
-  const liveStoredTokens = getStoredAccountTokens();
+  const activeBrand = targetBrandId || getBrandWorkspaceId();
+  const liveStoredTokens = getStoredAccountTokens(activeBrand);
 
   // 1. Ingest local OAuth token store
   Object.values(liveStoredTokens).forEach((t) => {
     if (!t) return;
+    // PLATFORM CONNECT ISOLATION LAW:
+    // Only ingest tokens that match activeBrand. Never leak across brands/users.
+    if (activeBrand) {
+      if (!t.brand_id || t.brand_id !== activeBrand) {
+        return;
+      }
+    }
     const pKey = normalizePlatformKey(t.platform);
     const statusLower = String(t.status || "").toLowerCase();
     const hasRefresh = Boolean(t.refreshToken);
@@ -752,6 +885,9 @@ export function buildPlatformAccountMap(
   if (Array.isArray(contextAccounts)) {
     contextAccounts.forEach((acc: any) => {
       if (!acc) return;
+      if (activeBrand && acc.brand_id && acc.brand_id !== activeBrand) {
+        return;
+      }
       const pKey = normalizePlatformKey(acc.platform);
       const statusLower = String(acc.status || "").toLowerCase();
       const hasRefresh = Boolean(acc.permissions?.refresh_token || acc.refreshToken);
@@ -849,15 +985,25 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
 
   saveToken(token: ConnectedAccountToken, opts?: { silent?: boolean }): void {
     try {
-      const stored = this.getStoredTokens();
       const pKey = normalizePlatformKey(token.platform);
+      const brandId = token.brand_id || getBrandWorkspaceId() || "";
+      const storageKey = brandId ? `${brandId}:${pKey}` : pKey;
+
+      let storeObj: Record<string, any> = {};
+      try {
+        const raw = localStorage.getItem("spark_social_account_tokens_v2");
+        if (raw) storeObj = JSON.parse(raw);
+      } catch {}
+
       const cleanToken = {
         ...token,
         platform: pKey,
         handle: normalizeHandle(token.handle),
+        brand_id: brandId || undefined,
       };
-      stored[pKey] = cleanToken;
-      localStorage.setItem("spark_social_account_tokens_v2", JSON.stringify(stored));
+
+      storeObj[storageKey] = cleanToken;
+      localStorage.setItem("spark_social_account_tokens_v2", JSON.stringify(storeObj));
       // silent=true when analytics pipeline enriches cache (avoid re-sync loops)
       if (!opts?.silent) {
         eventBus.emit("ACCOUNT_CONNECTED", { platform: pKey, handle: cleanToken.handle });
@@ -867,19 +1013,29 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
     }
   }
 
-  getStoredTokens(): Record<string, ConnectedAccountToken> {
+  getStoredTokens(targetBrandId?: string): Record<string, ConnectedAccountToken> {
     try {
       const stored = localStorage.getItem("spark_social_account_tokens_v2");
       if (!stored) return {};
       const parsed = JSON.parse(stored);
+      const activeBrand = targetBrandId || getBrandWorkspaceId();
       const normalized: Record<string, ConnectedAccountToken> = {};
+
       Object.entries(parsed).forEach(([k, tok]: [string, any]) => {
         if (tok && typeof tok === "object") {
-          const pKey = normalizePlatformKey(tok.platform || k);
+          const pKey = normalizePlatformKey(tok.platform || (k.includes(":") ? k.split(":")[1] : k));
+          const tokBrand = tok.brand_id || (k.includes(":") ? k.split(":")[0] : "");
+
+          if (activeBrand) {
+            if (tokBrand && tokBrand !== activeBrand) return;
+            if (!tokBrand) return;
+          }
+
           normalized[pKey] = {
             ...tok,
             platform: pKey,
             handle: normalizeHandle(tok.handle),
+            brand_id: tokBrand || undefined,
           };
         }
       });
@@ -974,14 +1130,23 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
 
 export const socialConnectorFramework = SocialConnectorFramework.getInstance();
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** Live brand workspace id only — never fall back to brand name strings. */
+/** Live brand workspace id only — never fall back to brand name strings or stale sessions. */
 export function getBrandWorkspaceId(): string {
+  if (_activeSessionBrandId && UUID_RE.test(_activeSessionBrandId)) {
+    return _activeSessionBrandId;
+  }
   try {
-    const id = localStorage.getItem("spark_current_brand_id") || "";
-    if (UUID_RE.test(id)) return id;
+    if (typeof localStorage !== "undefined") {
+      const storedUserId = localStorage.getItem("spark_current_user_id") || "";
+      if (_activeSessionUserId && storedUserId && storedUserId !== _activeSessionUserId) {
+        return "";
+      }
+      const id = localStorage.getItem("spark_current_brand_id") || "";
+      if (UUID_RE.test(id)) {
+        _activeSessionBrandId = id;
+        return id;
+      }
+    }
   } catch {
     /* ignore */
   }
@@ -989,16 +1154,23 @@ export function getBrandWorkspaceId(): string {
 }
 
 export function getOAuthAuthorizationUrl(platform: string): string {
+  const brandId = getBrandWorkspaceId();
+  if (!brandId) {
+    throw new Error(
+      "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
+    );
+  }
   return socialConnectorFramework.getAuthUrl(platform);
 }
 
 export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
-  const cleanToken = {
+  const brandId = token.brand_id || getBrandWorkspaceId();
+  const cleanToken: ConnectedAccountToken = {
     ...token,
     handle: normalizeHandle(token.handle),
+    brand_id: brandId || undefined,
   };
   socialConnectorFramework.saveToken(cleanToken);
-  const brandId = getBrandWorkspaceId();
   if (brandId) {
     void import("../backend/workspaceSync").then(({ persistAccountToken }) => {
       void persistAccountToken(brandId, cleanToken);
@@ -1031,8 +1203,8 @@ export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
     .catch((err) => console.warn("[OAuth] analytics sync after connect failed", err));
 }
 
-export function getStoredAccountTokens(): Record<string, ConnectedAccountToken> {
-  return socialConnectorFramework.getStoredTokens();
+export function getStoredAccountTokens(targetBrandId?: string): Record<string, ConnectedAccountToken> {
+  return socialConnectorFramework.getStoredTokens(targetBrandId);
 }
 
 function platformKeysMatch(a: string, b: string): boolean {
@@ -1048,16 +1220,23 @@ function platformKeysMatch(a: string, b: string): boolean {
 /** Purge all local token caches, brand pointers, and onboarding state across user sign-out boundaries. */
 export function clearAllStoredAccountTokens(): void {
   try {
+    _activeSessionBrandId = "";
+    _activeSessionUserId = "";
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem("spark_social_account_tokens_v2");
     localStorage.removeItem("spark_platform_analytics_v1");
     localStorage.removeItem("spark_current_brand_id");
     localStorage.removeItem("spark_current_brand_name");
+    localStorage.removeItem("spark_current_user_id");
+    localStorage.removeItem("spark_access_status");
+    localStorage.removeItem("spark_user_role");
     localStorage.removeItem("spark_onboarding_state");
     localStorage.removeItem("spark_onboarding_step");
     localStorage.removeItem("spark_onboarding_resume_state");
     localStorage.removeItem("spark_onboarding_complete");
     localStorage.removeItem("spark_demo_user");
+    localStorage.removeItem("spark_x_pkce_verifier");
+    localStorage.removeItem("spark_oauth_trigger_source");
   } catch (err) {
     console.warn("[socialIntegrationService] Token purge notice:", err);
   }
@@ -1222,14 +1401,15 @@ export async function ensureValidGoogleAccess(
 }
 
 /** Live connected platforms from local OAuth token store only (no mock fillers). */
-export function listLiveConnectedAccounts(): Array<{
+export function listLiveConnectedAccounts(targetBrandId?: string): Array<{
   platform: string;
   handle: string;
   displayName: string;
   status: "connected" | "needs_reconnect";
   active: boolean;
 }> {
-  return Array.from(buildPlatformAccountMap().values())
+  const activeBrand = targetBrandId || getBrandWorkspaceId();
+  return Array.from(buildPlatformAccountMap(undefined, activeBrand).values())
     .filter((a) => a.status === "connected" || a.status === "needs_reconnect")
     .map((a) => ({
       platform: a.platform,
@@ -1253,9 +1433,15 @@ export { formatCount };
  * Fetch live profile cards for all connected OAuth accounts (YouTube, X, …).
  * Phase 6J: runs full analytics pipeline (profile + channel stats + recent content).
  */
-export async function fetchLiveAccountProfiles(): Promise<LiveAccountProfileCard[]> {
+export async function fetchLiveAccountProfiles(targetBrandId?: string): Promise<LiveAccountProfileCard[]> {
+  const activeBrand = targetBrandId || getBrandWorkspaceId();
   const tokens = Object.values(getStoredAccountTokens()).filter(
-    (t) => !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase())
+    (t) => {
+      if (!t) return false;
+      if (activeBrand && t.brand_id && t.brand_id !== activeBrand) return false;
+      if (activeBrand && !t.brand_id) return false;
+      return !t.status || ["connected", "refreshing", "active"].includes(String(t.status).toLowerCase());
+    }
   );
   if (tokens.length === 0) return [];
 

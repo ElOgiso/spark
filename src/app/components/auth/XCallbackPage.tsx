@@ -4,6 +4,7 @@ import {
   getBrandWorkspaceId,
   getXRedirectUri,
   saveConnectedAccountToken,
+  parseOAuthState,
 } from "../../services/socialIntegrationService";
 
 export function XCallbackPage() {
@@ -31,9 +32,17 @@ export function XCallbackPage() {
       return;
     }
 
+    const parsedState = parseOAuthState(state);
+    const brandId = parsedState?.brandId || getBrandWorkspaceId();
+
+    if (!brandId) {
+      setStatus("error");
+      setErrorMsg("No active brand workspace found. Please return to Spark, select a brand, and reconnect.");
+      return;
+    }
+
     setStatus("exchanging");
     const redirectUri = getXRedirectUri();
-    const brandId = getBrandWorkspaceId();
     const codeVerifier =
       typeof localStorage !== "undefined"
         ? localStorage.getItem("spark_x_pkce_verifier") || ""

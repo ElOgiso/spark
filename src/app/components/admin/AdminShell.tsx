@@ -125,8 +125,8 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
       setOperationError(null);
       setActionLoadingId(user.id);
       const res = await approveUser(user.id, actorId);
-      if (res.error) {
-        setOperationError(`Approval failed: ${res.error}`);
+      if (res.error || res.data !== true) {
+        setOperationError(`Approval failed: ${res.error || "Profile access status was not updated"}`);
         return;
       }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
@@ -146,8 +146,8 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
       setOperationError(null);
       setActionLoadingId(user.id);
       const res = await rejectUser(user.id, actorId, "Rejected by administrator");
-      if (res.error) {
-        setOperationError(`Reject failed: ${res.error}`);
+      if (res.error || res.data !== true) {
+        setOperationError(`Reject failed: ${res.error || "Profile access status was not updated"}`);
         return;
       }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
@@ -167,8 +167,8 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
       setOperationError(null);
       setActionLoadingId(user.id);
       const res = await banUser(user.id, actorId, "Banned by administrator");
-      if (res.error) {
-        setOperationError(`Ban failed: ${res.error}`);
+      if (res.error || res.data !== true) {
+        setOperationError(`Ban failed: ${res.error || "Profile access status was not updated"}`);
         return;
       }
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));

@@ -13,7 +13,11 @@ import {
 } from "../backend/sessionService";
 import { markProfileOnboardingComplete } from "../backend/repositories/profileRepository";
 import type { BrandRow, ProfileRow } from "../backend/database.types";
-import { getBrandWorkspaceId } from "../services/socialIntegrationService";
+import {
+  getBrandWorkspaceId,
+  setActiveSessionBrand,
+  clearAllStoredAccountTokens,
+} from "../services/socialIntegrationService";
 
 type AuthContextValue = {
   currentUser: User | null;
@@ -101,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = Boolean(currentUser);
 
   const inFlightBootstrapRef = React.useRef<Promise<any> | null>(null);
+  const activeUserIdRef = React.useRef<string | null>(null);
 
   const bootstrap = useCallback(async (nextSession: Session | null) => {
     if (!nextSession?.user) {
@@ -110,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setProfile(null);
       setBrand(null);
+      setActiveSessionBrand(null, null);
       setLoading(false);
       return null;
     }
@@ -121,6 +127,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const task = (async () => {
       console.log("[SPARK AUTH] session exists: true");
       console.log("[SPARK AUTH] user id:", nextSession.user.id);
+
+      // Detect user boundary switch without explicit signOut (e.g. cross-session or tab swap)
+      if (activeUserIdRef.current && activeUserIdRef.current !== nextSession.user.id) {
+        console.log("[SPARK AUTH] User switch detected across sessions, clearing storage caches");
+        clearAllStoredAccountTokens();
+      }
+      activeUserIdRef.current = nextSession.user.id;
+
       setSession(nextSession);
 
       try {
@@ -135,14 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(result.profile);
         setBrand(result.brand);
         setBrands(result.brands || []);
-        if (result.brand?.id) {
-          try {
-            localStorage.setItem("spark_current_brand_id", result.brand.id);
-            localStorage.setItem("spark_current_brand_name", result.brand.name || "");
-          } catch {
-            /* ignore */
-          }
-        }
+        setActiveSessionBrand(result.brand?.id || null, nextSession.user.id);
         setError(result.error);
         setIsOnboardingComplete(isComplete);
         try {
@@ -251,12 +258,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(null);
         setProfile(null);
         setBrand(null);
+        setActiveSessionBrand(null, null);
+        activeUserIdRef.current = null;
         setIsOnboardingComplete(false);
-        try {
-          if (typeof localStorage !== "undefined") {
-            localStorage.removeItem("spark_onboarding_complete");
-          }
-        } catch {}
+        clearAllStoredAccountTokens();
         void import("./persistence").then(({ clearPersistedState }) => clearPersistedState());
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("spark-workspace-reset"));
@@ -398,6 +403,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       const { clearAllStoredAccountTokens } = await import("../services/socialIntegrationService");
       clearAllStoredAccountTokens();
+      setActiveSessionBrand(null, null);
+      activeUserIdRef.current = null;
       const { clearPersistedState } = await import("./persistence");
       clearPersistedState();
       if (typeof localStorage !== "undefined") {
@@ -457,6 +464,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (targetBrand) {
         setBrand(targetBrand);
+        setActiveSessionBrand(targetBrand.id, currentUser?.id);
         try {
           localStorage.setItem("spark_current_brand_id", targetBrand.id);
           localStorage.setItem("spark_current_brand_name", targetBrand.name || "");
@@ -520,6 +528,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await switchBrand(remainingBrands[0].id);
         } else {
           setBrand(null);
+          setActiveSessionBrand(null, currentUser?.id);
           try {
             localStorage.removeItem("spark_current_brand_id");
             localStorage.removeItem("spark_current_brand_name");
@@ -584,11 +593,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const sb = getSb();
         if (!sb) return;
         const { data } = await (sb.from("profiles") as any)
-          .select("access_status, credit_balance, role")
+          .select("id, email, access_status, credit_balance, role, display_name, active_brand_id")
           .eq("id", userId)
           .maybeSingle();
+
         if (data?.access_status) {
-          setProfile((prev) => prev ? { ...prev, access_status: data.access_status, credit_balance: data.credit_balance ?? prev.credit_balance, role: data.role ?? prev.role } : prev);
+          setProfile((prev) => {
+            if (!prev) {
+              return {
+                id: userId,
+                email: data.email || session?.user?.email || "creator@spark.ai",
+                display_name: data.display_name || "Creator",
+                full_name: data.display_name || "Creator",
+                role: data.role || "executive",
+                access_status: data.access_status,
+                credit_balance: data.credit_balance ?? 0,
+                active_brand_id: data.active_brand_id || null,
+                avatar_url: null,
+                onboarding_complete: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+            }
+            return {
+              ...prev,
+              access_status: data.access_status,
+              credit_balance: data.credit_balance ?? prev.credit_balance,
+              role: data.role ?? prev.role,
+            };
+          });
+
+          if (data.access_status === "active") {
+            try {
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem("spark_access_status", "active");
+              }
+            } catch {}
+          }
         }
       } catch (err) {
         console.warn("[AuthContext] realtime access poll notice:", err);
@@ -608,7 +649,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             (payload: any) => {
               const row = payload?.new;
               if (row?.access_status) {
-                setProfile((prev) => prev ? { ...prev, ...row } : prev);
+                setProfile((prev) => {
+                  if (!prev) {
+                    return {
+                      id: userId,
+                      email: row.email || session?.user?.email || "creator@spark.ai",
+                      display_name: row.display_name || "Creator",
+                      full_name: row.display_name || "Creator",
+                      role: row.role || "executive",
+                      access_status: row.access_status,
+                      credit_balance: row.credit_balance ?? 0,
+                      active_brand_id: row.active_brand_id || null,
+                      avatar_url: null,
+                      onboarding_complete: true,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                    };
+                  }
+                  return { ...prev, ...row };
+                });
+                if (row.access_status === "active") {
+                  try {
+                    if (typeof localStorage !== "undefined") {
+                      localStorage.setItem("spark_access_status", "active");
+                    }
+                  } catch {}
+                }
               }
             }
           )
@@ -618,9 +684,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
-    // Poll every 8s while still pending_approval, and on window focus
+    // Run immediate check on mount
+    void refreshAccessStatus();
+
+    // Poll every 4s while still pending_approval, and on window focus
     if (userAccessStatus === "pending_approval") {
-      pollTimer = setInterval(refreshAccessStatus, 8000);
+      pollTimer = setInterval(refreshAccessStatus, 4000);
       window.addEventListener("focus", refreshAccessStatus);
     }
 

@@ -5,6 +5,7 @@ import {
   getGoogleRedirectUri,
   saveConnectedAccountToken,
   getStoredAccountTokens,
+  parseOAuthState,
 } from "../../services/socialIntegrationService";
 
 export function GoogleCallbackPage() {
@@ -37,10 +38,19 @@ export function GoogleCallbackPage() {
       console.warn("[GoogleCallbackPage] Warning: state validation bypassed/failed", state);
     }
 
+    const parsedState = parseOAuthState(state);
+    const brandId = parsedState?.brandId || getBrandWorkspaceId();
+
+    if (!brandId) {
+      console.error("[GoogleCallbackPage] Error: no active brand workspace found");
+      setStatus("error");
+      setErrorMsg("No active brand workspace found. Please return to Spark, select a brand, and reconnect.");
+      return;
+    }
+
     setStatus("exchanging");
     // Must match the redirect_uri used to start OAuth (registered in Google Console)
     const redirectUri = getGoogleRedirectUri();
-    const brandId = getBrandWorkspaceId();
 
     console.log("[GoogleCallbackPage] Preparing backend POST with parameters:", {
       redirectUri,
