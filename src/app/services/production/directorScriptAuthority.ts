@@ -251,14 +251,21 @@ export function mergeSpecStoryboardWithBriefScript(params: {
           ? briefSpoken
           : specSpoken || (i === 0 ? String(params.hook || "").trim() : "");
 
+    const briefVisual = String(briefPanel?.visualDescription || "").trim();
+    const specVisual = String(panel.visualDescription || "").trim();
+    // Prefer substantive brief visual description from AI creative director over thin Spec skeleton
+    const visual =
+      briefVisual.length >= 15 && !isPlannerMetaText(briefVisual)
+        ? briefVisual
+        : specVisual || briefVisual || beat?.cameraDirection;
+
     const briefOnScreen = String(briefPanel?.onScreenText || beat?.onScreenText || "").trim();
     const director = resolveDirectorSceneScript({
       scene: {
         ...panel,
         spokenLines: spoken,
         onScreenText: briefOnScreen || panel.onScreenText,
-        visualDescription:
-          panel.visualDescription || briefPanel?.visualDescription || beat?.cameraDirection,
+        visualDescription: visual,
         physicalAction: panel.physicalAction || briefPanel?.physicalAction,
         primaryChange: panel.primaryChange,
         action: panel.action,
@@ -279,9 +286,11 @@ export function mergeSpecStoryboardWithBriefScript(params: {
       primaryChange: director.wasMeta ? director.physicalAction : panel.primaryChange || director.physicalAction,
       action: director.physicalAction,
       visualDescription:
-        !isPlannerMetaText(panel.visualDescription)
-          ? panel.visualDescription
-          : director.physicalAction,
+        visual && !isPlannerMetaText(visual)
+          ? visual
+          : !isPlannerMetaText(panel.visualDescription)
+            ? panel.visualDescription
+            : director.physicalAction,
       directorScript: {
         physicalAction: director.physicalAction,
         spokenLines: spoken || director.spokenLines,

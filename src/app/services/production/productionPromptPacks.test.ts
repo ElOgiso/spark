@@ -86,3 +86,72 @@ test("deep mode is diegetic-only (no external voiceover); standard vo leaves aco
   });
   assert.match(standardVo, /external voiceover bed/i);
 });
+
+test("motion prompt omits redundant board context leakage when followStoryboardStill is true", () => {
+  const promptFollowingStill = buildSceneMotionPrompt({
+    mode: "standard",
+    aspectRatio: "16:9",
+    sceneIndex: 1,
+    totalScenes: 3,
+    durationSec: 5,
+    action: "Subject walks through neon alley",
+    characterName: "Elena",
+    environment: "a high-end executive studio with refined architectural lighting",
+    followStoryboardStill: true,
+  });
+
+  assert.ok(!promptFollowingStill.includes("(Locked board context:"));
+  assert.ok(!promptFollowingStill.includes("executive studio"));
+  assert.match(
+    promptFollowingStill,
+    /Environment: Exact set, props, products, architecture, lighting, textures, and depth of field as IMAGE 1/
+  );
+});
+
+test("buildLockedIdentityPack: host format locks set, story and faceless formats use scene-directed set continuity", async () => {
+  const { buildLockedIdentityPack } = await import("./productionAssetService");
+  const brand = { name: "Acme Corp", locationPlateUrl: "https://example.com/studio.jpg" } as any;
+  const character = { name: "Jordan", style: "Presenter", traits: ["Dynamic"] } as any;
+  const brief = { visualDirection: "Minimalist executive studio" } as any;
+
+  // Host format
+  const hostPack = buildLockedIdentityPack({
+    brand,
+    character,
+    brief,
+    formatSettings: { contentFormat: "host" },
+  });
+  assert.match(hostPack.setBlock, /ENVIRONMENT \(LOCKED SET\)/);
+  assert.match(hostPack.setBlock, /Same physical set, backdrop, architectural details/);
+
+  // Story format
+  const storyPack = buildLockedIdentityPack({
+    brand,
+    character,
+    brief,
+    formatSettings: { contentFormat: "story" },
+  });
+  assert.match(storyPack.setBlock, /ENVIRONMENT \(SCENE-DIRECTED\)/);
+  assert.match(storyPack.setBlock, /Honor each scene's distinct location/);
+
+  // Faceless format
+  const facelessPack = buildLockedIdentityPack({
+    brand,
+    character: null,
+    brief,
+    formatSettings: { contentFormat: "faceless" },
+  });
+  assert.match(facelessPack.setBlock, /ENVIRONMENT \(SCENE-DIRECTED\)/);
+});
+
+test("Grok capability profile reflects adapter and contract start and end frame support", async () => {
+  const { MEDIA_CAPABILITY_PROFILES } = await import("./capability/profiles");
+  const grok = MEDIA_CAPABILITY_PROFILES.find((p) => p.providerId === "grok");
+  assert.ok(grok, "Grok profile must exist");
+  assert.equal(grok.temporal?.supportsStartFrame, true);
+  assert.equal(grok.temporal?.supportsEndFrame, true);
+  assert.equal(grok.temporal?.supportsStartAndEndFrame, true);
+  assert.equal(grok.temporal?.supportsTailFrame, true);
+  assert.match(grok.temporal?.provenance?.notes || "", /last_frame_url/i);
+});
+

@@ -795,6 +795,8 @@ export interface ProductionFormatSettings {
   visualGenre?: VisualGenreSetting;
   /** Cinematic coverage/camera craft overlay — default on, does not force photoreal. */
   cinematicCraft?: boolean;
+  /** When true or host default, locks set continuity across all scenes. When false, scenes are scene-directed. */
+  singleLocation?: boolean;
   preferredVideoProvider?: AIProviderId;
   preferredVideoModel?: string;
 }

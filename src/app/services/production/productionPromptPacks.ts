@@ -413,7 +413,7 @@ export function buildSceneMotionPrompt(params: SceneMotionPromptParams): string 
     : `Character Consistency: Strict facial, hair, and wardrobe fidelity to "${characterName}" (${characterStyle}).`;
 
   const environmentLine = followStoryboardStill
-    ? `Environment: Exact set, props, products, architecture, lighting, textures, and depth of field as IMAGE 1. Do not relocate or redesign. (Locked board context: ${environment}.)`
+    ? "Environment: Exact set, props, products, architecture, lighting, textures, and depth of field as IMAGE 1. Do not relocate or redesign."
     : `Environment: Set in "${environment}". Maintain lighting, textures, and depth of field.`;
 
   const criticalLaws = followStoryboardStill

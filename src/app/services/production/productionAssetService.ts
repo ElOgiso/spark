@@ -197,8 +197,23 @@ export function buildLockedIdentityPack(params: {
   const identityBlock = `CHARACTER (LOCKED IDENTITY): Primary subject is "${character?.name || "Host"}" (Style: ${character?.style || "Executive Presenter"}, Traits: ${(character?.traits || ["Visionary", "Authoritative", "Magnetic"]).join(", ")}).
 IDENTITY CONTINUITY LAW: Must be the exact same person in every panel. Consistent facial structure, hair, and wardrobe styling across every single scene. Absolutely no character drifting, no face morphing, no outfit changes.${characterReferenceImageUrl ? ` Reference Sheet: ${characterReferenceImageUrl}` : ""}`;
 
-  const setBlock = `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".${plateUrl ? ` Locked Set Reference: ${plateUrl}` : ""}
-SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and lighting atmosphere across all panels. Do not change set location mid-board unless brief explicitly changes scene location. Lighting aligned with ${brand.name || "Brand"}.`;
+  const effectiveFormat = getEffectiveContentFormat({
+    brand,
+    production,
+    brief,
+    character,
+    formatSettings,
+  });
+  const isSingleLocation =
+    effectiveFormat === "host" &&
+    formatSettings?.singleLocation !== false &&
+    (production as any)?.formatSettings?.singleLocation !== false;
+
+  const setBlock = isSingleLocation
+    ? `ENVIRONMENT (LOCKED SET): Location is "${environmentString}".${plateUrl ? ` Locked Set Reference: ${plateUrl}` : ""}
+SET CONTINUITY LAW: Same physical set, backdrop, architectural details, and lighting atmosphere across all panels. Do not change set location mid-board unless brief explicitly changes scene location. Lighting aligned with ${brand.name || "Brand"}.`
+    : `ENVIRONMENT (SCENE-DIRECTED): Visual world and aesthetic aligned with "${environmentString}".${plateUrl ? ` Brand Aesthetic Reference: ${plateUrl}` : ""}
+SET CONTINUITY LAW: Honor each scene's distinct location, architecture, and lighting atmosphere as defined in its storyboard panel. Maintain coherent world aesthetic aligned with ${brand.name || "Brand"} without forcing unrelated scenes into a single set.`;
 
   const visualGenre = resolveLiveVisualGenre({
     formatSettings: formatSettings,
@@ -2515,7 +2530,10 @@ export class ProductionAssetService {
               if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
                 identityRefs.push(sceneCharSheetUrl);
               }
-              if (validPlate && isValidMediaData(validPlate) && validPlate !== sceneFirstFrame && !identityRefs.includes(validPlate)) {
+              // Storyboard panel is the primary visual anchor for environment and lighting.
+              // Never inject a generic location plate when sceneFirstFrame is present, as it conflicts with
+              // the scene keyframe and causes provider cross-attention confusion or API rejections (e.g. Grok).
+              if (!sceneFirstFrame && validPlate && isValidMediaData(validPlate) && !identityRefs.includes(validPlate)) {
                 identityRefs.push(validPlate);
               }
 

@@ -79,6 +79,34 @@ test("mergeSpecStoryboardWithBriefScript keeps LLM spoken over Spec template", (
   assert.ok(!/host presents key/i.test(merged[0].physicalAction));
 });
 
+test("mergeSpecStoryboardWithBriefScript prefers substantive brief visualDescription over spec template", () => {
+  const merged = mergeSpecStoryboardWithBriefScript({
+    specStoryboard: [
+      {
+        scene: 1,
+        primaryChange: "Host explains key insight",
+        visualDescription: "Host standing in studio",
+        spokenLines: "Welcome back.",
+        cameraDirection: "Static medium",
+      },
+    ],
+    briefStoryboard: [
+      {
+        scene: 1,
+        visualDescription: "Dynamic drone establishing shot swooping through towering bamboo forest at sunrise with golden mist",
+        spokenLines: "Deep in the bamboo forest, silence rules.",
+      },
+    ],
+    briefBeats: [{ spokenLines: "Deep in the bamboo forest, silence rules." }],
+  });
+
+  assert.equal(
+    merged[0].visualDescription,
+    "Dynamic drone establishing shot swooping through towering bamboo forest at sunrise with golden mist"
+  );
+  assert.equal(merged[0].spokenLines, "Deep in the bamboo forest, silence rules.");
+});
+
 test("mergeSpecBeatsWithBriefBeats prefers brief spokenLines", () => {
   const beats = mergeSpecBeatsWithBriefBeats({
     specBeats: [{ spokenLines: "Here's the key takeaway.", valueJob: "proof" }],
