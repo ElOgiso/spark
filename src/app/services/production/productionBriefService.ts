@@ -118,46 +118,67 @@ export function resolveResearchContext(
   spark: ViralSpark,
   params?: { researchContext?: StructuredResearchContext }
 ): StructuredResearchContext | null {
+  let ctx: StructuredResearchContext | null = null;
+
   // 1) Explicit params.researchContext
   if (params?.researchContext && Object.keys(params.researchContext).length > 0) {
-    return params.researchContext;
+    ctx = { ...params.researchContext };
+  } else if (spark?.researchContext && Object.keys(spark.researchContext).length > 0) {
+    // 2) Attached spark.researchContext
+    ctx = { ...spark.researchContext };
+  } else {
+    // 3) Rebuild from spark fields if source / pattern data exists
+    const hasPatternData = Boolean(
+      spark?.origin === "SOURCE" ||
+        spark?.sourceId ||
+        (spark?.hook && (spark.hook.toLowerCase().includes("opener") || spark.hook.toLowerCase().includes("pattern")))
+    );
+
+    if (hasPatternData) {
+      const hookPattern = spark?.hook || undefined;
+      const titlePattern = spark?.title ? `Title structure (${spark.title.slice(0, 40)}...)` : undefined;
+      const format = spark?.suggestedFormat || (spark?.suggestedProductionMode === "express" ? "Vertical Short-Form (Shorts)" : "Host Presentation");
+      const ctaStyle = spark?.whyNow?.includes("comment") ? "Organic comment discussion bridge" : "Direct value CTA";
+      const nicheLanguage = spark?.whyNow ? spark.whyNow.split(/\s+/).filter((w) => w.length > 5).slice(0, 3) : undefined;
+      const viralReasons = spark?.whyNow ? [spark.whyNow] : undefined;
+
+      ctx = {
+        sourceName: spark?.sourceId ? `Inspiration Source (${spark.sourceId})` : "Inspiration Account",
+        platform: spark?.platformFit?.includes("Shorts") ? "YouTube Shorts" : "Video",
+        hookPattern,
+        titlePattern,
+        format,
+        ctaStyle,
+        nicheLanguage,
+        viralReasons,
+        provenStructure: format,
+      };
+    } else if (
+      (Array.isArray(spark?.spoken_beats) && spark.spoken_beats.length > 0) ||
+      spark?.opening_line ||
+      (Array.isArray(spark?.visual_actions) && spark.visual_actions.length > 0) ||
+      spark?.cta_line
+    ) {
+      ctx = {};
+    }
   }
 
-  // 2) Attached spark.researchContext
-  if (spark?.researchContext && Object.keys(spark.researchContext).length > 0) {
-    return spark.researchContext;
+  if (ctx) {
+    if (!ctx.spokenBeats && Array.isArray(spark?.spoken_beats) && spark.spoken_beats.length > 0) {
+      ctx.spokenBeats = spark.spoken_beats;
+    }
+    if (!ctx.openingLine && spark?.opening_line) {
+      ctx.openingLine = spark.opening_line;
+    }
+    if (!ctx.visualActions && Array.isArray(spark?.visual_actions) && spark.visual_actions.length > 0) {
+      ctx.visualActions = spark.visual_actions;
+    }
+    if (!ctx.ctaLine && spark?.cta_line) {
+      ctx.ctaLine = spark.cta_line;
+    }
   }
 
-  // 3) Rebuild from spark fields if source / pattern data exists
-  const hasPatternData = Boolean(
-    spark.origin === "SOURCE" ||
-      spark.sourceId ||
-      (spark.hook && (spark.hook.toLowerCase().includes("opener") || spark.hook.toLowerCase().includes("pattern")))
-  );
-
-  if (hasPatternData) {
-    const hookPattern = spark.hook || undefined;
-    const titlePattern = spark.title ? `Title structure (${spark.title.slice(0, 40)}...)` : undefined;
-    const format = spark.suggestedFormat || (spark.suggestedProductionMode === "express" ? "Vertical Short-Form (Shorts)" : "Host Presentation");
-    const ctaStyle = spark.whyNow?.includes("comment") ? "Organic comment discussion bridge" : "Direct value CTA";
-    const nicheLanguage = spark.whyNow ? spark.whyNow.split(/\s+/).filter((w) => w.length > 5).slice(0, 3) : undefined;
-    const viralReasons = spark.whyNow ? [spark.whyNow] : undefined;
-
-    return {
-      sourceName: spark.sourceId ? `Inspiration Source (${spark.sourceId})` : "Inspiration Account",
-      platform: spark.platformFit?.includes("Shorts") ? "YouTube Shorts" : "Video",
-      hookPattern,
-      titlePattern,
-      format,
-      ctaStyle,
-      nicheLanguage,
-      viralReasons,
-      provenStructure: format,
-    };
-  }
-
-  // 4) If pure trend or general spark without research context -> null (do not fabricate)
-  return null;
+  return ctx;
 }
 
 export function formatResearchContextBlock(context: StructuredResearchContext | null, brandName: string): string {
@@ -375,7 +396,7 @@ export function compileDeterministicBrief(params: {
   const cleanHook =
     rawHook.length > 5 && !rawHook.toLowerCase().startsWith("hook:") && !rawHook.toLowerCase().includes("curiosity opener")
       ? rawHook.replace(/^["']|["']$/g, "").trim()
-      : `Here is the non-obvious reality about ${niche || brand.niche || "this market"} that most operators in ${brand.name}'s space ignore.`;
+      : `Here is what you need to know about ${spark.title || niche || brand.niche || "this topic"}.`;
 
   // Brand Pillars & Audience Constraints
   const rawPillars = Array.isArray(brand.contentPillars) ? brand.contentPillars : [];
@@ -393,7 +414,7 @@ export function compileDeterministicBrief(params: {
 
   const spokenCta = defaultOffer
     ? `Claim your access to ${defaultOffer.title} right now — click the link in bio or drop a comment below.`
-    : `Follow ${brand.name} for daily high-conviction executive breakdowns and operational blueprints.`;
+    : (spark.cta_line || researchContext?.ctaLine || `Follow ${brand.name} for more breakdowns and practical strategies.`);
 
   const onScreenCta = defaultOffer
     ? `GET ${defaultOffer.title.toUpperCase().slice(0, 20)}`
@@ -452,12 +473,15 @@ export function compileDeterministicBrief(params: {
     timeIntervals.push({ start: startSec, end: endSec });
   }
 
-  const researchedSpokenBeats = Array.isArray(researchContext?.spokenBeats) && researchContext.spokenBeats.length > 0
-    ? researchContext.spokenBeats.map((b) => String(b || "").trim()).filter(Boolean)
-    : [];
-  const researchedVisualActions = Array.isArray(researchContext?.visualActions)
-    ? researchContext.visualActions.map((a) => String(a || "").trim()).filter(Boolean)
-    : [];
+  const rawSpokenBeats = Array.isArray(researchContext?.spokenBeats) && researchContext.spokenBeats.length > 0
+    ? researchContext.spokenBeats
+    : (Array.isArray(spark?.spoken_beats) && spark.spoken_beats.length > 0 ? spark.spoken_beats : []);
+  const researchedSpokenBeats = rawSpokenBeats.map((b) => String(b || "").trim()).filter(Boolean);
+
+  const rawVisualActions = Array.isArray(researchContext?.visualActions) && researchContext.visualActions.length > 0
+    ? researchContext.visualActions
+    : (Array.isArray(spark?.visual_actions) && spark.visual_actions.length > 0 ? spark.visual_actions : []);
+  const researchedVisualActions = rawVisualActions.map((a) => String(a || "").trim()).filter(Boolean);
 
   if (researchedSpokenBeats.length > 0) {
     const rCount = Math.max(3, Math.min(totalBeats, researchedSpokenBeats.length));
@@ -485,17 +509,17 @@ export function compileDeterministicBrief(params: {
       const job = valueJobs[i] || (isFirst ? "hook" : isLast ? "cta" : "proof");
 
       let spoken = researchedSpokenBeats[i] || "";
-      if (isFirst && researchContext?.openingLine) {
-        spoken = researchContext.openingLine;
-      } else if (isLast && researchContext?.ctaLine) {
-        spoken = researchContext.ctaLine;
+      if (isFirst && (researchContext?.openingLine || spark?.opening_line)) {
+        spoken = (researchContext?.openingLine || spark?.opening_line)!;
+      } else if (isLast && (researchContext?.ctaLine || spark?.cta_line)) {
+        spoken = (researchContext?.ctaLine || spark?.cta_line)!;
       } else if (isLast && !spoken) {
         spoken = spokenCta;
       }
 
       const visualAction = researchedVisualActions[i] || undefined;
       const onScreen = isFirst
-        ? (activePillar ? activePillar.toUpperCase().slice(0, 20) : "THE CORE REVELATION")
+        ? (activePillar ? activePillar.toUpperCase().slice(0, 20) : "CORE INSIGHT")
         : isLast
         ? onScreenCta
         : pillarBadge;
@@ -522,19 +546,19 @@ export function compileDeterministicBrief(params: {
     const t1 = timeIntervals[1];
     const t2 = timeIntervals[2];
 
-    const hookLine = `${cleanHook} Here is the exact shift leading operators are deploying right now.`;
+    const hookLine = `${cleanHook} Here is what actually matters.`;
     const valueLine = sparkAngle
-      ? `The core mechanism is clear: ${sparkAngle}. When you eliminate manual friction${pillarLabel}, execution speed and delivery velocity compound immediately.`
+      ? `The core concept: ${sparkAngle}. When you apply this${pillarLabel}, execution and results improve immediately.`
       : sparkWhyNow
-      ? `Here is the catalyst: ${sparkWhyNow}. At ${brand.name}${pillarLabel}, we eliminate process drag to unlock maximum market leverage.`
-      : `Most teams waste bandwidth on ${audiencePain || "outdated workflows"}. The real leverage comes from building around systematic, high-conviction delivery.`;
+      ? `Here is why this matters now: ${sparkWhyNow}. At ${brand.name}${pillarLabel}, we focus directly on what drives progress.`
+      : `Many teams face friction with ${audiencePain || "inconsistent execution"}. The breakthrough comes from a direct, focused methodology.`;
 
     beats.push(
       {
         timecode: `[${formatTime(t0.start)}-${formatTime(t0.end)}]`,
         valueJob: "hook",
         spokenLines: hookLine,
-        onScreenText: activePillar ? `${activePillar.toUpperCase().slice(0, 20)}` : `THE NON-OBVIOUS SHIFT`,
+        onScreenText: activePillar ? `${activePillar.toUpperCase().slice(0, 20)}` : `CORE INSIGHT`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
         startState: states[0].start,
         endState: states[0].end,
@@ -563,21 +587,21 @@ export function compileDeterministicBrief(params: {
     );
   } else if (totalBeats === 4) {
     // 30s: 4 Beats (Hook, Problem, Proof, CTA) -> Target ~72-90 words
-    const hookLine = `${cleanHook} In this breakdown, we reveal the core operational unlock that separates leading operators from the rest of the market.`;
+    const hookLine = `${cleanHook} In this breakdown, we examine the core approach that drives real results.`;
     const problemLine = audiencePain
-      ? `Here is the systemic bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, legacy playbooks cannot keep pace.` : "When execution relies on manual effort instead of leverage, delivery velocity and margins decay rapidly."}`
-      : `Most operators in ${niche || brand.niche || "this space"} waste time solving modern challenges with broken, fragmented tools that compound process debt.`;
+      ? `The main obstacle: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, standard methods fall short.` : "Without a proven system, execution slows and progress stalls."}`
+      : `Many in ${niche || brand.niche || "this field"} struggle with fragmented workflows that waste valuable time.`;
 
     const proofLine = sparkAngle
-      ? `To solve this${pillarLabel}, ${brand.name} deploys a streamlined framework: ${sparkAngle}. This consistently generates ${audienceDesire || "high market leverage and compounding efficiency"}.`
-      : `When you build around systematic execution${pillarLabel}, you eliminate manual drag to achieve ${audienceDesire || "predictable pipeline velocity and market authority"}.`;
+      ? `To solve this${pillarLabel}, ${brand.name} uses a clear framework: ${sparkAngle}. This consistently generates ${audienceDesire || "reliable, high-impact results"}.`
+      : `When you build on a structured approach${pillarLabel}, you eliminate guesswork to achieve ${audienceDesire || "consistent, measurable outcomes"}.`;
 
     beats.push(
       {
         timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
         valueJob: "hook",
         spokenLines: hookLine,
-        onScreenText: `WHY MOST GET THIS WRONG`,
+        onScreenText: `CORE INSIGHT`,
         cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
         startState: states[0].start,
         endState: states[0].end,
@@ -587,7 +611,7 @@ export function compileDeterministicBrief(params: {
         timecode: `[${formatTime(timeIntervals[1].start)}-${formatTime(timeIntervals[1].end)}]`,
         valueJob: "problem",
         spokenLines: problemLine,
-        onScreenText: `THE CORE BOTTLENECK`,
+        onScreenText: `THE CHALLENGE`,
         cameraDirection: "Medium tracking pan across set",
         startState: states[1].start,
         endState: states[1].end,
@@ -616,39 +640,39 @@ export function compileDeterministicBrief(params: {
     );
   } else if (totalBeats <= 6) {
     // 45s - 60s: 5–6 Beats (Hook, Problem, Context/Myth, Proof, Payoff, CTA) -> Target ~144-170 words
-    const hookLine = `${cleanHook} Most operators attempt to solve modern challenges with broken, outdated playbooks. In this strategic breakdown, we deconstruct the exact execution model ${brand.name} uses to establish market authority.`;
+    const hookLine = `${cleanHook} In this breakdown, we deconstruct the exact method ${brand.name} uses to achieve reliable results.`;
 
     const problemLine = audiencePain
-      ? `Here is the root bottleneck: ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, legacy systems collapse under load.` : "When you scale without systematic leverage, process debt compounds into permanent drag across your entire organization."}`
-      : `Every single day in ${niche || brand.niche || "this space"}, teams waste critical executive bandwidth fighting avoidable operational friction instead of executing high-signal strategy.`;
+      ? `The core challenge is ${audiencePain}. ${sparkWhyNow ? `Because ${sparkWhyNow.toLowerCase()}, conventional approaches struggle.` : "Without a structured workflow, inefficiency compounds over time."}`
+      : `Teams in ${niche || brand.niche || "this field"} often spend unnecessary time fighting friction instead of executing on what matters.`;
 
-    const contextLine = `The prevailing misconception is that hiring more people or buying more tools solves process debt. At ${brand.name}, our core methodology decouples input hours from strategic output${pillarLabel}.`;
+    const contextLine = `A frequent misconception is that more complexity equals better results. At ${brand.name}, our methodology simplifies each step to maximize output${pillarLabel}.`;
 
     const proofLine = sparkAngle
-      ? `To achieve genuine compounding, we deploy a streamlined framework: ${sparkAngle}. By automating repeatable delivery, conversion and execution velocity improve immediately.`
-      : `When you align execution with clear market positioning and modular pipelines, your team delivers ten times the output with zero manual overhead.`;
+      ? `To achieve consistent output, we rely on a clear process: ${sparkAngle}. By standardizing execution, quality and velocity improve immediately.`
+      : `When you align your workflow with structured checkpoints, your team delivers consistent results with far less friction.`;
 
-    const payoffLine = `This unlocks ${audienceDesire || "total operational freedom, predictable growth, and an unassailable competitive moat that competitors cannot replicate"}.`;
+    const payoffLine = `This delivers ${audienceDesire || "clarity, steady progress, and sustainable results that last"}.`;
 
     const intermediateJobs = totalBeats === 5
       ? [
-          { job: "problem", text: problemLine, screen: "THE ROOT BOTTLENECK", cam: "Medium tracking shot" },
+          { job: "problem", text: problemLine, screen: "THE CHALLENGE", cam: "Medium tracking shot" },
           { job: "context", text: contextLine, screen: pillarBadge, cam: "Split composition" },
-          { job: "proof", text: proofLine, screen: "SYSTEMATIC LEVERAGE", cam: "Authority close-up" },
+          { job: "proof", text: proofLine, screen: "DIRECT EXECUTION", cam: "Authority close-up" },
         ]
       : [
-          { job: "problem", text: problemLine, screen: "THE ROOT BOTTLENECK", cam: "Medium tracking shot" },
-          { job: "myth_bust", text: `Common wisdom says work harder to scale. In reality, working harder on broken systems only accelerates burnout and margin compression.`, screen: "MYTH: EFFORT = SCALE", cam: "Close-up direct angle" },
+          { job: "problem", text: problemLine, screen: "THE CHALLENGE", cam: "Medium tracking shot" },
+          { job: "myth_bust", text: `Common wisdom says just work longer hours. In reality, working longer on an inefficient process only creates burnout without improving results.`, screen: "MYTH VS REALITY", cam: "Close-up direct angle" },
           { job: "context", text: contextLine, screen: pillarBadge, cam: "Split composition" },
-          { job: "proof", text: proofLine, screen: "SYSTEMATIC LEVERAGE", cam: "Authority close-up" },
-          { job: "payoff", text: payoffLine, screen: "COMPOUNDING LEVERAGE", cam: "Cinematic push-in" },
+          { job: "proof", text: proofLine, screen: "DIRECT EXECUTION", cam: "Authority close-up" },
+          { job: "payoff", text: payoffLine, screen: "PROVEN RESULTS", cam: "Cinematic push-in" },
         ];
 
     beats.push({
       timecode: `[${formatTime(timeIntervals[0].start)}-${formatTime(timeIntervals[0].end)}]`,
       valueJob: "hook",
       spokenLines: hookLine,
-      onScreenText: `THE NON-OBVIOUS SHIFT`,
+      onScreenText: `CORE INSIGHT`,
       cameraDirection: modeKey === "deep" ? "Slow push-in zoom on presenter" : "Presenter centered, high energy",
       startState: states[0].start,
       endState: states[0].end,
@@ -1204,15 +1228,24 @@ ${prompt}`;
         0
       );
 
-      if (fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
-        console.warn(
-          `[ProductionBriefService] Real model under-delivered after ${MAX_REWRITE_PASSES} rewrite passes; using deterministic template fallback (${fallbackWords} words). Marking contentSource="template-fallback".`
+      // Spoken lines priority:
+      // 1) Viral Spark spoken_beats / opening_line / hook
+      // 2) Live brief LLM output
+      // 3) FAIL the brief (retry once) — do not ship the pamphlet
+      const hasViralSpokenBeats = Boolean(
+        (Array.isArray(spark.spoken_beats) && spark.spoken_beats.length >= 3) ||
+        (Array.isArray(resolvedResearch?.spokenBeats) && resolvedResearch.spokenBeats.length >= 3)
+      );
+
+      if (hasViralSpokenBeats && fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
+        console.log(
+          `[ProductionBriefService] Prioritizing Viral Spark researched spoken beats (${fallback.beats?.length || 0} beats, ${fallbackWords} words).`
         );
         validBeats = fallback.beats || [];
         totalWords = fallbackWords;
-        contentSource = "template-fallback";
+        contentSource = "ai";
       } else {
-        const errMsg = `Brief too thin for ${effectiveDurationSec}s (${totalWords} words < ${budget.wordFloor} minimum words)`;
+        const errMsg = `Production brief generation failed: LLM output did not meet quality floor (${totalWords} words < ${budget.wordFloor} minimum words, ${validBeats.length}/${budget.count} beats) and no viral spoken beats were available. Refusing to ship generic template copy.`;
         console.error(`[ProductionBriefService] ${errMsg}`);
         throw new Error(errMsg);
       }

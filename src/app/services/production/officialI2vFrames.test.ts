@@ -41,6 +41,19 @@ describe("official i2v frame 1 contract", () => {
     );
   });
 
+  it("rejects thumbnail URLs as forbidden i2v start frame", () => {
+    const thumb = "https://cdn.example.com/thumbnails/variant-1-thumbnail.jpg";
+    assert.equal(isForbiddenI2vStartFrame(thumb), true);
+    assert.throws(
+      () =>
+        resolveOfficialI2vClipFrames({
+          sceneImage: thumb,
+          sceneLabel: "Scene 1",
+        }),
+      /not a grid/i
+    );
+  });
+
   it("allows a mislabeled grid URL that is actually this shot's still", () => {
     const still = "https://cdn.example.com/scenes/scene-01.png";
     const frames = resolveOfficialI2vClipFrames({

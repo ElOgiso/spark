@@ -1055,12 +1055,12 @@ export class ProductionAssetService {
 
     const stages: import("../../domain/types").GenerationProgressStage[] = [
       { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
-      { id: "voice", label: skipExternalVoice ? "Voiceover synthesis (skipped — cinematic)" : "Voiceover synthesis", status: skipExternalVoice ? "done" : "pending" },
+      { id: "voice", label: skipExternalVoice ? "Voiceover synthesis (skipped — cinematic)" : "Voiceover synthesis", status: skipExternalVoice ? "skipped" : "pending" },
       { id: "keyframes", label: "Scene stills", status: "pending" },
-      { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "done" : "pending" },
+      { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "skipped" : "pending" },
       { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
       { id: "captions", label: mode === "express" ? "Captions" : "Captions (master assemble)", status: "pending" },
-      { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "done" : "pending" },
+      { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "skipped" : "pending" },
       { id: "saving", label: "Finalizing media package", status: "pending" },
     ];
 
@@ -2266,6 +2266,17 @@ export class ProductionAssetService {
               checkAborted();
               const s = currentStoryboard[sIdx];
               const globalSceneNum = s.scene || sIdx + 1;
+
+              // HYBRID (standard) mode: respect beat audio ("vo" | "talent")
+              // "talent beat: still → i2v from THAT still as firstFrame, NO ElevenLabs on that beat. vo beat: still stays still, ElevenLabs only for those lines."
+              if (mode === "standard" && s.audio === "vo") {
+                console.log(
+                  `[SPARK Pipeline] Hybrid Mode: Scene ${globalSceneNum} audio is "vo" — still stays still (no motion synthesis).`
+                );
+                s.videoUrl = undefined;
+                continue;
+              }
+
               const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
               const shotIdForScene = (s as any).shotId || (s as any).id || `shot_${globalSceneNum}`;
               const prevShotId =
@@ -2716,12 +2727,8 @@ export class ProductionAssetService {
               void persistCurrentStage(`Scene-Video-${globalSceneNum}`);
             }
 
-            // Gated merge policy:
-            // "Do NOT call merge/compile-of-clips in generateAssets when brand.review_required !== false. Autonomous only: keep auto-merge."
-            const isAutonomous = (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false;
-
-            if (isAutonomous && mode === "standard" && sceneClips.length === 1 && currentStoryboard.length > 1) {
-              // AUTONOMOUS HYBRID MUX: Hook video (scene 1) + remaining narrator stills (scenes 2..N) + full VO narration
+            if (mode === "standard" && sceneClips.length === 1 && currentStoryboard.length > 1) {
+              // HYBRID MUX: Hook video (scene 1) + remaining narrator stills (scenes 2..N) + full VO narration
               emitProgress(82, "Merge", `Compiling Hybrid master MP4 (Hook video + ${currentStoryboard.length - 1} narrator stills + voiceover)...`);
               try {
                 const remainingImages = currentStoryboard.slice(1).map((s, idx) => s.image || sceneImages[idx + 1]).filter(Boolean) as string[];
@@ -2764,17 +2771,19 @@ export class ProductionAssetService {
                   });
                   if (storedHybrid?.publicUrl && isDurableMasterVideoReady(storedHybrid.publicUrl)) {
                     realVideoUrl = storedHybrid.publicUrl;
-                    console.log(`[SPARK Pipeline] Storage Upload: Autonomous Hybrid Master Video -> ${realVideoUrl}`);
+                    (brief as any).canonicalMasterUrl = storedHybrid.publicUrl;
+                    (production as any).canonicalMasterUrl = storedHybrid.publicUrl;
+                    console.log(`[SPARK Pipeline] Storage Upload: Hybrid Master Video -> ${realVideoUrl}`);
                   }
                 }
               } catch (hybridErr: any) {
-                console.warn("[SPARK Pipeline] Autonomous hybrid compile notice:", hybridErr);
+                console.warn("[SPARK Pipeline] Hybrid compile notice:", hybridErr);
               }
-            } else if (isAutonomous && sceneClips.length > 1) {
-              emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4 (autonomous mode)...`);
+            } else if (sceneClips.length > 1) {
+              emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4...`);
               try {
                 const hasVoScenes = currentStoryboard.length > 0 && currentStoryboard.some((s) => s.audio === "vo");
-                const mergeAudioUrl = (mode === "express" || hasVoScenes) ? realVoiceUrl : undefined;
+                const mergeAudioUrl = (mode === "standard" && hasVoScenes) ? realVoiceUrl : undefined;
                 const targetMergeTexts = collectSceneCaptionLines(
                   currentStoryboard,
                   brief.beats,
@@ -2795,7 +2804,7 @@ export class ProductionAssetService {
                     timeoutMs: 120000,
                   }),
                   120000,
-                  "Automatic scene video merge timed out after 120s",
+                  "Scene video merge timed out after 120s",
                   signal
                 );
 
@@ -2803,17 +2812,16 @@ export class ProductionAssetService {
                   realVideoUrl = mergeResult.publicUrl;
                   (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
                   (production as any).canonicalMasterUrl = mergeResult.publicUrl;
-                  console.log(`[SPARK Pipeline] Autonomous Serverless Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
+                  console.log(`[SPARK Pipeline] Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                 } else {
                   console.warn(
-                    "[SPARK Pipeline] Autonomous merge did not produce a server ffmpeg master — not using Canvas/MediaRecorder"
+                    "[SPARK Pipeline] Scene merge did not produce a server ffmpeg master"
                   );
                 }
               } catch (mergeErr: any) {
-                console.warn("[SPARK Pipeline] Autonomous scene merge notice:", mergeErr);
+                console.warn("[SPARK Pipeline] Scene merge notice:", mergeErr);
               }
             } else if (
-              isAutonomous &&
               sceneClips.length === 1 &&
               currentStoryboard.length <= 1 &&
               isDurableMasterVideoReady(sceneClips[0])
@@ -2821,12 +2829,12 @@ export class ProductionAssetService {
               // True one-take production: the single clip IS the master.
               realVideoUrl = sceneClips[0];
               (brief as any).canonicalMasterUrl = sceneClips[0];
+              (production as any).canonicalMasterUrl = sceneClips[0];
             } else if (sceneClips.length > 0) {
-              // Multi-scene: never promote a scene clip to production/review hero.
-              if (realVideoUrl && sceneClips.includes(realVideoUrl)) {
+              if (realVideoUrl && sceneClips.includes(realVideoUrl) && currentStoryboard.length > 1) {
                 realVideoUrl = undefined as any;
               }
-              console.log(`[SPARK Pipeline] Review Required: Retaining ${sceneClips.length} distinct scene video clip(s). Master video merge gated on executive 'Approve & merge'.`);
+              console.log(`[SPARK Pipeline] Review: Retaining ${sceneClips.length} distinct scene video clip(s).`);
             }
           }
         } catch (vidErr: any) {
@@ -2847,7 +2855,9 @@ export class ProductionAssetService {
       // Express/narrator may compile a slideshow master from stills + VO.
       // Cinematic/deep/standard must NOT burn emergency VO or narrator slideshow credits —
       // those assets are unused (quarantined) and must not be generated.
-      if (!isVideoSuccess && sceneImages.length > 0 && mode === "express") {
+      if (mode === "deep") {
+        console.log(`[SPARK Pipeline] Cinematic mode: emergency VO and slideshow fallback are strictly disabled.`);
+      } else if (!isVideoSuccess && sceneImages.length > 0 && mode === "express") {
         try {
           if (!realVoiceUrl) {
             console.warn(

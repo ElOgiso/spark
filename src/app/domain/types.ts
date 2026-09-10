@@ -127,6 +127,11 @@ export interface ViralSpark {
   lastSyncedAt?: string;
   syncCount?: number;
   researchContext?: StructuredResearchContext;
+  hook_formula?: string;
+  opening_line?: string;
+  spoken_beats?: string[];
+  visual_actions?: string[];
+  cta_line?: string;
   /**
    * Production readiness. Research auto-prepares spoken hooks at birth via
    * `ensureViralSparkProductionReady`; Create re-ensures as a safety net.

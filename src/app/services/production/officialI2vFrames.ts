@@ -11,7 +11,7 @@ function isUsableImageUrl(val?: string | null): val is string {
 }
 
 export function looksLikeSheetOrGridUrl(url: string): boolean {
-  return /storyboard[-_]?grid|contact[-_]?sheet|character[-_]?sheet|model[-_]?sheet|location[-_]?plate/i.test(
+  return /storyboard[-_]?grid|contact[-_]?sheet|character[-_]?sheet|model[-_]?sheet|location[-_]?plate|thumbnail/i.test(
     url
   );
 }

@@ -108,3 +108,112 @@ test("compileDeterministicBrief preserves research openingLine, spokenBeats, vis
   // 3. Visual description equals physical action (not meta-text)
   assert.equal(brief.storyboard[0].visualDescription, "Creator sits at dark minimalist desk pointing directly at macro lens");
 });
+
+test("compileDeterministicBrief picks up spark.spoken_beats when researchContext is omitted", () => {
+  const brand: Brand = {
+    id: "brand_2",
+    name: "Velocity AI",
+    tagline: "Speed",
+    niche: "AI Video",
+    pillar: "Automation",
+    status: "active",
+    colors: { primary: "#000", secondary: "#fff", accent: "#f00" },
+    socialLinks: {},
+    website: "https://velocity.ai",
+  };
+
+  const spark: ViralSpark = {
+    id: "spark_2",
+    title: "Viral Video Breakdown",
+    hook: "The secret to AI continuity.",
+    views: "500k",
+    velocity: "10k/day",
+    platformFit: "YouTube Shorts",
+    brandFitScore: 90,
+    category: "hot",
+    timeWindow: "7d",
+    productionTime: "15m",
+    whyNow: "Trending now",
+    angle: "Direct continuity",
+    spoken_beats: [
+      "Here is how you lock AI video continuity without morphing.",
+      "You extract the last frame of scene one and make it scene two's start frame.",
+      "That chains the motion seamlessly across the cut.",
+      "Follow Velocity AI for the full workflow guide.",
+    ],
+    opening_line: "Here is how you lock AI video continuity without morphing.",
+    cta_line: "Follow Velocity AI for the full workflow guide.",
+  };
+
+  const brief = compileDeterministicBrief({
+    spark,
+    brand,
+    productionMode: "standard",
+    targetDurationSec: 30,
+  });
+
+  assert.equal(brief.beats.length, 4);
+  assert.equal(brief.beats[0].spokenLines, "Here is how you lock AI video continuity without morphing.");
+  assert.equal(brief.beats[1].spokenLines, "You extract the last frame of scene one and make it scene two's start frame.");
+  assert.equal(brief.beats[2].spokenLines, "That chains the motion seamlessly across the cut.");
+  assert.equal(brief.beats[3].spokenLines, "Follow Velocity AI for the full workflow guide.");
+});
+
+test("compileDeterministicBrief produces ZERO pamphlet phrases across durations", () => {
+  const brand: Brand = {
+    id: "brand_3",
+    name: "Atlas Growth",
+    tagline: "Scale",
+    niche: "SaaS",
+    pillar: "Growth",
+    status: "active",
+    colors: { primary: "#000", secondary: "#fff", accent: "#f00" },
+    socialLinks: {},
+    website: "https://atlas.io",
+  };
+
+  const spark: ViralSpark = {
+    id: "spark_3",
+    title: "Growth Playbook",
+    hook: "Most founders build SaaS completely wrong.",
+    views: "100k",
+    velocity: "5k/day",
+    platformFit: "YouTube Shorts",
+    brandFitScore: 88,
+    category: "hot",
+    timeWindow: "7d",
+    productionTime: "15m",
+    whyNow: "SaaS churn is at all time high",
+    angle: "Retention first",
+  };
+
+  const pamphletPatterns = [
+    /leading operators/i,
+    /manual friction/i,
+    /market leverage/i,
+    /high-conviction executive breakdowns/i,
+    /the non-obvious shift/i,
+    /the core bottleneck/i,
+    /why most get this wrong/i,
+    /systematic leverage/i,
+    /compounding leverage/i,
+  ];
+
+  for (const duration of [15, 30, 60]) {
+    const brief = compileDeterministicBrief({
+      spark,
+      brand,
+      productionMode: "standard",
+      targetDurationSec: duration,
+    });
+
+    const fullScript = brief.beats.map((b) => `${b.spokenLines} ${b.onScreenText}`).join(" ");
+    for (const pattern of pamphletPatterns) {
+      assert.equal(
+        pattern.test(fullScript),
+        false,
+        `Pamphlet phrase ${pattern} found in ${duration}s brief: "${fullScript}"`
+      );
+    }
+  }
+});

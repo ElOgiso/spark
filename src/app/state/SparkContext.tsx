@@ -2192,11 +2192,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 ),
               }));
 
-
               try {
                 const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
-                production: stableEnrichedProd,
-                brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
+                production: {
+                  ...stableEnrichedProd,
+                  mode: (stableEnrichedProd as any)?.mode || state.brand?.productionMode || "standard",
+                },
+                brand: {
+                  ...state.brand,
+                  productionMode: state.brand?.productionMode || (stableEnrichedProd as any)?.mode,
+                  formatSettings: effectiveFormat,
+                  creditSettings: effectiveCredit,
+                },
                 character: effectiveCharacter,
                 characters: state.characters || [],
                 memoryItems: state.memoryItems || [],
@@ -2842,11 +2849,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { production: updatedProd, brief: updatedBrief } = await productionService.generateAssetsForProduction({
         production: {
           ...prod,
+          mode: (prod as any)?.mode || state.brand?.productionMode || "standard",
           formatSettings: effectiveFormat,
           targetDurationSec: effectiveFormat.targetDurationSec,
           aspectRatio: effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16",
         },
-        brand: { ...state.brand, formatSettings: effectiveFormat, creditSettings: effectiveCredit },
+        brand: {
+          ...state.brand,
+          productionMode: state.brand?.productionMode || (prod as any)?.mode,
+          formatSettings: effectiveFormat,
+          creditSettings: effectiveCredit,
+        },
         character: effectiveCharacter,
         characters: state.characters || [],
         memoryItems: state.memoryItems || [],

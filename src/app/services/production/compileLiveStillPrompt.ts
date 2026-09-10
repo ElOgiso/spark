@@ -207,7 +207,7 @@ function cleanStillCompiledPrompt(compiled: string): string {
     .filter((line) => {
       const l = line.trim();
       if (!l) return false;
-      if (/^(SCENE\s*\(|SHOT PURPOSE:|WHY:|DIALOGUE PERFORMANCE:|NARRATION CONTEXT)/i.test(l)) {
+      if (/^(SCENE\s*\(|SHOT PURPOSE:|WHY:|DIALOGUE PERFORMANCE:|NARRATION CONTEXT|PURPOSE:|SPOKEN\s*(LINES)?:|SCRIPT:|BRAND LAW:|VALUE JOB:)/i.test(l)) {
         return false;
       }
       return true;

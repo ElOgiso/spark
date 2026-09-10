@@ -457,6 +457,8 @@ export async function executeProductionViaAssetBridge(
   const assetResult = await ProductionAssetService.generateAssets({
     production: {
       ...params.production,
+      mode: params.production.mode || (params.brand as any)?.productionMode,
+      productionMode: params.production.mode || (params.brand as any)?.productionMode,
       brief,
       reasoning: {
         ...(typeof params.production.reasoning === "object" && params.production.reasoning
@@ -466,7 +468,10 @@ export async function executeProductionViaAssetBridge(
       },
     },
     brief,
-    brand: params.brand,
+    brand: {
+      ...params.brand,
+      productionMode: (params.brand as any)?.productionMode || params.production.mode,
+    },
     character: params.character,
     characters: params.characters,
     memoryItems: params.memoryItems,
