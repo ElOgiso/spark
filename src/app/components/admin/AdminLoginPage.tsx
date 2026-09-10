@@ -37,18 +37,46 @@ export function AdminLoginPage({ onSuccess }: { onSuccess: (user: any) => void }
   // Auto-verify permissions when session becomes active on /admin
   useEffect(() => {
     if (auth.isAuthenticated && !auth.loading) {
-      if (auth.isAdmin || (auth.profile?.role || "").toLowerCase() === "admin" || auth.isSuperAdmin) {
+      const isUserAdmin = Boolean(
+        auth.isAdmin ||
+        auth.isSuperAdmin ||
+        (auth.profile?.role || "").toLowerCase().includes("admin") ||
+        Boolean(auth.profile?.is_super_admin) ||
+        (auth.currentUser?.app_metadata?.role || "").toLowerCase().includes("admin") ||
+        (auth.currentUser?.user_metadata?.role || "").toLowerCase().includes("admin")
+      );
+
+      if (isUserAdmin) {
         if (typeof sessionStorage !== "undefined") {
           sessionStorage.removeItem("spark_admin_login_intent");
         }
         onSuccess(auth.currentUser);
-      } else {
+      } else if (auth.profile) {
         setError(
           `Access Denied: The account "${auth.currentUser?.email || "Signed In User"}" is not registered as a SPARK Administrator.`
         );
       }
     }
-  }, [auth.isAuthenticated, auth.loading, auth.isAdmin, auth.profile?.role, auth.isSuperAdmin, onSuccess]);
+  }, [
+    auth.isAuthenticated,
+    auth.loading,
+    auth.isAdmin,
+    auth.isSuperAdmin,
+    auth.profile,
+    auth.currentUser,
+    onSuccess,
+  ]);
+
+  if (auth.loading || (auth.isAuthenticated && !auth.profile)) {
+    return (
+      <div className="h-screen w-screen bg-[#07090E] flex flex-col items-center justify-center p-6 select-none relative overflow-hidden">
+        <MainLogoAnimated size={64} />
+        <p className="text-xs text-purple-300/80 font-medium tracking-widest uppercase mt-4 animate-pulse">
+          Verifying administrator credentials...
+        </p>
+      </div>
+    );
+  }
 
   const handleGoogleAdminSignIn = async () => {
     setError(null);

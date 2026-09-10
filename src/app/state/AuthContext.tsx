@@ -549,11 +549,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [brand, brands, currentUser, switchBrand, openCreateWorkspaceModal]);
 
   const userRole: "executive" | "admin" = useMemo(() => {
-    const rawRole = (profile?.role || "").toLowerCase().trim();
-    return rawRole === "admin" ? "admin" : "executive";
-  }, [profile?.role]);
+    const rawRole = (profile?.role || currentUser?.app_metadata?.role || currentUser?.user_metadata?.role || "").toLowerCase().trim();
+    const isSuper = Boolean(profile?.is_super_admin || currentUser?.app_metadata?.is_super_admin || currentUser?.user_metadata?.is_super_admin);
+    const hasAdminFlag = rawRole === "admin" || rawRole === "super_admin" || rawRole === "administrator" || rawRole === "owner" || isSuper;
+    return hasAdminFlag ? "admin" : "executive";
+  }, [profile?.role, profile?.is_super_admin, currentUser?.app_metadata, currentUser?.user_metadata]);
 
-  const isAdmin = userRole === "admin";
+  const isAdmin = userRole === "admin" || Boolean(profile?.is_super_admin);
   const isSuperAdmin = Boolean(profile?.is_super_admin) || isAdmin;
 
   const userAccessStatus: "pending_approval" | "active" | "banned" | "rejected" = useMemo(() => {

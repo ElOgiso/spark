@@ -14,12 +14,21 @@ function displayNameFromUser(user: User): string {
   return emailPrefix || "Spark Director";
 }
 
-export async function getProfile(userId: string): Promise<RepositoryResult<ProfileRow>> {
+export async function getProfile(userId: string, email?: string | null): Promise<RepositoryResult<ProfileRow>> {
   if (!isSupabaseConfigured()) return unconfiguredResult<ProfileRow>();
   const supabase = getSupabaseClient();
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
-  const { data, error } = await (supabase.from("profiles") as any).select("*").eq("id", userId).maybeSingle();
+  let { data, error } = await (supabase.from("profiles") as any).select("*").eq("id", userId).maybeSingle();
+  if (!data && email) {
+    try {
+      const byEmail = await (supabase.from("profiles") as any).select("*").eq("email", email).maybeSingle();
+      if (byEmail.data) {
+        data = byEmail.data;
+        error = null;
+      }
+    } catch {}
+  }
   if (error) return repositoryError<ProfileRow>(error.message);
   return { data, error: null, source: "supabase" };
 }
@@ -30,16 +39,32 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
   if (!supabase) return unconfiguredResult<ProfileRow>();
 
   try {
-    // Check if profile already exists to preserve onboarding_complete and active_brand_id
-    const { data: existing, error: fetchErr } = await (supabase.from("profiles") as any)
+    // Check if profile already exists by id, or by email (e.g. pre-provisioned admin in database)
+    let existing: ProfileRow | null = null;
+    const { data: byId, error: fetchErr } = await (supabase.from("profiles") as any)
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
+
+    existing = byId;
+
+    if (!existing && user.email) {
+      try {
+        const { data: byEmail } = await (supabase.from("profiles") as any)
+          .select("*")
+          .eq("email", user.email)
+          .maybeSingle();
+        if (byEmail) {
+          existing = byEmail;
+        }
+      } catch {}
+    }
 
     if (existing && !fetchErr) {
       // Profile exists — refresh display fields (name/email/avatar) but never reset access/onboarding state
       try {
         const refreshPayload: Record<string, any> = {
+          id: user.id,
           display_name: displayNameFromUser(user),
           email: user.email ?? null,
           updated_at: new Date().toISOString(),
@@ -47,9 +72,16 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
         if (typeof user.user_metadata?.avatar_url === "string") {
           refreshPayload.avatar_url = user.user_metadata.avatar_url;
         }
+        // If matched by email with an older/seeded id, transfer the elevated role, permissions, and active status
+        if (existing.id !== user.id) {
+          if (existing.role) refreshPayload.role = existing.role;
+          if (existing.is_super_admin !== undefined) refreshPayload.is_super_admin = existing.is_super_admin;
+          if (existing.access_status) refreshPayload.access_status = existing.access_status;
+          if (existing.onboarding_complete !== undefined) refreshPayload.onboarding_complete = existing.onboarding_complete;
+          if (existing.active_brand_id) refreshPayload.active_brand_id = existing.active_brand_id;
+        }
         const { data: refreshed, error: refreshError } = await (supabase.from("profiles") as any)
-          .update(refreshPayload)
-          .eq("id", user.id)
+          .upsert(refreshPayload, { onConflict: "id" })
           .select("*")
           .single();
         if (!refreshError && refreshed) {
@@ -68,11 +100,14 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
       }
     } catch {}
 
+    const metaRole = (user.app_metadata?.role || user.user_metadata?.role || "").toLowerCase().trim();
+    const initialRole = metaRole === "admin" || metaRole === "super_admin" ? "admin" : "executive";
+
     // New user — full insert with safe defaults
     const payload: Partial<ProfileRow> & { id: string } = {
       id: user.id,
       display_name: displayNameFromUser(user),
-      role: "executive",
+      role: initialRole,
       avatar_url: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
       email: user.email ?? null,
       onboarding_complete: initialOnboarding,
@@ -92,7 +127,7 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
         id: user.id,
         display_name: payload.display_name,
         email: payload.email,
-        role: "executive",
+        role: initialRole,
       };
       const retryUpsert = await (supabase.from("profiles") as any)
         .upsert(minimalPayload, { onConflict: "id" })

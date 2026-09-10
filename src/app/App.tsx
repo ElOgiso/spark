@@ -205,7 +205,16 @@ function AppContent() {
           }
         }
 
-        if (auth.isAdmin && (currentPage.startsWith("/admin") || !auth.brand)) {
+        const isUserAdmin = Boolean(
+          auth.isAdmin ||
+          auth.isSuperAdmin ||
+          (auth.profile?.role || "").toLowerCase().includes("admin") ||
+          Boolean(auth.profile?.is_super_admin) ||
+          (auth.currentUser?.app_metadata?.role || "").toLowerCase().includes("admin") ||
+          (auth.currentUser?.user_metadata?.role || "").toLowerCase().includes("admin")
+        );
+
+        if (isUserAdmin && (currentPage.startsWith("/admin") || !auth.brand)) {
           console.log("[SPARK AUTH] routing: ADMIN CONSOLE");
           setViewState("dashboard");
         } else if (!auth.isOnboardingComplete) {
@@ -388,17 +397,28 @@ function AppContent() {
 
     // 2. Authenticated Session Exists
     if (isUserAuthenticated) {
+      // Evaluate admin authority comprehensively
+      const isUserAdmin = Boolean(
+        auth.isAdmin ||
+        auth.isSuperAdmin ||
+        (auth.profile?.role || "").toLowerCase().includes("admin") ||
+        Boolean(auth.profile?.is_super_admin) ||
+        (auth.currentUser?.app_metadata?.role || "").toLowerCase().includes("admin") ||
+        (auth.currentUser?.user_metadata?.role || "").toLowerCase().includes("admin")
+      );
+
       // A1. Admin standalone route check for verified admin
-      if (auth.isAdmin && (currentPage.startsWith("/admin") || (!auth.isOnboardingComplete && !auth.brand))) {
+      if (isUserAdmin && (currentPage.startsWith("/admin") || (!auth.isOnboardingComplete && !auth.brand))) {
+        const targetAdminPath = currentPage === "/admin" || currentPage === "/admin/" ? "/admin/inbox" : currentPage;
         return (
           <ProtectedRoute>
-            <AdminPlaceholderPage currentPath={currentPage.startsWith("/admin") ? currentPage : "/admin/inbox"} onNavigate={setCurrentPage} />
+            <AdminPlaceholderPage currentPath={targetAdminPath} onNavigate={setCurrentPage} />
           </ProtectedRoute>
         );
       }
 
       // A2. Admin standalone route access for authenticated non-admin -> Show dedicated rejection screen with switch-account button
-      if (currentPage.startsWith("/admin")) {
+      if (currentPage.startsWith("/admin") && !isUserAdmin) {
         return (
           <AdminLoginPage
             onSuccess={() => {
