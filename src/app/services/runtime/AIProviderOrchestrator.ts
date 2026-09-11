@@ -1626,7 +1626,7 @@ export class AIProviderOrchestrator {
 
     // Execute with automatic retry & seamless failover across candidate providers
     let lastError: Error | null = null;
-    const maxCandidates = capability === "Image Generation" || capability === "Video Generation" ? 3 : 2;
+    const maxCandidates = capability === "Image Generation" || capability === "Video Generation" ? 3 : Math.min(candidates.length, 4);
     const candidatesToTry = candidates.slice(0, maxCandidates);
 
     if (options.referenceImageUrl || options.referenceImageUrls?.length) {

@@ -872,6 +872,37 @@ export function compileDeterministicBrief(params: {
   };
 }
 
+function extractJsonFromModelResponse(raw?: string | null): any {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {}
+
+  const stripped = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {}
+
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      try {
+        const sanitized = match[0]
+          .replace(/,\s*([\]}])/g, "$1")
+          .replace(/[\x00-\x1F\x7F-\x9F]/g, (c) => (c === "\n" || c === "\r" || c === "\t" ? c : ""));
+        return JSON.parse(sanitized);
+      } catch {}
+    }
+  }
+  return null;
+}
+
 export class ProductionBriefService {
   static async generateBrief(params: {
     spark: ViralSpark;
@@ -1171,12 +1202,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
         systemInstruction,
       });
 
-      const cleanJson = rawResponse
-        .replace(/```json/gi, "")
-        .replace(/```/g, "")
-        .trim();
-
-      parsedJson = JSON.parse(cleanJson);
+      parsedJson = extractJsonFromModelResponse(rawResponse);
     } catch (parseErr) {
       console.warn("[ProductionBriefService] Initial LLM generation notice:", parseErr);
     }
@@ -1211,12 +1237,7 @@ ${prompt}`;
           systemInstruction: rewriteInstruction,
         });
 
-        const cleanRewriteJson = rewriteResponse
-          .replace(/```json/gi, "")
-          .replace(/```/g, "")
-          .trim();
-
-        const rewrittenParsed = JSON.parse(cleanRewriteJson);
+        const rewrittenParsed = extractJsonFromModelResponse(rewriteResponse);
         const rewrittenEvaluated = mapParsedBeats(rewrittenParsed?.beats);
 
         // Keep the strongest result so far (more words / more beats is closer to the floor).
@@ -1240,8 +1261,7 @@ ${prompt}`;
     }
 
     // Final validation: only if the real model still fails the floor after all retries do we fall
-    // back to the deterministic template — and we MARK it (contentSource) so it is never silently
-    // passed off as premium AI output.
+    // back to the domain-grounded deterministic template satisfying Word Law floor.
     let validBeats: ProductionBriefBeat[] = evaluated.beats;
     let totalWords = evaluated.words;
     let contentSource: "ai" | "template-fallback" = "ai";
@@ -1253,9 +1273,9 @@ ${prompt}`;
       );
 
       // Spoken lines priority:
-      // 1) Viral Spark spoken_beats / opening_line / hook
-      // 2) Live brief LLM output
-      // 3) FAIL the brief (retry once) — do not ship the pamphlet
+      // 1) Viral Spark researched spoken beats (if available from source video)
+      // 2) Live brief LLM output (if meets floor)
+      // 3) Domain-grounded deterministic Word Law brief (adapted to brand, niche, pillars, audience, offer)
       const hasViralSpokenBeats = Boolean(
         (Array.isArray(spark.spoken_beats) && spark.spoken_beats.length >= 3) ||
         (Array.isArray(resolvedResearch?.spokenBeats) && resolvedResearch.spokenBeats.length >= 3)
@@ -1268,8 +1288,15 @@ ${prompt}`;
         validBeats = fallback.beats || [];
         totalWords = fallbackWords;
         contentSource = "ai";
+      } else if (fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
+        console.log(
+          `[ProductionBriefService] Prioritizing domain-grounded Word Law brief (${fallback.beats?.length || 0} beats, ${fallbackWords} words).`
+        );
+        validBeats = fallback.beats || [];
+        totalWords = fallbackWords;
+        contentSource = "template-fallback";
       } else {
-        const errMsg = `Production brief generation failed: LLM output did not meet quality floor (${totalWords} words < ${budget.wordFloor} minimum words, ${validBeats.length}/${budget.count} beats) and no viral spoken beats were available. Refusing to ship generic template copy.`;
+        const errMsg = `Production brief generation failed: LLM output did not meet quality floor (${totalWords} words < ${budget.wordFloor} minimum words, ${validBeats.length}/${budget.count} beats). Refusing to ship generic template copy.`;
         console.error(`[ProductionBriefService] ${errMsg}`);
         throw new Error(errMsg);
       }
