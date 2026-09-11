@@ -796,10 +796,14 @@ export function compileDeterministicBrief(params: {
     )
     .join("\n");
 
-  const visualDirection =
-    modeKey === "deep"
-      ? `Continuous single-take staging for ${hostTitle}. 16:9 cinematic framing, studio lighting, zero montage cuts.`
-      : `Vertical 9:16 framing. Presenter ${hostTitle} centered in studio set, high-contrast lower-third typography, dynamic scene transitions.`;
+  const isStoryOrAnime = contentFormat === "story" || contentFormat === "anime";
+  const visualDirection = isStoryOrAnime
+    ? (modeKey === "deep"
+        ? `Cinematic 16:9 narrative sequence. In-world environmental staging, dynamic cinematic lighting, narrative continuity across shots.`
+        : `Vertical 9:16 cinematic narrative framing. In-world staging, atmospheric lighting, dynamic visual storytelling and continuity across shots.`)
+    : (modeKey === "deep"
+        ? `Continuous single-take staging for ${hostTitle}. 16:9 cinematic framing, studio lighting, zero montage cuts.`
+        : `Vertical 9:16 framing. Presenter ${hostTitle} centered in studio set, high-contrast lower-third typography, dynamic scene transitions.`);
 
   const caption = defaultOffer
     ? `${spark.title}\n\n${sparkWhyNow}\n\nGet ${defaultOffer.title} → ${defaultOffer.url}\n\n#${brand.name.replace(/\s+/g, "")} #${(niche || brand.niche || "strategy").replace(/\s+/g, "")}`
@@ -823,7 +827,7 @@ export function compileDeterministicBrief(params: {
       : repairPhysicalAction({
           metaOrEmpty: "",
           cameraDirection: b.cameraDirection,
-          environment: visualDirection || `${brand.name} studio set`,
+          environment: visualDirection || (isStoryOrAnime ? `${brand.name} cinematic world` : `${brand.name} studio set`),
           sceneIndex: idx,
           contentFormat,
         });
@@ -832,7 +836,7 @@ export function compileDeterministicBrief(params: {
       scene: idx + 1,
       duration: `${Math.max(3, Math.round(durationSec / beats.length))}s`,
       shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
-      cameraDirection: b.cameraDirection || "Presenter centered",
+      cameraDirection: b.cameraDirection || (isStoryOrAnime ? "Cinematic framing" : "Presenter centered"),
       transitions: "Continuous flow",
       onScreenText: b.onScreenText,
       pacing: durationSec <= 30 ? "Fast" : "Balanced",
@@ -1056,6 +1060,7 @@ SERIES CONTINUITY & STORY CANON LAW (EPISODE ${epNum} OF "${s.title}"):
 `;
     }
 
+    const isStoryOrAnime = contentFormat === "story" || contentFormat === "anime";
     const prompt = `
 COMPILE PRODUCTION BRIEF FOR VIRAL SPARK:
 
@@ -1099,18 +1104,18 @@ Return a valid JSON object matching this exact structure with NO markdown format
       "timecode": "[00:00-00:10]",
       "valueJob": "hook",
       "subject": "main",
-      "spokenLines": "Exact multi-sentence substantive spoken lines for host/VO",
+      "spokenLines": "${isStoryOrAnime ? "Exact dialogue or voiceover lines for the scene" : "Exact multi-sentence substantive spoken lines for host/VO"}",
       "physicalAction": "Physical description of what the camera sees — body language, gestures, props, and set without spoken words or brackets",
       "onScreenText": "TEXT OVERLAY (MAX 6 WORDS)",
-      "cameraDirection": "Slow push-in zoom on host",
-      "startState": "Host established in framing with initial posture",
-      "endState": "Host gestures outward emphasizing hook discovery",
+      "cameraDirection": "${isStoryOrAnime ? "Cinematic framing or camera movement" : "Slow push-in zoom on host"}",
+      "startState": "${isStoryOrAnime ? "Subject or scene established in framing with initial posture/setting" : "Host established in framing with initial posture"}",
+      "endState": "${isStoryOrAnime ? "Subject or scene evolves emphasizing narrative progression" : "Host gestures outward emphasizing hook discovery"}",
       "audio": "talent"
     }
   ],
-  "spokenCta": "Exact ready-to-speak closing line for host/VO",
+  "spokenCta": "${isStoryOrAnime ? "Closing thematic line, narrator observation, or story payoff" : "Exact ready-to-speak closing line for host/VO"}",
   "onScreenCta": "UPPERCASE LOWER-THIRD TEXT (MAX 6 WORDS)",
-  "visualDirection": "Concrete studio set, camera movement, and host posture direction for ${modeKey} mode",
+  "visualDirection": "${isStoryOrAnime ? "Cinematic environmental staging, atmospheric lighting, and visual storytelling direction" : `Concrete studio set, camera movement, and host posture direction for ${modeKey} mode`}",
   "caption": "Platform post text with hashtags and offer link",
   "platformRecommendation": "${spark.platformFit || (modeKey === "deep" ? "YouTube Long-form" : "YouTube Shorts")}",
   "whyThisWorks": "1-3 sentences citing spark evidence (${spark.whyNow}), active content pillar, and brand authority",

@@ -207,7 +207,9 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
   return {
     prompt: body.prompt || "",
     firstFrameDataUri,
+    firstFrameUrl: frames.firstFrameUrl,
     lastFrameDataUri,
+    lastFrameUrl: frames.endFrameUrl,
     referenceDataUris,
     aspectRatio: body.aspectRatio || body.aspect_ratio,
     durationSec: typeof body.durationSec === "number" ? body.durationSec : Number(body.duration) || undefined,
@@ -428,6 +430,14 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY || process.env.VITE_XAI_API_KEY || process.env.VITE_GROK_API_KEY;
   if (!apiKey) throw new Error("xAI Grok API key not configured (XAI_API_KEY or GROK_API_KEY).");
   const body = buildGrokVideoGenerateBody({ ...req, model: req.model || GROK_VIDEO_MODEL });
+
+  // F. Log numInputImages / whether image was in the POST. If 0, abort.
+  const imageUrl = (body.image as any)?.url || (body as any).image_url;
+  const numInputImages = imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0 ? 1 : 0;
+  console.log(`[Grok Video] Request check: model=${body.model}, numInputImages=${numInputImages}, imageUrl=${imageUrl ? imageUrl.slice(0, 60) + "..." : "none"}`);
+  if (numInputImages === 0) {
+    throw new Error("Refusing to generate Grok video with numInputImages=0 (T2V forbidden for shot i2v).");
+  }
 
   const res = await fetch("https://api.x.ai/v1/videos/generations", {
     method: "POST",

@@ -256,8 +256,8 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
       },
       // Video Generation
       {
-        id: "grok-imagine-video",
-        label: "Grok Imagine Video (9:16 Master Preview)",
+        id: "grok-imagine-video-1.5",
+        label: "Grok Imagine Video 1.5 (Image-to-Video)",
         capabilities: ["Video Generation"],
         recommended: true,
         status: "stable",

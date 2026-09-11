@@ -29,6 +29,7 @@ export function compileStoryboardPlanPrompt(params: {
   const subjectName = character?.name || labels.nameFallback;
   const subjectStyle = character?.style || labels.styleFallback;
   const formatLaw = contentFormatDirective(format);
+  const isStoryOrAnime = format === "story" || format === "anime";
   const visualGenre = resolveLiveVisualGenre({
     formatSettings: brief.formatSettings,
     contentFormat: format,
@@ -65,7 +66,7 @@ Structure a seamless continuous one-take sequence matching the brief's duration 
 CONTINUITY LAWS:
 1. Stage N's startState MUST open EXACTLY on Stage N-1's endState.
 2. Exactly ONE primary physical/story change per stage.
-3. Locked character identity, wardrobe, and studio set across all panels.
+3. ${isStoryOrAnime ? "Locked character identity, wardrobe, and world environment across all panels." : "Locked character identity, wardrobe, and studio set across all panels."}
 4. Concrete camera direction required every panel.
 5. Forbid montage cuts, teleportation, or stock cutaways. Return valid JSON only.`,
       prompt: `
@@ -98,23 +99,23 @@ Return valid JSON with this exact structure:
       "scene": 1,
       "duration": "0-8s",
       "valueJob": "hook",
-      "shotList": "Presenter direct-to-camera ${aspectRatio} master shot establishing scene",
+      "shotList": "${isStoryOrAnime ? `Cinematic ${aspectRatio} narrative establishing shot of ${subjectName}` : `Presenter direct-to-camera ${aspectRatio} master shot establishing scene`}",
       "cameraDirection": "Slow cinematic push-in with subtle lateral glide",
       "transitions": "Continuous one-take flow",
-      "startState": "Host stands in studio, looking into lens, holding tablet with initial data",
-      "primaryChange": "Host turns slightly as ambient background lighting dims to emphasize key metric",
-      "endState": "Host centered in frame, gesturing right, backlight highlighting focused expression",
+      "startState": "${isStoryOrAnime ? `${subjectName} established in world setting, engaged in scene action (never direct-to-camera lens address)` : `Host stands in studio, looking into lens, holding tablet with initial data`}",
+      "primaryChange": "${isStoryOrAnime ? `${subjectName} initiates motion as environment and lighting react to narrative tension` : `Host turns slightly as ambient background lighting dims to emphasize key metric`}",
+      "endState": "${isStoryOrAnime ? `${subjectName} framed dynamically within environment, establishing scene continuity` : `Host centered in frame, gesturing right, backlight highlighting focused expression`}",
       "onScreenText": "${hook.slice(0, 50)}",
       "pacing": "Deliberate and cinematic",
       "spokenLines": "${hook.slice(0, 80)}",
       "scriptSnippet": "${hook.slice(0, 80)}",
-      "visualDescription": "High contrast executive opening shot with locked lighting and host presence"
+      "visualDescription": "${isStoryOrAnime ? `Cinematic atmospheric opening shot authentic to narrative genre and world` : `High contrast executive opening shot with locked lighting and host presence`}"
     }
   ],
   "thumbnails": [
-    { "id": "t1", "variant": "A", "concept": "High-contrast cinematic keyframe with host authority expression and curiosity hook" },
+    { "id": "t1", "variant": "A", "concept": "${isStoryOrAnime ? `High-contrast cinematic keyframe with ${subjectName} in dynamic narrative stance` : `High-contrast cinematic keyframe with host authority expression and curiosity hook`}" },
     { "id": "t2", "variant": "B", "concept": "Cinematic split lighting with illuminated metric graphic breakdown" },
-    { "id": "t3", "variant": "C", "concept": "Minimalist premium typography overlay on sharp host portrait in studio" }
+    { "id": "t3", "variant": "C", "concept": "${isStoryOrAnime ? `Dramatic narrative composition of ${subjectName} in world environment` : `Minimalist premium typography overlay on sharp host portrait in studio`}" }
   ]
 }
 `,
@@ -183,14 +184,14 @@ Return valid JSON with this exact structure:
   return {
     compiler: "storyboard_plan",
     systemInstruction: `You are SPARK's Senior Production Producer.
-Structure a balanced Hybrid Presentation storyboard (host-on-camera + overlay text).
-HYBRID LAWS:
-1. Every panel has valueJob, exact host spokenLines, and onScreenText overlay.
+Structure a balanced ${isStoryOrAnime ? "Cinematic Story storyboard (narrative character blocking + scene atmosphere)" : "Hybrid Presentation storyboard (host-on-camera + overlay text)"}.
+${isStoryOrAnime ? "NARRATIVE CONTINUITY LAWS:" : "HYBRID LAWS:"}
+1. Every panel has valueJob, exact ${isStoryOrAnime ? "character spoken/narrated" : "host spoken"} lines, and onScreenText overlay.
 2. startState -> primaryChange -> endState with clear single action focus.
 3. Concrete camera direction per panel (no generic descriptors).
-4. Locked character identity, wardrobe, and studio set across all panels. Return valid JSON only.`,
+4. ${isStoryOrAnime ? "Locked character identity, wardrobe, and world environment across all panels." : "Locked character identity, wardrobe, and studio set across all panels."} Return valid JSON only.`,
     prompt: `
-Create a hybrid presentation storyboard (${aspectRatio}) for:
+Create a ${isStoryOrAnime ? "cinematic narrative storyboard" : "hybrid presentation storyboard"} (${aspectRatio}) for:
 
 TITLE: "${brief.title}"
 BRAND: "${brand.name}" (${brand.niche})
@@ -203,10 +204,10 @@ HOOK: "${brief.hook}"
 SCRIPT OUTLINE: "${brief.scriptOutline}"
 VISUAL DIRECTION: "${brief.visualDirection}"
 ${formattedBeatsBlock}
-HYBRID PRESENTATION RULES:
+${isStoryOrAnime ? "NARRATIVE CINEMATIC RULES:" : "HYBRID PRESENTATION RULES:"}
 - Every panel has:
   * valueJob: hook | problem | context | proof | example | myth_bust | payoff | cta
-  * spokenLines: Exact lines for host on camera
+  * spokenLines: Exact lines for ${isStoryOrAnime ? "dialogue / narration" : "host on camera"}
   * onScreenText: <=6-8 words in uppercase
   * startState -> primaryChange -> endState
   * cameraDirection: Concrete camera framing
@@ -218,21 +219,21 @@ Return valid JSON with this exact structure:
       "scene": 1,
       "duration": "0-8s",
       "valueJob": "hook",
-      "shotList": "Presenter direct-to-camera vertical framing",
+      "shotList": "${isStoryOrAnime ? `Cinematic ${aspectRatio} narrative framing of ${subjectName}` : `Presenter direct-to-camera vertical framing`}",
       "cameraDirection": "Push-in slow zoom",
       "transitions": "Continuous flow",
-      "startState": "Host standing in executive studio addressing viewer",
-      "primaryChange": "Host raises tablet presenting the challenge",
-      "endState": "Host centered with focused expression holding visual aid",
+      "startState": "${isStoryOrAnime ? `${subjectName} in narrative scene environment, engaged in story context (no direct lens address)` : `Host standing in executive studio addressing viewer`}",
+      "primaryChange": "${isStoryOrAnime ? `${subjectName} shifts stance as dynamic lighting emphasizes key conflict` : `Host raises tablet presenting the challenge`}",
+      "endState": "${isStoryOrAnime ? `${subjectName} framed with focused expression in story setting` : `Host centered with focused expression holding visual aid`}",
       "onScreenText": "${hook.slice(0, 50)}",
       "pacing": "Fast hook",
       "spokenLines": "${hook.slice(0, 80)}",
       "scriptSnippet": "${hook.slice(0, 80)}",
-      "visualDescription": "High contrast executive presenter opening frame"
+      "visualDescription": "${isStoryOrAnime ? `Cinematic narrative opening frame with world-authentic lighting and character presence` : `High contrast executive presenter opening frame`}"
     }
   ],
   "thumbnails": [
-    { "id": "t1", "variant": "A", "concept": "High-contrast split screen with presenter expression and bold hook" },
+    { "id": "t1", "variant": "A", "concept": "${isStoryOrAnime ? `High-contrast cinematic narrative keyframe of ${subjectName}` : `High-contrast split screen with presenter expression and bold hook`}" },
     { "id": "t2", "variant": "B", "concept": "Glowing metric dashboard with curiosity-gap text overlay" },
     { "id": "t3", "variant": "C", "concept": "Minimalist dark mode typography card with brand accent highlight" }
   ]

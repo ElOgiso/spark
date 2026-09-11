@@ -166,6 +166,8 @@ describe("official Veo / Grok wire fields", () => {
       durationSec: 6,
       aspectRatio: "9:16",
     });
+    assert.equal(body.model, "grok-imagine-video-1.5");
+    assert.deepEqual(body.image, { url: "data:image/jpeg;base64,STILL" });
     assert.equal(body.image_url, "data:image/jpeg;base64,STILL");
     assert.equal(body.last_frame_url, "data:image/jpeg;base64,END");
     assert.equal(body.reference_image_urls, undefined);

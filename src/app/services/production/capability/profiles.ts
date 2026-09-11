@@ -156,8 +156,8 @@ export const MEDIA_CAPABILITY_PROFILES: MediaCapabilityProfile[] = [
   },
   {
     providerId: "grok",
-    modelId: "grok-imagine-video",
-    displayName: "Grok Imagine Video",
+    modelId: "grok-imagine-video-1.5",
+    displayName: "Grok Imagine Video 1.5",
     modalities: ["video", "image"],
     generationModes: ["image_to_video"],
     adapterSupported: true,

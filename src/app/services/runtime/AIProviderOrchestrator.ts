@@ -1226,7 +1226,7 @@ export class AIProviderOrchestrator {
             referenceImageUrls: [],
             aspectRatio: options.aspectRatio,
             durationSec: options.durationSec,
-            model: options.model || "grok-imagine-video",
+            model: options.model || "grok-imagine-video-1.5",
             productionId: options.productionId,
             brandId: options.brandId,
             shotIndex: options.shotIndex,

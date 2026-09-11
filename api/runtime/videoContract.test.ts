@@ -191,11 +191,20 @@ test("Grok i2v sends image_url and omits reference faces on the same request", (
     durationSec: 7,
     aspectRatio: "9:16",
   });
+  assert.equal(body.model, "grok-imagine-video-1.5");
+  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
   assert.equal(body.image_url, "data:image/jpeg;base64,START");
   assert.equal(body.last_frame_url, "data:image/jpeg;base64,END");
   assert.equal(body.reference_image_urls, undefined);
   assert.equal(snapGrokDuration(0), 1);
   assert.equal(snapGrokDuration(99), 15);
+  assert.throws(
+    () =>
+      buildGrokVideoGenerateBody({
+        prompt: "camera pans left",
+      }),
+    /numInputImages=0 forbidden/
+  );
 });
 
 test("Grok motion prompt does not restyle the start frame", () => {

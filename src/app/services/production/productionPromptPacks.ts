@@ -138,17 +138,22 @@ export function getProductionPromptPack(options: PromptPackOptions): ModePromptP
   // Single source of mode truth — honors production/brand/brief preference + legacy synonyms.
   const mode: "express" | "standard" | "deep" = resolveProductionMode({ production, brief, brand });
   const contentFormat = getEffectiveContentFormat({ production, brief, brand, character });
-  const charName = character?.name || "Host";
-  const charStyle = character?.style || "Executive Creator";
-  const charTraits = character?.traits?.join(", ") || "authoritative, articulate, magnetic";
+  const isStoryOrAnime = contentFormat === "story" || contentFormat === "anime";
+  const charName = character?.name || (isStoryOrAnime ? "Protagonist" : "Host");
+  const charStyle = character?.style || (isStoryOrAnime ? "Narrative Character" : "Executive Creator");
+  const charTraits = character?.traits?.join(", ") || (isStoryOrAnime ? "expressive, cinematic, grounded" : "authoritative, articulate, magnetic");
 
-  const environmentStr = brief.visualDirection || "a high-end executive studio with refined architectural lighting";
+  const environmentStr =
+    brief.visualDirection ||
+    (isStoryOrAnime
+      ? "a cinematic narrative environment authentic to the story world"
+      : "a high-end executive studio with refined architectural lighting");
   const rankedLaws = buildRankedBrandLaws(memoryItems, 10).lawsBlock;
 
   const globalLockBlock = `
 ${voiceIdentityLockBlock({ contentFormat, character, characterRefUrl })}
 ENVIRONMENT (LOCKED SET): Location is "${environmentStr}".
-BRAND IDENTITY: ${brand.name} (${brand.niche || "Media OS"}).
+BRAND IDENTITY: ${brand.name} (${brand.niche || (isStoryOrAnime ? "Narrative Series" : "Media OS")}).
 ASPECT RATIO: ${aspectRatio}.
 ${rankedLaws ? `RANKED BRAND MEMORY LAWS:\n${rankedLaws}\n` : ""}${ANTI_SLOP_RULES}
 `.trim();
@@ -193,7 +198,7 @@ ${rankedLaws ? `RANKED BRAND MEMORY LAWS:\n${rankedLaws}\n` : ""}${ANTI_SLOP_RUL
 GLOBAL LOCK:
 CHARACTER (from sheet image): ${charName} (Style: ${charStyle}, Traits: ${charTraits}). Reference sheet is image 1.
 LOCATION / SET (locked): ${environmentStr}.
-STYLE: ${brand.name} (${brand.niche || "Executive"}), cinematic anamorphic look, 8K photorealistic.
+STYLE: ${brand.name} (${brand.niche || (isStoryOrAnime ? "Cinematic Story" : "Executive")}), cinematic anamorphic look, 8K photorealistic.
 ONLY spoken words are inside quotation marks.
 
 TIMELINE BEATS (0-${durationSec}s):
@@ -223,7 +228,7 @@ CINEMATIC MOTION LAWS:
     videoPromptTemplate: (durationSec, sceneDescriptions) => `
 ${globalLockBlock}
 
-LAM ONE-TAKE HYBRID PRESENTATION SEQUENCE (${aspectRatio}, Target Duration: ${durationSec}s):
+${isStoryOrAnime ? "NARRATIVE CINEMATIC SEQUENCE" : "LAM ONE-TAKE HYBRID PRESENTATION SEQUENCE"} (${aspectRatio}, Target Duration: ${durationSec}s):
 INPUT REF [1]: Primary Character Reference Sheet (${charName})
 INPUT REF [2]: Master Storyboard Grid / Keyframe Reference
 GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environmentStr}". Look lives in reference images — text describes physical change only.
@@ -231,11 +236,15 @@ GLOBAL LOCK: Primary subject is "${charName}" (${charStyle}). Set is "${environm
 TIMELINE & BEAT STRUCTURE:
 ${sceneDescriptions}
 
-HYBRID PRESENTATION LAWS:
+${isStoryOrAnime ? `NARRATIVE CINEMATIC LAWS:
+- Immersive story world perspective with strong visual continuity.
+- Sequential beat animation from reference keyframes in exact order (1 -> N).
+- Continuous scene lighting, atmospheric depth, and spatial consistency; zero random environment resets.
+- Paced cinematic camera motion authentic to narrative action.` : `HYBRID PRESENTATION LAWS:
 - Host-on-camera perspective with high retention visual engagement.
 - Sequential beat animation from reference keyframes in exact order (1 -> N).
 - Continuous set lighting and atmosphere; zero random environment resets.
-- Clean host presentation pacing matching audio narration.
+- Clean host presentation pacing matching audio narration.`}
 
 AUDIO & SPEECH POLICY:
 - Ambient sound design and synchronized SFX in chronological sequence.

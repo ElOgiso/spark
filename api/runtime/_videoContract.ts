@@ -6,7 +6,7 @@
 
 export const SEEDANCE_MODEL_15_PRO = "doubao-seedance-1-5-pro-251215";
 export const SEEDANCE_MODEL_20 = "doubao-seedance-2-0-260128";
-export const GROK_VIDEO_MODEL = "grok-imagine-video";
+export const GROK_VIDEO_MODEL = "grok-imagine-video-1.5";
 export const KLING_DEFAULT_MODEL = "kling-v2-6";
 
 export const SEEDANCE_POLL_INTERVAL_MS = 10_000;
@@ -27,8 +27,11 @@ export interface SeedanceContentPart {
 export interface VideoClipRequest {
   prompt: string;
   firstFrameDataUri?: string;
+  firstFrameUrl?: string; // Direct durable public/signed URL of this shot still
   lastFrameDataUri?: string;
+  lastFrameUrl?: string;
   referenceDataUris?: string[];
+  referenceUrls?: string[];
   aspectRatio?: string;
   durationSec?: number;
   resolution?: string;
@@ -325,30 +328,34 @@ export function grokMotionPrompt(prompt: string): string {
 }
 
 export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string, unknown> {
+  const model = req.model && req.model !== "grok-imagine-video" ? req.model : GROK_VIDEO_MODEL;
+
+  // B. Body must include official image object when a still exists:
+  // image: { url: firstFrameDataUri or durable public/signed URL of THIS SHOT still }
+  // Never send i2v without an image. If no still, FAIL the shot — do not T2V.
+  const stillUrl = req.firstFrameUrl || req.firstFrameDataUri;
+  if (!stillUrl || !stillUrl.trim()) {
+    throw new Error("Grok I2V requires this shot's still as frame 1. Refusing text-to-video (numInputImages=0 forbidden).");
+  }
+
+  const trimmedUrl = stillUrl.trim();
   const body: Record<string, unknown> = {
-    model: req.model || GROK_VIDEO_MODEL,
+    model,
     prompt: grokMotionPrompt(req.prompt),
     duration: snapGrokDuration(req.durationSec),
     aspect_ratio: normalizeAspectRatio(req.aspectRatio),
     resolution: normalizeResolution(req.resolution),
+    image: {
+      url: trimmedUrl,
+    },
+    image_url: trimmedUrl,
   };
 
-  // Official i2v: image only. xAI forbids image + reference_images on one request.
-  if (req.firstFrameDataUri) {
-    body.image_url = req.firstFrameDataUri;
-    if (req.lastFrameDataUri && req.lastFrameDataUri !== req.firstFrameDataUri) {
-      body.last_frame_url = req.lastFrameDataUri;
-    }
-    return body;
+  const endUrl = req.lastFrameUrl || req.lastFrameDataUri;
+  if (endUrl && endUrl.trim() && endUrl.trim() !== trimmedUrl) {
+    body.last_frame_url = endUrl.trim();
   }
 
-  const refs = (req.referenceDataUris || [])
-    .filter(Boolean)
-    .filter((u) => u !== req.lastFrameDataUri)
-    .slice(0, 7);
-  if (refs.length > 0) {
-    body.reference_image_urls = refs;
-  }
   return body;
 }
 

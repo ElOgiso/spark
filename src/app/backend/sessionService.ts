@@ -182,7 +182,7 @@ export async function bootstrapUserSession(
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           settings: { is_draft: true },
-        } as BrandRow;
+        } as unknown as BrandRow;
         brands = [activeBrand];
       }
 
