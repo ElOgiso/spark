@@ -41,16 +41,21 @@ export async function createDraftBrand(
   const supabase = getSupabaseClient();
   if (!supabase) return unconfiguredResult<BrandRow>();
 
+  const rawAudience = (initialValues?.audience as any) || {};
+  const draftAudience = {
+    ...rawAudience,
+    settings: { is_draft: true, ...((initialValues?.settings as any) || {}), ...(rawAudience.settings || {}) },
+  };
+
   const draftPayload: Partial<BrandRow> = {
     owner_id: ownerId,
     name: initialValues?.name || "Draft Brand",
     niche: initialValues?.niche || null,
     archetype: initialValues?.archetype ?? null,
     purpose: initialValues?.purpose ?? null,
-    audience: (initialValues?.audience as any) ?? {},
+    audience: draftAudience,
     tone: (initialValues?.tone as any) ?? [],
     content_pillars: (initialValues?.content_pillars as any) ?? [],
-    settings: { is_draft: true, ...((initialValues?.settings as any) || {}) },
     automation_mode: initialValues?.automation_mode ?? "balanced",
     review_required: initialValues?.review_required ?? true,
     publish_requires_approval: initialValues?.publish_requires_approval ?? true,
@@ -109,7 +114,37 @@ export async function ensureDefaultBrand(
 }
 
 export async function updateBrand(id: string, values: Partial<BrandRow>): Promise<RepositoryResult<BrandRow>> {
-  return updateRow("brands", id, values);
+  const { settings, ...cleanValues } = values as any;
+  const finalValues: any = { ...cleanValues };
+
+  // If settings are provided, fold them into audience.settings to avoid Supabase error: column brands.settings does not exist
+  if (settings && typeof settings === "object") {
+    const supabase = getSupabaseClient();
+    let currentAudience: Record<string, any> = {};
+    if (finalValues.audience && typeof finalValues.audience === "object") {
+      currentAudience = { ...finalValues.audience };
+    } else if (supabase) {
+      try {
+        const { data: bRow } = await (supabase.from("brands") as any)
+          .select("audience")
+          .eq("id", id)
+          .maybeSingle();
+        if (bRow?.audience && typeof bRow.audience === "object") {
+          currentAudience = { ...bRow.audience };
+        }
+      } catch {}
+    }
+
+    finalValues.audience = {
+      ...currentAudience,
+      settings: {
+        ...(currentAudience.settings || {}),
+        ...settings,
+      },
+    };
+  }
+
+  return updateRow("brands", id, finalValues);
 }
 
 export async function deleteBrand(id: string): Promise<RepositoryResult<true>> {

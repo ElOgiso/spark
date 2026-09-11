@@ -331,6 +331,32 @@ export class VideoUnderstandingProvider {
       }
     }
 
+    // Public oEmbed Fallback for YouTube (unauthenticated, highly reliable)
+    if (platform === "youtube" && (!title || !thumbnail)) {
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`;
+        const res = await fetch(oembedUrl);
+        if (res.ok) {
+          const oembed = await res.json();
+          if (oembed.title && !title) title = oembed.title;
+          if (oembed.author_name && !creatorName) {
+            creatorName = oembed.author_name;
+            if (!creatorHandle) creatorHandle = `@${oembed.author_name.replace(/\s+/g, "")}`;
+          }
+          if (oembed.thumbnail_url && !thumbnail) thumbnail = oembed.thumbnail_url;
+        }
+      } catch (oembedErr) {
+        console.warn("[VideoUnderstandingProvider] YouTube oEmbed fetch notice:", oembedErr);
+      }
+    }
+
+    if (!thumbnail && platform === "youtube" && videoId) {
+      thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    }
+    if (!title && platform === "youtube" && videoId) {
+      title = `YouTube Video (${videoId})`;
+    }
+
     // Stage 2: Transcript Extraction
     const transcript = await this.fetchTranscript(videoId, platform);
 
@@ -341,7 +367,7 @@ export class VideoUnderstandingProvider {
     const prompt = `Watch this video once and extract a production ticket SPARK can remake.
 Video Title: "${title}"
 Platform: ${platform}
-Duration: ${durationSec}s
+Duration: ${durationSec ? `${durationSec}s` : "unknown (short/long form)"}
 Public View Count: ${viewCount ?? "unknown"}
 Public Likes: ${likeCount ?? "unknown"}
 Tags/Topics: ${tags.join(", ") || "unknown"}
@@ -409,7 +435,13 @@ Do not invent a hook, CTA, or beats if they are not in the transcript or frames.
       ? aiResult.visual_actions.map((a: any) => String(a || "").trim()).filter(Boolean).slice(0, 6)
       : [];
     const duration_sec =
-      typeof durationSec === "number" && durationSec > 0 ? durationSec : undefined;
+      typeof durationSec === "number" && durationSec > 0
+        ? durationSec
+        : typeof aiResult?.duration_sec === "number" && aiResult.duration_sec > 0
+          ? aiResult.duration_sec
+          : cleanUrl.includes("/shorts/")
+            ? 60
+            : 180;
 
     const videoResearch: VideoResearch = {
       videoId,

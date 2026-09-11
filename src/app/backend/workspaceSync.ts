@@ -129,7 +129,9 @@ function brandRowToDomain(row: BrandRow): Brand {
 
   const settingsObj = (row.settings && typeof row.settings === "object" && !Array.isArray(row.settings))
     ? (row.settings as any)
-    : {};
+    : (audienceObj?.settings && typeof audienceObj.settings === "object" && !Array.isArray(audienceObj.settings))
+      ? (audienceObj.settings as any)
+      : {};
 
   const rawFormatSettings = settingsObj.format_settings;
   const rawContentFormat: ContentFormat =
@@ -322,8 +324,10 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
 
   const mainCharacter = refreshedCharacters.find((c) => c.role !== "support") || refreshedCharacters[0];
 
-  const cloudCreditSettings = (brandRes?.data?.settings as any)?.credit_settings || (brandRes?.data?.audience as any)?.credit_settings;
-  const cloudFormatSettings = (brandRes?.data?.settings as any)?.format_settings;
+  const brandAudience = (brandRes?.data?.audience as any) || {};
+  const cloudSettings = (brandRes?.data?.settings as any) || brandAudience.settings || {};
+  const cloudCreditSettings = cloudSettings.credit_settings || brandAudience.credit_settings;
+  const cloudFormatSettings = cloudSettings.format_settings || brandAudience.format_settings;
 
   let localCachedFormat: Partial<ProductionFormatSettings> | undefined = undefined;
   if (typeof localStorage !== "undefined" && brandId) {
@@ -333,7 +337,7 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     } catch {}
   }
 
-  const cloudSettingsWrittenAt = (brandRes?.data?.settings as any)?.settings_written_at;
+  const cloudSettingsWrittenAt = cloudSettings.settings_written_at || brandAudience.settings_written_at;
   const keepLocalSettings = isInMemorySettingsNewer(readSettingsWrittenAt(brandId), cloudSettingsWrittenAt);
 
   const resolvedFormatDuration = keepLocalSettings
@@ -1091,21 +1095,29 @@ export async function persistCreditSettings(
     if (!supabase) return false;
 
     const { data: brandRow } = await (supabase.from("brands") as any)
-      .select("settings")
+      .select("audience")
       .eq("id", brandId)
-      .single();
+      .maybeSingle();
+
+    const existingAudience =
+      brandRow?.audience && typeof brandRow.audience === "object" && !Array.isArray(brandRow.audience)
+        ? { ...brandRow.audience }
+        : {};
 
     const existingSettings =
-      brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
-        ? { ...brandRow.settings }
+      existingAudience.settings && typeof existingAudience.settings === "object" && !Array.isArray(existingAudience.settings)
+        ? { ...existingAudience.settings }
         : {};
 
     const writtenAt = new Date().toISOString();
     existingSettings.credit_settings = { ...settings };
     existingSettings.settings_written_at = writtenAt;
+    existingAudience.credit_settings = { ...settings };
+    existingAudience.settings_written_at = writtenAt;
+    existingAudience.settings = existingSettings;
 
     const { error } = await (supabase.from("brands") as any)
-      .update({ settings: existingSettings, updated_at: writtenAt })
+      .update({ audience: existingAudience, updated_at: writtenAt })
       .eq("id", brandId);
 
     if (error) {
@@ -1114,7 +1126,7 @@ export async function persistCreditSettings(
     }
 
     stampSettingsWrittenAt(brandId, writtenAt);
-    console.log("[workspaceSync] Credit settings persisted to brands.settings in Supabase:", settings);
+    console.log("[workspaceSync] Credit settings persisted to brands.audience in Supabase:", settings);
     return true;
   } catch (err) {
     console.error("[workspaceSync] persistCreditSettings error:", err);
@@ -1133,15 +1145,16 @@ export async function persistFormatSettings(
   };
 
   const writeLocalFormatCache = () => {
-    if (typeof localStorage !== "undefined") {
+    if (typeof localStorage === "undefined") return;
+    try {
       localStorage.setItem(`spark_format_settings_${brandId || "default"}`, JSON.stringify(cleanSettings));
-      if (brandId) {
+      if (typeof window !== "undefined" && (window as any).__SPARK_ACTIVE_BRAND_ID__ === brandId) {
         localStorage.setItem(`spark_format_settings_active`, JSON.stringify(cleanSettings));
       }
-    }
+    } catch {}
   };
 
-  if (!isSupabaseConfigured() || !brandId || !isUuid(brandId)) {
+  if (!isSupabaseConfigured() || !isUuid(brandId)) {
     writeLocalFormatCache();
     if (brandId) stampSettingsWrittenAt(brandId);
     return true;
@@ -1156,13 +1169,18 @@ export async function persistFormatSettings(
     }
 
     const { data: brandRow } = await (supabase.from("brands") as any)
-      .select("settings")
+      .select("audience")
       .eq("id", brandId)
-      .single();
+      .maybeSingle();
+
+    const existingAudience =
+      brandRow?.audience && typeof brandRow.audience === "object" && !Array.isArray(brandRow.audience)
+        ? { ...brandRow.audience }
+        : {};
 
     const existingSettings =
-      brandRow?.settings && typeof brandRow.settings === "object" && !Array.isArray(brandRow.settings)
-        ? { ...brandRow.settings }
+      existingAudience.settings && typeof existingAudience.settings === "object" && !Array.isArray(existingAudience.settings)
+        ? { ...existingAudience.settings }
         : {};
 
     const writtenAt = new Date().toISOString();
@@ -1172,9 +1190,12 @@ export async function persistFormatSettings(
       existingSettings.contentFormat = cleanSettings.contentFormat;
       existingSettings.content_format = cleanSettings.contentFormat;
     }
+    existingAudience.format_settings = { ...cleanSettings };
+    existingAudience.settings_written_at = writtenAt;
+    existingAudience.settings = existingSettings;
 
     const { error } = await (supabase.from("brands") as any)
-      .update({ settings: existingSettings, updated_at: writtenAt })
+      .update({ audience: existingAudience, updated_at: writtenAt })
       .eq("id", brandId);
 
     if (error) {
@@ -1184,7 +1205,7 @@ export async function persistFormatSettings(
 
     writeLocalFormatCache();
     stampSettingsWrittenAt(brandId, writtenAt);
-    console.log("[workspaceSync] Format settings persisted to brands.settings in Supabase:", settings);
+    console.log("[workspaceSync] Format settings persisted to brands.audience in Supabase:", settings);
     return true;
   } catch (err) {
     console.error("[workspaceSync] persistFormatSettings error:", err);
@@ -1239,11 +1260,15 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
     // Merge settings (locationPlateUrl, format_settings, credit_settings, etc.)
     const supabase = getSupabaseClient();
     let existingSettings: Record<string, any> = {};
+    let currentAudience: Record<string, any> = { ...audienceObj };
     if (supabase) {
-      const { data: bRow } = await (supabase.from("brands") as any).select("settings").eq("id", brandId).single();
-      const rawSettings = (bRow as any)?.settings;
-      if (rawSettings && typeof rawSettings === "object" && !Array.isArray(rawSettings)) {
-        existingSettings = { ...rawSettings };
+      const { data: bRow } = await (supabase.from("brands") as any).select("audience").eq("id", brandId).maybeSingle();
+      const rawAudience = (bRow as any)?.audience;
+      if (rawAudience && typeof rawAudience === "object" && !Array.isArray(rawAudience)) {
+        currentAudience = { ...rawAudience, ...currentAudience };
+        if (rawAudience.settings && typeof rawAudience.settings === "object") {
+          existingSettings = { ...rawAudience.settings };
+        }
       }
     }
 
@@ -1276,8 +1301,9 @@ export async function persistBrandUpdate(brandId: string, patch: Partial<Brand> 
     const writtenAt = new Date().toISOString();
     if (Object.keys(newSettings).length > 0) {
       newSettings.settings_written_at = writtenAt;
-      rowPatch.settings = newSettings;
+      currentAudience.settings = newSettings;
     }
+    rowPatch.audience = currentAudience;
 
     const res = await updateBrand(brandId, rowPatch);
     if (res.error) {

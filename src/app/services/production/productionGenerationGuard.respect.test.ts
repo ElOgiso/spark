@@ -181,21 +181,26 @@ describe("Production Generation ON/OFF preference respect", () => {
     assert.ok(report.preflight || report.ok || errs.length > 0, "lifecycle must run past the generation guard");
   });
 
-  it("credit firewall: Super Spark chat is allowed when OFF; every other category is blocked", () => {
+  it("credit firewall: Super Spark chat and research intelligence are allowed when OFF; asset generation is blocked", () => {
     ProductionGenerationGuard.setEnabled(false);
     assert.doesNotThrow(() =>
       ProductionGenerationGuard.assertSpendAllowed("modelRouter.superSpark", "superSpark")
     );
+    assert.doesNotThrow(() =>
+      ProductionGenerationGuard.assertSpendAllowed("modelRouter.research", "research")
+    );
+    assert.doesNotThrow(() =>
+      ProductionGenerationGuard.assertSpendAllowed("modelRouter.videoUnderstanding", "videoUnderstanding")
+    );
+    assert.doesNotThrow(() =>
+      ProductionGenerationGuard.assertSpendAllowed("modelRouter.memory", "memory")
+    );
     assert.throws(
       () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.storyboardImages", "storyboardImages"),
-      /Super Spark chat is the only allowed spend path/
+      /Super Spark chat and research intelligence are the only allowed spend paths/
     );
     assert.throws(
       () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.production", "production"),
-      /currently OFF/
-    );
-    assert.throws(
-      () => ProductionGenerationGuard.assertSpendAllowed("modelRouter.research", "research"),
       /currently OFF/
     );
     assert.throws(

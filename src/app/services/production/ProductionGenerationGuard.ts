@@ -75,9 +75,15 @@ export class ProductionGenerationGuard {
     }
   }
 
-  /** Super Spark chat is the only spend path allowed when Production Generation is OFF. */
+  /** Super Spark chat and research intelligence are allowed when Production Generation is OFF. */
   static isExemptCategory(category?: string | null): boolean {
-    return category === "superSpark";
+    return (
+      category === "superSpark" ||
+      category === "videoUnderstanding" ||
+      category === "research" ||
+      category === "memory" ||
+      category === "analytics"
+    );
   }
 
   static assertEnabled(actionName: string, brandId?: string): void {
@@ -85,8 +91,9 @@ export class ProductionGenerationGuard {
   }
 
   /**
-   * Credit firewall. When Production is OFF, only category "superSpark" may spend.
-   * All other ModelRouter categories, briefs, images, video, and research analysis throw.
+   * Credit firewall. When Production is OFF, only chat, research, video understanding,
+   * memory, and analytics may spend. Autonomous asset generation (storyboards, video, production)
+   * remains strictly blocked.
    */
   static assertSpendAllowed(actionName: string, category?: string | null, brandId?: string): void {
     this.assertAccessActive(actionName);
@@ -95,7 +102,7 @@ export class ProductionGenerationGuard {
 
     if (!this.isEnabled(brandId)) {
       throw new Error(
-        `[ProductionGenerationGuard] Action "${actionName}" blocked: Production Generation is currently OFF. Super Spark chat is the only allowed spend path.`
+        `[ProductionGenerationGuard] Action "${actionName}" blocked: Production Generation is currently OFF. Super Spark chat and research intelligence are the only allowed spend paths.`
       );
     }
   }

@@ -212,14 +212,28 @@ export async function bootstrapUserSession(
 
       // 6) Determine onboarding completeness from CLOUD source of truth:
       // Profile flag is true OR user has at least one configured non-draft brand owned by them
-      const isDraft = !activeBrand || (activeBrand.settings as any)?.is_draft === true || activeBrand.name === "Draft Brand";
+      const isDraft =
+        !activeBrand ||
+        (activeBrand.audience as any)?.settings?.is_draft === true ||
+        (activeBrand.settings as any)?.is_draft === true ||
+        activeBrand.name === "Draft Brand";
       let isComplete = profile.onboarding_complete === true;
 
-      // Cloud auto-repair: only if user has a configured, NON-DRAFT brand in Supabase
-      if (!isComplete && !isDraft && brands.length > 0 && activeBrand && activeBrand.name && activeBrand.name !== "My Brand") {
-        profile.onboarding_complete = true;
-        isComplete = true;
-        void markProfileOnboardingComplete(user.id, activeBrand.id, "active");
+      // Cloud auto-repair: if user has a configured, NON-DRAFT brand in Supabase
+      if (!isComplete) {
+        const configuredBrand = brands.find(
+          (b) =>
+            b &&
+            b.name &&
+            b.name !== "Draft Brand" &&
+            (b.audience as any)?.settings?.is_draft !== true &&
+            (b.settings as any)?.is_draft !== true
+        );
+        if (configuredBrand) {
+          profile.onboarding_complete = true;
+          isComplete = true;
+          void markProfileOnboardingComplete(user.id, configuredBrand.id, "active");
+        }
       }
 
       if (isComplete) {

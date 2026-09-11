@@ -72,14 +72,26 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<Profil
         if (typeof user.user_metadata?.avatar_url === "string") {
           refreshPayload.avatar_url = user.user_metadata.avatar_url;
         }
-        // If matched by email with an older/seeded id, transfer the elevated role, permissions, and active status
-        if (existing.id !== user.id) {
-          if (existing.role) refreshPayload.role = existing.role;
-          if (existing.is_super_admin !== undefined) refreshPayload.is_super_admin = existing.is_super_admin;
-          if (existing.access_status) refreshPayload.access_status = existing.access_status;
-          if (existing.onboarding_complete !== undefined) refreshPayload.onboarding_complete = existing.onboarding_complete;
-          if (existing.active_brand_id) refreshPayload.active_brand_id = existing.active_brand_id;
-        }
+        // Always preserve/carry over role, permissions, access status, onboarding state, and active brand
+        if (existing.role) refreshPayload.role = existing.role;
+        if (existing.is_super_admin !== undefined) refreshPayload.is_super_admin = existing.is_super_admin;
+        if (existing.access_status) refreshPayload.access_status = existing.access_status;
+        if (existing.onboarding_complete !== undefined) refreshPayload.onboarding_complete = existing.onboarding_complete;
+        if (existing.active_brand_id) refreshPayload.active_brand_id = existing.active_brand_id;
+
+        // If local storage has onboarding complete or active brand, and existing profile is missing them, heal it
+        try {
+          if (typeof localStorage !== "undefined") {
+            const cachedOnboarding = localStorage.getItem("spark_onboarding_complete");
+            if (cachedOnboarding === "true" && !refreshPayload.onboarding_complete) {
+              refreshPayload.onboarding_complete = true;
+            }
+            const cachedBrand = localStorage.getItem("spark_current_brand_id");
+            if (cachedBrand && !refreshPayload.active_brand_id) {
+              refreshPayload.active_brand_id = cachedBrand;
+            }
+          }
+        } catch {}
         const { data: refreshed, error: refreshError } = await (supabase.from("profiles") as any)
           .upsert(refreshPayload, { onConflict: "id" })
           .select("*")
