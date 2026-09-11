@@ -224,20 +224,20 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
       {
         id: "grok-4.5",
         label: "Grok 4.5 (Flagship Reasoning & Vision)",
-        capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding"],
+        capabilities: ["Chat", "Reasoning", "Vision"],
         recommended: true,
         status: "stable",
       },
       {
         id: "grok-beta",
         label: "Grok Beta (Fast)",
-        capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding"],
+        capabilities: ["Chat", "Reasoning", "Vision"],
         status: "stable",
       },
       {
         id: "grok-2-vision-1212",
         label: "Grok 2 Vision",
-        capabilities: ["Chat", "Vision", "Video Understanding"],
+        capabilities: ["Chat", "Vision"],
         status: "stable",
       },
       // Image Generation

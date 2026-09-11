@@ -81,9 +81,33 @@ export interface Account {
   posts: number;
 }
 
+export interface StructuredSourceContent {
+  sourceType: "youtube" | "video" | "image" | "audio" | "article" | "general" | string;
+  sourceUrl?: string;
+  youtubeUrl?: string;
+  title?: string;
+  durationSec?: number;
+  transcript?: string;
+  frames?: string[];
+  mediaReference?: string;
+  understandingProvider?: string;
+  confidence?: number;
+}
+
 export interface StructuredResearchContext {
   sourceName?: string;
   platform?: string;
+  sourceUrl?: string;
+  youtubeUrl?: string;
+  sourceType?: "youtube" | "video" | "image" | "audio" | "article" | "general" | string;
+  title?: string;
+  durationSec?: number;
+  transcript?: string;
+  frames?: string[];
+  mediaReference?: string;
+  understandingProvider?: string;
+  confidence?: number;
+  sourceContent?: StructuredSourceContent;
   hookPattern?: string;
   titlePattern?: string;
   format?: string;
@@ -145,6 +169,9 @@ export interface ViralSpark {
   estimatedViews?: string;
   whyItWorks?: string;
   suggestedScript?: string;
+  sourceContent?: StructuredSourceContent;
+  youtubeUrl?: string;
+  sourceUrl?: string;
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
@@ -263,6 +290,9 @@ export interface ProductionBrief {
   whyThisWorks: string;
   /** Structured viral research carried onto the brief so still/motion prompts can generate on-concept visuals. */
   researchContext?: StructuredResearchContext;
+  /** Structured source media context (YouTube URL, raw media, transcripts, frames) */
+  sourceContent?: StructuredSourceContent;
+  youtubeUrl?: string;
   /** Provenance of the script content: real model output vs. the deterministic template safety-net. */
   contentSource?: "ai" | "template-fallback";
   brandFitScore: number;

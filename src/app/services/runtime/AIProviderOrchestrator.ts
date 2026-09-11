@@ -22,6 +22,9 @@ export interface AIExecutionOptions {
   productionId?: string;
   brandId?: string;
   shotIndex?: number;
+  youtubeUrl?: string;
+  sourceUrl?: string;
+  sourceContent?: any;
 }
 
 export interface AIProviderPlugin {
@@ -30,6 +33,37 @@ export interface AIProviderPlugin {
   capabilities: AICapabilityType[];
   isAvailable(customKeys?: Record<string, string>): boolean;
   execute(options: AIExecutionOptions): Promise<string>;
+}
+
+/**
+ * Universal media helper: converts image URLs (including HTTP/HTTPS) to data URIs
+ * for providers requiring base64 inlineData (Gemini, Claude)
+ */
+async function urlToDataUri(url: string): Promise<string> {
+  if (!url || url.startsWith("data:")) return url;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return url;
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    if (typeof Buffer !== "undefined") {
+      const arrayBuffer = await res.arrayBuffer();
+      const b64 = Buffer.from(arrayBuffer).toString("base64");
+      return `data:${contentType};base64,${b64}`;
+    }
+    const blob = await res.blob();
+    return await new Promise<string>((resolve) => {
+      if (typeof FileReader !== "undefined") {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(url);
+        reader.readAsDataURL(blob);
+      } else {
+        resolve(url);
+      }
+    });
+  } catch {
+    return url;
+  }
 }
 
 /**
@@ -690,6 +724,35 @@ export class AIProviderOrchestrator {
 
         const chatModel = (options.model && options.model.startsWith("gemini")) ? options.model : "gemini-2.0-flash";
 
+        const userParts: any[] = [];
+        if (options.youtubeUrl) {
+          userParts.push({
+            fileData: {
+              fileUri: options.youtubeUrl,
+              mimeType: "video/*",
+            },
+          });
+        }
+        if (options.frames && options.frames.length > 0) {
+          for (const frameUrl of options.frames) {
+            const dataUri = await urlToDataUri(frameUrl);
+            if (dataUri.startsWith("data:")) {
+              const mimeType = dataUri.split(";")[0].replace("data:", "");
+              const data = dataUri.split(",")[1];
+              userParts.push({ inlineData: { mimeType, data } });
+            } else {
+              userParts.push({ text: `[Keyframe Reference: ${frameUrl}]` });
+            }
+          }
+        }
+        userParts.push({ text: options.prompt });
+
+        const contents = (options.history || []).map((h) => ({
+          role: h.role,
+          parts: h.parts,
+        }));
+        contents.push({ role: "user", parts: userParts });
+
         if (apiKey) {
           try {
             const { GoogleGenAI } = await import("@google/genai").catch(() => ({ GoogleGenAI: null as any }));
@@ -698,26 +761,6 @@ export class AIProviderOrchestrator {
                 apiKey,
                 httpOptions: { headers: { "User-Agent": "aistudio-build" } },
               });
-
-              const contents = (options.history || []).map((h) => ({
-                role: h.role,
-                parts: h.parts,
-              }));
-
-              const userParts: any[] = [];
-              if (options.frames && options.frames.length > 0) {
-                for (const frameUrl of options.frames) {
-                  if (frameUrl.startsWith("data:image/")) {
-                    const mimeType = frameUrl.split(";")[0].replace("data:", "");
-                    const data = frameUrl.split(",")[1];
-                    userParts.push({ inlineData: { mimeType, data } });
-                  } else if (frameUrl.startsWith("http")) {
-                    userParts.push({ text: `[Keyframe Image URL: ${frameUrl}]` });
-                  }
-                }
-              }
-              userParts.push({ text: options.prompt });
-              contents.push({ role: "user", parts: userParts });
 
               const response = await ai.models.generateContent({
                 model: chatModel,
@@ -736,8 +779,6 @@ export class AIProviderOrchestrator {
 
         // Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY / GOOGLE_AI_API_KEY)
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`;
-        const contents = (options.history || []).map((h) => ({ role: h.role, parts: h.parts }));
-        contents.push({ role: "user", parts: [{ text: options.prompt }] });
 
         const payload: any = { contents };
         if (options.systemInstruction) {
@@ -888,30 +929,30 @@ export class AIProviderOrchestrator {
           ? options.model
           : "gpt-5.6";
 
+        const messages: any[] = [];
+        if (options.systemInstruction) {
+          messages.push({ role: "system", content: options.systemInstruction });
+        }
+        if (options.history) {
+          options.history.forEach((h) => {
+            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+          });
+        }
+        
+        let userContent: any = options.prompt;
+        if (options.frames && options.frames.length > 0) {
+          userContent = [
+            { type: "text", text: options.prompt },
+            ...options.frames.map((url) => ({
+              type: "image_url",
+              image_url: { url, detail: "low" },
+            })),
+          ];
+        }
+        messages.push({ role: "user", content: userContent });
+
         if (apiKey) {
           try {
-            const messages: any[] = [];
-            if (options.systemInstruction) {
-              messages.push({ role: "system", content: options.systemInstruction });
-            }
-            if (options.history) {
-              options.history.forEach((h) => {
-                messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-              });
-            }
-            
-            let userContent: any = options.prompt;
-            if (options.frames && options.frames.length > 0) {
-              userContent = [
-                { type: "text", text: options.prompt },
-                ...options.frames.map((url) => ({
-                  type: "image_url",
-                  image_url: { url, detail: "low" },
-                })),
-              ];
-            }
-            messages.push({ role: "user", content: userContent });
-
             const res = await fetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
               headers: {
@@ -958,16 +999,6 @@ export class AIProviderOrchestrator {
         }
 
         // Server Proxy Fallback via /api/runtime/execute
-        const messages = [];
-        if (options.systemInstruction) {
-          messages.push({ role: "system", content: options.systemInstruction });
-        }
-        if (options.history) {
-          options.history.forEach((h) => {
-            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-          });
-        }
-        messages.push({ role: "user", content: options.prompt });
 
         const proxyRes = await fetch("/api/runtime/execute", {
           method: "POST",
@@ -1007,36 +1038,37 @@ export class AIProviderOrchestrator {
           "claude-3-5-haiku-20241022",
         ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-        if (apiKey) {
-          try {
-            const messages = [];
-            if (options.history) {
-              options.history.forEach((h) => {
-                messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+        const messages: any[] = [];
+        if (options.history) {
+          options.history.forEach((h) => {
+            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+          });
+        }
+
+        let userContent: any = options.prompt;
+        if (options.frames && options.frames.length > 0) {
+          userContent = [];
+          for (const frameUrl of options.frames) {
+            const dataUri = await urlToDataUri(frameUrl);
+            if (dataUri.startsWith("data:")) {
+              const mimeType = dataUri.split(";")[0].replace("data:", "");
+              const data = dataUri.split(",")[1];
+              userContent.push({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mimeType,
+                  data,
+                },
               });
             }
+          }
+          userContent.push({ type: "text", text: options.prompt });
+        }
+        messages.push({ role: "user", content: userContent });
 
-            let userContent: any = options.prompt;
-            if (options.frames && options.frames.length > 0) {
-              userContent = [];
-              for (const frameUrl of options.frames) {
-                if (frameUrl.startsWith("data:image/")) {
-                  const mimeType = frameUrl.split(";")[0].replace("data:", "");
-                  const data = frameUrl.split(",")[1];
-                  userContent.push({
-                    type: "image",
-                    source: {
-                      type: "base64",
-                      media_type: mimeType,
-                      data,
-                    },
-                  });
-                }
-              }
-              userContent.push({ type: "text", text: options.prompt });
-            }
-            messages.push({ role: "user", content: userContent });
-
+        if (apiKey) {
+          try {
             for (const modelId of candidateModels) {
               try {
                 const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1071,13 +1103,6 @@ export class AIProviderOrchestrator {
         }
 
         // Server Proxy Fallback via /api/runtime/execute
-        const messages = [];
-        if (options.history) {
-          options.history.forEach((h) => {
-            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-          });
-        }
-        messages.push({ role: "user", content: options.prompt });
 
         for (const modelId of candidateModels) {
           try {
@@ -1115,7 +1140,7 @@ export class AIProviderOrchestrator {
     this.registerPlugin({
       id: "grok",
       name: "xAI Grok (Grok 4.5 / Imagine / Video / TTS)",
-      capabilities: ["Chat", "Vision", "Video Understanding", "Reasoning", "Image Generation", "Video Generation", "Text To Speech"],
+      capabilities: ["Chat", "Vision", "Reasoning", "Image Generation", "Video Generation", "Text To Speech"],
       isAvailable: (customKeys) => true,
       execute: async (options) => {
         const apiKey = resolveProviderKey("grok", options.customApiKeys);
@@ -1303,20 +1328,42 @@ export class AIProviderOrchestrator {
         const validGrokChat = options.model && options.model.toLowerCase().startsWith("grok");
         const chatModel = validGrokChat ? options.model! : "grok-4.5";
 
+        let userContent: any = options.prompt;
+        if (options.frames && options.frames.length > 0) {
+          userContent = [
+            { type: "text", text: options.prompt },
+            ...options.frames.map((url) => ({
+              type: "image_url",
+              image_url: { url },
+            })),
+          ];
+        }
+
+        const messages: any[] = [];
+        if (options.systemInstruction) {
+          messages.push({ role: "system", content: options.systemInstruction });
+        }
+        if (options.history) {
+          options.history.forEach((h) => {
+            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+          });
+        }
+        messages.push({ role: "user", content: userContent });
+
+        const responseInput: any[] = [];
+        if (options.systemInstruction) {
+          responseInput.push({ role: "system", content: options.systemInstruction });
+        }
+        if (options.history) {
+          options.history.forEach((h) => {
+            responseInput.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
+          });
+        }
+        responseInput.push({ role: "user", content: userContent });
+
         if (apiKey) {
           // 1. Try official /v1/responses endpoint
           try {
-            const responseInput: any[] = [];
-            if (options.systemInstruction) {
-              responseInput.push({ role: "system", content: options.systemInstruction });
-            }
-            if (options.history) {
-              options.history.forEach((h) => {
-                responseInput.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-              });
-            }
-            responseInput.push({ role: "user", content: options.prompt });
-
             const respRes = await fetch("https://api.x.ai/v1/responses", {
               method: "POST",
               headers: {
@@ -1343,28 +1390,6 @@ export class AIProviderOrchestrator {
 
           // 2. Fallback to /v1/chat/completions
           try {
-            const messages: any[] = [];
-            if (options.systemInstruction) {
-              messages.push({ role: "system", content: options.systemInstruction });
-            }
-            if (options.history) {
-              options.history.forEach((h) => {
-                messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-              });
-            }
-
-            let userContent: any = options.prompt;
-            if (options.frames && options.frames.length > 0) {
-              userContent = [
-                { type: "text", text: options.prompt },
-                ...options.frames.map((url) => ({
-                  type: "image_url",
-                  image_url: { url },
-                })),
-              ];
-            }
-            messages.push({ role: "user", content: userContent });
-
             const res = await fetch("https://api.x.ai/v1/chat/completions", {
               method: "POST",
               headers: {
@@ -1390,16 +1415,6 @@ export class AIProviderOrchestrator {
         }
 
         // Server Proxy Fallback via /api/runtime/execute
-        const messages = [];
-        if (options.systemInstruction) {
-          messages.push({ role: "system", content: options.systemInstruction });
-        }
-        if (options.history) {
-          options.history.forEach((h) => {
-            messages.push({ role: h.role === "model" ? "assistant" : "user", content: h.parts[0]?.text || "" });
-          });
-        }
-        messages.push({ role: "user", content: options.prompt });
 
         const proxyRes = await fetch("/api/runtime/execute", {
           method: "POST",

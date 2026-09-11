@@ -171,7 +171,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
   grok: {
     providerId: "grok",
     displayName: "xAI Grok",
-    capabilities: ["Chat", "Reasoning", "Vision", "Video Understanding", "Image Generation", "Video Generation", "Text To Speech"],
+    capabilities: ["Chat", "Reasoning", "Vision", "Image Generation", "Video Generation", "Text To Speech"],
     maxVideoDurationSec: 15,
     allowedDurationsSec: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     supportsImageRefs: true,

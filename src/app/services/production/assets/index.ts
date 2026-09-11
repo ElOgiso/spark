@@ -11,3 +11,4 @@ export * from "./resolve";
 export * from "./characterIdentity";
 export * from "./phase3Handoff";
 export * from "./anchorIntelligence";
+export * from "../productSheetPrompt";

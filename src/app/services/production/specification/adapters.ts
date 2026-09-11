@@ -467,6 +467,16 @@ export function legacyProductionToSpec(params: {
       existingResearchPresent: Boolean(brief?.researchContext || spark?.researchContext),
     }),
     researchContext: brief?.researchContext || spark?.researchContext,
+    sourceContent:
+      brief?.sourceContent ||
+      spark?.sourceContent ||
+      brief?.researchContext?.sourceContent ||
+      spark?.researchContext?.sourceContent,
+    youtubeUrl:
+      brief?.youtubeUrl ||
+      spark?.youtubeUrl ||
+      brief?.researchContext?.youtubeUrl ||
+      spark?.researchContext?.youtubeUrl,
     approvalSummary: {
       projectTitle: project.title,
       genreLabel: creative.genre,
@@ -521,6 +531,16 @@ export function productionSpecToBrief(spec: ProductionSpec, existing?: Productio
     platformRecommendation: spec.project.platforms.join(", "),
     whyThisWorks: spec.narrative.whyThisWorks || existing?.whyThisWorks || spec.creative.rationale.join("; "),
     researchContext: spec.researchContext || existing?.researchContext,
+    sourceContent:
+      spec.sourceContent ||
+      existing?.sourceContent ||
+      spec.researchContext?.sourceContent ||
+      existing?.researchContext?.sourceContent,
+    youtubeUrl:
+      spec.youtubeUrl ||
+      existing?.youtubeUrl ||
+      spec.researchContext?.youtubeUrl ||
+      existing?.researchContext?.youtubeUrl,
     contentSource: existing?.contentSource || "ai",
     brandFitScore: existing?.brandFitScore ?? 80,
     suggestedDuration: `${spec.project.targetDurationSec}s`,

@@ -4,7 +4,7 @@ import type { VisualTreatment } from "../cinematography/cinematicIntelligence";
  * ProductionSpec is the source of truth for planning; legacy ProductionBrief remains a compatibility view.
  */
 
-import type { ProductionMode, StructuredResearchContext } from "../../../domain/types";
+import type { ProductionMode, StructuredResearchContext, StructuredSourceContent } from "../../../domain/types";
 import type { SceneSpec } from "./sceneSpec";
 import type { ContinuitySpec } from "./continuitySpec";
 import type { AudioSpec } from "./audioSpec";
@@ -183,6 +183,8 @@ export interface ProductionSpec {
   /** Structured research needs identified by Creative Director — not invented facts */
   researchRequirements: ResearchRequirementSpec;
   researchContext?: StructuredResearchContext;
+  sourceContent?: StructuredSourceContent;
+  youtubeUrl?: string;
   approvalSummary?: ProductionApprovalSummary;
   /** Observability / compiler metadata */
   meta: {

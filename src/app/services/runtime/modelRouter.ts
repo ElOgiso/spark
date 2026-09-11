@@ -99,8 +99,9 @@ export class ModelRouter {
       case "memory":
         return "openai"; // Default: OpenAI -> Claude -> Grok -> Gemini
       case "research":
+        return "grok";   // Default: Grok (realtime search / intelligence) -> Gemini -> OpenAI
       case "videoUnderstanding":
-        return "grok";   // Default: Grok Vision -> Gemini Vision -> OpenAI Vision
+        return "gemini"; // Default: Gemini (native video / YouTube ingestion) -> Grok -> OpenAI
       case "production":
       case "review":
         return "claude"; // Default: Claude -> OpenAI -> Gemini -> Grok
