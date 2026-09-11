@@ -36,7 +36,7 @@ import {
 import type { BrandGenesisData, VoiceProfile } from "../../onboarding/OnboardingWizard";
 import { SparkLogo } from "../../SparkLogo";
 import { CharacterSheetLightbox } from "../../onboarding/CharacterSheetLightbox";
-import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../../services/socialIntegrationService";
+import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId, getActiveSessionUserId } from "../../../services/socialIntegrationService";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -435,7 +435,9 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     socialConnectorFramework
       .loadClientConfig()
       .then(() => {
-        const url = getOAuthAuthorizationUrl(platformName);
+        const brandId = auth.brand?.id || getBrandWorkspaceId();
+        const userId = auth.currentUser?.id || getActiveSessionUserId();
+        const url = getOAuthAuthorizationUrl(platformName, brandId, userId);
         if (url && url !== "#") {
           window.location.href = url;
         } else {
@@ -495,8 +497,11 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
       connectedAccounts,
     };
 
+    const targetBrandId = auth.brand?.id || getBrandWorkspaceId();
     void initializeBrandGenesis(genesisData);
-    void auth.markOnboardingComplete(auth.brand?.id);
+    if (targetBrandId) {
+      void auth.markOnboardingComplete(targetBrandId);
+    }
     onComplete(genesisData);
   };
 

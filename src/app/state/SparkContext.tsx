@@ -1367,8 +1367,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       brandId = existingBrandId;
       if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
         try {
-          const { ensureDefaultBrand } = await import("../backend/repositories/brandRepository");
-          const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
+          const { createDraftBrand } = await import("../backend/repositories/brandRepository");
+          const defaultBrandRes = await createDraftBrand(auth.currentUser.id, {
             name: brandName,
             niche: niche,
             purpose: vision,
@@ -1380,7 +1380,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             auth.setBrand(defaultBrandRes.data);
           }
         } catch (err) {
-          console.warn("[SparkContext] ensureDefaultBrand fallback notice:", err);
+          console.warn("[SparkContext] createDraftBrand fallback notice:", err);
         }
       }
     }
@@ -1702,7 +1702,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           audience: genesisBrand.audience,
           tone: genesisBrand.tone,
           contentPillars: genesisBrand.contentPillars,
-          settings: genesisBrand.settings,
+          settings: {
+            ...(typeof genesisBrand.settings === "object" ? genesisBrand.settings : {}),
+            is_draft: false,
+          },
           automation_mode: automationMode,
           review_required: reviewRequired,
         });

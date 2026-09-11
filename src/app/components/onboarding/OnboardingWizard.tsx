@@ -32,7 +32,7 @@ import {
 import { Button } from "../ds";
 import { SparkLogo } from "../SparkLogo";
 import { CharacterSheetLightbox } from "./CharacterSheetLightbox";
-import { socialConnectorFramework, getOAuthAuthorizationUrl } from "../../services/socialIntegrationService";
+import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId, getActiveSessionUserId } from "../../services/socialIntegrationService";
 import {
   getElevenLabsVoices,
   previewElevenLabsVoice,
@@ -570,7 +570,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     socialConnectorFramework
       .loadClientConfig()
       .then(() => {
-        const url = getOAuthAuthorizationUrl(platformName);
+        const brandId = getBrandWorkspaceId();
+        const userId = getActiveSessionUserId();
+        const url = getOAuthAuthorizationUrl(platformName, brandId, userId);
         if (url && url !== "#") {
           window.location.href = url;
         } else {

@@ -737,9 +737,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.data) {
           setProfile(res.data);
         }
+        if (targetBrandId) {
+          const { updateBrand } = await import("../backend/repositories/brandRepository");
+          void updateBrand(targetBrandId, {
+            settings: { is_draft: false },
+          });
+        }
       } catch (err) {
         console.warn("[Spark Auth] markProfileOnboardingComplete notice:", err);
       }
+    }
+
+    if (targetBrandId && targetUserId) {
+      setActiveSessionBrand(targetBrandId, targetUserId);
     }
 
     try {

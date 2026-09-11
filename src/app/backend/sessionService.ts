@@ -9,8 +9,9 @@ import {
   signUpWithEmail,
 } from "./authService";
 import type { BrandRow, ProfileRow } from "./database.types";
-import { ensureDefaultBrand, listBrandsForOwner } from "./repositories/brandRepository";
+import { ensureDefaultBrand, listBrandsForOwner, createDraftBrand } from "./repositories/brandRepository";
 import { upsertProfile, markProfileOnboardingComplete, setActiveBrand } from "./repositories/profileRepository";
+import { setActiveSessionBrand } from "../services/socialIntegrationService";
 import type { RepositoryResult } from "./repositories/repositoryTypes";
 import { isSupabaseConfigured } from "./supabaseClient";
 import type { Brand as SparkBrand } from "../domain/types";
@@ -127,7 +128,7 @@ export async function bootstrapUserSession(
     try {
       // 1) Query all brands owned by this user FIRST
       const brandsRes = await listBrandsForOwner(user.id);
-      const brands = brandsRes.data || [];
+      let brands = brandsRes.data || [];
 
       // 2) Upsert profile in Supabase
       const profileRes = await upsertProfile(user);
@@ -138,40 +139,66 @@ export async function bootstrapUserSession(
         full_name: user.user_metadata?.full_name || "Creator",
         role: "Director",
         avatar_url: null,
-        onboarding_complete: brands.length > 0,
-        active_brand_id: brands[0]?.id || null,
+        onboarding_complete: false,
+        active_brand_id: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      // 3) Resolve active brand based on profile pointer or first brand
+      // 3) If user has NO owned brand, create draft brand NOW (owner_id = auth.uid())!
       let activeBrand: BrandRow | null = null;
-      if (profile.active_brand_id) {
-        activeBrand = brands.find((b) => b.id === profile.active_brand_id) || null;
-      }
-      if (!activeBrand && brands.length > 0) {
-        activeBrand = brands[0];
-      }
-
-      // 4) Determine onboarding completeness from CLOUD source of truth:
-      // Profile flag is true OR user has at least one configured brand owned by them in Supabase
-      const hasOwnedBrand = brands.length > 0 && brands.some((b) => b.owner_id === user.id);
-      let isComplete = profile.onboarding_complete === true || hasOwnedBrand;
-
-      // 5) Cloud auto-repair: if user already has an existing brand in Supabase but profile flag is false -> REPAIR flag in Supabase!
-      if (hasOwnedBrand && !profile.onboarding_complete) {
-        const brandToUse = activeBrand || brands[0];
-        profile.onboarding_complete = true;
-        isComplete = true;
-        void markProfileOnboardingComplete(user.id, brandToUse.id, "active");
+      if (brands.length === 0) {
+        const draftRes = await createDraftBrand(user.id, {
+          name: localBrand?.name || "Draft Brand",
+          niche: localBrand?.niche || null,
+        });
+        if (draftRes.data) {
+          brands = [draftRes.data];
+          activeBrand = draftRes.data;
+        }
+      } else {
+        if (profile.active_brand_id) {
+          activeBrand = brands.find((b) => b.id === profile.active_brand_id) || null;
+        }
+        if (!activeBrand && brands.length > 0) {
+          activeBrand = brands[0];
+        }
       }
 
-      // 6) Ensure profile.active_brand_id in Supabase points to the active brand
+      // 4) Anchor active session brand & user immediately
+      if (activeBrand?.id) {
+        setActiveSessionBrand(activeBrand.id, user.id);
+        try {
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("spark_current_brand_id", activeBrand.id);
+            localStorage.setItem("spark_current_user_id", user.id);
+            if (activeBrand.name) {
+              localStorage.setItem("spark_current_brand_name", activeBrand.name);
+            }
+          }
+        } catch {}
+      }
+
+      // 5) Ensure profiles.active_brand_id in Supabase points to the active brand
       if (activeBrand?.id && profile.active_brand_id !== activeBrand.id) {
         const setBrandRes = await setActiveBrand(user.id, activeBrand.id);
         if (setBrandRes.data) {
           profile = setBrandRes.data;
+        } else {
+          profile.active_brand_id = activeBrand.id;
         }
+      }
+
+      // 6) Determine onboarding completeness from CLOUD source of truth:
+      // Profile flag is true OR user has at least one configured non-draft brand owned by them
+      const isDraft = !activeBrand || (activeBrand.settings as any)?.is_draft === true || activeBrand.name === "Draft Brand";
+      let isComplete = profile.onboarding_complete === true;
+
+      // Cloud auto-repair: only if user has a configured, NON-DRAFT brand in Supabase
+      if (!isComplete && !isDraft && brands.length > 0 && activeBrand && activeBrand.name && activeBrand.name !== "My Brand") {
+        profile.onboarding_complete = true;
+        isComplete = true;
+        void markProfileOnboardingComplete(user.id, activeBrand.id, "active");
       }
 
       if (isComplete) {
@@ -201,8 +228,19 @@ export async function bootstrapUserSession(
         if (bRes.data && bRes.data.length > 0) {
           retryBrands = bRes.data;
           retryActiveBrand = bRes.data[0];
-          isComplete = true;
-          void markProfileOnboardingComplete(user.id, retryActiveBrand.id, "active");
+          const isDraft = (retryActiveBrand.settings as any)?.is_draft === true || retryActiveBrand.name === "Draft Brand";
+          if (!isDraft && retryActiveBrand.name && retryActiveBrand.name !== "My Brand") {
+            isComplete = true;
+          }
+        } else {
+          const draftRes = await createDraftBrand(user.id);
+          if (draftRes.data) {
+            retryBrands = [draftRes.data];
+            retryActiveBrand = draftRes.data;
+          }
+        }
+        if (retryActiveBrand?.id) {
+          setActiveSessionBrand(retryActiveBrand.id, user.id);
         }
       } catch {}
 

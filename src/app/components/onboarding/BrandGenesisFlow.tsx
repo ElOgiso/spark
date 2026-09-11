@@ -2407,7 +2407,47 @@ export function BrandGenesisFlow({
     }
   }, []);
 
+  const patchDraftBrandToCloud = async (patch: Partial<any>) => {
+    const brandId = auth.brand?.id || getBrandWorkspaceId();
+    if (!brandId || !isUuid(brandId) || !auth.currentUser?.id) return;
+    try {
+      const { persistBrandUpdate } = await import("../../backend/workspaceSync");
+      await persistBrandUpdate(brandId, patch);
+    } catch (err) {
+      console.warn("[BrandGenesisFlow] Failed to patch draft brand:", err);
+    }
+  };
+
   const go = (next: number) => {
+    // Progressively patch draft brand on frame advances
+    if (frame === 1) {
+      if (data.brandName) {
+        void patchDraftBrandToCloud({ name: data.brandName });
+      }
+    } else if (frame === 2) {
+      void patchDraftBrandToCloud({
+        name: data.brandName.trim() || "My Brand",
+        niche: data.niche.trim() || null,
+      });
+    } else if (frame === 3) {
+      void patchDraftBrandToCloud({
+        archetype: data.archetype || null,
+        purpose: data.goal || null,
+      });
+    } else if (frame === 4) {
+      void patchDraftBrandToCloud({
+        locationPlateUrl: data.locationPlateUrl || null,
+      });
+    } else if (frame === 5) {
+      void patchDraftBrandToCloud({
+        settings: { voiceId: data.selectedVoiceId, voiceName: data.selectedVoice },
+      });
+    } else if (frame === 6) {
+      void patchDraftBrandToCloud({
+        automation_mode: data.automationMode === "Manual" ? "manual" : data.automationMode === "Autonomous" ? "autonomous" : "balanced",
+      });
+    }
+
     setPrevFrame(frame);
     setAnimKey((k) => k + 1);
     setFrame(next);
@@ -2437,12 +2477,12 @@ export function BrandGenesisFlow({
     }, 10000);
 
     try {
-      let currentBrandId = getBrandWorkspaceId();
+      let currentBrandId = auth.brand?.id || getBrandWorkspaceId();
       if (!currentBrandId) {
         if (auth.currentUser?.id) {
-          const { ensureDefaultBrand } = await import("../../backend/repositories/brandRepository");
-          const defaultBrandRes = await ensureDefaultBrand(auth.currentUser.id, {
-            name: data.brandName.trim() || "My Brand",
+          const { createDraftBrand } = await import("../../backend/repositories/brandRepository");
+          const defaultBrandRes = await createDraftBrand(auth.currentUser.id, {
+            name: data.brandName.trim() || "Draft Brand",
             niche: data.niche.trim() || undefined,
           });
           if (defaultBrandRes.data?.id) {
@@ -2457,11 +2497,18 @@ export function BrandGenesisFlow({
         }
       }
 
+      const currentUserId = auth.currentUser?.id || (auth.mode === "demo" ? "demo-user" : undefined);
+      if (currentBrandId && currentUserId) {
+        setActiveSessionBrand(currentBrandId, currentUserId);
+      }
+
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("spark_onboarding_resume_state", JSON.stringify(data));
       }
       const authUrl = getOAuthAuthorizationUrl(
-        oauthKey as "YouTube Shorts" | "Twitter/X"
+        oauthKey as "YouTube Shorts" | "Twitter/X",
+        currentBrandId,
+        currentUserId
       );
       clearTimeout(timeout);
       if (authUrl) {
@@ -2746,7 +2793,7 @@ export function BrandGenesisFlow({
         (async () => {
           await initializeBrandGenesis(genesisData);
           genesisData.alreadyInitialized = true;
-          const brandId = getBrandWorkspaceId();
+          const brandId = auth.brand?.id || getBrandWorkspaceId();
           if (brandId) {
             const { persistFormatSettings } = await import("../../backend/workspaceSync");
             await persistFormatSettings(brandId, {
@@ -2758,8 +2805,8 @@ export function BrandGenesisFlow({
               preferredVideoProvider: genesisData.preferredVideoProvider && genesisData.preferredVideoProvider !== "auto" ? genesisData.preferredVideoProvider : "auto",
             });
           }
-          if (mode !== "additional_workspace") {
-            await auth.markOnboardingComplete(auth.brand?.id);
+          if (mode !== "additional_workspace" && brandId) {
+            await auth.markOnboardingComplete(brandId);
           }
         })(),
         new Promise((resolve) => setTimeout(resolve, 8000)),

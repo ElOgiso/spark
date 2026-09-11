@@ -33,6 +33,40 @@ export async function createBrand(values: Partial<BrandRow>): Promise<Repository
   return insertRow("brands", values);
 }
 
+export async function createDraftBrand(
+  ownerId: string,
+  initialValues?: Partial<BrandRow>
+): Promise<RepositoryResult<BrandRow>> {
+  if (!isSupabaseConfigured()) return unconfiguredResult<BrandRow>();
+  const supabase = getSupabaseClient();
+  if (!supabase) return unconfiguredResult<BrandRow>();
+
+  const draftPayload: Partial<BrandRow> = {
+    owner_id: ownerId,
+    name: initialValues?.name || "Draft Brand",
+    niche: initialValues?.niche || null,
+    archetype: initialValues?.archetype ?? null,
+    purpose: initialValues?.purpose ?? null,
+    audience: (initialValues?.audience as any) ?? {},
+    tone: (initialValues?.tone as any) ?? [],
+    content_pillars: (initialValues?.content_pillars as any) ?? [],
+    settings: { is_draft: true, ...((initialValues?.settings as any) || {}) },
+    automation_mode: initialValues?.automation_mode ?? "balanced",
+    review_required: initialValues?.review_required ?? true,
+    publish_requires_approval: initialValues?.publish_requires_approval ?? true,
+    autonomous_publishing_enabled: initialValues?.autonomous_publishing_enabled ?? false,
+  };
+
+  const { data, error } = await (supabase.from("brands") as any)
+    .insert(draftPayload)
+    .select("*")
+    .single();
+
+  if (error) return repositoryError<BrandRow>(error.message);
+  return { data, error: null, source: "supabase" };
+}
+
+
 export async function ensureDefaultBrand(
   profileId: string,
   localBrand?: Partial<SparkBrand>,
