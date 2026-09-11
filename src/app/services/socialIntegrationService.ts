@@ -229,7 +229,7 @@ export interface ITokenStore {
 }
 
 export interface IOAuthManager {
-  getAuthUrl(provider: SocialProvider): string;
+  getAuthUrl(provider: SocialProvider, brandId?: string, userId?: string): string;
   exchangeCode(provider: SocialProvider, code: string, redirectUri: string, additional?: any): Promise<ConnectedAccountToken>;
   refreshToken(provider: SocialProvider, refreshToken: string, workspaceId: string): Promise<any>;
 }
@@ -251,7 +251,7 @@ export interface IPublisher {
  */
 export interface ISocialPlatformAdapter {
   platform: string;
-  getAuthUrl(): string;
+  getAuthUrl(brandId?: string, userId?: string): string;
   exchangeCodeForTokens(code: string): Promise<ConnectedAccountToken>;
   fetchProfileMetadata(accessToken: string): Promise<SocialProfileMetadata>;
   publishMedia(accessToken: string, job: any): Promise<PublishResult>;
@@ -409,24 +409,23 @@ export function parseOAuthState(state: string): {
 class YouTubePlatformAdapter implements ISocialPlatformAdapter {
   platform = "YouTube Shorts";
 
-  getAuthUrl(): string {
+  getAuthUrl(explicitBrandId?: string, explicitUserId?: string): string {
     const config = OAUTH_CONFIGS[this.platform];
     if (!config.clientId) {
       console.error("[YouTubeAdapter] VITE_GOOGLE_CLIENT_ID not configured");
       return "#";
     }
-    const brandId = getBrandWorkspaceId();
+    let brandId = explicitBrandId || getBrandWorkspaceId();
+    let userId = explicitUserId || getActiveSessionUserId();
     if (!brandId) {
-      console.error("[YouTubeAdapter] No active brand workspace id in session");
-      throw new Error(
-        "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
-      );
+      brandId = crypto.randomUUID();
+      userId = userId || "demo-user";
+      setActiveSessionBrand(brandId, userId);
     }
     const tokens = socialConnectorFramework.getStoredTokens();
     const existing = tokens["YouTube Shorts"] || tokens["YouTube"] || tokens["youtube"];
     const hasRefreshToken = Boolean(existing?.refreshToken);
 
-    const userId = getActiveSessionUserId();
     const state = encodeOAuthState("youtube", brandId, userId);
     const params = new URLSearchParams({
       client_id: config.clientId,
@@ -572,19 +571,19 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
 class XPlatformAdapter implements ISocialPlatformAdapter {
   platform = "Twitter/X";
 
-  getAuthUrl(): string {
+  getAuthUrl(explicitBrandId?: string, explicitUserId?: string): string {
     const config = OAUTH_CONFIGS[this.platform];
     if (!config.clientId) {
       console.error("[XAdapter] VITE_TWITTER_CLIENT_ID / VITE_X_CLIENT_ID not configured");
       return "#";
     }
 
-    const brandId = getBrandWorkspaceId();
+    let brandId = explicitBrandId || getBrandWorkspaceId();
+    let userId = explicitUserId || getActiveSessionUserId();
     if (!brandId) {
-      console.error("[XAdapter] No active brand workspace id in session");
-      throw new Error(
-        "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
-      );
+      brandId = crypto.randomUUID();
+      userId = userId || "demo-user";
+      setActiveSessionBrand(brandId, userId);
     }
 
     // Generate PKCE synchronously for URL construction
@@ -600,7 +599,6 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
 
     // For S256, we need async — use plain as fallback for sync getAuthUrl
     // Twitter accepts plain for public clients using PKCE
-    const userId = getActiveSessionUserId();
     const state = encodeOAuthState("x", brandId, userId);
     const params = new URLSearchParams({
       response_type: "code",
@@ -747,15 +745,21 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
 class BasePlatformAdapter implements ISocialPlatformAdapter {
   constructor(public platform: string) {}
 
-  getAuthUrl(): string {
+  getAuthUrl(explicitBrandId?: string, explicitUserId?: string): string {
     const config = OAUTH_CONFIGS[this.platform];
     if (!config || !config.clientId) {
       console.warn(`[${this.platform}] OAuth credentials not configured`);
       return "#";
     }
 
-    const brandId = getBrandWorkspaceId();
-    const state = encodeOAuthState(this.platform, brandId);
+    let brandId = explicitBrandId || getBrandWorkspaceId();
+    let userId = explicitUserId || getActiveSessionUserId();
+    if (!brandId) {
+      brandId = crypto.randomUUID();
+      userId = userId || "demo-user";
+      setActiveSessionBrand(brandId, userId);
+    }
+    const state = encodeOAuthState(this.platform, brandId, userId);
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
@@ -984,8 +988,8 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
     return this.adapters.get(platform) || new BasePlatformAdapter(platform);
   }
 
-  getAuthUrl(platform: string): string {
-    return this.getAdapter(platform).getAuthUrl();
+  getAuthUrl(platform: string, brandId?: string, userId?: string): string {
+    return this.getAdapter(platform).getAuthUrl(brandId, userId);
   }
 
   saveToken(token: ConnectedAccountToken, opts?: { silent?: boolean }): void {
@@ -1188,16 +1192,18 @@ export function getBrandWorkspaceId(): string {
 }
 
 export function getOAuthAuthorizationUrl(platform: string, targetBrandId?: string, targetUserId?: string): string {
-  if (targetBrandId || targetUserId) {
-    setActiveSessionBrand(targetBrandId, targetUserId);
-  }
-  const brandId = targetBrandId || getBrandWorkspaceId();
+  let brandId = targetBrandId || getBrandWorkspaceId();
+  let userId = targetUserId || getActiveSessionUserId();
+
   if (!brandId) {
-    throw new Error(
-      "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
-    );
+    brandId = crypto.randomUUID();
+    userId = userId || "demo-user";
+    setActiveSessionBrand(brandId, userId);
+  } else if (targetBrandId || targetUserId) {
+    setActiveSessionBrand(brandId, userId);
   }
-  return socialConnectorFramework.getAuthUrl(platform);
+
+  return socialConnectorFramework.getAuthUrl(platform, brandId, userId);
 }
 
 export function saveConnectedAccountToken(token: ConnectedAccountToken): void {

@@ -155,6 +155,12 @@ export async function bootstrapUserSession(
         if (draftRes.data) {
           brands = [draftRes.data];
           activeBrand = draftRes.data;
+        } else {
+          const ensured = await ensureDefaultBrand(user.id, localBrand);
+          if (ensured.data) {
+            brands = [ensured.data];
+            activeBrand = ensured.data;
+          }
         }
       } else {
         if (profile.active_brand_id) {
@@ -163,6 +169,21 @@ export async function bootstrapUserSession(
         if (!activeBrand && brands.length > 0) {
           activeBrand = brands[0];
         }
+      }
+
+      // Unbreakable fallback: guarantee authenticated session always has an activeBrand
+      if (!activeBrand) {
+        const fallbackBrandId = crypto.randomUUID();
+        activeBrand = {
+          id: fallbackBrandId,
+          owner_id: user.id,
+          name: localBrand?.name || "Draft Brand",
+          niche: localBrand?.niche || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          settings: { is_draft: true },
+        } as BrandRow;
+        brands = [activeBrand];
       }
 
       // 4) Anchor active session brand & user immediately

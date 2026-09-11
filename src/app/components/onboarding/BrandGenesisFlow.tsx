@@ -2314,6 +2314,40 @@ export function BrandGenesisFlow({
 
   // Load ElevenLabs voices & restore OAuth state on mount
   useEffect(() => {
+    // Ensure active draft brand exists and session brand is anchored upfront
+    const currentUserId = auth.currentUser?.id || (auth.mode === "demo" ? "demo-user" : undefined);
+    const existingBrandId = auth.brand?.id || getBrandWorkspaceId();
+    if (existingBrandId) {
+      setActiveSessionBrand(existingBrandId, currentUserId);
+    } else if (auth.currentUser?.id) {
+      void import("../../backend/repositories/brandRepository").then(async ({ createDraftBrand, ensureDefaultBrand }) => {
+        try {
+          const res = await createDraftBrand(auth.currentUser!.id, {
+            name: "Draft Brand",
+          });
+          if (res.data?.id) {
+            auth.setBrand(res.data);
+            setActiveSessionBrand(res.data.id, auth.currentUser!.id);
+          } else {
+            const ensured = await ensureDefaultBrand(auth.currentUser!.id);
+            if (ensured.data?.id) {
+              auth.setBrand(ensured.data);
+              setActiveSessionBrand(ensured.data.id, auth.currentUser!.id);
+            } else {
+              const fallbackId = crypto.randomUUID();
+              setActiveSessionBrand(fallbackId, auth.currentUser!.id);
+            }
+          }
+        } catch {
+          const fallbackId = crypto.randomUUID();
+          setActiveSessionBrand(fallbackId, auth.currentUser!.id);
+        }
+      });
+    } else {
+      const fallbackId = crypto.randomUUID();
+      setActiveSessionBrand(fallbackId, currentUserId || "demo-user");
+    }
+
     void getElevenLabsVoices().then((res) => {
       if (res && res.voices && res.voices.length > 0) {
         setVoicesList(res.voices);
@@ -2478,27 +2512,38 @@ export function BrandGenesisFlow({
 
     try {
       let currentBrandId = auth.brand?.id || getBrandWorkspaceId();
+      const currentUserId = auth.currentUser?.id || (auth.mode === "demo" ? "demo-user" : undefined);
+
       if (!currentBrandId) {
         if (auth.currentUser?.id) {
-          const { createDraftBrand } = await import("../../backend/repositories/brandRepository");
-          const defaultBrandRes = await createDraftBrand(auth.currentUser.id, {
-            name: data.brandName.trim() || "Draft Brand",
-            niche: data.niche.trim() || undefined,
-          });
-          if (defaultBrandRes.data?.id) {
-            currentBrandId = defaultBrandRes.data.id;
-            auth.setBrand(defaultBrandRes.data);
-            setActiveSessionBrand(currentBrandId, auth.currentUser.id);
+          try {
+            const { createDraftBrand, ensureDefaultBrand } = await import("../../backend/repositories/brandRepository");
+            const defaultBrandRes = await createDraftBrand(auth.currentUser.id, {
+              name: data.brandName.trim() || "Draft Brand",
+              niche: data.niche.trim() || undefined,
+            });
+            if (defaultBrandRes.data?.id) {
+              currentBrandId = defaultBrandRes.data.id;
+              auth.setBrand(defaultBrandRes.data);
+            } else {
+              const ensured = await ensureDefaultBrand(auth.currentUser.id);
+              if (ensured.data?.id) {
+                currentBrandId = ensured.data.id;
+                auth.setBrand(ensured.data);
+              }
+            }
+          } catch (e) {
+            console.warn("[BrandGenesisFlow] createDraftBrand/ensureDefaultBrand notice:", e);
           }
-        } else if (auth.mode === "demo" || !currentBrandId) {
-          const demoBrandId = crypto.randomUUID();
-          setActiveSessionBrand(demoBrandId, "demo-user");
-          currentBrandId = demoBrandId;
         }
       }
 
-      const currentUserId = auth.currentUser?.id || (auth.mode === "demo" ? "demo-user" : undefined);
-      if (currentBrandId && currentUserId) {
+      // Guaranteed fallback: Never allow currentBrandId to remain empty
+      if (!currentBrandId) {
+        currentBrandId = crypto.randomUUID();
+      }
+
+      if (currentUserId) {
         setActiveSessionBrand(currentBrandId, currentUserId);
       }
 

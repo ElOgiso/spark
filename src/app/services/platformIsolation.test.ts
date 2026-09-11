@@ -10,6 +10,8 @@ import {
   clearAllStoredAccountTokens,
   saveConnectedAccountToken,
   getStoredAccountTokens,
+  getOAuthAuthorizationUrl,
+  OAUTH_CONFIGS,
 } from "./socialIntegrationService";
 
 // Mock localStorage in Node environment if absent
@@ -137,3 +139,38 @@ test("Storage purge: clearAllStoredAccountTokens wipes all platform tokens and s
   assert.equal(localStorage.getItem("spark_current_brand_id"), null);
   assert.equal(localStorage.getItem("spark_current_user_id"), null);
 });
+
+test("OAuth authorization resilience: getOAuthAuthorizationUrl auto-generates brand workspace when session is empty", () => {
+  // Set mock client IDs for test runner
+  OAUTH_CONFIGS["YouTube Shorts"].clientId = "mock-google-client-id";
+  OAUTH_CONFIGS["Twitter/X"].clientId = "mock-x-client-id";
+
+  // Ensure session is completely clean
+  clearAllStoredAccountTokens();
+  assert.equal(getBrandWorkspaceId(), "");
+
+  // Calling without brandId must NOT throw; it must auto-generate a valid UUID workspace
+  const ytUrl = getOAuthAuthorizationUrl("YouTube Shorts");
+  assert.ok(ytUrl && ytUrl !== "#", "YouTube auth URL must be returned without error");
+
+  const brandIdAfter = getBrandWorkspaceId();
+  assert.ok(brandIdAfter && brandIdAfter.length > 0, "A valid brandId workspace must be automatically generated and anchored");
+
+  // Check state embedded in the URL
+  const ytParsed = new URL(ytUrl);
+  const ytState = ytParsed.searchParams.get("state") || "";
+  const ytDecoded = parseOAuthState(ytState);
+  assert.equal(ytDecoded?.brandId, brandIdAfter, "Embedded state must match the auto-generated brandId");
+
+  // Calling for X with an explicit brand must honor the explicit brand
+  const explicitBrand = "99999999-9999-4999-8999-999999999999";
+  const xUrl = getOAuthAuthorizationUrl("Twitter/X", explicitBrand, "user-explicit");
+  assert.ok(xUrl && xUrl !== "#", "X auth URL must be returned without error");
+
+  const xParsed = new URL(xUrl);
+  const xState = xParsed.searchParams.get("state") || "";
+  const xDecoded = parseOAuthState(xState);
+  assert.equal(xDecoded?.brandId, explicitBrand, "Explicit brand ID must be preserved in state");
+  assert.equal(xDecoded?.userId, "user-explicit", "Explicit user ID must be preserved in state");
+});
+
