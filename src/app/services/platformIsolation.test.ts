@@ -103,7 +103,12 @@ test("Platform Account Map: strictly isolates accounts across brands", () => {
   assert.equal(liveBAfter.length, 1);
   assert.equal(liveBAfter[0].handle, "@creator_brand_b");
 
-  // Brand A still sees only Brand A's account
+  // User B querying Brand A MUST NOT see User A's token
+  const mapBOnBrandA = buildPlatformAccountMap(undefined, brandA);
+  assert.ok(!mapBOnBrandA.has("youtube"), "User B must not see User A's YouTube account on Brand A");
+
+  // When User A resumes session on Brand A, Brand A's account is preserved
+  setActiveSessionBrand(brandA, "user-a");
   const mapAAfter = buildPlatformAccountMap(undefined, brandA);
   assert.equal(mapAAfter.get("youtube")?.handle, "@creator_brand_a");
 });

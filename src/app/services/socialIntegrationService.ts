@@ -87,6 +87,7 @@ export interface PublishResult {
 export interface ConnectedAccountToken {
   id?: string;
   brand_id?: string;
+  user_id?: string;
   platform: string;
   handle: string;
   displayName: string;
@@ -425,7 +426,8 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
     const existing = tokens["YouTube Shorts"] || tokens["YouTube"] || tokens["youtube"];
     const hasRefreshToken = Boolean(existing?.refreshToken);
 
-    const state = encodeOAuthState("youtube", brandId);
+    const userId = getActiveSessionUserId();
+    const state = encodeOAuthState("youtube", brandId, userId);
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: config.redirectUri,
@@ -598,7 +600,8 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
 
     // For S256, we need async — use plain as fallback for sync getAuthUrl
     // Twitter accepts plain for public clients using PKCE
-    const state = encodeOAuthState("x", brandId);
+    const userId = getActiveSessionUserId();
+    const state = encodeOAuthState("x", brandId, userId);
     const params = new URLSearchParams({
       response_type: "code",
       client_id: config.clientId,
@@ -839,11 +842,13 @@ export interface CanonicalPlatformAccount {
  */
 export function buildPlatformAccountMap(
   contextAccounts?: any[],
-  targetBrandId?: string
+  targetBrandId?: string,
+  targetUserId?: string
 ): Map<string, CanonicalPlatformAccount> {
   const map = new Map<string, CanonicalPlatformAccount>();
   const activeBrand = targetBrandId || getBrandWorkspaceId();
-  const liveStoredTokens = getStoredAccountTokens(activeBrand);
+  const activeUser = targetUserId || getActiveSessionUserId();
+  const liveStoredTokens = getStoredAccountTokens(activeBrand, activeUser);
 
   // 1. Ingest local OAuth token store
   Object.values(liveStoredTokens).forEach((t) => {
@@ -987,7 +992,12 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
     try {
       const pKey = normalizePlatformKey(token.platform);
       const brandId = token.brand_id || getBrandWorkspaceId() || "";
-      const storageKey = brandId ? `${brandId}:${pKey}` : pKey;
+      const userId = token.user_id || getActiveSessionUserId() || "";
+      const storageKey = userId && brandId
+        ? `${userId}:${brandId}:${pKey}`
+        : brandId
+        ? `${brandId}:${pKey}`
+        : pKey;
 
       let storeObj: Record<string, any> = {};
       try {
@@ -995,11 +1005,12 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
         if (raw) storeObj = JSON.parse(raw);
       } catch {}
 
-      const cleanToken = {
+      const cleanToken: ConnectedAccountToken = {
         ...token,
         platform: pKey,
         handle: normalizeHandle(token.handle),
         brand_id: brandId || undefined,
+        user_id: userId || undefined,
       };
 
       storeObj[storageKey] = cleanToken;
@@ -1013,19 +1024,41 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
     }
   }
 
-  getStoredTokens(targetBrandId?: string): Record<string, ConnectedAccountToken> {
+  getStoredTokens(targetBrandId?: string, targetUserId?: string): Record<string, ConnectedAccountToken> {
     try {
       const stored = localStorage.getItem("spark_social_account_tokens_v2");
       if (!stored) return {};
       const parsed = JSON.parse(stored);
       const activeBrand = targetBrandId || getBrandWorkspaceId();
+      const activeUser = targetUserId || getActiveSessionUserId();
       const normalized: Record<string, ConnectedAccountToken> = {};
 
       Object.entries(parsed).forEach(([k, tok]: [string, any]) => {
         if (tok && typeof tok === "object") {
-          const pKey = normalizePlatformKey(tok.platform || (k.includes(":") ? k.split(":")[1] : k));
-          const tokBrand = tok.brand_id || (k.includes(":") ? k.split(":")[0] : "");
+          let tokUser = tok.user_id || "";
+          let tokBrand = tok.brand_id || "";
+          let tokPlatform = tok.platform || "";
 
+          if (k.includes(":")) {
+            const parts = k.split(":");
+            if (parts.length >= 3) {
+              tokUser = parts[0];
+              tokBrand = parts[1];
+              tokPlatform = parts.slice(2).join(":");
+            } else if (parts.length === 2) {
+              tokBrand = parts[0];
+              tokPlatform = parts[1];
+            }
+          }
+
+          const pKey = normalizePlatformKey(tokPlatform || tok.platform || k);
+
+          // User isolation: device leftovers from another user must not paint as connected
+          if (activeUser && tokUser && tokUser !== activeUser) {
+            return;
+          }
+
+          // Brand isolation: only tokens matching activeBrand
           if (activeBrand) {
             if (tokBrand && tokBrand !== activeBrand) return;
             if (!tokBrand) return;
@@ -1036,6 +1069,7 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
             platform: pKey,
             handle: normalizeHandle(tok.handle),
             brand_id: tokBrand || undefined,
+            user_id: tokUser || undefined,
           };
         }
       });
@@ -1138,7 +1172,7 @@ export function getBrandWorkspaceId(): string {
   try {
     if (typeof localStorage !== "undefined") {
       const storedUserId = localStorage.getItem("spark_current_user_id") || "";
-      if (_activeSessionUserId && storedUserId && storedUserId !== _activeSessionUserId) {
+      if (_activeSessionUserId && (!storedUserId || storedUserId !== _activeSessionUserId)) {
         return "";
       }
       const id = localStorage.getItem("spark_current_brand_id") || "";
@@ -1153,8 +1187,11 @@ export function getBrandWorkspaceId(): string {
   return "";
 }
 
-export function getOAuthAuthorizationUrl(platform: string): string {
-  const brandId = getBrandWorkspaceId();
+export function getOAuthAuthorizationUrl(platform: string, targetBrandId?: string, targetUserId?: string): string {
+  if (targetBrandId || targetUserId) {
+    setActiveSessionBrand(targetBrandId, targetUserId);
+  }
+  const brandId = targetBrandId || getBrandWorkspaceId();
   if (!brandId) {
     throw new Error(
       "No active brand workspace found in the current session. Select or create a brand before connecting platforms."
@@ -1165,10 +1202,12 @@ export function getOAuthAuthorizationUrl(platform: string): string {
 
 export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
   const brandId = token.brand_id || getBrandWorkspaceId();
+  const userId = token.user_id || getActiveSessionUserId();
   const cleanToken: ConnectedAccountToken = {
     ...token,
     handle: normalizeHandle(token.handle),
     brand_id: brandId || undefined,
+    user_id: userId || undefined,
   };
   socialConnectorFramework.saveToken(cleanToken);
   if (brandId) {
@@ -1203,8 +1242,8 @@ export function saveConnectedAccountToken(token: ConnectedAccountToken): void {
     .catch((err) => console.warn("[OAuth] analytics sync after connect failed", err));
 }
 
-export function getStoredAccountTokens(targetBrandId?: string): Record<string, ConnectedAccountToken> {
-  return socialConnectorFramework.getStoredTokens(targetBrandId);
+export function getStoredAccountTokens(targetBrandId?: string, targetUserId?: string): Record<string, ConnectedAccountToken> {
+  return socialConnectorFramework.getStoredTokens(targetBrandId, targetUserId);
 }
 
 function platformKeysMatch(a: string, b: string): boolean {
@@ -1401,7 +1440,7 @@ export async function ensureValidGoogleAccess(
 }
 
 /** Live connected platforms from local OAuth token store only (no mock fillers). */
-export function listLiveConnectedAccounts(targetBrandId?: string): Array<{
+export function listLiveConnectedAccounts(targetBrandId?: string, targetUserId?: string): Array<{
   platform: string;
   handle: string;
   displayName: string;
@@ -1409,7 +1448,8 @@ export function listLiveConnectedAccounts(targetBrandId?: string): Array<{
   active: boolean;
 }> {
   const activeBrand = targetBrandId || getBrandWorkspaceId();
-  return Array.from(buildPlatformAccountMap(undefined, activeBrand).values())
+  const activeUser = targetUserId || getActiveSessionUserId();
+  return Array.from(buildPlatformAccountMap(undefined, activeBrand, activeUser).values())
     .filter((a) => a.status === "connected" || a.status === "needs_reconnect")
     .map((a) => ({
       platform: a.platform,

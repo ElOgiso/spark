@@ -67,9 +67,9 @@ BEGIN
     END IF;
   END IF;
 
-  -- 3) If still 0 rows updated, return false so caller does not assume success
+  -- 3) If still 0 rows updated, raise error so caller receives profile not found
   IF rows_updated = 0 THEN
-    RETURN false;
+    RAISE EXCEPTION 'profile not found';
   END IF;
 
   -- 4) Log to audit log upon confirmed row update

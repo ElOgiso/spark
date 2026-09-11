@@ -129,6 +129,24 @@ export function AdminShell({ currentPath = "/admin/inbox", onNavigate }: AdminSh
         setOperationError(`Approval failed: ${res.error || "Profile access status was not updated"}`);
         return;
       }
+
+      // Re-fetch profile from database to confirm approval persisted
+      try {
+        const { getSupabaseClient: getSb } = await import("../../backend/supabaseClient");
+        const sb = getSb();
+        if (sb) {
+          const { data: refetched } = await (sb.from("profiles") as any)
+            .select("id, access_status")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (refetched && refetched.access_status === "pending_approval") {
+            setOperationError(`Approval verification failed: Profile ${user.email || user.id} is still pending approval in database.`);
+            return;
+          }
+        }
+      } catch {}
+
       setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
       setPeople((prev) =>
         prev.map((p) => (p.id === user.id ? { ...p, access_status: "active" } : p))

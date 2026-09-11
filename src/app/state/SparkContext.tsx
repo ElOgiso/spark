@@ -1361,7 +1361,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         throw new Error(`Failed to create additional workspace: ${createErr?.message || String(createErr)}`);
       }
     } else {
-      brandId = auth.brand?.id || getBrandWorkspaceId();
+      const existingBrandId = auth.brand?.id && (!auth.brand.owner_id || auth.brand.owner_id === auth.currentUser?.id)
+        ? auth.brand.id
+        : getBrandWorkspaceId();
+      brandId = existingBrandId;
       if ((!brandId || !isUuid(brandId)) && auth.currentUser?.id && isSupabaseConfigured()) {
         try {
           const { ensureDefaultBrand } = await import("../backend/repositories/brandRepository");

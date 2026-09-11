@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import {
   getBrandWorkspaceId,
+  getActiveSessionUserId,
   getGoogleRedirectUri,
   saveConnectedAccountToken,
   getStoredAccountTokens,
@@ -39,6 +40,17 @@ export function GoogleCallbackPage() {
     }
 
     const parsedState = parseOAuthState(state);
+    const activeUserId = getActiveSessionUserId();
+    if (parsedState?.userId && activeUserId && parsedState.userId !== activeUserId) {
+      console.error("[GoogleCallbackPage] User ID mismatch between state and session:", {
+        stateUserId: parsedState.userId,
+        sessionUserId: activeUserId,
+      });
+      setStatus("error");
+      setErrorMsg("Security validation failed: This OAuth connection was initiated by a different user session. Token not saved.");
+      return;
+    }
+
     const brandId = parsedState?.brandId || getBrandWorkspaceId();
 
     if (!brandId) {
@@ -102,6 +114,7 @@ export function GoogleCallbackPage() {
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,
+          user_id: parsedState?.userId || activeUserId || undefined,
         };
         saveConnectedAccountToken(token);
         console.log("[GoogleCallbackPage] Saved token to storage.", {

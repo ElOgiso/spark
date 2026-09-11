@@ -186,7 +186,13 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
       new_status: "active",
     });
 
-    if (!rpcRes.error && rpcRes.data === true) {
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes("profile not found") || rpcRes.error.code === "P0001") {
+        return repositoryError<boolean>("profile not found");
+      }
+    } else if (rpcRes.data === false) {
+      return repositoryError<boolean>("profile not found");
+    } else if (rpcRes.data === true) {
       // Re-verify that target profile exists and has active access_status
       const { data: verified } = await (supabase.from("profiles") as any)
         .select("id, access_status, credit_balance")
@@ -202,6 +208,7 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
         await logAdminAction(actorId, "APPROVE_USER", targetUserId);
         return { data: true, error: null, source: "supabase" };
       }
+      return repositoryError<boolean>("profile not found");
     }
 
     // Fallback to direct table update with returned row verification
@@ -219,7 +226,7 @@ export async function approveUser(targetUserId: string, actorId: string): Promis
 
     if (error) return repositoryError<boolean>(error.message);
     if (!updated || updated.access_status !== "active") {
-      return repositoryError<boolean>(`Failed to activate user ${targetUserId}: profile row not updated`);
+      return repositoryError<boolean>("profile not found");
     }
 
     await logAdminAction(actorId, "APPROVE_USER", targetUserId);
@@ -246,7 +253,13 @@ export async function rejectUser(targetUserId: string, actorId: string, reason?:
       new_status: "rejected",
     });
 
-    if (!rpcRes.error && rpcRes.data === true) {
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes("profile not found") || rpcRes.error.code === "P0001") {
+        return repositoryError<boolean>("profile not found");
+      }
+    } else if (rpcRes.data === false) {
+      return repositoryError<boolean>("profile not found");
+    } else if (rpcRes.data === true) {
       await logAdminAction(actorId, "REJECT_USER", targetUserId, { reason });
       return { data: true, error: null, source: "supabase" };
     }
@@ -264,7 +277,7 @@ export async function rejectUser(targetUserId: string, actorId: string, reason?:
 
     if (error) return repositoryError<boolean>(error.message);
     if (!updated || updated.access_status !== "rejected") {
-      return repositoryError<boolean>(`Failed to reject user ${targetUserId}: profile row not updated`);
+      return repositoryError<boolean>("profile not found");
     }
 
     await logAdminAction(actorId, "REJECT_USER", targetUserId, { reason });
@@ -291,7 +304,13 @@ export async function banUser(targetUserId: string, actorId: string, reason?: st
       new_status: "banned",
     });
 
-    if (!rpcRes.error && rpcRes.data === true) {
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes("profile not found") || rpcRes.error.code === "P0001") {
+        return repositoryError<boolean>("profile not found");
+      }
+    } else if (rpcRes.data === false) {
+      return repositoryError<boolean>("profile not found");
+    } else if (rpcRes.data === true) {
       await logAdminAction(actorId, "BAN_USER", targetUserId, { reason });
       return { data: true, error: null, source: "supabase" };
     }
@@ -309,7 +328,7 @@ export async function banUser(targetUserId: string, actorId: string, reason?: st
 
     if (error) return repositoryError<boolean>(error.message);
     if (!updated || updated.access_status !== "banned") {
-      return repositoryError<boolean>(`Failed to ban user ${targetUserId}: profile row not updated`);
+      return repositoryError<boolean>("profile not found");
     }
 
     await logAdminAction(actorId, "BAN_USER", targetUserId, { reason });
@@ -336,20 +355,32 @@ export async function unbanUser(targetUserId: string, actorId: string): Promise<
       new_status: "active",
     });
 
-    if (!rpcRes.error) {
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes("profile not found") || rpcRes.error.code === "P0001") {
+        return repositoryError<boolean>("profile not found");
+      }
+    } else if (rpcRes.data === false) {
+      return repositoryError<boolean>("profile not found");
+    } else if (rpcRes.data === true) {
+      await logAdminAction(actorId, "UNBAN_USER", targetUserId);
       return { data: true, error: null, source: "supabase" };
     }
 
-    const { error } = await (supabase.from("profiles") as any)
+    const { data: updated, error } = await (supabase.from("profiles") as any)
       .update({
         access_status: "active",
         access_reviewed_at: new Date().toISOString(),
         access_reviewed_by: actorId,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", targetUserId);
+      .eq("id", targetUserId)
+      .select("id, access_status")
+      .maybeSingle();
 
     if (error) return repositoryError<boolean>(error.message);
+    if (!updated || updated.access_status !== "active") {
+      return repositoryError<boolean>("profile not found");
+    }
 
     await logAdminAction(actorId, "UNBAN_USER", targetUserId);
     return { data: true, error: null, source: "supabase" };

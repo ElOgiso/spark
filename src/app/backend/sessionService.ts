@@ -154,14 +154,16 @@ export async function bootstrapUserSession(
       }
 
       // 4) Determine onboarding completeness from CLOUD source of truth:
-      // Profile flag is true OR user has at least one configured brand in Supabase
-      let isComplete = profile.onboarding_complete === true || (brands.length > 0 && Boolean(activeBrand));
+      // Profile flag is true OR user has at least one configured brand owned by them in Supabase
+      const hasOwnedBrand = brands.length > 0 && brands.some((b) => b.owner_id === user.id);
+      let isComplete = profile.onboarding_complete === true || hasOwnedBrand;
 
       // 5) Cloud auto-repair: if user already has an existing brand in Supabase but profile flag is false -> REPAIR flag in Supabase!
-      if (brands.length > 0 && activeBrand && !profile.onboarding_complete) {
+      if (hasOwnedBrand && !profile.onboarding_complete) {
+        const brandToUse = activeBrand || brands[0];
         profile.onboarding_complete = true;
         isComplete = true;
-        void markProfileOnboardingComplete(user.id, activeBrand.id);
+        void markProfileOnboardingComplete(user.id, brandToUse.id, "active");
       }
 
       // 6) Ensure profile.active_brand_id in Supabase points to the active brand
@@ -200,6 +202,7 @@ export async function bootstrapUserSession(
           retryBrands = bRes.data;
           retryActiveBrand = bRes.data[0];
           isComplete = true;
+          void markProfileOnboardingComplete(user.id, retryActiveBrand.id, "active");
         }
       } catch {}
 

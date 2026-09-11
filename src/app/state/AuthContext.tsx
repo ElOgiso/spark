@@ -125,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const task = (async () => {
+      setLoading(true);
       console.log("[SPARK AUTH] session exists: true");
       console.log("[SPARK AUTH] user id:", nextSession.user.id);
 
@@ -275,7 +276,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Immediately set the session in state so user is immediately authenticated
+      // Immediately set the session in state and ensure loading is true while bootstrap executes
+      setLoading(true);
       setSession(nextSession);
 
       // Trigger cloud bootstrap asynchronously
@@ -409,8 +411,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearPersistedState();
       if (typeof localStorage !== "undefined") {
         try {
+          localStorage.removeItem("spark_social_account_tokens_v2");
           localStorage.removeItem("spark_current_brand_id");
           localStorage.removeItem("spark_current_brand_name");
+          localStorage.removeItem("spark_current_user_id");
+          localStorage.removeItem("spark_access_status");
+          localStorage.removeItem("spark_user_role");
           localStorage.removeItem("spark_onboarding_complete");
           localStorage.removeItem("spark_demo_user");
         } catch {}
@@ -576,10 +582,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("spark_user_role", userRole);
-        localStorage.setItem("spark_access_status", userAccessStatus);
+        if (profile?.access_status === "active" || userRole === "admin") {
+          localStorage.setItem("spark_access_status", "active");
+        } else if (profile?.access_status) {
+          localStorage.setItem("spark_access_status", profile.access_status);
+        }
       }
     } catch {}
-  }, [userRole, userAccessStatus]);
+  }, [userRole, profile?.access_status]);
 
   // Realtime access-status sync: subscribe to profile changes + poll while pending_approval
   useEffect(() => {

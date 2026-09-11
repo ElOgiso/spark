@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import {
   getBrandWorkspaceId,
+  getActiveSessionUserId,
   getXRedirectUri,
   saveConnectedAccountToken,
   parseOAuthState,
@@ -33,6 +34,17 @@ export function XCallbackPage() {
     }
 
     const parsedState = parseOAuthState(state);
+    const activeUserId = getActiveSessionUserId();
+    if (parsedState?.userId && activeUserId && parsedState.userId !== activeUserId) {
+      console.error("[XCallbackPage] User ID mismatch between state and session:", {
+        stateUserId: parsedState.userId,
+        sessionUserId: activeUserId,
+      });
+      setStatus("error");
+      setErrorMsg("Security validation failed: This OAuth connection was initiated by a different user session. Token not saved.");
+      return;
+    }
+
     const brandId = parsedState?.brandId || getBrandWorkspaceId();
 
     if (!brandId) {
@@ -94,6 +106,7 @@ export function XCallbackPage() {
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,
+          user_id: parsedState?.userId || activeUserId || undefined,
         };
         saveConnectedAccountToken(token);
 

@@ -225,7 +225,13 @@ function AppContent() {
           setViewState("dashboard");
         } else {
           console.log("[SPARK AUTH] routing: DASHBOARD");
-          setViewState((prev) => (prev === "auth" ? "dashboard" : prev));
+          const hasResumeOnboarding = search.includes("resume_onboarding");
+          const isAdditional = Boolean(auth.createWorkspaceModalOpen);
+          if (!hasResumeOnboarding && !isAdditional) {
+            setViewState("dashboard");
+          } else {
+            setViewState((prev) => (prev === "auth" ? "dashboard" : prev));
+          }
         }
       } else {
         console.log("[SPARK AUTH] routing: AUTH");
@@ -388,7 +394,8 @@ function AppContent() {
     }
 
     // 1. Session Restoration / Hydration State (Minimal HydrationSplash only)
-    if (auth.loading) {
+    // Do not route to Genesis while auth.loading or bootstrap is in flight with unknown complete state
+    if (auth.loading || (isUserAuthenticated && !auth.profile && !auth.error && !auth.isOnboardingComplete)) {
       return <HydrationSplash />;
     }
 
