@@ -74,6 +74,8 @@ export interface ProductionAssetGenerationResult {
   productionScenes?: ProductionScene[];
   audioUrl?: string;
   videoUrl?: string;
+  audioAssetId?: string;
+  videoAssetId?: string;
   /** Spec + reasoning after syncProductionMediaStores projection */
   reasoning?: any;
 }
@@ -729,8 +731,11 @@ export class ProductionAssetService {
     mimeType: string;
     prompt?: string;
     provider?: string;
+    sceneId?: string;
+    shotId?: string;
+    taskId?: string;
   }): Promise<{ publicUrl: string; storagePath: string; assetId: string; driveFileId?: string; driveWebViewLink?: string; uploadSuccess: boolean }> {
-    const { productionId, brandId = "default-brand", assetType, storagePath, dataUrlOrBlob, mimeType, prompt, provider } = params;
+    const { productionId, brandId = "default-brand", assetType, storagePath, dataUrlOrBlob, mimeType, prompt, provider, sceneId, shotId, taskId } = params;
     const assetId = `pa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -858,6 +863,9 @@ export class ProductionAssetService {
       id: assetId,
       brandId,
       productionId,
+      sceneId,
+      shotId,
+      taskId,
       assetType,
       provider: provider || "AIProviderOrchestrator",
       storageBucket: SPARK_STORAGE_BUCKET,
@@ -1627,6 +1635,7 @@ export class ProductionAssetService {
               checkAborted();
               const globalSceneNum = currentStoryboard[pIdx].scene || pIdx + 1;
               let finalStill = extracted.panels[pIdx];
+              let panelAssetId: string | undefined;
               try {
                 const storedStill = await this.uploadAssetToStorage({
                   productionId: production.id,
@@ -1637,7 +1646,13 @@ export class ProductionAssetService {
                   mimeType: "image/jpeg",
                   prompt: `Storyboard panel ${pIdx + 1} (${sheetLayout}, ${frameLock.aspectRatio}, ${sourceStill})`,
                   provider: "storyboardPanelExtract",
+                  sceneId: currentStoryboard[pIdx]?.sceneId,
+                  shotId: currentStoryboard[pIdx]?.shotId,
+                  taskId: currentStoryboard[pIdx]?.generationTaskId,
                 });
+                if (storedStill?.assetId) {
+                  panelAssetId = storedStill.assetId;
+                }
                 if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
                   finalStill = storedStill.publicUrl;
                 } else if (isEphemeralMediaUrl(finalStill)) {
@@ -1673,6 +1688,11 @@ export class ProductionAssetService {
               s.image = finalStill;
               s.keyframeImageUrl = finalStill;
               (s as any).sourceStill = sourceStill;
+              if (panelAssetId) {
+                s.sourceImageAssetId = panelAssetId;
+                s.stillAssetId = panelAssetId;
+                s.assetIds = Array.from(new Set([...(s.assetIds || []), panelAssetId]));
+              }
               attachSceneMotionLock(s, {
                 environment: identityPack.environmentString,
                 contentFormat: effectiveContentFormat,
@@ -1687,6 +1707,9 @@ export class ProductionAssetService {
                 ...s,
                 image: finalStill,
                 keyframeImageUrl: finalStill,
+                sourceImageAssetId: s.sourceImageAssetId,
+                stillAssetId: s.stillAssetId,
+                assetIds: s.assetIds,
                 motionLock: (s as any).motionLock,
                 physicalAction: (s as any).physicalAction,
               };
@@ -1833,6 +1856,7 @@ export class ProductionAssetService {
           // SET shots: reuse locked plate as the still (do not invent a new empty room)
           if (shouldReuseLocationPlateAsStill({ resolvedSubject, locationPlateUrl: plateUrl })) {
             let finalStill = plateUrl as string;
+            let plateAssetId: string | undefined;
             try {
               const storedStill = await this.uploadAssetToStorage({
                 productionId: production.id,
@@ -1843,7 +1867,13 @@ export class ProductionAssetService {
                 mimeType: "image/png",
                 prompt: "Locked set plate reuse (subject=set)",
                 provider: "locationPlate",
+                sceneId: s.sceneId,
+                shotId: s.shotId,
+                taskId: s.generationTaskId,
               });
+              if (storedStill?.assetId) {
+                plateAssetId = storedStill.assetId;
+              }
               if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
                 finalStill = storedStill.publicUrl;
               } else if (isEphemeralMediaUrl(finalStill)) {
@@ -1880,6 +1910,11 @@ export class ProductionAssetService {
             s.keyframeImageUrl = finalStill;
             (s as any).subject = "set";
             (s as any).sourceStill = "scene_still";
+            if (plateAssetId) {
+              s.sourceImageAssetId = plateAssetId;
+              s.stillAssetId = plateAssetId;
+              s.assetIds = Array.from(new Set([...(s.assetIds || []), plateAssetId]));
+            }
             attachSceneMotionLock(s, {
               environment: identityPack.environmentString,
               contentFormat: contentFormat,
@@ -1894,6 +1929,9 @@ export class ProductionAssetService {
               ...s,
               image: finalStill,
               keyframeImageUrl: finalStill,
+              sourceImageAssetId: s.sourceImageAssetId,
+              stillAssetId: s.stillAssetId,
+              assetIds: s.assetIds,
               subject: "set",
               motionLock: (s as any).motionLock,
               physicalAction: (s as any).physicalAction,
@@ -1984,6 +2022,7 @@ export class ProductionAssetService {
 
             if (isValidMediaData(stillImgUrl)) {
               let finalStill = stillImgUrl;
+              let stillAssetId: string | undefined;
               try {
                 const storedStill = await this.uploadAssetToStorage({
                   productionId: production.id,
@@ -1994,7 +2033,13 @@ export class ProductionAssetService {
                   mimeType: "image/png",
                   prompt: stillPrompt,
                   provider: "ModelRouter",
+                  sceneId: s.sceneId,
+                  shotId: s.shotId,
+                  taskId: s.generationTaskId,
                 });
+                if (storedStill?.assetId) {
+                  stillAssetId = storedStill.assetId;
+                }
                 if (storedStill?.publicUrl && isPersistableSparkMediaUrl(storedStill.publicUrl)) {
                   finalStill = storedStill.publicUrl;
                 } else if (isEphemeralMediaUrl(finalStill)) {
@@ -2032,11 +2077,19 @@ export class ProductionAssetService {
               s.keyframeImageUrl = finalStill;
               (s as any).subject = resolvedSubject;
               (s as any).sourceStill = "scene_still";
+              if (stillAssetId) {
+                s.sourceImageAssetId = stillAssetId;
+                s.stillAssetId = stillAssetId;
+                s.assetIds = Array.from(new Set([...(s.assetIds || []), stillAssetId]));
+              }
               bindMotionLockStillUrl(s, finalStill);
               currentStoryboard[sIdx] = {
                 ...s,
                 image: finalStill,
                 keyframeImageUrl: finalStill,
+                sourceImageAssetId: s.sourceImageAssetId,
+                stillAssetId: s.stillAssetId,
+                assetIds: s.assetIds,
                 subject: resolvedSubject,
                 motionLock: (s as any).motionLock,
                 physicalAction: (s as any).physicalAction,
@@ -2565,6 +2618,7 @@ export class ProductionAssetService {
                       provider: providerId,
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
+                      sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
                       endFrameUrl: sceneEndFrame,
                       referenceImageUrls: identityRefs,
                       aspectRatio: identityPack.aspectRatio,
@@ -2587,45 +2641,31 @@ export class ProductionAssetService {
                       return await tryI2v(activeVideo.providerId);
                     } catch (primaryI2vErr: any) {
                       console.warn(
-                        `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} failed Scene ${globalSceneNum}:`,
-                        primaryI2vErr?.message || primaryI2vErr
+                        `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} notice Scene ${globalSceneNum}:`,
+                        primaryI2vErr
                       );
-                      // Fail over across other I2V adapters before giving up on the scene
-                      for (const alt of i2vFallbacks) {
+                      for (const fallbackProvider of i2vFallbacks) {
                         try {
-                          console.log(`[SPARK Pipeline] I2V failover → ${alt} for Scene ${globalSceneNum}`);
-                          return await tryI2v(alt);
-                        } catch (altErr: any) {
-                          console.warn(`[SPARK Pipeline] I2V failover ${alt} failed:`, altErr?.message || altErr);
+                          console.log(
+                            `[SPARK Pipeline] Attempting I2V fallback to ${fallbackProvider} for Scene ${globalSceneNum}...`
+                          );
+                          return await tryI2v(fallbackProvider);
+                        } catch (fallbackErr: any) {
+                          console.warn(
+                            `[SPARK Pipeline] Fallback I2V provider ${fallbackProvider} notice Scene ${globalSceneNum}:`,
+                            fallbackErr
+                          );
                         }
                       }
-                      // Last resort: orchestrator path (Gemini Veo / remaining plugins)
-                      console.log(`[SPARK Pipeline] I2V adapters exhausted — ModelRouter failover for Scene ${globalSceneNum}`);
-                      const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                        prompt: sceneMotionPrompt,
-                        firstFrameUrl: sceneFirstFrame,
-                        referenceImageUrl: sceneFirstFrame,
-                        referenceImageUrls: identityRefs,
-                        aspectRatio: identityPack.aspectRatio,
-                        durationSec: sceneTargetDuration,
-                        lastFrameUrl: sceneLastFrame,
-                        endFrameUrl: sceneEndFrame,
-                        preferredProvider: (preferredVideoProvider || "gemini") as any,
-                        model: preferredVideoModel,
-                        productionId: production.id,
-                        brandId: (brand as any).id,
-                        shotIndex: globalSceneNum,
-                      });
-                      return { url: routed, provider: "model_router_failover" };
                     }
                   }
 
+                  // Standard ModelRouter fallback (Veo / Runway / Pika / etc.)
                   const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                     prompt: sceneMotionPrompt,
-                    firstFrameUrl: sceneFirstFrame,
-                    referenceImageUrl: sceneFirstFrame,
-                    referenceImageUrls: identityRefs,
                     aspectRatio: identityPack.aspectRatio,
+                    firstFrameUrl: sceneFirstFrame,
+                    referenceImageUrls: identityRefs,
                     durationSec: sceneTargetDuration,
                     lastFrameUrl: sceneLastFrame,
                     endFrameUrl: sceneEndFrame,
@@ -2648,6 +2688,7 @@ export class ProductionAssetService {
 
                 if (isValidMediaData(generated.url)) {
                   let finalClip = "";
+                  let clipAssetId: string | undefined;
                   try {
                     const storedClip = await this.uploadAssetToStorage({
                       productionId: production.id,
@@ -2658,7 +2699,13 @@ export class ProductionAssetService {
                       mimeType: "video/mp4",
                       prompt: sceneMotionPrompt,
                       provider: generated.provider || "ModelRouter",
+                      sceneId: s.sceneId,
+                      shotId: shotIdForScene,
+                      taskId: s.generationTaskId,
                     });
+                    if (storedClip?.assetId) {
+                      clipAssetId = storedClip.assetId;
+                    }
                     if (
                       storedClip?.uploadSuccess &&
                       storedClip.publicUrl &&
@@ -2696,6 +2743,8 @@ export class ProductionAssetService {
                         mimeType: "image/jpeg",
                         prompt: `Last frame of Scene ${globalSceneNum}`,
                         provider: "VideoFrameExtractor",
+                        sceneId: s.sceneId,
+                        shotId: shotIdForScene,
                       });
                       if (storedLastFrame?.publicUrl) {
                         s.lastFrameUrl = storedLastFrame.publicUrl;
@@ -2721,7 +2770,17 @@ export class ProductionAssetService {
                   }
 
                   s.videoUrl = finalClip;
-                  currentStoryboard[sIdx] = { ...s, videoUrl: finalClip, lastFrameUrl: s.lastFrameUrl };
+                  if (clipAssetId) {
+                    s.videoAssetId = clipAssetId;
+                    s.assetIds = Array.from(new Set([...(s.assetIds || []), clipAssetId]));
+                  }
+                  currentStoryboard[sIdx] = {
+                    ...s,
+                    videoUrl: finalClip,
+                    lastFrameUrl: s.lastFrameUrl,
+                    videoAssetId: s.videoAssetId,
+                    assetIds: s.assetIds,
+                  };
                   sceneClips.push(finalClip);
                   if (sIdx === 0 && (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false && currentStoryboard.length === 1) {
                     realVideoUrl = finalClip;
@@ -2729,12 +2788,18 @@ export class ProductionAssetService {
                   }
                 } else {
                   console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));
-                  if (!lastError) lastError = `Scene ${globalSceneNum} Video: Provider returned empty data`;
+                  const errMsg = `Scene ${globalSceneNum} Video: Provider returned empty data`;
+                  if (!lastError) lastError = errMsg;
+                  s.lastError = errMsg;
+                  currentStoryboard[sIdx] = { ...s, lastError: errMsg };
                 }
               } catch (sceneVidErr: any) {
                 if (sceneVidErr?.name === "AbortError" || signal?.aborted) throw sceneVidErr;
                 console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation notice:`, sceneVidErr);
-                if (!lastError) lastError = `Scene ${globalSceneNum} Video: ${sceneVidErr?.message || String(sceneVidErr)}`;
+                const errMsg = `Scene ${globalSceneNum} Video: ${sceneVidErr?.message || String(sceneVidErr)}`;
+                if (!lastError) lastError = errMsg;
+                s.lastError = errMsg;
+                currentStoryboard[sIdx] = { ...s, lastError: errMsg };
               }
 
               const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
@@ -3880,7 +3945,15 @@ export class ProductionAssetService {
               mimeType: "image/png",
               prompt: compiledStill.prompt,
               provider: "ModelRouter",
+              sceneId: (sceneToFix as any).sceneId,
+              shotId: (sceneToFix as any).shotId || shotId,
+              taskId: (sceneToFix as any).generationTaskId,
             });
+            if (storedStill?.assetId) {
+              sceneToFix.sourceImageAssetId = storedStill.assetId;
+              sceneToFix.stillAssetId = storedStill.assetId;
+              sceneToFix.assetIds = Array.from(new Set([...(sceneToFix.assetIds || []), storedStill.assetId]));
+            }
             if (storedStill?.publicUrl) finalStill = storedStill.publicUrl;
           } catch {}
           sceneToFix.image = finalStill;
@@ -4061,6 +4134,7 @@ export class ProductionAssetService {
 
       let finalClipUrl = generatedClip;
       if (isPlayableVideoUrl(generatedClip)) {
+        let fixClipAssetId: string | undefined;
         try {
           const storedAsset = await ProductionAssetService.uploadAssetToStorage({
             productionId,
@@ -4071,7 +4145,13 @@ export class ProductionAssetService {
             mimeType: "video/mp4",
             prompt: motionPrompt,
             provider: "ModelRouter",
+            sceneId: (sceneToFix as any).sceneId,
+            shotId: (sceneToFix as any).shotId || shotId,
+            taskId: (sceneToFix as any).generationTaskId,
           });
+          if (storedAsset?.assetId) {
+            fixClipAssetId = storedAsset.assetId;
+          }
           if (storedAsset?.publicUrl && isPersistableSparkMediaUrl(storedAsset.publicUrl)) {
             finalClipUrl = storedAsset.publicUrl;
           } else if (!isPersistableSparkMediaUrl(generatedClip)) {
@@ -4095,6 +4175,8 @@ export class ProductionAssetService {
               mimeType: "image/jpeg",
               prompt: `Revised last frame of Scene ${sceneIndex}`,
               provider: "VideoFrameExtractor",
+              sceneId: (sceneToFix as any).sceneId,
+              shotId: (sceneToFix as any).shotId || shotId,
             });
             if (storedRevLast?.publicUrl) {
               sceneToFix.lastFrameUrl = storedRevLast.publicUrl;
@@ -4111,6 +4193,11 @@ export class ProductionAssetService {
           }
         } catch (revLastErr) {
           console.warn("[ProductionAssetService] Revised scene last frame extract notice:", revLastErr);
+        }
+
+        if (fixClipAssetId) {
+          sceneToFix.videoAssetId = fixClipAssetId;
+          sceneToFix.assetIds = Array.from(new Set([...(sceneToFix.assetIds || []), fixClipAssetId]));
         }
       }
 

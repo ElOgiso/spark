@@ -557,3 +557,119 @@ describe("input preparation + errors", () => {
     assert.ok(d >= 1000);
   });
 });
+
+describe("asset-to-video wiring & traceability", () => {
+  it("projectAssetsOntoSpec links sourceImageAssetId and videoAssetId to shots and tasks", async () => {
+    const { projectAssetsOntoSpec } = await import("./execution/productionExecutionBridge");
+    const plan = createProductionPlan({ idea: "High tech commercial", targetDurationSec: 15 });
+    const spec = plan.spec!;
+    const tasks = planGenerationTasks(spec);
+    const shot = spec.scenes[0].shots[0];
+
+    const projected = projectAssetsOntoSpec({
+      spec,
+      tasks,
+      assetResult: {
+        brief: productionSpecToBrief(spec),
+        scenes: [{ scene: 1, description: "Test", duration: "5s" }],
+        productionScenes: [
+          {
+            scene: 1,
+            shotId: shot.id,
+            image: "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/scenes/scene-01.png",
+            videoUrl: "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/video/shot-1.mp4",
+            sourceImageAssetId: "pa-img-12345",
+            videoAssetId: "pa-vid-67890",
+            duration: "5s",
+            shotList: "shot 1",
+            cameraDirection: "static",
+            transitions: "cut",
+            onScreenText: "",
+            pacing: "medium",
+            scriptSnippet: "hello",
+            visualDescription: "Product in studio lighting",
+          },
+        ],
+        videoUrl: "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/video/master.mp4",
+      },
+      productionId: "p1",
+      logger: () => {},
+    });
+
+    const projectedShot = projected.spec.scenes[0].shots.find((s) => s.id === shot.id)!;
+    assert.equal(projectedShot.sourceImageAssetId, "pa-img-12345");
+    assert.equal(projectedShot.videoAssetId, "pa-vid-67890");
+    assert.ok(projectedShot.assetIds.includes("pa-img-12345"));
+    assert.ok(projectedShot.assetIds.includes("pa-vid-67890"));
+    assert.equal(projectedShot.references.firstFrameUrl, "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/scenes/scene-01.png");
+
+    const kfTask = projected.tasks.find((t) => t.shotId === shot.id && t.kind === "keyframe")!;
+    assert.equal(kfTask.status, "succeeded");
+    assert.equal(kfTask.productionAssetId, "pa-img-12345");
+
+    const vidTask = projected.tasks.find((t) => t.shotId === shot.id && t.kind === "video")!;
+    assert.equal(vidTask.status, "succeeded");
+    assert.equal(vidTask.productionAssetId, "pa-vid-67890");
+  });
+
+  it("projectAssetsOntoSpec fails loud when shot videoUrl is missing even if masterOk is true", async () => {
+    const { projectAssetsOntoSpec } = await import("./execution/productionExecutionBridge");
+    const plan = createProductionPlan({ idea: "Test failover", targetDurationSec: 15 });
+    const spec = plan.spec!;
+    const tasks = planGenerationTasks(spec);
+    const shot = spec.scenes[0].shots[0];
+
+    const projected = projectAssetsOntoSpec({
+      spec,
+      tasks,
+      assetResult: {
+        brief: productionSpecToBrief(spec),
+        scenes: [{ scene: 1, description: "Test", duration: "5s" }],
+        productionScenes: [
+          {
+            scene: 1,
+            shotId: shot.id,
+            image: "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/scenes/scene-01.png",
+            // videoUrl is intentionally missing for this shot
+            videoUrl: undefined,
+            sourceImageAssetId: "pa-img-12345",
+            duration: "5s",
+            shotList: "shot 1",
+            cameraDirection: "static",
+            transitions: "cut",
+            onScreenText: "",
+            pacing: "medium",
+            scriptSnippet: "hello",
+            visualDescription: "Product in studio lighting",
+          },
+        ],
+        // Global master exists (e.g. from prior run or slideshow fallback)
+        videoUrl: "https://jaqzjhabmtvqtvinoafq.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/video/master.mp4",
+      },
+      productionId: "p1",
+      logger: () => {},
+    });
+
+    const vidTask = projected.tasks.find((t) => t.shotId === shot.id && t.kind === "video")!;
+    assert.equal(vidTask.status, "failed");
+    assert.ok(vidTask.lastError?.includes("Video generation produced no mediaUrl"));
+
+    const projectedShot = projected.spec.scenes[0].shots.find((s) => s.id === shot.id)!;
+    assert.equal(projectedShot.generationStatus, "failed");
+  });
+
+  it("requestProductionVideoClip rejects empty firstFrameUrl for I2V providers", async () => {
+    const { requestProductionVideoClip } = await import("./productionVideoRequest");
+    await assert.rejects(
+      async () => {
+        await requestProductionVideoClip({
+          provider: "grok",
+          prompt: "camera pan left",
+          firstFrameUrl: "",
+        });
+      },
+      /I2V video generation with provider "grok" requires a valid firstFrameUrl/
+    );
+  });
+});
+

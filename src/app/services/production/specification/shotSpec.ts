@@ -140,6 +140,8 @@ export interface ShotSpec {
   characterIds: string[];
   propIds: string[];
   assetIds: string[];
+  sourceImageAssetId?: string;
+  videoAssetId?: string;
   generationStrategy: GenerationStrategy;
   /** Structured provider-independent strategy (Phase 1+) */
   generationStrategySpec?: GenerationStrategySpec;

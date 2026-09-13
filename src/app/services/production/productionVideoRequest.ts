@@ -19,6 +19,7 @@ export interface ProductionVideoClipRequest {
   productionId?: string;
   brandId?: string;
   shotIndex?: number;
+  sourceImageAssetId?: string;
 }
 
 export interface ProductionVideoClipResult {
@@ -35,6 +36,12 @@ export function isI2vApiProvider(provider?: string): boolean {
 export async function requestProductionVideoClip(
   params: ProductionVideoClipRequest
 ): Promise<ProductionVideoClipResult> {
+  if (isI2vApiProvider(params.provider) && (!params.firstFrameUrl || !params.firstFrameUrl.trim())) {
+    throw new Error(
+      `I2V video generation with provider "${params.provider}" requires a valid firstFrameUrl (shot still/keyframe).`
+    );
+  }
+
   const res = await fetch("/api/runtime/video", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,6 +50,7 @@ export async function requestProductionVideoClip(
       prompt: params.prompt,
       imageUrl: params.firstFrameUrl,
       firstFrameUrl: params.firstFrameUrl,
+      sourceImageAssetId: params.sourceImageAssetId,
       // End-frame conditioning must NOT silently reuse the first frame.
       lastFrameUrl: params.endFrameUrl,
       endFrameUrl: params.endFrameUrl,

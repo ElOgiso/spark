@@ -220,6 +220,10 @@ export interface ProductionScene {
   status?: SceneStatus;
   editNotes?: string;
   lastError?: string;
+  sourceImageAssetId?: string;
+  stillAssetId?: string;
+  videoAssetId?: string;
+  assetIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }

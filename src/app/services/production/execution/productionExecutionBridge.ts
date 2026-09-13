@@ -304,12 +304,16 @@ export function projectAssetsOntoSpec(params: {
       const lastFrameUrl = panel?.lastFrameUrl || shot.lastFrameUrl;
       const shotFailed = Boolean(panel?.lastError);
 
+      const sourceImageAssetId = panel?.sourceImageAssetId || panel?.stillAssetId || shot.sourceImageAssetId;
+      const videoAssetId = panel?.videoAssetId || shot.videoAssetId;
+
       const keyframeTask = tasks.find((t) => t.shotId === shot.id && t.kind === "keyframe");
       const videoTask = tasks.find((t) => t.shotId === shot.id && t.kind === "video");
 
       if (keyframeTask) {
         if (imageUrl) {
           keyframeTask.status = "succeeded";
+          keyframeTask.productionAssetId = sourceImageAssetId || keyframeTask.productionAssetId;
           keyframeTask.lastError = undefined;
         } else if (shotFailed || (!imageUrl && !masterOk)) {
           keyframeTask.status = "failed";
@@ -327,10 +331,11 @@ export function projectAssetsOntoSpec(params: {
       }
 
       if (videoTask) {
-        if (videoUrl || (imageUrl && masterOk)) {
+        if (videoUrl) {
           videoTask.status = "succeeded";
+          videoTask.productionAssetId = videoAssetId || videoTask.productionAssetId;
           videoTask.lastError = undefined;
-        } else if (shotFailed) {
+        } else {
           videoTask.status = "failed";
           videoTask.lastError = panel?.lastError || "Video generation produced no mediaUrl";
         }
@@ -345,6 +350,19 @@ export function projectAssetsOntoSpec(params: {
         });
       }
 
+      const mergedAssetIds = Array.from(
+        new Set(
+          [
+            ...(shot.assetIds || []),
+            ...(panel?.assetIds || []),
+            sourceImageAssetId,
+            videoAssetId,
+          ].filter(Boolean) as string[]
+        )
+      );
+
+      const isFailed = shotFailed || (videoTask && videoTask.status === "failed");
+
       return {
         ...shot,
         id: shot.id,
@@ -352,7 +370,14 @@ export function projectAssetsOntoSpec(params: {
         keyframeUrl: imageUrl || shot.keyframeUrl,
         mediaUrl: videoUrl || shot.mediaUrl,
         lastFrameUrl: lastFrameUrl || shot.lastFrameUrl,
-        generationStatus: shotFailed
+        sourceImageAssetId,
+        videoAssetId,
+        assetIds: mergedAssetIds,
+        references: {
+          ...shot.references,
+          firstFrameUrl: imageUrl || shot.references?.firstFrameUrl,
+        },
+        generationStatus: isFailed
           ? ("failed" as const)
           : imageUrl || videoUrl || masterOk
             ? ("generated" as const)
@@ -368,6 +393,7 @@ export function projectAssetsOntoSpec(params: {
     if (task.kind === "voice") {
       if (assetResult.audioUrl) {
         task.status = "succeeded";
+        task.productionAssetId = (assetResult as any).audioAssetId || task.productionAssetId;
         task.lastError = undefined;
       } else if (masterOk) {
         task.status = "skipped";
@@ -378,6 +404,9 @@ export function projectAssetsOntoSpec(params: {
     }
     if (task.kind === "merge") {
       task.status = masterOk ? "succeeded" : "failed";
+      if (masterOk) {
+        task.productionAssetId = (assetResult as any).videoAssetId || task.productionAssetId;
+      }
       if (!masterOk) task.lastError = task.lastError || "Master video missing";
     }
   }
