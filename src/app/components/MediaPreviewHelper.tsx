@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Check, Sparkles, Film, ArrowRight, Music, Download, Mic, Image as ImageIcon, Loader2 } from "lucide-react";
-import { extractSparkStoragePath, ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "../services/production/productionAssetService";
+import {
+  extractSparkStoragePath,
+  ProductionAssetService,
+  isDurableMasterVideoReady,
+  isPlayableVideoUrl,
+  isEphemeralMediaUrl,
+} from "../services/production/productionAssetService";
+import { subscribeToIngest } from "../services/production/ingestMediaToSpark";
 import {
   applyReviewFullscreenOrientation,
   enterReviewVideoFullscreen,
@@ -331,7 +338,11 @@ export function InteractiveVideoPlayer({
 
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
 
-  const isMasterMerged = Boolean(videoUrl && isDurableMasterVideoReady(videoUrl));
+  const isMasterMerged = Boolean(
+    videoUrl &&
+      isPlayableVideoUrl(videoUrl) &&
+      (isDurableMasterVideoReady(videoUrl) || scenes.length <= 1)
+  );
 
   // If master is merged: active scene tracks timeline progress across full film
   // If not merged: active scene is strictly the selected shot
@@ -351,7 +362,24 @@ export function InteractiveVideoPlayer({
   // Master Mode vs Single Shot Mode:
   const activeVideoUrl = isMasterMerged
     ? videoUrl
-    : (activeScene.videoUrl && isPlayableVideoUrl(activeScene.videoUrl) ? activeScene.videoUrl : undefined);
+    : (activeScene.videoUrl && isPlayableVideoUrl(activeScene.videoUrl)
+        ? activeScene.videoUrl
+        : (videoUrl && isPlayableVideoUrl(videoUrl) ? videoUrl : undefined));
+
+  const [playerSrc, setPlayerSrc] = useState<string | undefined>(activeVideoUrl);
+
+  useEffect(() => {
+    setPlayerSrc(activeVideoUrl);
+  }, [activeVideoUrl]);
+
+  useEffect(() => {
+    if (playerSrc && isEphemeralMediaUrl(playerSrc)) {
+      const unsub = subscribeToIngest(playerSrc, (sparkUrl) => {
+        setPlayerSrc(sparkUrl);
+      });
+      return unsub;
+    }
+  }, [playerSrc]);
 
   const activeImageUrl = isMasterMerged
     ? undefined
@@ -373,7 +401,20 @@ export function InteractiveVideoPlayer({
   }, [activeVideoUrl, selectedSceneIndex, isMasterMerged]);
 
   const togglePlay = () => {
-    if (activeVideoUrl) {
+    const currentVideo = playerSrc || activeVideoUrl;
+    if (currentVideo) {
+      if (isEphemeralMediaUrl(currentVideo)) {
+        void import("../services/production/ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
+          scheduleAutoIngestMedia({
+            url: currentVideo,
+            productionId: id,
+            assetType: "video",
+            onSuccess: (sparkUrl) => {
+              setPlayerSrc(sparkUrl);
+            },
+          });
+        });
+      }
       if (videoRef.current) {
         if (isPlaying) {
           videoRef.current.pause();
@@ -521,11 +562,11 @@ export function InteractiveVideoPlayer({
         )}
 
         {/* Video / Still / Backdrop — stage is FS target (file only, black letterbox) */}
-        {activeVideoUrl ? (
+        {playerSrc || activeVideoUrl ? (
           <div ref={stageRef} className="spark-review-video-stage absolute inset-0 bg-black z-0">
             <video
               ref={videoRef}
-              src={activeVideoUrl}
+              src={playerSrc || activeVideoUrl}
               loop={!isMasterMerged}
               muted={isMuted}
               playsInline

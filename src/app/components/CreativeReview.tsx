@@ -41,6 +41,7 @@ import { getNotionModeLabel } from "../services/production/resolveProductionMode
 import {
   resolveCanonicalProductionMedia,
   resolveReviewHeroVideoUrl,
+  resolveImmediatePlayableVideoUrl,
 } from "../services/production/canonicalProductionMedia";
 import {
   resolveProductionMediaView,
@@ -161,7 +162,10 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
     [activeProd, activeReview, brief]
   );
   const canonicalMedia = mediaView.canonical;
-  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
+  const reviewHeroVideoUrl =
+    canonicalMedia.canonicalMasterUrl ||
+    canonicalMedia.immediatePlayableUrl ||
+    resolveImmediatePlayableVideoUrl(activeProd, { review: activeReview, brief });
   // Live path: Review player binds canonical master only — never Asset Intelligence v2 packages.
   const prodMode = String(activeProd?.productionMode || brief?.productionMode || "").toLowerCase();
   const isExpressMode = prodMode === "express" || prodMode === "narrator";

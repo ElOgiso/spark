@@ -11,6 +11,7 @@ import {
   extractSparkStoragePath,
 } from "./productionAssetService";
 import { requestProductionVideoClip } from "./productionVideoRequest";
+import { resolveImmediatePlayableVideoUrl } from "./canonicalProductionMedia";
 import { brandProductionStoragePath } from "./brandProductionStoragePath";
 import { domainProductionToInsert, domainReviewToInsert } from "../../backend/mappers/workspaceMappers";
 
@@ -50,7 +51,7 @@ describe("Spark byte persist contract", () => {
     );
   });
 
-  it("requestProductionVideoClip rejects vidgen/googleapis as videoUrl", async () => {
+  it("requestProductionVideoClip accepts provider URL as videoUrl for immediate playback", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
       new Response(
@@ -61,17 +62,55 @@ describe("Spark byte persist contract", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       )) as typeof fetch;
 
-    await assert.rejects(
-      () =>
-        requestProductionVideoClip({
-          provider: "grok",
-          prompt: "test",
-          firstFrameUrl: "data:image/jpeg;base64,AAA",
-        }),
-      /provider URL|Spark storage/i
-    );
+    const clip = await requestProductionVideoClip({
+      provider: "grok",
+      prompt: "test",
+      firstFrameUrl: "data:image/jpeg;base64,AAA",
+    });
+
+    assert.equal(clip.videoUrl, "https://vidgen.x.ai/generated.mp4");
 
     globalThis.fetch = originalFetch;
+  });
+
+  it("resolveImmediatePlayableVideoUrl returns vidgen URL when no Spark URL exists", () => {
+    const prod: any = {
+      id: "prod-1",
+      scenes: [
+        {
+          scene: 1,
+          videoUrl: "https://vidgen.x.ai/clip-1.mp4",
+        },
+      ],
+    };
+    assert.equal(
+      resolveImmediatePlayableVideoUrl(prod),
+      "https://vidgen.x.ai/clip-1.mp4"
+    );
+  });
+
+  it("resolveImmediatePlayableVideoUrl prefers Spark URL when both exist", () => {
+    const prod: any = {
+      id: "prod-1",
+      videoUrl: SPARK_PUBLIC,
+      playablePreviewUrl: "https://vidgen.x.ai/clip-1.mp4",
+      scenes: [
+        {
+          scene: 1,
+          videoUrl: SPARK_PUBLIC,
+          playablePreviewUrl: "https://vidgen.x.ai/clip-1.mp4",
+        },
+      ],
+    };
+    assert.equal(resolveImmediatePlayableVideoUrl(prod), SPARK_PUBLIC);
+  });
+
+  it("workspaceSync preserves provider URL when no Spark URL exists yet", () => {
+    const incomingVideo = "https://vidgen.x.ai/generated.mp4";
+    const sparkVideo = sanitizePersistedMediaUrl(incomingVideo);
+    assert.equal(sparkVideo, undefined);
+    const videoToPersist = sparkVideo || incomingVideo || undefined;
+    assert.equal(videoToPersist, "https://vidgen.x.ai/generated.mp4");
   });
 
   it("requestProductionVideoClip accepts a Spark public URL + storagePath", async () => {

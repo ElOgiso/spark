@@ -1,7 +1,51 @@
+import {
+  isEphemeralMediaUrl,
+  isSparkStorageUrl,
+  extractSparkStoragePath,
+} from "./productionAssetService";
+
 /**
  * Client → server ingest when the browser cannot fetch a provider URL (CORS).
  * Server downloads bytes and uploads them to bucket "Spark".
  */
+
+type IngestListener = (sparkUrl: string) => void;
+const inFlightIngests = new Map<
+  string,
+  Promise<{ publicUrl: string; storagePath: string } | null>
+>();
+const ingestListeners = new Map<string, Set<IngestListener>>();
+
+export function subscribeToIngest(url: string, listener: IngestListener): () => void {
+  const trimmed = (url || "").trim();
+  if (!trimmed) return () => {};
+  if (!ingestListeners.has(trimmed)) {
+    ingestListeners.set(trimmed, new Set());
+  }
+  ingestListeners.get(trimmed)!.add(listener);
+  return () => {
+    const set = ingestListeners.get(trimmed);
+    if (set) {
+      set.delete(listener);
+      if (set.size === 0) ingestListeners.delete(trimmed);
+    }
+  };
+}
+
+function notifyIngestSuccess(originalUrl: string, sparkUrl: string) {
+  const trimmed = (originalUrl || "").trim();
+  const listeners = ingestListeners.get(trimmed);
+  if (listeners) {
+    listeners.forEach((fn) => {
+      try {
+        fn(sparkUrl);
+      } catch (err) {
+        console.warn("[ingestMediaToSpark] listener notice:", err);
+      }
+    });
+  }
+}
+
 export async function ingestRemoteMediaToSpark(params: {
   url: string;
   brandId?: string;
@@ -42,4 +86,94 @@ export async function ingestRemoteMediaToSpark(params: {
     console.warn("[ingestMediaToSpark] notice:", err);
     return null;
   }
+}
+
+/**
+ * Schedule background auto-ingest for ephemeral provider URLs.
+ * Deduplicates in-flight ingests by url+productionId.
+ * On success, persists to database and notifies all player listeners.
+ * On failure, keeps providerUrl without wiping.
+ */
+export async function scheduleAutoIngestMedia(params: {
+  url: string;
+  brandId?: string;
+  productionId: string;
+  assetType?: "image" | "frame" | "storyboard" | "video" | "audio" | "thumbnail";
+  storagePath?: string;
+  shotIndex?: number;
+  mimeType?: string;
+  onSuccess?: (sparkUrl: string) => void;
+}): Promise<{ publicUrl: string; storagePath: string } | null> {
+  const url = String(params.url || "").trim();
+  if (!url) return null;
+  if (!isEphemeralMediaUrl(url) || isSparkStorageUrl(url)) {
+    return { publicUrl: url, storagePath: extractSparkStoragePath(url) || "" };
+  }
+
+  const productionId = params.productionId || "default-prod";
+  const brandId = params.brandId;
+  const assetType = params.assetType || "video";
+  const dedupeKey = `${url}::${productionId}`;
+
+  if (params.onSuccess) {
+    subscribeToIngest(url, params.onSuccess);
+  }
+
+  if (inFlightIngests.has(dedupeKey)) {
+    return inFlightIngests.get(dedupeKey)!;
+  }
+
+  const defaultStoragePath =
+    params.storagePath ||
+    (assetType === "video"
+      ? `video/shot-${params.shotIndex || "master"}-${Date.now()}.mp4`
+      : `${assetType}/asset-${Date.now()}.png`);
+
+  const promise = (async () => {
+    try {
+      const result = await ingestRemoteMediaToSpark({
+        url,
+        brandId,
+        productionId,
+        assetType,
+        storagePath: defaultStoragePath,
+        mimeType: params.mimeType || (assetType === "video" ? "video/mp4" : undefined),
+      });
+
+      if (result?.publicUrl) {
+        notifyIngestSuccess(url, result.publicUrl);
+
+        // Persist Spark URL to database
+        try {
+          const { updateProduction } = await import("../../backend/repositories/productionRepository");
+          await updateProduction(productionId, {
+            assets: {
+              video_url: result.publicUrl,
+              video_storage_path: result.storagePath,
+            } as any,
+            brief: {
+              videoUrl: result.publicUrl,
+              playablePreviewUrl: result.publicUrl,
+              video_storage_path: result.storagePath,
+            } as any,
+          });
+        } catch (dbErr) {
+          console.warn("[scheduleAutoIngestMedia] DB persist notice:", dbErr);
+        }
+
+        return result;
+      }
+
+      console.warn("[scheduleAutoIngestMedia] Ingest returned null; keeping provider preview URL.");
+      return null;
+    } catch (err) {
+      console.warn("[scheduleAutoIngestMedia] Ingest notice:", err);
+      return null;
+    } finally {
+      inFlightIngests.delete(dedupeKey);
+    }
+  })();
+
+  inFlightIngests.set(dedupeKey, promise);
+  return promise;
 }

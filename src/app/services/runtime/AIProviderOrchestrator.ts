@@ -440,17 +440,11 @@ export class AIProviderOrchestrator {
 
           if (finalVideoUrl) {
             const playableUrl = await convertToPlayableUrl(finalVideoUrl);
-            if (
-              /vidgen\.x\.ai|generativelanguage\.googleapis|files\//i.test(playableUrl) &&
-              !playableUrl.startsWith("data:")
-            ) {
-              throw new Error("Veo returned a provider URI; persist requires MP4 bytes.");
-            }
             let durableUrl = playableUrl;
             if (options.productionId && playableUrl) {
-              const { ingestRemoteMediaToSpark } = await import("../production/ingestMediaToSpark");
+              const { scheduleAutoIngestMedia } = await import("../production/ingestMediaToSpark");
               const shot = options.shotIndex && options.shotIndex > 0 ? Math.round(options.shotIndex) : Date.now();
-              const ingested = await ingestRemoteMediaToSpark({
+              void scheduleAutoIngestMedia({
                 url: playableUrl,
                 brandId: options.brandId,
                 productionId: options.productionId,
@@ -458,12 +452,6 @@ export class AIProviderOrchestrator {
                 storagePath: `video/shot-${shot}.mp4`,
                 mimeType: "video/mp4",
               });
-              if (!ingested?.publicUrl) {
-                throw new Error("Veo clip persist to Spark failed.");
-              }
-              durableUrl = ingested.publicUrl;
-            } else if (!playableUrl.startsWith("data:")) {
-              throw new Error("Veo clip has no Spark persist context and is not MP4 bytes.");
             }
             console.log("[Gemini Provider] Veo Video generation SUCCESS:", durableUrl.slice(0, 80));
             if (options.onChunk) options.onChunk(durableUrl);
@@ -1257,7 +1245,19 @@ export class AIProviderOrchestrator {
             shotIndex: options.shotIndex,
           });
           if (!clip.videoUrl) {
-            throw new Error("Grok Video Generation returned no Spark video URL.");
+            throw new Error("Grok Video Generation returned no video URL.");
+          }
+          if (options.productionId && clip.videoUrl) {
+            const { scheduleAutoIngestMedia } = await import("../production/ingestMediaToSpark");
+            const shot = options.shotIndex && options.shotIndex > 0 ? Math.round(options.shotIndex) : Date.now();
+            void scheduleAutoIngestMedia({
+              url: clip.videoUrl,
+              brandId: options.brandId,
+              productionId: options.productionId,
+              assetType: "video",
+              storagePath: `video/shot-${shot}.mp4`,
+              shotIndex: options.shotIndex,
+            });
           }
           if (options.onChunk) options.onChunk(clip.videoUrl);
           return clip.videoUrl;

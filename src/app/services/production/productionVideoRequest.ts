@@ -96,15 +96,7 @@ export async function requestProductionVideoClip(
   const looksSpark =
     /\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(videoUrl) ||
     Boolean(storagePath && storagePath.startsWith("brands/"));
-  const looksProvider =
-    /vidgen\.x\.ai|generativelanguage\.googleapis|oaidalleapiprodscus|fal\.media|klingai\.com|runwayml\.com|lumalabs\.ai/i.test(
-      videoUrl
-    );
-  if (looksProvider || !looksSpark) {
-    throw new Error(
-      "Video adapter returned a provider URL instead of Spark storage bytes. Persist failed."
-    );
-  }
+  // Provider URLs (e.g. vidgen.x.ai) are kept as playable preview while background ingest copies bytes to Spark.
   return {
     videoUrl,
     storagePath,

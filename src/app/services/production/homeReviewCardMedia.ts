@@ -4,7 +4,10 @@
  * Does not invent a router — App already splits currentPage on "?" .
  */
 import { isPlayableVideoUrl } from "./productionAssetService";
-import { resolveCanonicalMasterVideoUrl } from "./canonicalProductionMedia";
+import {
+  resolveCanonicalMasterVideoUrl,
+  resolveImmediatePlayableVideoUrl,
+} from "./canonicalProductionMedia";
 
 export const SPARK_REVIEW_FOCUS_KEY = "spark_review_focus_id";
 
@@ -60,24 +63,12 @@ function isHttpPlayableVideo(val?: string | null): val is string {
   return isPlayableVideoUrl(trimmed);
 }
 
-/** Card/queue face: playable http(s) video, never a still when a video exists. */
+/** Card/queue face: playable http(s) video, never a still when a video exists (provider or Spark). */
 export function resolveCardPlayableVideoUrl(
   production?: any,
   extras?: { review?: any; brief?: any }
 ): string | undefined {
-  const brief = extras?.brief ?? production?.brief;
-  const review = extras?.review;
-  const generated = brief?.generatedAssets?.generatedVideos;
-  const candidates = [
-    production?.videoUrl,
-    brief?.videoUrl,
-    Array.isArray(generated) ? generated[0] : undefined,
-    review?.videoUrl,
-  ];
-  for (const c of candidates) {
-    if (isHttpPlayableVideo(c)) return c;
-  }
-  const canonical = resolveCanonicalMasterVideoUrl({ production, review, brief });
-  if (isHttpPlayableVideo(canonical)) return canonical;
+  const immediate = resolveImmediatePlayableVideoUrl(production, extras);
+  if (isHttpPlayableVideo(immediate)) return immediate;
   return undefined;
 }

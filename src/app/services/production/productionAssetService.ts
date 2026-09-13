@@ -2720,9 +2720,35 @@ export class ProductionAssetService {
                   if (!finalClip && isPersistableSparkMediaUrl(generated.url)) {
                     finalClip = generated.url;
                   }
+                  if (!finalClip && isPlayableVideoUrl(generated.url)) {
+                    finalClip = generated.url;
+                  }
                   if (!finalClip) {
-                    throw new Error(`Scene ${globalSceneNum} Video: persist to Spark failed`);
+                    throw new Error(`Scene ${globalSceneNum} Video: no playable video URL returned`);
                   } else {
+                    s.videoUrl = finalClip;
+                    (s as any).playablePreviewUrl = finalClip;
+
+                    // If the clip is an ephemeral provider URL, fire background ingest to Spark
+                    if (isEphemeralMediaUrl(finalClip)) {
+                      void import("./ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
+                        scheduleAutoIngestMedia({
+                          url: finalClip,
+                          brandId: (brand as any).id,
+                          productionId: production.id,
+                          assetType: "video",
+                          storagePath: getStoragePath(`video/shot-${globalSceneNum}-${Date.now()}.mp4`),
+                          shotIndex: globalSceneNum,
+                          onSuccess: (sparkUrl) => {
+                            s.videoUrl = sparkUrl;
+                            (s as any).playablePreviewUrl = sparkUrl;
+                            if (currentStoryboard[sIdx]) {
+                              currentStoryboard[sIdx].videoUrl = sparkUrl;
+                            }
+                          },
+                        });
+                      });
+                    }
 
                   // Extract last frame of this clip and persist it so clip N+1 can send it as first_frame.
                   try {
@@ -2907,16 +2933,22 @@ export class ProductionAssetService {
             } else if (
               sceneClips.length === 1 &&
               currentStoryboard.length <= 1 &&
-              isDurableMasterVideoReady(sceneClips[0])
+              isPlayableVideoUrl(sceneClips[0])
             ) {
               // True one-take production: the single clip IS the master.
               realVideoUrl = sceneClips[0];
-              (brief as any).canonicalMasterUrl = sceneClips[0];
-              (production as any).canonicalMasterUrl = sceneClips[0];
+              (brief as any).playablePreviewUrl = sceneClips[0];
+              (production as any).playablePreviewUrl = sceneClips[0];
+              if (isDurableMasterVideoReady(sceneClips[0])) {
+                (brief as any).canonicalMasterUrl = sceneClips[0];
+                (production as any).canonicalMasterUrl = sceneClips[0];
+              }
             } else if (sceneClips.length > 0) {
               if (realVideoUrl && sceneClips.includes(realVideoUrl) && currentStoryboard.length > 1) {
                 realVideoUrl = undefined as any;
               }
+              (production as any).playablePreviewUrl = sceneClips[0];
+              (brief as any).playablePreviewUrl = sceneClips[0];
               console.log(`[SPARK Pipeline] Review: Retaining ${sceneClips.length} distinct scene video clip(s).`);
             }
           }
@@ -2929,10 +2961,10 @@ export class ProductionAssetService {
 
       checkAborted();
       let isVideoSuccess = mode === "express"
-        ? Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
+        ? Boolean(realVideoUrl && isPlayableVideoUrl(realVideoUrl))
         : mode === "standard"
-        ? (sceneClips.length > 0 && isDurableMasterVideoReady(sceneClips[0])) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl))
-        : (sceneClips.length > 0 && sceneClips.every((c) => isDurableMasterVideoReady(c))) || Boolean(realVideoUrl && isDurableMasterVideoReady(realVideoUrl));
+        ? (sceneClips.length > 0 && isPlayableVideoUrl(sceneClips[0])) || Boolean(realVideoUrl && isPlayableVideoUrl(realVideoUrl))
+        : (sceneClips.length > 0 && sceneClips.every((c) => isPlayableVideoUrl(c))) || Boolean(realVideoUrl && isPlayableVideoUrl(realVideoUrl));
 
       // Provider I2V total failure handling.
       // Express/narrator may compile a slideshow master from stills + VO.

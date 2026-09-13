@@ -117,6 +117,7 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
   const [activeFullscreenVideo, setActiveFullscreenVideo] = useState<{
     videoUrl: string;
     title?: string;
+    productionId?: string;
   } | null>(null);
 
   const getRouteForActivity = (activity: Activity) => {
@@ -227,6 +228,7 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
                           setActiveFullscreenVideo({
                             videoUrl: activity.videoUrl!,
                             title: activity.title,
+                            productionId: activity.productionId,
                           });
                         }}
                         className="cursor-pointer active:scale-90 transition-transform"
@@ -357,6 +359,7 @@ export function ActivityFeed({ activities, onNavigate }: ActivityFeedProps) {
         <VideoFullscreenModal
           videoUrl={activeFullscreenVideo.videoUrl}
           title={activeFullscreenVideo.title}
+          productionId={activeFullscreenVideo.productionId}
           onClose={() => setActiveFullscreenVideo(null)}
         />
       )}

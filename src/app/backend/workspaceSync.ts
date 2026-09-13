@@ -306,7 +306,33 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
             extractSparkStoragePath(persistableResignedVideo) ||
             null,
         } as any,
-      }).catch((err) => console.warn("[workspaceSync] Production signed URL update notice:", err));
+      });
+    }
+
+    // After hydrate, if videoUrl is ephemeral, schedule ingest once
+    if (refreshedProd.videoUrl && isEphemeralMediaUrl(refreshedProd.videoUrl) && isUuid(refreshedProd.id)) {
+      void import("../services/production/ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
+        scheduleAutoIngestMedia({
+          url: refreshedProd.videoUrl!,
+          brandId: isUuid(brandId) ? brandId : undefined,
+          productionId: refreshedProd.id,
+          assetType: "video",
+          onSuccess: (sparkUrl) => {
+            void updateProduction(refreshedProd.id, {
+              assets: {
+                ...(refreshedProd.brief?.generatedAssets || {}),
+                video_url: sparkUrl,
+                video_storage_path: extractSparkStoragePath(sparkUrl) || null,
+              } as any,
+              brief: {
+                ...(refreshedProd.brief as any),
+                videoUrl: sparkUrl,
+                playablePreviewUrl: sparkUrl,
+              } as any,
+            }).catch(() => {});
+          },
+        });
+      });
     }
   }
 
@@ -644,17 +670,26 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
   );
   const incomingVideo =
     (production as any).videoUrl || (production as any).brief?.videoUrl || existingBrief.videoUrl || existingBriefObj.videoUrl;
-  const videoUrl = sanitizePersistedMediaUrl(
+  const sparkVideo = sanitizePersistedMediaUrl(
     incomingVideo,
     existingBrief.videoUrl || existingBriefObj.videoUrl || (existingAssets.video_url as string | undefined)
   );
+  // Rule 3c: STOP deleting ephemeral video URLs when no Spark URL exists for that slot.
+  // Allowed persist shape: Spark URL if present, else provider URL.
+  // When Spark URL exists, persist ONLY the Spark URL going forward.
+  const videoUrl = sparkVideo || incomingVideo || undefined;
+  const playablePreviewUrl =
+    (production as any).playablePreviewUrl ||
+    (production as any).brief?.playablePreviewUrl ||
+    videoUrl;
+
   const storyboardGridUrl = sanitizePersistedMediaUrl(
     (production as any).brief?.storyboardGridUrl || (production as any).brief?.generatedAssets?.storyboardGridUrl,
     existingBrief.storyboardGridUrl || existingBriefObj.storyboardGridUrl
   );
   const videoStoragePath =
     (production as any).videoStoragePath ||
-    extractSparkStoragePath(videoUrl) ||
+    extractSparkStoragePath(sparkVideo || videoUrl) ||
     existingAssets.video_storage_path ||
     existingBrief.video_storage_path;
 
@@ -662,14 +697,24 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     if (!Array.isArray(scenes)) return scenes;
     return scenes.map((s: any) => {
       if (!s || typeof s !== "object") return s;
-      const sceneVideo = sanitizePersistedMediaUrl(s.videoUrl, undefined);
-      return sceneVideo === s.videoUrl ? s : { ...s, videoUrl: sceneVideo };
+      const sparkScene = sanitizePersistedMediaUrl(s.videoUrl, undefined);
+      const sceneVideo = sparkScene || s.videoUrl;
+      const preview = s.playablePreviewUrl || sceneVideo;
+      return {
+        ...s,
+        videoUrl: sceneVideo,
+        playablePreviewUrl: preview,
+      };
     });
   };
 
   const incomingGenerated = ((production as any).brief?.generatedAssets as any) || {};
   const generatedVideos = Array.isArray(incomingGenerated.generatedVideos)
-    ? incomingGenerated.generatedVideos.filter((u: any) => typeof u === "string" && !isEphemeralMediaUrl(u) && sanitizePersistedMediaUrl(u))
+    ? incomingGenerated.generatedVideos.map((u: any) => {
+        if (typeof u !== "string") return u;
+        const sparkUrl = sanitizePersistedMediaUrl(u);
+        return sparkUrl || u; // Keep provider URL if no Spark URL exists yet
+      })
     : incomingGenerated.generatedVideos;
   const { video_url: _dropVideoUrl, videoUrl: _dropVideoCamel, ...generatedAssetsRest } = incomingGenerated;
   const sanitizedGeneratedAssets = {
@@ -684,6 +729,7 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
         ...(production as any).brief,
         audioUrl,
         videoUrl,
+        playablePreviewUrl,
         storyboardGridUrl,
         generationProgress: genProg,
         video_storage_path: videoStoragePath,
@@ -700,6 +746,7 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     sparkId: production.sparkId || existingBrief.sparkId,
     audioUrl,
     videoUrl,
+    playablePreviewUrl,
     storyboardGridUrl,
     generationProgress: genProg,
     video_storage_path: videoStoragePath,

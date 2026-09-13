@@ -1,9 +1,11 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { useAuth } from "../../state/AuthContext";
 import { AIChatModal } from "../AIChatModal";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import { openProductionReviewDetail, resolveCardPlayableVideoUrl } from "../../services/production/homeReviewCardMedia";
+import { isEphemeralMediaUrl } from "../../services/production/productionAssetService";
+import { subscribeToIngest, scheduleAutoIngestMedia } from "../../services/production/ingestMediaToSpark";
 import {
   ArrowRight,
   CheckCircle2,
@@ -301,17 +303,44 @@ function MobileMetricTile({
 export function VideoFullscreenModal({
   videoUrl,
   title,
+  productionId,
+  brandId,
   onClose,
 }: {
   videoUrl: string;
   title?: string;
+  productionId?: string;
+  brandId?: string;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [currentSrc, setCurrentSrc] = useState(videoUrl);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(videoUrl);
+  }, [videoUrl]);
+
+  useEffect(() => {
+    if (currentSrc && isEphemeralMediaUrl(currentSrc)) {
+      const unsub = subscribeToIngest(currentSrc, (sparkUrl) => {
+        setCurrentSrc(sparkUrl);
+      });
+      void scheduleAutoIngestMedia({
+        url: currentSrc,
+        productionId: productionId || "default-prod",
+        brandId,
+        assetType: "video",
+        onSuccess: (sparkUrl) => {
+          setCurrentSrc(sparkUrl);
+        },
+      });
+      return unsub;
+    }
+  }, [currentSrc, productionId, brandId]);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -363,7 +392,7 @@ export function VideoFullscreenModal({
       >
         <video
           ref={videoRef}
-          src={videoUrl}
+          src={currentSrc}
           autoPlay
           playsInline
           muted={isMuted}
@@ -430,7 +459,7 @@ export interface DonorSparkMediaHomeProps {
 
 export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHomeProps) {
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [activeFullscreenVideo, setActiveFullscreenVideo] = useState<{ videoUrl: string; title?: string } | null>(null);
+  const [activeFullscreenVideo, setActiveFullscreenVideo] = useState<{ videoUrl: string; title?: string; productionId?: string } | null>(null);
   const { productions = [], reviewItems = [], viralSparks = [], brand, character } = useSpark() as any;
   const auth = useAuth();
 
@@ -876,7 +905,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                       className="m-press"
                       onClick={() => {
                         if (item.videoUrl && !item.isGenerating) {
-                          setActiveFullscreenVideo({ videoUrl: item.videoUrl, title: item.title });
+                          setActiveFullscreenVideo({ videoUrl: item.videoUrl, title: item.title, productionId: item.productionId });
                         }
                       }}
                       style={{
@@ -1015,7 +1044,7 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setActiveFullscreenVideo({ videoUrl: item.videoUrl!, title: item.title });
+                                setActiveFullscreenVideo({ videoUrl: item.videoUrl!, title: item.title, productionId: item.productionId });
                               }}
                               className="m-press"
                               title="Play Video Fullscreen"
@@ -1269,6 +1298,8 @@ export function DonorSparkMediaHome({ onNavigate = () => {} }: DonorSparkMediaHo
         <VideoFullscreenModal
           videoUrl={activeFullscreenVideo.videoUrl}
           title={activeFullscreenVideo.title}
+          productionId={activeFullscreenVideo.productionId}
+          brandId={brand?.id}
           onClose={() => setActiveFullscreenVideo(null)}
         />
       )}

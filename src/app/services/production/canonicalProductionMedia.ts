@@ -13,6 +13,7 @@ import {
   isDurableMasterVideoReady,
   isPlayableVideoUrl,
   isEmergencySlideshowFallbackUrl,
+  isSparkStorageUrl,
 } from "./productionAssetService";
 import {
   isCinematicMode,
@@ -48,6 +49,7 @@ export interface CanonicalProductionMediaView {
   scenes: CanonicalSceneMedia[];
   emergencyFallbackUrl: string | undefined;
   stillImageUrl: string | undefined;
+  immediatePlayableUrl?: string;
   masterUnavailableReason: string | null;
   modeMismatch: boolean;
   modeMismatchMessage: string | null;
@@ -220,7 +222,19 @@ export function resolveCanonicalProductionMedia(input: {
     | string
     | undefined;
 
-  const canonicalMasterUrl = resolveCanonicalMasterVideoUrl({ production, review, brief });
+  const totalSceneCount = Math.max(
+    scenes.length,
+    sceneClips.length,
+    Array.isArray(brief?.storyboard) ? brief.storyboard.length : 0
+  );
+  const isSingleShot = totalSceneCount <= 1;
+
+  let canonicalMasterUrl = resolveCanonicalMasterVideoUrl({ production, review, brief });
+  if (!canonicalMasterUrl && isSingleShot && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+    canonicalMasterUrl = sceneClips[0];
+  }
+
+  const immediatePlayableUrl = resolveImmediatePlayableVideoUrl(production, { review, brief });
   const stillImageUrl =
     scenes.find((s) => s.imageUrl)?.imageUrl ||
     brief.generatedAssets?.generatedFrames?.[0] ||
@@ -266,6 +280,7 @@ export function resolveCanonicalProductionMedia(input: {
     scenes,
     emergencyFallbackUrl,
     stillImageUrl,
+    immediatePlayableUrl,
     masterUnavailableReason,
     modeMismatch,
     modeMismatchMessage: modeMismatch
@@ -288,6 +303,91 @@ export function resolveCanonicalSceneVideoUrl(input: {
 }): string | undefined {
   const view = resolveCanonicalProductionMedia(input);
   return view.scenes[input.sceneIndex]?.videoUrl;
+}
+
+/**
+ * Immediate playable video URL resolution.
+ * Priority:
+ * 1. Spark-bucket / isStorageVerifiedVideoUrl / isDurableMasterVideoReady
+ * 2. canonicalMasterUrl if durable
+ * 3. ANY https playable video on:
+ *    production.videoUrl, brief.videoUrl, review.videoUrl,
+ *    generatedAssets.generatedVideos[0] (string or .url / .videoUrl),
+ *    productionScenes[i].videoUrl, storyboard[i].videoUrl
+ *    including vidgen.x.ai / provider hosts
+ * 4. undefined
+ */
+export function resolveImmediatePlayableVideoUrl(
+  production?: any,
+  extras?: { review?: any; brief?: any }
+): string | undefined {
+  const brief = extras?.brief ?? production?.brief;
+  const review = extras?.review;
+
+  const rawClips: any[] = Array.isArray(brief?.generatedAssets?.generatedVideos)
+    ? brief.generatedAssets.generatedVideos
+    : Array.isArray(brief?.generatedAssets?.sceneClips)
+      ? brief.generatedAssets.sceneClips
+      : [];
+
+  const scenes =
+    (Array.isArray(production?.productionScenes) && production.productionScenes.length > 0
+      ? production.productionScenes
+      : null) ||
+    (Array.isArray(brief?.storyboard) && brief.storyboard.length > 0 ? brief.storyboard : null) ||
+    (Array.isArray(production?.scenes) && production.scenes.length > 0 ? production.scenes : null) ||
+    [];
+
+  const extractUrl = (item: any): string | undefined => {
+    if (!item) return undefined;
+    if (typeof item === "string") return item.trim();
+    if (typeof item.videoUrl === "string") return item.videoUrl.trim();
+    if (typeof item.url === "string") return item.url.trim();
+    if (typeof item.playablePreviewUrl === "string") return item.playablePreviewUrl.trim();
+    return undefined;
+  };
+
+  const candidates: (string | undefined)[] = [
+    production?.canonicalMasterUrl,
+    brief?.canonicalMasterUrl,
+    production?.videoUrl,
+    brief?.videoUrl,
+    production?.playablePreviewUrl,
+    brief?.playablePreviewUrl,
+    review?.videoUrl,
+    ...rawClips.map(extractUrl),
+    ...scenes.map(extractUrl),
+  ];
+
+  // 1. Priority 1: Durable Spark master / isStorageVerifiedVideoUrl / isDurableMasterVideoReady
+  for (const c of candidates) {
+    if (c && isDurableMasterVideoReady(c) && !isEmergencySlideshowFallbackUrl(c)) {
+      return c;
+    }
+  }
+
+  // Direct Spark storage URL
+  for (const c of candidates) {
+    if (c && isSparkStorageUrl(c) && isPlayableVideoUrl(c) && !isEmergencySlideshowFallbackUrl(c)) {
+      return c;
+    }
+  }
+
+  // 2. Priority 2: ANY https/http playable video (including provider hosts like vidgen.x.ai)
+  for (const c of candidates) {
+    if (c && isPlayableVideoUrl(c) && !isEmergencySlideshowFallbackUrl(c)) {
+      return c;
+    }
+  }
+
+  // Emergency fallback if nothing else exists
+  for (const c of candidates) {
+    if (c && isPlayableVideoUrl(c)) {
+      return c;
+    }
+  }
+
+  return undefined;
 }
 
 /** Review hero: canonical master only — never a scene-clip stand-in. */
