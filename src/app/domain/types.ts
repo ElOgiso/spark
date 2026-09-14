@@ -308,6 +308,10 @@ export interface ProductionBrief {
   takeGrids?: string[];
   audioUrl?: string;
   videoUrl?: string;
+  playablePreviewUrl?: string;
+  canonicalMasterUrl?: string;
+  assemblyStatus?: "assembly_pending" | "assembly_complete" | "assembly_failed";
+  assemblyError?: string;
   video_storage_path?: string;
   thumbnailUrl?: string;
   lastError?: string;
@@ -368,6 +372,10 @@ export interface Production {
   brief?: ProductionBrief;
   audioUrl?: string;
   videoUrl?: string;
+  playablePreviewUrl?: string;
+  canonicalMasterUrl?: string;
+  assemblyStatus?: "assembly_pending" | "assembly_complete" | "assembly_failed";
+  assemblyError?: string;
   /** Durable Spark object key: brands/{brandId}/{productionId}/video/... */
   videoStoragePath?: string;
   storyboardGridUrl?: string;

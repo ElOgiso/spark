@@ -340,4 +340,86 @@ describe("Phase 2 generate spine bridge", () => {
     assert.ok(failedShotTasks.some((t) => t.status === "failed" || t.status === "blocked"));
     assert.equal(collectSpecShots(projected.spec).find((s) => s.id === "shot_02")?.id, "shot_02");
   });
+
+  it("preserves valid multi-scene clips and reports Ready for Review with assembly_pending when merge is unavailable", async () => {
+    const spec = makeTinySpec();
+    const production = {
+      id: "prod_phase18_multi_scene",
+      title: "Phase 18 Multi-Scene Test",
+      status: "Drafting",
+      mode: "deep",
+      dateCreated: "2026-09-14",
+      aspectRatio: "9:16",
+      formats: ["YouTube Shorts"],
+      scenes: [],
+      reasoning: { productionSpec: spec },
+      brief: buildSpecDrivenBrief(spec),
+    } as Production;
+
+    const clips = [
+      "https://example-supabase.co/storage/v1/object/public/Spark/brands/brand_1/prod_1/video/shot-01.mp4",
+      "https://example-supabase.co/storage/v1/object/public/Spark/brands/brand_1/prod_1/video/shot-02.mp4",
+      "https://example-supabase.co/storage/v1/object/public/Spark/brands/brand_1/prod_1/video/shot-03.mp4",
+    ];
+
+    const generateMock = mock.method(ProductionAssetService, "generateAssets", async (params: any) => {
+      const brief = {
+        ...params.brief,
+        assemblyStatus: "assembly_pending" as const,
+        assemblyError: "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.",
+        playablePreviewUrl: clips[0],
+        generatedAssets: {
+          generatedVideos: clips,
+          sceneClips: clips,
+        },
+      };
+      return {
+        brief,
+        scenes: clips.map((c, i) => ({
+          scene: i + 1,
+          description: `Scene ${i + 1}`,
+          duration: "5s",
+          videoUrl: c,
+        })),
+        productionScenes: clips.map((c, i) => ({
+          scene: i + 1,
+          id: `shot_0${i + 1}`,
+          shotId: `shot_0${i + 1}`,
+          description: `Scene ${i + 1}`,
+          duration: "5s",
+          image: `https://example-supabase.co/storage/v1/object/public/Spark/scenes/scene-0${i + 1}.png`,
+          videoUrl: c,
+        })),
+        audioUrl: undefined,
+        videoUrl: undefined,
+        playablePreviewUrl: clips[0],
+        assemblyStatus: "assembly_pending" as const,
+        assemblyError: "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.",
+      };
+    });
+
+    try {
+      const result = await executeProductionViaAssetBridge({
+        production,
+        brand: { id: "brand_1", name: "Acme", niche: "saas" } as any,
+      });
+      assert.equal(result.production.status, "Ready for Review");
+      assert.equal(result.production.lastError, undefined);
+      assert.equal(result.production.playablePreviewUrl, clips[0]);
+      assert.equal((result.production as any).assemblyStatus, "assembly_pending");
+      assert.equal(Boolean(result.production.videoUrl), false);
+      const mergeTask = result.tasks.find((t) => t.kind === "merge");
+      assert.ok(mergeTask);
+      assert.equal(mergeTask?.status, "skipped");
+      assert.ok(
+        mergeTask?.lastError?.includes("FFMPEG concatenation unavailable") ||
+        mergeTask?.lastError?.includes("Master video assembly pending")
+      );
+      const videoTasks = result.tasks.filter((t) => t.kind === "video");
+      assert.ok(videoTasks.length >= 2);
+      assert.ok(videoTasks.every((t) => t.status === "succeeded"));
+    } finally {
+      generateMock.mock.restore();
+    }
+  });
 });

@@ -293,7 +293,13 @@ export function projectAssetsOntoSpec(params: {
   const { assetResult, productionId, logger } = params;
   let tasks = params.tasks.map((t) => ({ ...t }));
   const panels = panelByShotId(assetResult.productionScenes || assetResult.brief.storyboard);
+  const hasValidClips = Boolean(
+    (assetResult.scenes && assetResult.scenes.some((s) => s.videoUrl)) ||
+    (assetResult.brief?.generatedAssets?.generatedVideos &&
+      assetResult.brief.generatedAssets.generatedVideos.length > 0)
+  );
   const masterOk = Boolean(assetResult.videoUrl);
+  const mediaOk = Boolean(masterOk || hasValidClips);
 
   const nextScenes = params.spec.scenes.map((scene) => ({
     ...scene,
@@ -379,7 +385,7 @@ export function projectAssetsOntoSpec(params: {
         },
         generationStatus: isFailed
           ? ("failed" as const)
-          : imageUrl || videoUrl || masterOk
+          : imageUrl || videoUrl || mediaOk
             ? ("generated" as const)
             : shot.generationStatus,
         generationTasks: (shot.generationTasks || []).map(
@@ -395,7 +401,7 @@ export function projectAssetsOntoSpec(params: {
         task.status = "succeeded";
         task.productionAssetId = (assetResult as any).audioAssetId || task.productionAssetId;
         task.lastError = undefined;
-      } else if (masterOk) {
+      } else if (masterOk || mediaOk) {
         task.status = "skipped";
       } else {
         task.status = "failed";
@@ -403,11 +409,17 @@ export function projectAssetsOntoSpec(params: {
       }
     }
     if (task.kind === "merge") {
-      task.status = masterOk ? "succeeded" : "failed";
       if (masterOk) {
+        task.status = "succeeded";
         task.productionAssetId = (assetResult as any).videoAssetId || task.productionAssetId;
+        task.lastError = undefined;
+      } else if (hasValidClips) {
+        task.status = "skipped";
+        task.lastError = (assetResult.brief as any)?.assemblyError || "Master video assembly pending (individual scene clips generated and persisted)";
+      } else {
+        task.status = "failed";
+        task.lastError = task.lastError || "Master video missing";
       }
-      if (!masterOk) task.lastError = task.lastError || "Master video missing";
     }
   }
 
@@ -419,7 +431,7 @@ export function projectAssetsOntoSpec(params: {
       scenes: nextScenes,
       project: {
         ...params.spec.project,
-        status: masterOk ? "generating" : "failed",
+        status: mediaOk ? "generating" : "failed",
         updatedAt: new Date().toISOString(),
       },
     },
@@ -520,9 +532,15 @@ export async function executeProductionViaAssetBridge(
   spec = projected.spec;
   tasks = projected.tasks;
 
-  const anyTaskFailed = tasks.some((t) => t.status === "failed");
+  const hasValidClips = Boolean(
+    (assetResult.scenes && assetResult.scenes.some((s) => s.videoUrl)) ||
+    (assetResult.brief?.generatedAssets?.generatedVideos &&
+      assetResult.brief.generatedAssets.generatedVideos.length > 0)
+  );
   const masterOk = Boolean(assetResult.videoUrl);
-  const finalStatus = masterOk && !anyTaskFailed ? "Ready for Review" : "Failed";
+  const mediaOk = Boolean(masterOk || hasValidClips);
+  const anyTaskFailed = tasks.some((t) => t.status === "failed");
+  const finalStatus = mediaOk && !anyTaskFailed ? "Ready for Review" : "Failed";
 
   const updatedProduction: Production = {
     ...params.production,
@@ -532,6 +550,23 @@ export async function executeProductionViaAssetBridge(
     productionScenes: assetResult.productionScenes || assetResult.brief.storyboard,
     audioUrl: assetResult.audioUrl,
     videoUrl: assetResult.videoUrl,
+    playablePreviewUrl:
+      assetResult.playablePreviewUrl ||
+      (assetResult.brief as any).playablePreviewUrl ||
+      (params.production as any).playablePreviewUrl ||
+      (hasValidClips ? assetResult.brief?.generatedAssets?.generatedVideos?.[0] : undefined),
+    assemblyStatus:
+      assetResult.assemblyStatus ||
+      (assetResult.brief as any).assemblyStatus ||
+      (params.production as any).assemblyStatus,
+    assemblyError:
+      assetResult.assemblyError ||
+      (assetResult.brief as any).assemblyError ||
+      (params.production as any).assemblyError,
+    canonicalMasterUrl:
+      assetResult.canonicalMasterUrl ||
+      (assetResult.brief as any).canonicalMasterUrl ||
+      (params.production as any).canonicalMasterUrl,
     isGeneratingAssets: false,
     generationProgress: assetResult.brief.generationProgress,
     targetDurationSec:
@@ -544,7 +579,7 @@ export async function executeProductionViaAssetBridge(
       params.production.mode ||
       String(spec.project.productionMode || "standard"),
     formatSettings: assetResult.brief.formatSettings || params.production.formatSettings,
-    lastError: masterOk
+    lastError: mediaOk
       ? undefined
       : assetResult.brief.lastError || "Master video missing after Spec-driven generation",
     reasoning: {

@@ -71,9 +71,14 @@ export function createLiveAssetExecuteAdapter(
     });
     lastBridgeResult = bridge;
 
-    const masterOk = Boolean(bridge.assetResult.videoUrl);
+    const hasValidClips = Boolean(
+      (bridge.assetResult.scenes && bridge.assetResult.scenes.some((s) => s.videoUrl)) ||
+      (bridge.assetResult.brief?.generatedAssets?.generatedVideos &&
+        bridge.assetResult.brief.generatedAssets.generatedVideos.length > 0)
+    );
+    const mediaOk = Boolean(bridge.assetResult.videoUrl || hasValidClips);
     const anyTaskFailed = bridge.tasks.some((t) => t.status === "failed");
-    const ok = masterOk && !anyTaskFailed;
+    const ok = mediaOk && !anyTaskFailed;
     const now = new Date().toISOString();
     const dag = buildProductionDag(bridge.spec, bridge.tasks);
 

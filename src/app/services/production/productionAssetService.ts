@@ -70,12 +70,16 @@ export const SPARK_STORAGE_BUCKET = "Spark";
 
 export interface ProductionAssetGenerationResult {
   brief: ProductionBrief;
-  scenes: { scene: number; description: string; duration: string }[];
+  scenes: { scene: number; description: string; duration: string; image?: string; videoUrl?: string }[];
   productionScenes?: ProductionScene[];
   audioUrl?: string;
   videoUrl?: string;
   audioAssetId?: string;
   videoAssetId?: string;
+  playablePreviewUrl?: string;
+  canonicalMasterUrl?: string;
+  assemblyStatus?: "assembly_pending" | "assembly_complete" | "assembly_failed";
+  assemblyError?: string;
   /** Spec + reasoning after syncProductionMediaStores projection */
   reasoning?: any;
 }
@@ -2921,15 +2925,28 @@ export class ProductionAssetService {
                   realVideoUrl = mergeResult.publicUrl;
                   (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
                   (production as any).canonicalMasterUrl = mergeResult.publicUrl;
+                  (brief as any).assemblyStatus = "assembly_complete";
+                  (production as any).assemblyStatus = "assembly_complete";
                   console.log(`[SPARK Pipeline] Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
                 } else {
                   console.warn(
                     "[SPARK Pipeline] Scene merge did not produce a server ffmpeg master"
                   );
+                  (brief as any).assemblyStatus = "assembly_pending";
+                  (production as any).assemblyStatus = "assembly_pending";
+                  (brief as any).assemblyError = "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.";
                 }
               } catch (mergeErr: any) {
                 console.warn("[SPARK Pipeline] Scene merge notice:", mergeErr);
+                (brief as any).assemblyStatus = "assembly_pending";
+                (production as any).assemblyStatus = "assembly_pending";
+                (brief as any).assemblyError = mergeErr?.message || String(mergeErr);
               }
+              // CRITICAL: NEVER DESTROY VALID GENERATED MEDIA
+              // If merge was unavailable or pending, all individual scene clips remain valid and accessible.
+              (production as any).playablePreviewUrl = sceneClips[0];
+              (brief as any).playablePreviewUrl = sceneClips[0];
+              console.log(`[SPARK Pipeline] Multi-scene: Retaining ${sceneClips.length} distinct scene video clip(s) with assemblyStatus: ${(brief as any).assemblyStatus}.`);
             } else if (
               sceneClips.length === 1 &&
               currentStoryboard.length <= 1 &&
@@ -2939,6 +2956,8 @@ export class ProductionAssetService {
               realVideoUrl = sceneClips[0];
               (brief as any).playablePreviewUrl = sceneClips[0];
               (production as any).playablePreviewUrl = sceneClips[0];
+              (brief as any).assemblyStatus = "assembly_complete";
+              (production as any).assemblyStatus = "assembly_complete";
               if (isDurableMasterVideoReady(sceneClips[0])) {
                 (brief as any).canonicalMasterUrl = sceneClips[0];
                 (production as any).canonicalMasterUrl = sceneClips[0];
@@ -2949,6 +2968,10 @@ export class ProductionAssetService {
               }
               (production as any).playablePreviewUrl = sceneClips[0];
               (brief as any).playablePreviewUrl = sceneClips[0];
+              if (!(brief as any).assemblyStatus) {
+                (brief as any).assemblyStatus = "assembly_pending";
+                (production as any).assemblyStatus = "assembly_pending";
+              }
               console.log(`[SPARK Pipeline] Review: Retaining ${sceneClips.length} distinct scene video clip(s).`);
             }
           }
@@ -3546,6 +3569,21 @@ export class ProductionAssetService {
         productionScenes: synced.productionScenes || fullProductionScenes,
         audioUrl: realVoiceUrl,
         videoUrl: realVideoUrl,
+        playablePreviewUrl:
+          (production as any).playablePreviewUrl ||
+          (brief as any).playablePreviewUrl ||
+          synced.brief?.playablePreviewUrl ||
+          sceneClips[0],
+        canonicalMasterUrl:
+          (production as any).canonicalMasterUrl ||
+          (brief as any).canonicalMasterUrl ||
+          synced.brief?.canonicalMasterUrl,
+        assemblyStatus:
+          (production as any).assemblyStatus ||
+          (brief as any).assemblyStatus ||
+          synced.brief?.assemblyStatus ||
+          (realVideoUrl ? "assembly_complete" : sceneClips.length > 1 ? "assembly_pending" : undefined),
+        assemblyError: (brief as any).assemblyError || synced.brief?.assemblyError,
         reasoning: synced.reasoning,
       };
     } catch (err: any) {

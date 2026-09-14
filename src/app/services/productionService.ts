@@ -2,7 +2,7 @@ import { IProductionService } from "../domain/contracts";
 import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief, getEffectiveFormatSettings, AutomationMode, ProductionAsset } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
 import { ProductionBriefService } from "./production/productionBriefService";
-import { ProductionAssetService, isDurableMasterVideoReady } from "./production/productionAssetService";
+import { ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
 import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 import { isProductionTombstoned } from "./production/productionTombstone";
@@ -446,12 +446,20 @@ export class ProductionService implements IProductionService {
       result?.videoUrl ||
       production.videoUrl;
     const audioUrl = result?.audioUrl || production.audioUrl;
-    const isVideoSuccess = Boolean(videoUrl && isDurableMasterVideoReady(videoUrl));
+    const hasValidClips = Boolean(
+      (result?.scenes && result.scenes.some((s: any) => s.videoUrl && isPlayableVideoUrl(s.videoUrl))) ||
+      (result?.brief?.generatedAssets?.generatedVideos &&
+        result.brief.generatedAssets.generatedVideos.length > 0) ||
+      (bridge?.production?.scenes && bridge.production.scenes.some((s: any) => s.videoUrl && isPlayableVideoUrl(s.videoUrl)))
+    );
+    const isVideoSuccess = Boolean(
+      (videoUrl && isDurableMasterVideoReady(videoUrl)) || hasValidClips
+    );
     const generationFailed =
       report.phase === "blocked" ||
       report.phase === "failed" ||
       report.phase === "cancelled" ||
-      (bridge && !result?.videoUrl && report.execution && !report.execution.ok);
+      (bridge && !result?.videoUrl && !hasValidClips && report.execution && !report.execution.ok);
 
     // Review is the human surface: generation success → Ready for Review even when QC wants eyes.
     const finalProdStatus = generationFailed

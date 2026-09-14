@@ -321,6 +321,9 @@ export function syncProductionMediaStores(params: {
     brief.videoUrl = masterVideoUrl;
     brief.canonicalMasterUrl = masterVideoUrl;
     brief.generatedAssets.canonicalMasterUrl = masterVideoUrl;
+    brief.playablePreviewUrl = masterVideoUrl;
+  } else if (sceneClips.length > 0) {
+    brief.playablePreviewUrl = sceneClips[0];
   }
   if (audioUrl) {
     brief.audioUrl = audioUrl;
