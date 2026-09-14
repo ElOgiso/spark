@@ -26,6 +26,7 @@ export type LocationPlatePromptInput = {
   visualMedium?: string;
   narrativePurpose?: string;
   emptyEnvironment?: boolean;
+  cameraAngle?: "three_quarter_depth" | "wide_establishing" | "straight_on" | string;
 };
 
 /**
@@ -70,10 +71,17 @@ export function buildLocationPlatePrompt(params: LocationPlatePromptInput): stri
 
   const mediumGuidance = mediumGuidanceFor(medium);
 
+  const cameraAngle = params.cameraAngle || "three_quarter_depth";
+  const angleLine =
+    cameraAngle === "three_quarter_depth"
+      ? "COMPOSITION & PERSPECTIVE: 3/4 depth angle view capturing room volume, architectural leading lines, and deep spatial perspective."
+      : `COMPOSITION & PERSPECTIVE: ${cameraAngle}.`;
+
   return [
     'LOCKED LOCATION PLATE — empty environment reference for production continuity.',
     placeLine,
     conditionLine,
+    angleLine,
     purpose ? `NARRATIVE PURPOSE: ${purpose}` : '',
     continuity.length ? `CONTINUITY LANDMARKS: ${continuity.join('; ')}` : '',
     mediumGuidance,
@@ -82,7 +90,7 @@ export function buildLocationPlatePrompt(params: LocationPlatePromptInput): stri
     params.genre ? `Genre: ${params.genre}` : '',
     params.contentFormat ? `Content format: ${params.contentFormat}` : '',
     empty
-      ? 'NO PEOPLE. No faces. No crowd. Empty locked set for reuse across shots.'
+      ? 'NO PEOPLE. No faces. No crowd. No human figures or silhouettes. Completely empty locked set for reuse across shots.'
       : 'Minimal figures only if narratively essential; prefer empty plate.',
     'Establish architecture, spatial layout, materials, and camera-relevant landmarks.',
     'Single coherent visual treatment. Photoreal or stylized per medium — do not mix media.',

@@ -19,6 +19,8 @@ export interface CharacterSheetPromptParams {
   hairStyle?: string;
   wardrobe?: string;
   directorNotes?: string;
+  layoutStyle?: "turnaround_3view" | "full_turnaround_multiview";
+  closeUpPriority?: boolean;
 }
 
 function mediumStyleDirective(genre: string): string {
@@ -68,13 +70,21 @@ ${niche ? `NICHE CONTEXT: ${niche}` : ""}
 ${research ? `STORY CONTEXT: ${research}` : ""}
 ${params.wardrobe?.trim() ? `WARDROBE STATE: ${params.wardrobe.trim()}` : wardrobeDirective}
 ${params.directorNotes?.trim() ? `DIRECTOR NOTES: ${params.directorNotes.trim()}` : ""}
-LAYOUT ON ONE IMAGE:
+${
+  params.layoutStyle === "full_turnaround_multiview"
+    ? `LAYOUT ON ONE IMAGE:
 - Top: name + role + 3 palette swatches
 - Row: FRONT, 3/4 FRONT, LEFT, RIGHT, BACK, 3/4 REAR, same height, neutral gray
 - Right: face close-up + 2 costume details
 - Bottom-left: 8 labeled expressions
-- Bottom-right: 4 brand-safe poses (presenting, pointing, reacting, standing) — not random movie stunts
-Same face, hair, outfit, colors in every cell. No collage of different people.
+- Bottom-right: 4 brand-safe poses (presenting, pointing, reacting, standing) — not random movie stunts`
+    : `LAYOUT ON ONE IMAGE:
+- 3-PANEL SEAMLESS TURNAROUND on neutral 18% studio grey backdrop (#808080), soft even diffuse light, zero cast shadows.
+- Panel 1: FRONT full-body orthographic standing view, natural relaxed pose, complete wardrobe visibility.
+- Panel 2: BACK full-body orthographic standing view, identical height and scale, rear wardrobe construction.
+- Panel 3: High-detail FACE CLOSE-UP portrait, neutral expression, crisp eye color, skin texture, and hair grooming.`
+}
+${params.closeUpPriority ? "CLOSE-UP PRIORITY: The face close-up panel defines primary facial geometry and eye details for all downstream shots.\n" : ""}LOCKS: Exactly ONE single human identity across all panels. Identical bone structure, face, hair, skin tone, outfit, and colors in every cell. No collage of different people.
 If user uploaded a face, match that face.
 This sheet owns identity — shot prompts must not redefine face/hair/wardrobe details already locked here.
 `.trim();

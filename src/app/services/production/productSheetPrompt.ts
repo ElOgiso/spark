@@ -19,6 +19,7 @@ export interface ProductSheetPromptParams {
   genre?: string; // Realistic | Cinematic | Industrial Design Render | 3D | Minimalist
   usageContext?: string;
   directorNotes?: string;
+  ghostMannequin?: boolean;
 }
 
 function mediumProductStyleDirective(genre: string): string {
@@ -47,9 +48,18 @@ export function buildProductionProductSheetPrompt(params: ProductSheetPromptPara
   const formFactor = params.dimensionsOrFormFactor?.trim();
   const branding = params.brandingOrLogos?.trim();
   const usage = params.usageContext?.trim();
-  const notes = params.directorNotes?.trim();
+  const isApparelOrKit =
+    Boolean(params.ghostMannequin) ||
+    /apparel|kit|uniform|clothing|garment|suit|wear|costume/i.test(category) ||
+    /apparel|kit|uniform|clothing|garment|suit|wear|costume/i.test(productName);
+
+  const displayLine = isApparelOrKit
+    ? "DISPLAY: Ghost-mannequin invisible form with 3D volumetric structure. NO human body, NO skin, NO mannequin head or limbs. Garment drape and interior lining cleanly visible."
+    : "";
 
   const propSlug = slugify(productName) || "prop";
+  const ipLock = "IP LOCK: Original generic / fictional design. NO real-world brand logos, trademarks, or copyrighted IP.";
+  const notes = params.directorNotes?.trim();
 
   return `
 Professional industrial design product model sheet, single product entity, studio turnaround.
@@ -58,6 +68,7 @@ STYLE: ${genre} commercial presentation for ${brandName}.
 ${mediumProductStyleDirective(genre)}
 PRODUCT: ${productName} (Category: ${category}).
 ${desc ? `DESCRIPTION: ${desc}` : ""}
+${displayLine}
 ${materials.length > 0 ? `MATERIALS & FINISHES: ${materials.join(", ")}` : "MATERIALS: Premium industrial materials with realistic specular reflection."}
 ${colors.length > 0 ? `COLOR PALETTE: ${colors.join(", ")}` : "PALETTE: Cohesive brand-locked colorway."}
 ${features.length > 0 ? `CRITICAL DETAILS & CONTROLS: ${features.join("; ")}` : ""}
@@ -65,11 +76,12 @@ ${formFactor ? `FORM FACTOR: ${formFactor}` : ""}
 ${branding ? `BRANDING PLACEMENT: ${branding}` : ""}
 ${usage ? `USAGE CONTEXT: ${usage}` : ""}
 ${notes ? `DIRECTOR NOTES: ${notes}` : ""}
+${ipLock}
 LAYOUT ON ONE IMAGE:
 - Top: product name + brand + colorway material swatches
-- Row: FRONT ELEVATION, 3/4 HERO VIEW, SIDE PROFILE, REAR ELEVATION, TOP-DOWN VIEW, same scale, neutral studio gray backdrop
-- Bottom-left: 2 high-detail close-up callouts (texture, button/interface, or logo engraving)
+- Row: FRONT ELEVATION, 3/4 HERO VIEW, SIDE PROFILE, REAR ELEVATION, TOP-DOWN VIEW, same scale, neutral studio gray backdrop (#808080)
+- Bottom-left: 2 high-detail close-up callouts (texture, button/interface, or design detail)
 - Bottom-right: 1 in-hand or in-context scale reference demonstration
-Zero morphing. Identical proportions, buttons, materials, and logos across every angle. No background clutter, no people, single locked product object only.
+Zero morphing. Identical proportions, buttons, materials, and form across every angle. No background clutter, no people, single locked product object only.
 `.trim();
 }

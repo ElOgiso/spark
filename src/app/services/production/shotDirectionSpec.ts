@@ -36,6 +36,12 @@ export interface ShotDirectionSpec {
   positiveLocks: string[];
   /** Duration in seconds snapped to provider constraints */
   durationSec?: number;
+  /** Screen direction / spatial placement axis across the frame (e.g. "psychologist screen-left, santiago screen-right") */
+  screenDirection?: string;
+  /** Specialized cinematography craft execution (e.g. "whip-pan 0.5s", "dutch 15°", "locked-off OTS") */
+  cameraCraft?: string;
+  /** Spatial continuity law (e.g. "180° line holds; do not cross camera axis") */
+  continuityRule?: string;
 }
 
 export interface DeriveShotDirectionParams {
@@ -179,7 +185,25 @@ export function deriveShotDirectionSpec(params: DeriveShotDirectionParams): Shot
       ? "Clean visual motion leaving acoustic space for external voiceover bed; subtle diegetic foley."
       : "Diegetic natural sound, room acoustic ambience, subtle foley. No score or background music.");
 
-  // 12. Positive Locks
+  // 12. DP Craft Fields
+  const screenDirection =
+    explicitSpec?.screenDirection ||
+    scene.screenDirection ||
+    scene.spatialAxis ||
+    undefined;
+
+  const cameraCraft =
+    explicitSpec?.cameraCraft ||
+    scene.cameraCraft ||
+    scene.cinematography ||
+    undefined;
+
+  const continuityRule =
+    explicitSpec?.continuityRule ||
+    scene.continuityRule ||
+    undefined;
+
+  // 13. Positive Locks
   const positiveLocks: string[] = [
     `Headcount: exactly ${isInsertOrSet ? "0 on-screen human subjects (set / insert focus)" : "1 primary subject in frame"}`,
     "Direction Axis: maintain continuous spatial screen direction and eyeline throughout the shot",
@@ -188,6 +212,12 @@ export function deriveShotDirectionSpec(params: DeriveShotDirectionParams): Shot
     "Clean Frame: no borders, no sheet edges, no multi-panel split, no text glyphs or subtitles",
     "Mouth Clean: no unnatural jaw morphing, glitch artifacts, or speech lip distortion",
   ];
+  if (screenDirection) {
+    positiveLocks.push(`Screen Direction: ${screenDirection}`);
+  }
+  if (continuityRule) {
+    positiveLocks.push(`Continuity Rule: ${continuityRule}`);
+  }
   if (explicitSpec?.positiveLocks && Array.isArray(explicitSpec.positiveLocks)) {
     for (const lock of explicitSpec.positiveLocks) {
       if (!positiveLocks.includes(lock)) {
@@ -210,5 +240,8 @@ export function deriveShotDirectionSpec(params: DeriveShotDirectionParams): Shot
     audioDiegetic,
     positiveLocks,
     durationSec,
+    screenDirection,
+    cameraCraft,
+    continuityRule,
   };
 }

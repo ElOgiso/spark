@@ -189,7 +189,9 @@ export function compileLiveMotionPrompt(params: {
       : "FORMAT: this clip is one segment of a multishot; no internal cuts.";
 
   const actionSection = `ACTION: ${shotDirection.action}`;
-  const cameraSection = `CAMERA: ${shotDirection.camera}`;
+  const cameraSection = shotDirection.cameraCraft
+    ? `CAMERA: ${shotDirection.camera} [Craft Execution: ${shotDirection.cameraCraft}]`
+    : `CAMERA: ${shotDirection.camera}`;
   const performanceSection = shotDirection.performance
     ? `PERFORMANCE (AUDIO ONLY — never draw text): natural lip/body sync for intent «${shotDirection.performance.replace(/"/g, "'")}».`
     : "";

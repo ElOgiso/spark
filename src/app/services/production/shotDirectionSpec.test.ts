@@ -217,3 +217,75 @@ test("officialI2vFrames strictly forbids character sheets, location plates, or g
   });
   assert.equal(resolved.firstFrameUrl, validStillUrl);
 });
+
+test("compileLiveMotionPrompt folds optional DP craft fields into CAMERA and POSITIVE LOCKS", () => {
+  const result = compileLiveMotionPrompt({
+    mode: "deep",
+    aspectRatio: "16:9",
+    sceneIndex: 1,
+    totalScenes: 2,
+    durationSec: 5,
+    scene: {
+      physicalAction: "Dr. Elena leans forward across the consultation desk",
+      cameraDirection: "Medium over-the-shoulder shot",
+      screenDirection: "Dr. Elena screen-left looking screen-right; Santiago screen-right profile",
+      cameraCraft: "whip-pan 0.4s to desk clock, settling on 35mm prime focal length",
+      continuityRule: "180° line holds across the desk axis; do not cross line of action",
+    },
+    refLabels: ["INPUT REF [1]: Scene 1 Still"],
+    isInsertOrSet: false,
+    environment: "Consulting Office",
+  });
+
+  const { prompt, shotDirection } = result;
+
+  // CAMERA craft folding
+  assert.match(prompt, /CAMERA: Medium over-the-shoulder shot \[Craft Execution: whip-pan 0\.4s to desk clock/);
+  assert.equal(shotDirection.cameraCraft, "whip-pan 0.4s to desk clock, settling on 35mm prime focal length");
+
+  // POSITIVE LOCKS folding
+  assert.match(prompt, /Screen Direction: Dr\. Elena screen-left looking screen-right/);
+  assert.match(prompt, /Continuity Rule: 180° line holds across the desk axis/);
+  assert.equal(shotDirection.screenDirection, "Dr. Elena screen-left looking screen-right; Santiago screen-right profile");
+  assert.equal(shotDirection.continuityRule, "180° line holds across the desk axis; do not cross line of action");
+});
+
+test("Asset image prompt compilers produce higher-win-rate reference language", async () => {
+  const { buildProductionCharacterSheetPrompt } = await import("./characterSheetPrompt");
+  const { buildLocationPlatePrompt } = await import("./locationPlatePrompt");
+  const { buildProductionProductSheetPrompt } = await import("./productSheetPrompt");
+
+  // 1. Character sheet: 3-panel grey seamless (#808080) and single identity LOCKS
+  const charPrompt = buildProductionCharacterSheetPrompt({
+    creatorName: "Santiago",
+    role: "protagonist",
+    genre: "Cinematic",
+    closeUpPriority: true,
+  });
+  assert.match(charPrompt, /3-PANEL SEAMLESS TURNAROUND on neutral 18% studio grey backdrop/i);
+  assert.match(charPrompt, /Panel 1: FRONT full-body/i);
+  assert.match(charPrompt, /Panel 2: BACK full-body/i);
+  assert.match(charPrompt, /Panel 3: High-detail FACE CLOSE-UP/i);
+  assert.match(charPrompt, /CLOSE-UP PRIORITY: The face close-up panel defines primary facial geometry/i);
+  assert.match(charPrompt, /LOCKS: Exactly ONE single human identity across all panels/i);
+
+  // 2. Location plate: empty environment + 3/4 depth angle
+  const locPrompt = buildLocationPlatePrompt({
+    locationName: "Consulting Office",
+    brandName: "Santiago Series",
+    emptyEnvironment: true,
+  });
+  assert.match(locPrompt, /COMPOSITION & PERSPECTIVE: 3\/4 depth angle view capturing room volume/i);
+  assert.match(locPrompt, /NO PEOPLE\. No faces\. No crowd\. No human figures or silhouettes/i);
+
+  // 3. Product sheet: ghost-mannequin + IP lock
+  const propPrompt = buildProductionProductSheetPrompt({
+    productName: "Tactical Field Jacket",
+    category: "Apparel / Kit",
+    ghostMannequin: true,
+  });
+  assert.match(propPrompt, /DISPLAY: Ghost-mannequin invisible form with 3D volumetric structure/i);
+  assert.match(propPrompt, /NO human body, NO skin, NO mannequin head/i);
+  assert.match(propPrompt, /IP LOCK: Original generic \/ fictional design\. NO real-world brand logos/i);
+});
+
