@@ -181,7 +181,59 @@ test("Seedance 2.0 cannot mix first/last frame with reference media", () => {
   assert.deepEqual(roles, ["first_frame", "last_frame"]);
 });
 
-test("Grok i2v sends image object, last_frame object, reference_images (max 7), and 720p resolution", () => {
+test("Grok i2v: 1. still only -> image only (keeps requested 1080p resolution)", () => {
+  const body = buildGrokVideoGenerateBody({
+    prompt: "camera pans left",
+    firstFrameDataUri: "data:image/jpeg;base64,START",
+    durationSec: 5,
+    aspectRatio: "16:9",
+    resolution: "1080p",
+  });
+  assert.equal(body.model, "grok-imagine-video-1.5");
+  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
+  assert.equal(body.image_url, "data:image/jpeg;base64,START");
+  assert.equal(body.last_frame, undefined);
+  assert.equal((body as any).last_frame_url, undefined);
+  assert.equal(body.reference_images, undefined);
+  assert.equal(body.resolution, "1080p");
+});
+
+test("Grok i2v: 2. still + end -> image + last_frame and forces 720p even if 1080p requested", () => {
+  const body = buildGrokVideoGenerateBody({
+    prompt: "camera pans left",
+    firstFrameDataUri: "data:image/jpeg;base64,START",
+    lastFrameDataUri: "data:image/jpeg;base64,END",
+    durationSec: 5,
+    aspectRatio: "16:9",
+    resolution: "1080p",
+  });
+  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
+  assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+  assert.equal((body as any).last_frame_url, undefined);
+  assert.equal(body.reference_images, undefined);
+  assert.equal(body.resolution, "720p");
+});
+
+test("Grok i2v: 3. still + refs -> image + reference_images (max 7) and forces 720p", () => {
+  const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
+  const body = buildGrokVideoGenerateBody({
+    prompt: "camera pans left",
+    firstFrameDataUri: "data:image/jpeg;base64,START",
+    referenceDataUris: refs,
+    durationSec: 6,
+    aspectRatio: "9:16",
+  });
+  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
+  assert.equal(body.last_frame, undefined);
+  assert.equal((body as any).last_frame_url, undefined);
+  assert.ok(Array.isArray(body.reference_images));
+  assert.equal((body.reference_images as any[]).length, 7);
+  assert.deepEqual((body.reference_images as any[])[0], { url: "data:image/jpeg;base64,F0" });
+  assert.deepEqual((body.reference_images as any[])[6], { url: "data:image/jpeg;base64,F6" });
+  assert.equal(body.resolution, "720p");
+});
+
+test("Grok i2v: 4. still + end + refs -> all three + 720p, rejects legacy last_frame_url alone", () => {
   const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",

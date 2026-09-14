@@ -192,11 +192,16 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
   const lastFrameDataUri = frames.endFrameUrl ? await toDataUri(frames.endFrameUrl) : undefined;
   const referenceDataUris: string[] = [];
   for (const url of frames.referenceImageUrls) {
+    if (!url || typeof url !== "string" || !url.trim()) continue;
     try {
       const uri = await toDataUri(url);
-      if (uri) referenceDataUris.push(uri);
-    } catch (err) {
-      console.warn("[video adapter] reference image fetch notice:", err);
+      if (uri) {
+        referenceDataUris.push(uri);
+      } else if (url.trim().startsWith("https://")) {
+        referenceDataUris.push(url.trim());
+      }
+    } catch (err: any) {
+      throw new Error(`Failed to convert reference image for I2V: ${err?.message || err}`);
     }
   }
   return {
@@ -428,11 +433,15 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   if (!apiKey) throw new Error("xAI Grok API key not configured (XAI_API_KEY or GROK_API_KEY).");
   const body = buildGrokVideoGenerateBody({ ...req, model: req.model || GROK_VIDEO_MODEL });
 
-  // F. Log numInputImages / whether image was in the POST. If 0, abort.
+  // Log once per shot immediately before fetch to api.x.ai
   const imageUrl = (body.image as any)?.url || (body as any).image_url;
-  const numInputImages = imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0 ? 1 : 0;
-  console.log(`[Grok Video] Request check: model=${body.model}, numInputImages=${numInputImages}, imageUrl=${imageUrl ? imageUrl.slice(0, 60) + "..." : "none"}`);
-  if (numInputImages === 0) {
+  const hasImageUrl = Boolean(imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0);
+  const hasLastFrame = Boolean((body.last_frame as any)?.url || (body as any).last_frame_url);
+  const refImagesCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
+  console.log(
+    `[Grok Video] Shot request: model=${body.model}, hasImageUrl=${hasImageUrl}, hasLastFrame=${hasLastFrame}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
+  );
+  if (!hasImageUrl) {
     throw new Error("Refusing to generate Grok video with numInputImages=0 (T2V forbidden for shot i2v).");
   }
 

@@ -40,7 +40,7 @@ test("requestProductionVideoClip passes referenceImageUrls in request body for m
   }
 });
 
-test("requestProductionVideoClip respects provider capability stripping for grok/xai", async () => {
+test("requestProductionVideoClip passes referenceImageUrls for grok/xai", async () => {
   const originalFetch = globalThis.fetch;
   let capturedBody: any = null;
 
@@ -71,8 +71,8 @@ test("requestProductionVideoClip respects provider capability stripping for grok
 
     assert.ok(capturedBody);
     assert.equal(capturedBody.provider, "grok");
-    // Grok does not take multi-image reference inputs, so capability guard ensures []
-    assert.deepEqual(capturedBody.referenceImageUrls, []);
+    // Grok official REST API accepts reference_images, so referenceImageUrls is forwarded
+    assert.deepEqual(capturedBody.referenceImageUrls, [charSheet]);
   } finally {
     globalThis.fetch = originalFetch;
   }

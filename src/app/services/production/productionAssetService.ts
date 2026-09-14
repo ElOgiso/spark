@@ -2584,15 +2584,28 @@ export class ProductionAssetService {
               }
 
               const identityRefs: string[] = [];
-              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
-                identityRefs.push(sceneCharSheetUrl);
+              const addIdentityRef = (url?: string | null) => {
+                if (!url || !isValidMediaData(url)) return;
+                const trimmed = url.trim();
+                if (trimmed === sceneFirstFrame || trimmed === sceneEndFrame) return;
+                if (!identityRefs.includes(trimmed)) {
+                  identityRefs.push(trimmed);
+                }
+              };
+
+              // Character sheet (main active host)
+              addIdentityRef(sceneCharSheetUrl);
+              // Support character sheet (when distinct)
+              if (supportChar) {
+                const supportSheetUrl =
+                  motionMerged.supportUrls[0] ||
+                  supportChar.characterSheetUrl ||
+                  supportChar.imageUrl ||
+                  supportChar.avatarUrl;
+                addIdentityRef(supportSheetUrl);
               }
-              // Storyboard panel is the primary visual anchor for environment and lighting.
-              // Never inject a generic location plate when sceneFirstFrame is present, as it conflicts with
-              // the scene keyframe and causes provider cross-attention confusion or API rejections (e.g. Grok).
-              if (!sceneFirstFrame && validPlate && isValidMediaData(validPlate) && !identityRefs.includes(validPlate)) {
-                identityRefs.push(validPlate);
-              }
+              // Location plate (studio / locked set environment)
+              addIdentityRef(validPlate);
 
               const continuity = evaluateVisualContinuity({
                 sceneIndex: sIdx,
