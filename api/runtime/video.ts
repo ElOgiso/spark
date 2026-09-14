@@ -190,18 +190,13 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
   const frames = resolveClipFrames(body);
   const firstFrameDataUri = frames.firstFrameUrl ? await toDataUri(frames.firstFrameUrl) : undefined;
   const lastFrameDataUri = frames.endFrameUrl ? await toDataUri(frames.endFrameUrl) : undefined;
-  const provider = String(body.provider || "").toLowerCase();
-  // Grok i2v cannot combine image + reference_images. This pass is still-only i2v.
-  const allowRefs = provider !== "grok" && provider !== "xai";
   const referenceDataUris: string[] = [];
-  if (allowRefs) {
-    for (const url of frames.referenceImageUrls) {
-      try {
-        const uri = await toDataUri(url);
-        if (uri) referenceDataUris.push(uri);
-      } catch (err) {
-        console.warn("[video adapter] reference image fetch notice:", err);
-      }
+  for (const url of frames.referenceImageUrls) {
+    try {
+      const uri = await toDataUri(url);
+      if (uri) referenceDataUris.push(uri);
+    } catch (err) {
+      console.warn("[video adapter] reference image fetch notice:", err);
     }
   }
   return {
@@ -211,6 +206,8 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
     lastFrameDataUri,
     lastFrameUrl: frames.endFrameUrl,
     referenceDataUris,
+    referenceUrls: frames.referenceImageUrls,
+    referenceImageUrls: frames.referenceImageUrls,
     aspectRatio: body.aspectRatio || body.aspect_ratio,
     durationSec: typeof body.durationSec === "number" ? body.durationSec : Number(body.duration) || undefined,
     resolution: body.resolution,

@@ -32,6 +32,7 @@ export interface VideoClipRequest {
   lastFrameUrl?: string;
   referenceDataUris?: string[];
   referenceUrls?: string[];
+  referenceImageUrls?: string[];
   aspectRatio?: string;
   durationSec?: number;
   resolution?: string;
@@ -351,9 +352,43 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     image_url: trimmedUrl,
   };
 
-  const endUrl = req.lastFrameUrl || req.lastFrameDataUri;
-  if (endUrl && endUrl.trim() && endUrl.trim() !== trimmedUrl) {
-    body.last_frame_url = endUrl.trim();
+  const endUrl = (req.lastFrameUrl || req.lastFrameDataUri || (req as any).endFrameUrl)?.trim();
+  let hasLastFrame = false;
+  if (endUrl && endUrl !== trimmedUrl) {
+    body.last_frame = { url: endUrl };
+    hasLastFrame = true;
+  }
+
+  const rawRefs: string[] = [
+    ...((req as any).referenceImageUrls || []),
+    ...(req.referenceUrls || []),
+    ...(req.referenceDataUris || []),
+    ...((req as any).reference_image_urls || []),
+    ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.url)) || []),
+  ];
+  const seen = new Set<string>();
+  seen.add(trimmedUrl);
+  if (hasLastFrame && endUrl) {
+    seen.add(endUrl);
+  }
+  const dedupedRefs: string[] = [];
+  for (const r of rawRefs) {
+    if (typeof r === "string" && r.trim()) {
+      const trimmedRef = r.trim();
+      if (!seen.has(trimmedRef)) {
+        seen.add(trimmedRef);
+        dedupedRefs.push(trimmedRef);
+        if (dedupedRefs.length >= 7) break;
+      }
+    }
+  }
+  if (dedupedRefs.length > 0) {
+    body.reference_images = dedupedRefs.map((u) => ({ url: u }));
+  }
+
+  // When last_frame or any reference_images are present -> force resolution = "720p".
+  if (hasLastFrame || dedupedRefs.length > 0) {
+    body.resolution = "720p";
   }
 
   return body;

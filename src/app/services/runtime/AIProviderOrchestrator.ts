@@ -1133,11 +1133,11 @@ export class AIProviderOrchestrator {
       execute: async (options) => {
         const apiKey = resolveProviderKey("grok", options.customApiKeys);
 
-        // 4A. Grok Image Generation (grok-imagine-image-quality 9:16)
+        // 4A. Grok Image Generation (grok-imagine-image-2.0 9:16)
         if (options.capability === "Image Generation") {
           const imageModel = (options.model && (options.model.startsWith("grok") || options.model.includes("imagine")))
             ? options.model
-            : "grok-imagine-image-quality";
+            : "grok-imagine-image-2.0";
           const grokImagePayload: any = {
             model: imageModel,
             prompt: options.prompt,

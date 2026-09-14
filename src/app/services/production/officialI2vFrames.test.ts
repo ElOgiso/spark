@@ -157,7 +157,7 @@ describe("official Veo / Grok wire fields", () => {
     assert.equal(snapVeoDuration(4), 4);
   });
 
-  it("Grok i2v body has image + optional last frame and no reference_images", () => {
+  it("Grok i2v body has image + optional last frame and reference_images (max 7, 720p)", () => {
     const body = buildGrokVideoGenerateBody({
       prompt: "camera pans left",
       firstFrameDataUri: "data:image/jpeg;base64,STILL",
@@ -169,9 +169,13 @@ describe("official Veo / Grok wire fields", () => {
     assert.equal(body.model, "grok-imagine-video-1.5");
     assert.deepEqual(body.image, { url: "data:image/jpeg;base64,STILL" });
     assert.equal(body.image_url, "data:image/jpeg;base64,STILL");
-    assert.equal(body.last_frame_url, "data:image/jpeg;base64,END");
-    assert.equal(body.reference_image_urls, undefined);
-    assert.equal("reference_images" in body, false);
+    assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+    assert.equal((body as any).last_frame_url, undefined);
+    assert.equal(body.resolution, "720p");
+    assert.deepEqual(body.reference_images, [
+      { url: "data:image/jpeg;base64,SHEET" },
+      { url: "data:image/jpeg;base64,GRID" },
+    ]);
   });
 
   it("resolveClipFrames uses lastFrameUrl as end/continuity, not as frame 1", () => {

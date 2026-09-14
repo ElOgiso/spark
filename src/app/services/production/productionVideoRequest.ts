@@ -54,8 +54,7 @@ export async function requestProductionVideoClip(
       // End-frame conditioning must NOT silently reuse the first frame.
       lastFrameUrl: params.endFrameUrl,
       endFrameUrl: params.endFrameUrl,
-      referenceImageUrls:
-        /^(grok|xai)$/i.test(params.provider) ? [] : params.referenceImageUrls || [],
+      referenceImageUrls: params.referenceImageUrls || [],
       aspectRatio: params.aspectRatio,
       durationSec: params.durationSec,
       model: params.model,

@@ -242,8 +242,8 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
       },
       // Image Generation
       {
-        id: "grok-imagine-image-quality",
-        label: "Grok Imagine Image Quality (9:16)",
+        id: "grok-imagine-image-2.0",
+        label: "Grok Imagine Image 2.0 (9:16)",
         capabilities: ["Image Generation"],
         recommended: true,
         status: "stable",

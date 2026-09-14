@@ -181,7 +181,7 @@ test("Seedance 2.0 cannot mix first/last frame with reference media", () => {
   assert.deepEqual(roles, ["first_frame", "last_frame"]);
 });
 
-test("Grok i2v sends image_url and omits reference faces on the same request", () => {
+test("Grok i2v sends image object, last_frame object, reference_images (max 7), and 720p resolution", () => {
   const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
@@ -194,7 +194,13 @@ test("Grok i2v sends image_url and omits reference faces on the same request", (
   assert.equal(body.model, "grok-imagine-video-1.5");
   assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
   assert.equal(body.image_url, "data:image/jpeg;base64,START");
-  assert.equal(body.last_frame_url, "data:image/jpeg;base64,END");
+  assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+  assert.equal((body as any).last_frame_url, undefined);
+  assert.equal(body.resolution, "720p");
+  assert.ok(Array.isArray(body.reference_images));
+  assert.equal((body.reference_images as any[]).length, 7);
+  assert.deepEqual((body.reference_images as any[])[0], { url: "data:image/jpeg;base64,F0" });
+  assert.deepEqual((body.reference_images as any[])[6], { url: "data:image/jpeg;base64,F6" });
   assert.equal(body.reference_image_urls, undefined);
   assert.equal(snapGrokDuration(0), 1);
   assert.equal(snapGrokDuration(99), 15);
