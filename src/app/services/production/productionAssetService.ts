@@ -2567,6 +2567,11 @@ export class ProductionAssetService {
                 );
               }
 
+              // STAGE 3 DURATION & MULTISHOT POLICY:
+              // 1. Durations are strictly clamped to each provider's legal limits (Grok 1-15, Kling 5/10, Veo 4/6/8, Seedance 4-15).
+              // 2. If a Stage-3 beat describes multiple hard cuts or an overall duration > provider max:
+              //    SPARK maps this to multiple discrete shots (one still per segment -> individual I2V clips -> assemble / assembly_pending).
+              //    SPARK never issues an illegal single generation claiming a 30s multi-cut film beyond provider capabilities.
               const veoLike = /^(gemini|veo|google)$/i.test(String(activeVideo.providerId || ""));
               const sceneTargetDuration =
                 veoLike && sceneLastFrame
@@ -2620,8 +2625,13 @@ export class ProductionAssetService {
                 contentFormat: effectiveContentFormat,
                 followStoryboardStill: true,
                 elements: shotElements,
+                shotDirection: (s as any).shotDirection,
               });
               const sceneMotionPrompt = sceneMotionCompiled.prompt;
+              (s as any).shotDirection = sceneMotionCompiled.shotDirection;
+              if (s.motionLock) {
+                (s.motionLock as any).shotDirection = sceneMotionCompiled.shotDirection;
+              }
               if (!sceneMotionCompiled.fromPersistedLock) {
                 console.warn(
                   `[SPARK Pipeline] Scene ${globalSceneNum} motion lock was missing at I2V — rebuilt from scene (prefer still-time lock)`
@@ -2683,13 +2693,17 @@ export class ProductionAssetService {
                     (p) => p !== String(activeVideo.providerId || "").toLowerCase()
                   );
                   const tryI2v = async (providerId: string) => {
+                    const effectiveRefs =
+                      providerId.toLowerCase() === "grok"
+                        ? identityRefs.slice(0, 7)
+                        : identityRefs;
                     const apiClip = await requestProductionVideoClip({
                       provider: providerId,
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
                       sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
                       endFrameUrl: sceneEndFrame,
-                      referenceImageUrls: identityRefs,
+                      referenceImageUrls: effectiveRefs,
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
                       model: preferredVideoModel,

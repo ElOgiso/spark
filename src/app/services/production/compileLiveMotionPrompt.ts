@@ -32,6 +32,10 @@ import {
   formatElementBindingHeader,
   type ProductionElement,
 } from "./elements/productionElements";
+import {
+  deriveShotDirectionSpec,
+  type ShotDirectionSpec,
+} from "./shotDirectionSpec";
 
 export function compileLiveMotionPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -57,12 +61,15 @@ export function compileLiveMotionPrompt(params: {
   followStoryboardStill?: boolean;
   /** Optional production elements for machine-readable ELEMENT BINDING header */
   elements?: ProductionElement[];
+  /** Optional Stage 3 explicit shot direction specification */
+  shotDirection?: Partial<ShotDirectionSpec>;
 }): {
   prompt: string;
   compiler: "scene_motion";
   directorScript: ReturnType<typeof resolveDirectorSceneScript>;
   motionLock: SceneMotionLock;
   fromPersistedLock: boolean;
+  shotDirection: ShotDirectionSpec;
 } {
   const {
     mode,
@@ -145,16 +152,81 @@ export function compileLiveMotionPrompt(params: {
   const cinematicCraft = motionLock.cinematicCraft !== false;
   const genreLaw = visualGenreDirective({ visualGenre, cinematicCraft });
 
+  const shotDirection = deriveShotDirectionSpec({
+    scene,
+    sceneIndex,
+    totalScenes,
+    durationSec,
+    motionLock,
+    directorScript,
+    brief,
+    elements: params.elements,
+    isInsertOrSet,
+    characterName,
+    environment,
+    contentFormat: format,
+    explicitSpec: params.shotDirection,
+  });
+
   const bindingBlock =
     params.elements && params.elements.length > 0
       ? formatElementBindingHeader(params.elements)
-      : "";
+      : [
+          "ELEMENT BINDING:",
+          ...refLabels.filter((l) => !l.startsWith("INPUT REF [1]")),
+          "IMAGE 1 = this shot’s storyboard still (first frame). Animate only. Do not restyle.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+  const locationMapSection = shotDirection.locationMap
+    ? `LOCATION MAP: ${shotDirection.locationMap}`
+    : "";
+
+  const formatSection =
+    shotDirection.formatMode === "single_continuous"
+      ? "FORMAT: single continuous clip; no internal cuts."
+      : "FORMAT: this clip is one segment of a multishot; no internal cuts.";
+
+  const actionSection = `ACTION: ${shotDirection.action}`;
+  const cameraSection = `CAMERA: ${shotDirection.camera}`;
+  const performanceSection = shotDirection.performance
+    ? `PERFORMANCE (AUDIO ONLY — never draw text): natural lip/body sync for intent «${shotDirection.performance.replace(/"/g, "'")}».`
+    : "";
+  const physicsSection = shotDirection.physics
+    ? `PHYSICS: ${shotDirection.physics}`
+    : "";
+  const lightingSection = shotDirection.lighting
+    ? `LIGHTING: ${shotDirection.lighting}`
+    : "";
+  const audioSection = `AUDIO: ${shotDirection.audioDiegetic || "diegetic only; no score/music."}`;
+
+  const positiveLocksSection = [
+    "POSITIVE LOCKS:",
+    ...shotDirection.positiveLocks.map((l) => `- ${l}`),
+  ].join("\n");
+
+  const stage3Envelope = [
+    `SCENE CONTEXT: ${shotDirection.sceneContext}`,
+    locationMapSection,
+    formatSection,
+    actionSection,
+    cameraSection,
+    performanceSection,
+    physicsSection,
+    lightingSection,
+    audioSection,
+    positiveLocksSection,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const refHeader = [
     contentFormatDirective(format),
     genreLaw,
     bindingBlock,
     ...refLabels,
+    stage3Envelope,
     revisionLine,
     followStoryboardStill ? storyboardStillAnimateLaws() : "",
     directorVisualSpeechLaw(directorScript.spokenLines || motionLock.spokenLines),
@@ -189,5 +261,6 @@ export function compileLiveMotionPrompt(params: {
     directorScript,
     motionLock,
     fromPersistedLock,
+    shotDirection,
   };
 }

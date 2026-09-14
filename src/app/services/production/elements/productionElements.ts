@@ -282,7 +282,7 @@ export function resolveElementsForShot(
  */
 export function formatElementBindingHeader(
   elements: ProductionElement[],
-  firstFrameLabel = "this shot’s storyboard still (first frame — animate only)"
+  firstFrameLabel = "this shot’s storyboard still (first frame). Animate only. Do not restyle."
 ): string {
   const lines: string[] = ["ELEMENT BINDING:"];
   for (const el of elements) {

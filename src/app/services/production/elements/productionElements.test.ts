@@ -151,7 +151,7 @@ test("formatElementBindingHeader generates clean machine-readable header", () =>
   assert.match(header, /ELEMENT BINDING:/);
   assert.match(header, /@eduardo = character identity sheet/);
   assert.match(header, /@loc_cabin = location plate/);
-  assert.match(header, /IMAGE 1 = this shot’s storyboard still \(first frame — animate only\)/);
+  assert.match(header, /IMAGE 1 = this shot’s storyboard still \(first frame/);
 });
 
 test("buildVisualLockRefs returns elements, labelLines, and tagLines", () => {
@@ -213,7 +213,7 @@ test("compileLiveMotionPrompt outputs ELEMENT BINDING header with stable tags an
   assert.match(result.prompt, /ELEMENT BINDING:/);
   assert.match(result.prompt, /@eduardo = character identity sheet/);
   assert.match(result.prompt, /@loc_cabin = location plate/);
-  assert.match(result.prompt, /IMAGE 1 = this shot’s storyboard still \(first frame — animate only\)/);
+  assert.match(result.prompt, /IMAGE 1 = this shot’s storyboard still \(first frame/);
   assert.match(result.prompt, /VISUAL LOCK LAW:/);
   // Motion body remains motion and camera only
   assert.match(result.prompt, /Host turns to camera with a confident smile/);
