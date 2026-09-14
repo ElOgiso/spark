@@ -4,6 +4,8 @@
  * used for zero-drift visual locking in video and image generation pipelines.
  */
 
+import { slugify } from "./elements/productionElements";
+
 export interface CharacterSheetPromptParams {
   creatorName?: string;
   role?: string;
@@ -51,8 +53,13 @@ export function buildProductionCharacterSheetPrompt(params: CharacterSheetPrompt
     ? "WARDROBE & SILHOUETTE LOCK: distinct silhouette and distinct color palette from primary lead; one single outfit inferred from genre + brand; do not invent a second costume."
     : "WARDROBE LOCK: one outfit inferred from genre + brand; do not invent a second costume.";
 
+  const elementTag = isSupport
+    ? `@support_${slugify(params.creatorName) || "character"}`
+    : `@${slugify(params.creatorName) || "main_character"}`;
+
   return `
 Professional animation model sheet, single character, studio turnaround.
+ELEMENT TAG: ${elementTag}
 STYLE: ${characterGenre} consistent with brand ${brandName}.
 ${mediumStyleDirective(characterGenre)}
 CHARACTER: ${name}, role ${roleDesc}, personality ${personality}.

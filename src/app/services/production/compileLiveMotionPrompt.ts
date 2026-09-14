@@ -28,6 +28,10 @@ import {
   visualGenreDirective,
 } from "./visualGenreDirectives";
 import { isVisualGenreId, opticalDisciplineForVisualGenre } from "../../domain/visualGenre";
+import {
+  formatElementBindingHeader,
+  type ProductionElement,
+} from "./elements/productionElements";
 
 export function compileLiveMotionPrompt(params: {
   mode: "express" | "standard" | "deep";
@@ -51,6 +55,8 @@ export function compileLiveMotionPrompt(params: {
    * animate to life without redesigning look.
    */
   followStoryboardStill?: boolean;
+  /** Optional production elements for machine-readable ELEMENT BINDING header */
+  elements?: ProductionElement[];
 }): {
   prompt: string;
   compiler: "scene_motion";
@@ -139,9 +145,15 @@ export function compileLiveMotionPrompt(params: {
   const cinematicCraft = motionLock.cinematicCraft !== false;
   const genreLaw = visualGenreDirective({ visualGenre, cinematicCraft });
 
+  const bindingBlock =
+    params.elements && params.elements.length > 0
+      ? formatElementBindingHeader(params.elements)
+      : "";
+
   const refHeader = [
     contentFormatDirective(format),
     genreLaw,
+    bindingBlock,
     ...refLabels,
     revisionLine,
     followStoryboardStill ? storyboardStillAnimateLaws() : "",

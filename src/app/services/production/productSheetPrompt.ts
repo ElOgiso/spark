@@ -1,8 +1,10 @@
-﻿/**
+/**
  * SPARK Production Product & Prop Model Sheet Generator
  * Creates professional multi-view product/prop design bibles (turnaround, material callouts, detail close-ups, in-hand / in-use angles)
  * used for zero-drift visual locking across scenes in video and image generation pipelines.
  */
+
+import { slugify } from "./elements/productionElements";
 
 export interface ProductSheetPromptParams {
   productName?: string;
@@ -47,8 +49,11 @@ export function buildProductionProductSheetPrompt(params: ProductSheetPromptPara
   const usage = params.usageContext?.trim();
   const notes = params.directorNotes?.trim();
 
+  const propSlug = slugify(productName) || "prop";
+
   return `
 Professional industrial design product model sheet, single product entity, studio turnaround.
+ELEMENT TAG: @prop_${propSlug}
 STYLE: ${genre} commercial presentation for ${brandName}.
 ${mediumProductStyleDirective(genre)}
 PRODUCT: ${productName} (Category: ${category}).

@@ -21,6 +21,11 @@ import {
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
 import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
+import {
+  buildProductionElementPack,
+  resolveElementsForShot,
+  type ProductionElement,
+} from "./elements/productionElements";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
 import { collectSparkShotClipUrls } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
@@ -255,6 +260,9 @@ export interface VisualLockRefsResult {
   primaryRefUrl?: string;
   charSheetUrls: string[];
   refPromptHeader: string;
+  labelLines?: string[];
+  tagLines?: string[];
+  elements?: ProductionElement[];
 }
 
 export function isPlayableVideoUrl(val?: string | null): val is string {
@@ -602,6 +610,28 @@ export function buildVisualLockRefs(params: {
     }
   }
 
+  const elementPack = buildProductionElementPack({
+    character,
+    supportCharacter,
+    locationPlateUrl: validPlate,
+    directorIdentityUrls,
+    directorSupportUrls,
+    directorPropUrl,
+  });
+
+  const elements: ProductionElement[] = [];
+  const tagLines: string[] = [];
+  for (let i = 0; i < orderedRefs.length; i++) {
+    const url = orderedRefs[i];
+    const el = elementPack.find((e) => e.url === url);
+    if (el) {
+      elements.push(el);
+      tagLines.push(`ELEMENT ${el.tag} → ${labelLines[i]}`);
+    } else {
+      tagLines.push(labelLines[i]);
+    }
+  }
+
   const refPromptHeader = labelLines.length > 0
     ? `${labelLines.join("\n")}\nVISUAL LOCK LAW: The physical identity, face, outfit, and studio set look strictly lives in the reference images above. Text describes physical action and camera motion only.\n`
     : "";
@@ -611,6 +641,9 @@ export function buildVisualLockRefs(params: {
     primaryRefUrl: orderedRefs[0],
     charSheetUrls: (isInsertSubject || isSetSubject) ? [] : (charSheetUrls || []).slice(0, 2),
     refPromptHeader,
+    labelLines,
+    tagLines,
+    elements,
   };
 }
 
@@ -2541,7 +2574,25 @@ export class ProductionAssetService {
                   : snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) ||
                     Math.min(rawSceneDur, 8);
 
-              // 4. Prompt labels only — sheets/plates/grid never occupy the i2v start-frame field.
+              // 4. Resolve Production Elements & Shot-level needed tags
+              const productionElementPack = buildProductionElementPack({
+                character: activeChar || character,
+                supportCharacter: supportChar,
+                characters,
+                brand,
+                locationPlateUrl: durableLocationPlateUrl || validPlate,
+                directorIdentityUrls: motionMerged.identityUrls,
+                directorSupportUrls: motionMerged.supportUrls,
+                directorPropUrl: motionMerged.propUrl,
+              });
+              const neededTags = (s as any).elementTags || (s as any).neededTags || (s as any).tags;
+              const shotElements = resolveElementsForShot(
+                productionElementPack,
+                neededTags,
+                resolvedMotionSubject
+              ).filter((e) => e.url !== sceneFirstFrame && e.url !== sceneEndFrame);
+
+              // 5. Prompt labels & ELEMENT BINDING — sheets/plates/grid never occupy the i2v start-frame field.
               const isChainingLastFrame = Boolean(sceneLastFrame);
               const refLabels: string[] = [
                 `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} shot still)`,
@@ -2549,11 +2600,8 @@ export class ProductionAssetService {
               if (isChainingLastFrame) {
                 refLabels.push(`INPUT REF [lastFrame]: Next panel crop (or previous last-frame extract as fallback)`);
               }
-              if (sceneCharSheetUrl && isValidMediaData(sceneCharSheetUrl) && sceneCharSheetUrl !== sceneFirstFrame) {
-                refLabels.push(`Character sheet logged for Review (not i2v start): ${activeChar?.name || "Host"}`);
-              }
-              if (validPlate && validPlate !== sceneFirstFrame) {
-                refLabels.push(`Location plate logged for Review (not i2v start)`);
+              for (const el of shotElements) {
+                refLabels.push(`ELEMENT ${el.tag} → ${el.label} (${el.description || el.role})`);
               }
 
               const sceneMotionCompiled = compileLiveMotionPrompt({
@@ -2571,6 +2619,7 @@ export class ProductionAssetService {
                 brief,
                 contentFormat: effectiveContentFormat,
                 followStoryboardStill: true,
+                elements: shotElements,
               });
               const sceneMotionPrompt = sceneMotionCompiled.prompt;
               if (!sceneMotionCompiled.fromPersistedLock) {
@@ -2593,19 +2642,22 @@ export class ProductionAssetService {
                 }
               };
 
-              // Character sheet (main active host)
-              addIdentityRef(sceneCharSheetUrl);
-              // Support character sheet (when distinct)
-              if (supportChar) {
-                const supportSheetUrl =
-                  motionMerged.supportUrls[0] ||
-                  supportChar.characterSheetUrl ||
-                  supportChar.imageUrl ||
-                  supportChar.avatarUrl;
-                addIdentityRef(supportSheetUrl);
+              for (const el of shotElements) {
+                addIdentityRef(el.url);
               }
-              // Location plate (studio / locked set environment)
-              addIdentityRef(validPlate);
+              // Safety fallback: if no elements were resolved, retain main character & plate fallbacks
+              if (identityRefs.length === 0) {
+                addIdentityRef(sceneCharSheetUrl);
+                if (supportChar) {
+                  const supportSheetUrl =
+                    motionMerged.supportUrls[0] ||
+                    supportChar.characterSheetUrl ||
+                    supportChar.imageUrl ||
+                    supportChar.avatarUrl;
+                  addIdentityRef(supportSheetUrl);
+                }
+                addIdentityRef(validPlate);
+              }
 
               const continuity = evaluateVisualContinuity({
                 sceneIndex: sIdx,

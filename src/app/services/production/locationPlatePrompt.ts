@@ -5,6 +5,8 @@
  * Empty locked environments (NO PEOPLE) for continuity plates.
  */
 
+import { slugify } from "./elements/productionElements";
+
 export type LocationPlatePromptInput = {
   brandName?: string;
   niche?: string;
@@ -45,7 +47,9 @@ export function buildLocationPlatePrompt(params: LocationPlatePromptInput): stri
   const continuity = (params.continuityFeatures || []).filter(Boolean);
   const fallbackEnv = (params.environmentDescription || '').trim();
 
+  const locSlug = slugify(name || params.brandName) || 'plate';
   const placeLine = [
+    `ELEMENT TAG: @loc_${locSlug}`,
     name ? `LOCATION: ${name}` : '',
     geography ? `GEOGRAPHY: ${geography}` : '',
     architecture ? `ARCHITECTURE: ${architecture}` : '',
