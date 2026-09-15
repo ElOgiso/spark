@@ -310,3 +310,86 @@ test("buildProductionElementPack aligns tags with assetBible and gracefully succ
   assert.ok(packWithoutBible.find((e) => e.role === "location")?.tag.includes("loc_santiago"));
   assert.equal(packWithoutBible.find((e) => e.role === "prop")?.tag, "@prop_hero");
 });
+
+test("listMissingAssetBibleEntries identifies unattached bible entries without throwing", async () => {
+  const { listMissingAssetBibleEntries } = await import("./assetBibleFromBrief");
+
+  const bible = [
+    { tag: "@santiago", role: "character_main", sheetKind: "character", label: "Santiago", notes: "" },
+    { tag: "@loc_office", role: "location", sheetKind: "location", label: "Consulting Office", notes: "" },
+    { tag: "@prop_recorder", role: "prop", sheetKind: "prop", label: "Hero Recorder", notes: "" },
+    { tag: "@wardrobe_santiago_childhood", role: "wardrobe_variant", sheetKind: "wardrobe_variant", label: "Childhood Santiago", notes: "" },
+  ] as const;
+
+  // Case 1: only main character sheet and location plate are attached
+  const partialElements = [
+    { tag: "@santiago", role: "character_main", label: "Santiago", url: "https://example.com/santiago.png" },
+    { tag: "@loc_office", role: "location", label: "Consulting Office", url: "https://example.com/office.png" },
+  ] as any;
+
+  const missing = listMissingAssetBibleEntries(bible as any, partialElements);
+  assert.equal(missing.length, 2);
+  assert.equal(missing[0].tag, "@prop_recorder");
+  assert.equal(missing[1].tag, "@wardrobe_santiago_childhood");
+
+  // Case 2: all items satisfied with valid URLs
+  const completeElements = [
+    ...partialElements,
+    { tag: "@prop_recorder", role: "prop", label: "Hero Recorder", url: "https://example.com/recorder.png" },
+    { tag: "@wardrobe_santiago_childhood", role: "wardrobe_variant", label: "Childhood Santiago", url: "https://example.com/childhood.png" },
+  ] as any;
+
+  const allSatisfied = listMissingAssetBibleEntries(bible as any, completeElements);
+  assert.equal(allSatisfied.length, 0);
+
+  // Case 3: handles null/empty safely
+  assert.deepEqual(listMissingAssetBibleEntries(null, null), []);
+  assert.deepEqual(listMissingAssetBibleEntries([], []), []);
+});
+
+test("buildProductionElementPack binds named/tagged prop URLs to matching bible prop tags", async () => {
+  const { buildProductionElementPack } = await import("../elements/productionElements");
+
+  const pack = buildProductionElementPack({
+    character: { id: "c1", name: "Host", characterSheetUrl: "https://example.com/host.png" } as any,
+    propUrls: [
+      { url: "https://example.com/trophy.png", name: "Championship Trophy" },
+      { url: "https://example.com/watch.png", tag: "@prop_gold_watch" },
+    ],
+    assetBible: [
+      { tag: "@prop_trophy", role: "prop", sheetKind: "prop", label: "Hero Championship Trophy", notes: "" },
+      { tag: "@prop_gold_watch", role: "prop", sheetKind: "prop", label: "Luxury Gold Watch", notes: "" },
+    ],
+  });
+
+  const trophyEl = pack.find((e) => e.url === "https://example.com/trophy.png");
+  assert.ok(trophyEl);
+  assert.equal(trophyEl.tag, "@prop_trophy");
+  assert.equal(trophyEl.label, "Hero Championship Trophy");
+
+  const watchEl = pack.find((e) => e.url === "https://example.com/watch.png");
+  assert.ok(watchEl);
+  assert.equal(watchEl.tag, "@prop_gold_watch");
+});
+
+test("inferNeededTagsFromScene retains main character and location anchors when prop is mentioned in main shot", async () => {
+  const { inferNeededTagsFromScene } = await import("./assetBibleFromBrief");
+
+  const bible = [
+    { tag: "@santiago", role: "character_main", sheetKind: "character", label: "Santiago", notes: "" },
+    { tag: "@loc_office", role: "location", sheetKind: "location", label: "Consulting Office", notes: "" },
+    { tag: "@prop_recorder", role: "prop", sheetKind: "prop", label: "Hero Recorder", notes: "" },
+  ] as const;
+
+  const scene = {
+    shotList: "Scene 1",
+    subjectType: "main",
+    physicalAction: "Santiago inspects the recorder on the desk",
+  };
+
+  const tags = inferNeededTagsFromScene(scene, bible as any);
+  assert.ok(tags);
+  assert.ok(tags.includes("@santiago"), "Must keep main character tag");
+  assert.ok(tags.includes("@loc_office"), "Must keep location plate tag");
+  assert.ok(tags.includes("@prop_recorder"), "Must detect prop tag");
+});

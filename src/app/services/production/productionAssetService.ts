@@ -29,6 +29,7 @@ import {
 import {
   planAssetBibleFromBrief,
   inferNeededTagsFromScene,
+  listMissingAssetBibleEntries,
   type AssetBibleEntry,
 } from "./preproduction/assetBibleFromBrief";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
@@ -1068,6 +1069,30 @@ export class ProductionAssetService {
     }
     if (brief.assetBible) {
       production.assetBible = brief.assetBible;
+
+      // Soft-check missing planned bible assets for preflight visibility (non-blocking)
+      try {
+        const preflightPack = buildProductionElementPack({
+          character,
+          characters,
+          brand,
+          locationPlateUrl: (brief as any).locationPlateUrl || (production as any).locationPlateUrl,
+          assetBible: brief.assetBible,
+        });
+        const missing = listMissingAssetBibleEntries(brief.assetBible, preflightPack);
+        if (missing.length > 0) {
+          const missingSummary = missing.map((m) => `${m.tag} (${m.sheetKind})`).join(", ");
+          console.warn(
+            `[SPARK Asset Bible] ${missing.length} planned asset sheet(s) unattached at preflight: ${missingSummary}. Proceeding with available anchors.`
+          );
+        } else {
+          console.log(
+            `[SPARK Asset Bible] All ${brief.assetBible.length} planned asset bible entities satisfied.`
+          );
+        }
+      } catch (err) {
+        console.warn("[ProductionAssetService] Non-blocking missing asset bible inspection fallback:", err);
+      }
     }
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });

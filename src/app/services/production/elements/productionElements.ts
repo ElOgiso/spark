@@ -25,6 +25,9 @@ export interface ProductionElement {
   description?: string; // Short binding descriptor for prompt headers
 }
 
+export type PropUrlInput = string | { url: string; name?: string; tag?: string };
+export type WardrobeVariantInput = string | { url: string; name?: string; tag?: string; variantOf?: string };
+
 export interface BuildElementPackParams {
   character?: Character | null;
   supportCharacter?: Character | null;
@@ -34,8 +37,8 @@ export interface BuildElementPackParams {
   directorIdentityUrls?: string[] | null;
   directorSupportUrls?: string[] | null;
   directorPropUrl?: string | null;
-  propUrls?: string[] | null;
-  wardrobeVariantUrls?: string[] | null;
+  propUrls?: PropUrlInput[] | null;
+  wardrobeVariantUrls?: WardrobeVariantInput[] | null;
   assetBible?: AssetBibleEntry[] | null;
 }
 
@@ -191,21 +194,50 @@ export function buildProductionElementPack(params: BuildElementPackParams): Prod
     pushElement(params.directorPropUrl, "prop", pTag, pLabel, undefined, "product / prop design lock");
   }
   if (Array.isArray(params.propUrls)) {
-    params.propUrls.forEach((url, i) => {
+    params.propUrls.forEach((item, i) => {
+      const url = typeof item === "string" ? item : item?.url;
+      const explicitTag = typeof item === "object" ? item?.tag : undefined;
+      const explicitName = typeof item === "object" ? item?.name : undefined;
+
+      // Find matching bible prop by explicit tag, name, or slug
+      const matchedBibleProp =
+        (explicitTag && bibleProps.find((p) => p.tag.toLowerCase() === explicitTag.toLowerCase())) ||
+        (explicitName &&
+          bibleProps.find(
+            (p) =>
+              p.label.toLowerCase().includes(explicitName.toLowerCase()) ||
+              p.tag.toLowerCase().includes(slugify(explicitName))
+          )) ||
+        undefined;
+
       const offset = params.directorPropUrl ? 1 : 0;
-      const bibleProp = bibleProps[i + offset];
-      const pTag = bibleProp?.tag || `@prop_${i + 1}`;
-      const pLabel = bibleProp?.label || `Product / Prop ${i + 1}`;
+      const fallbackBibleProp = bibleProps[i + offset];
+      const pTag = matchedBibleProp?.tag || fallbackBibleProp?.tag || (explicitTag ? normalizeElementTag(explicitTag) : `@prop_${i + 1}`);
+      const pLabel = matchedBibleProp?.label || fallbackBibleProp?.label || explicitName || `Product / Prop ${i + 1}`;
       pushElement(url, "prop", pTag, pLabel, undefined, "product / prop design reference");
     });
   }
 
   // e) Wardrobe variants
   if (Array.isArray(params.wardrobeVariantUrls)) {
-    params.wardrobeVariantUrls.forEach((url, i) => {
-      const bibleW = bibleWardrobes[i];
-      const wTag = bibleW?.tag || `@wardrobe_${i + 1}`;
-      const wLabel = bibleW?.label || `Wardrobe Variant ${i + 1}`;
+    params.wardrobeVariantUrls.forEach((item, i) => {
+      const url = typeof item === "string" ? item : item?.url;
+      const explicitTag = typeof item === "object" ? item?.tag : undefined;
+      const explicitName = typeof item === "object" ? item?.name : undefined;
+
+      const matchedBibleW =
+        (explicitTag && bibleWardrobes.find((w) => w.tag.toLowerCase() === explicitTag.toLowerCase())) ||
+        (explicitName &&
+          bibleWardrobes.find(
+            (w) =>
+              w.label.toLowerCase().includes(explicitName.toLowerCase()) ||
+              w.tag.toLowerCase().includes(slugify(explicitName))
+          )) ||
+        undefined;
+
+      const fallbackBibleW = bibleWardrobes[i];
+      const wTag = matchedBibleW?.tag || fallbackBibleW?.tag || (explicitTag ? normalizeElementTag(explicitTag) : `@wardrobe_${i + 1}`);
+      const wLabel = matchedBibleW?.label || fallbackBibleW?.label || explicitName || `Wardrobe Variant ${i + 1}`;
       pushElement(url, "wardrobe_variant", wTag, wLabel, undefined, "wardrobe variant reference");
     });
   }

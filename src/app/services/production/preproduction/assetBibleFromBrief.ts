@@ -255,5 +255,67 @@ export function inferNeededTagsFromScene(
     }
   }
 
+  if (matchedTags.size > 0) {
+    const sType = String(scene.subjectType || scene.subject || "main").toLowerCase();
+    // If this is a main character shot and only props/locations were mentioned,
+    // preserve main character and location continuity anchors
+    if (sType === "main" || sType === "host") {
+      const heroEntry = bible.find((e) => e.role === "character_main");
+      if (heroEntry) {
+        matchedTags.add(heroEntry.tag);
+      }
+      const locEntry = bible.find((e) => e.role === "location");
+      if (locEntry && !Array.from(matchedTags).some((t) => t.startsWith("@loc_"))) {
+        matchedTags.add(locEntry.tag);
+      }
+    }
+  }
+
   return matchedTags.size > 0 ? Array.from(matchedTags) : undefined;
+}
+
+/**
+ * Compares planned asset bible entries against resolved production elements or available media assets.
+ * Returns the subset of bible entries that have no resolvable media asset URL yet.
+ */
+export function listMissingAssetBibleEntries(
+  bible?: AssetBibleEntry[] | null,
+  elements?: import("../elements/productionElements").ProductionElement[] | null
+): AssetBibleEntry[] {
+  if (!bible || !Array.isArray(bible) || bible.length === 0) return [];
+  const pack = Array.isArray(elements) ? elements : [];
+
+  return bible.filter((entry) => {
+    const normTag = entry.tag.trim().toLowerCase();
+
+    // 1. Direct tag match with valid non-empty URL
+    const hasTagMatch = pack.some(
+      (e) => e.tag.trim().toLowerCase() === normTag && Boolean(e.url && e.url.trim())
+    );
+    if (hasTagMatch) return false;
+
+    // 2. Entity ID match with valid URL
+    if (entry.sourceEntityId) {
+      const hasEntityMatch = pack.some(
+        (e) => e.entityId === entry.sourceEntityId && Boolean(e.url && e.url.trim())
+      );
+      if (hasEntityMatch) return false;
+    }
+
+    // 3. Role-level singleton anchor match (character_main, location)
+    if (entry.role === "character_main") {
+      const hasMainMatch = pack.some(
+        (e) => e.role === "character_main" && Boolean(e.url && e.url.trim())
+      );
+      if (hasMainMatch) return false;
+    }
+    if (entry.role === "location") {
+      const hasLocMatch = pack.some(
+        (e) => e.role === "location" && Boolean(e.url && e.url.trim())
+      );
+      if (hasLocMatch) return false;
+    }
+
+    return true;
+  });
 }
