@@ -145,26 +145,26 @@ export async function ensureAssetBibleAssets(
         }
 
         // Re-host / upload to Spark Storage
-        let finalUrl = rawImgUrl;
-        try {
-          const { ProductionAssetService } = await import("../productionAssetService");
-          const storageSubpath = `props/prop-sheet-${slugify(entry.tag || entry.label)}.png`;
-          const stored = await ProductionAssetService.uploadAssetToStorage({
-            productionId,
-            brandId,
-            assetType: "image",
-            storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
-            dataUrlOrBlob: rawImgUrl,
-            mimeType: "image/png",
-            prompt,
-            provider: "ModelRouter",
-          });
-          if (stored?.publicUrl && isValidMediaUrl(stored.publicUrl)) {
-            finalUrl = stored.publicUrl;
-          }
-        } catch (uploadErr) {
-          console.warn(`[SPARK Asset Bible] Storage upload notice for ${entry.tag}:`, uploadErr);
+        const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");
+        const storageSubpath = `props/prop-sheet-${slugify(entry.tag || entry.label)}.png`;
+        const stored = await ProductionAssetService.uploadAssetToStorage({
+          productionId,
+          brandId,
+          assetType: "image",
+          storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
+          dataUrlOrBlob: rawImgUrl,
+          mimeType: "image/png",
+          prompt,
+          provider: "ModelRouter",
+        });
+
+        const isDurable = Boolean(stored?.uploadSuccess && stored?.publicUrl && isSparkStorageUrl(stored.publicUrl));
+        if (!isDurable || !stored?.publicUrl) {
+          throw new Error(
+            `Storage upload failed for ${entry.tag}: upload did not return a verified durable Spark Storage URL`
+          );
         }
+        const finalUrl = stored.publicUrl;
 
         console.log(`[SPARK Asset Bible] Ensured ${entry.tag} → ${finalUrl}`);
         const genItem: EnsuredGeneratedAsset = {
@@ -218,25 +218,37 @@ export async function ensureAssetBibleAssets(
           throw new Error("Image provider returned empty or invalid URL");
         }
 
-        let finalUrl = rawImgUrl;
-        try {
-          const { ProductionAssetService } = await import("../productionAssetService");
-          const storageSubpath = `locations/location-plate-${slugify(entry.tag || entry.label)}.png`;
-          const stored = await ProductionAssetService.uploadAssetToStorage({
-            productionId,
-            brandId,
-            assetType: "image",
-            storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
-            dataUrlOrBlob: rawImgUrl,
-            mimeType: "image/png",
-            prompt,
-            provider: "ModelRouter",
-          });
-          if (stored?.publicUrl && isValidMediaUrl(stored.publicUrl)) {
-            finalUrl = stored.publicUrl;
+        // Re-host / upload to Spark Storage
+        const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");
+        const storageSubpath = `locations/location-plate-${slugify(entry.tag || entry.label)}.png`;
+        const stored = await ProductionAssetService.uploadAssetToStorage({
+          productionId,
+          brandId,
+          assetType: "image",
+          storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
+          dataUrlOrBlob: rawImgUrl,
+          mimeType: "image/png",
+          prompt,
+          provider: "ModelRouter",
+        });
+
+        const isDurable = Boolean(stored?.uploadSuccess && stored?.publicUrl && isSparkStorageUrl(stored.publicUrl));
+        if (!isDurable || !stored?.publicUrl) {
+          throw new Error(
+            `Storage upload failed for ${entry.tag}: upload did not return a verified durable Spark Storage URL`
+          );
+        }
+        const finalUrl = stored.publicUrl;
+
+        // Set brand location plate if brand context is provided
+        if (brand && typeof brand === "object") {
+          (brand as any).locationPlateUrl = finalUrl;
+          try {
+            const { uploadLocationPlateToStorage } = await import("../../../backend/workspaceSync");
+            void uploadLocationPlateToStorage(brandId, rawImgUrl);
+          } catch (syncErr) {
+            console.warn("[SPARK Asset Bible] Brand set plate mirror notice:", syncErr);
           }
-        } catch (uploadErr) {
-          console.warn(`[SPARK Asset Bible] Storage upload notice for ${entry.tag}:`, uploadErr);
         }
 
         console.log(`[SPARK Asset Bible] Ensured ${entry.tag} → ${finalUrl}`);
@@ -294,26 +306,27 @@ export async function ensureAssetBibleAssets(
           throw new Error("Image provider returned empty or invalid URL");
         }
 
-        let finalUrl = rawImgUrl;
-        try {
-          const { ProductionAssetService } = await import("../productionAssetService");
-          const storageSubpath = `wardrobe/wardrobe-variant-${slugify(entry.tag || entry.label)}.png`;
-          const stored = await ProductionAssetService.uploadAssetToStorage({
-            productionId,
-            brandId,
-            assetType: "image",
-            storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
-            dataUrlOrBlob: rawImgUrl,
-            mimeType: "image/png",
-            prompt,
-            provider: "ModelRouter",
-          });
-          if (stored?.publicUrl && isValidMediaUrl(stored.publicUrl)) {
-            finalUrl = stored.publicUrl;
-          }
-        } catch (uploadErr) {
-          console.warn(`[SPARK Asset Bible] Storage upload notice for ${entry.tag}:`, uploadErr);
+        // Re-host / upload to Spark Storage
+        const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");
+        const storageSubpath = `wardrobe/wardrobe-variant-${slugify(entry.tag || entry.label)}.png`;
+        const stored = await ProductionAssetService.uploadAssetToStorage({
+          productionId,
+          brandId,
+          assetType: "image",
+          storagePath: brandProductionStoragePath(brandId, productionId, storageSubpath),
+          dataUrlOrBlob: rawImgUrl,
+          mimeType: "image/png",
+          prompt,
+          provider: "ModelRouter",
+        });
+
+        const isDurable = Boolean(stored?.uploadSuccess && stored?.publicUrl && isSparkStorageUrl(stored.publicUrl));
+        if (!isDurable || !stored?.publicUrl) {
+          throw new Error(
+            `Storage upload failed for ${entry.tag}: upload did not return a verified durable Spark Storage URL`
+          );
         }
+        const finalUrl = stored.publicUrl;
 
         console.log(`[SPARK Asset Bible] Ensured ${entry.tag} → ${finalUrl}`);
         const genItem: EnsuredGeneratedAsset = {

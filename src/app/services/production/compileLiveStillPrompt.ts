@@ -69,8 +69,22 @@ export function buildStillSubjectLine(params: {
   return `SUBJECT & IDENTITY: ${labels.roleLine} "${name}" (${style}). Face, hairstyle, skin tone, and signature wardrobe must strictly match reference IMAGE 1. Subject is clearly visible in frame performing this beat's action.${medium}`;
 }
 
+export interface LiveScenePanelContext {
+  character?: any;
+  characters?: any[];
+  environment?: string;
+  location?: string;
+  brief?: any;
+  brandName?: string;
+  formatSettings?: any;
+}
+
 /** Map a live storyboard / production scene row into a panel spec for the OS frame compiler. */
-export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanelSpec {
+export function panelSpecFromLiveScene(
+  scene: any,
+  idx: number,
+  context?: LiveScenePanelContext
+): StoryboardPanelSpec {
   const sceneNum = Number(scene?.scene || scene?.index || idx + 1) || idx + 1;
   const lock = isSceneMotionLock(scene?.motionLock) ? scene.motionLock : null;
   const director = resolveDirectorSceneScript({
@@ -84,6 +98,67 @@ export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanel
     lock?.cameraDirection ||
     scene?.cameraDirection ||
     "Medium cinematic framing";
+
+  const rawSceneChars = Array.isArray(scene?.characters) ? scene.characters : [];
+  let characters: string[] = rawSceneChars
+    .map((c: any) => (typeof c === "string" ? c.trim() : c?.name ? String(c.name).trim() : ""))
+    .filter(Boolean);
+
+  if (characters.length === 0 && scene?.subjectRole !== "set" && scene?.subjectRole !== "insert") {
+    const directChar =
+      scene?.characterName ||
+      (typeof scene?.character === "string" ? scene.character : scene?.character?.name);
+    if (directChar && typeof directChar === "string" && directChar.trim()) {
+      characters = [directChar.trim()];
+    } else if (Array.isArray(context?.characters) && context.characters.length > 0) {
+      characters = context.characters
+        .map((c: any) => (typeof c === "string" ? c.trim() : c?.name ? String(c.name).trim() : ""))
+        .filter(Boolean);
+    } else if (context?.character) {
+      const cName = typeof context.character === "string" ? context.character : context.character.name;
+      if (cName && typeof cName === "string" && cName.trim()) {
+        characters = [cName.trim()];
+      }
+    } else if (context?.brief?.character) {
+      const cName = typeof context.brief.character === "string" ? context.brief.character : context.brief.character.name;
+      if (cName && typeof cName === "string" && cName.trim()) {
+        characters = [cName.trim()];
+      }
+    } else if (context?.brief?.characterName && typeof context.brief.characterName === "string") {
+      characters = [context.brief.characterName.trim()];
+    }
+  }
+
+  const rawSceneLocs = Array.isArray(scene?.locations) ? scene.locations : [];
+  let locations: string[] = rawSceneLocs
+    .map((l: any) => (typeof l === "string" ? l.trim() : l?.name ? String(l.name).trim() : ""))
+    .filter(Boolean);
+
+  if (locations.length === 0) {
+    const directLoc = scene?.location || scene?.environment || scene?.locationPlateName;
+    if (directLoc && typeof directLoc === "string" && directLoc.trim()) {
+      locations = [directLoc.trim()];
+    } else if (context?.location && typeof context.location === "string" && context.location.trim()) {
+      locations = [context.location.trim()];
+    } else if (context?.environment && typeof context.environment === "string" && context.environment.trim()) {
+      locations = [context.environment.trim()];
+    } else if (context?.brief?.location && typeof context.brief.location === "string" && context.brief.location.trim()) {
+      locations = [context.brief.location.trim()];
+    } else if (context?.brief?.environment && typeof context.brief.environment === "string" && context.brief.environment.trim()) {
+      locations = [context.brief.environment.trim()];
+    }
+  }
+
+  const rawProps = Array.isArray(scene?.props) ? scene.props : [];
+  const props: string[] = rawProps
+    .map((p: any) => (typeof p === "string" ? p.trim() : p?.label || p?.name || p?.tag ? String(p.label || p.name || p.tag).trim() : ""))
+    .filter(Boolean);
+
+  const rawProducts = Array.isArray(scene?.products) ? scene.products : [];
+  const products: string[] = rawProducts
+    .map((p: any) => (typeof p === "string" ? p.trim() : p?.label || p?.name || p?.tag ? String(p.label || p.name || p.tag).trim() : ""))
+    .filter(Boolean);
+
   return {
     panelId: scene?.panelId || `panel-${sceneNum}`,
     shotId: scene?.shotId || scene?.id || `shot-${sceneNum}`,
@@ -103,13 +178,15 @@ export function panelSpecFromLiveScene(scene: any, idx: number): StoryboardPanel
       lensIntent: "cinematic prime",
       depthOfField: "shallow subject separation",
     },
-    characters: Array.isArray(scene?.characters) ? scene.characters : [],
-    locations: Array.isArray(scene?.locations) ? scene.locations : [],
-    props: Array.isArray(scene?.props) ? scene.props : [],
-    products: Array.isArray(scene?.products) ? scene.products : [],
+    characters,
+    locations,
+    props,
+    products,
     blocking: action,
     subjectAction: action,
-    environmentAction: scene?.environmentAction || "Locked set continuity",
+    environmentAction:
+      scene?.environmentAction ||
+      (locations[0] ? `Locked set continuity in ${locations[0]}` : "Locked set continuity"),
     lightingIntent: scene?.lightingIntent || "High-contrast cinematic lighting",
     temporalBeat: {
       startSec: 0,
@@ -282,7 +359,14 @@ function cleanStillCompiledPrompt(compiled: string): string {
     }
   }
 
-  const panel = panelSpecFromLiveScene(scene, sceneIndexZeroBased);
+  const panel = panelSpecFromLiveScene(scene, sceneIndexZeroBased, {
+    character: brief?.character || production?.character,
+    characters: brief?.characters || production?.characters,
+    environment: brief?.environment || brief?.location || production?.environment,
+    location: brief?.location || production?.location,
+    brief: brief || production?.brief,
+    brandName: brief?.brandName || production?.brandName,
+  });
   const framePrompt = compileIndividualStoryboardFramePrompt({
     panel,
     aspectRatio,

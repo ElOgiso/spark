@@ -11,7 +11,7 @@ test("listMissing -> ensure generates prop URL for a bible prop entry when image
   const originalExecute = ModelRouter.executeCategoryRequest;
   const originalUpload = ProductionAssetService.uploadAssetToStorage;
 
-  const mockGeneratedUrl = "https://example.com/mock-recorder-prop-sheet.png";
+  const mockGeneratedUrl = "https://test.supabase.co/storage/v1/object/public/Spark/brands/brand-1/prod-1/props/recorder.png";
   ModelRouter.executeCategoryRequest = async () => mockGeneratedUrl;
   ProductionAssetService.uploadAssetToStorage = async (params: any) => ({
     publicUrl: mockGeneratedUrl,
@@ -161,10 +161,10 @@ test("ensureAssetBibleAssets strictly respects maxPropGenerations cap", async ()
   let generatedCount = 0;
   ModelRouter.executeCategoryRequest = async () => {
     generatedCount++;
-    return `https://example.com/prop-${generatedCount}.png`;
+    return `https://test.supabase.co/storage/v1/object/public/Spark/brands/brand-1/prod-1/props/prop-${generatedCount}.png`;
   };
   ProductionAssetService.uploadAssetToStorage = async (params: any) => ({
-    publicUrl: `https://example.com/prop-${generatedCount}.png`,
+    publicUrl: `https://test.supabase.co/storage/v1/object/public/Spark/brands/brand-1/prod-1/props/prop-${generatedCount}.png`,
     storagePath: params.storagePath,
     assetId: `pa-${generatedCount}`,
     uploadSuccess: true,

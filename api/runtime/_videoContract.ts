@@ -328,34 +328,62 @@ export function grokMotionPrompt(prompt: string): string {
   return i2vMotionLock(prompt);
 }
 
+export function mapGrokAspectRatio(ratio?: string): string {
+  const norm = normalizeAspectRatio(ratio);
+  if (norm === "16:9") return "VIDEO_ASPECT_RATIO_16_9";
+  if (norm === "1:1") return "VIDEO_ASPECT_RATIO_1_1";
+  return "VIDEO_ASPECT_RATIO_9_16";
+}
+
+export function mapGrokResolution(res?: string): "VIDEO_RESOLUTION_720P" | "VIDEO_RESOLUTION_1080P" {
+  const norm = normalizeResolution(res);
+  if (norm === "1080p") return "VIDEO_RESOLUTION_1080P";
+  return "VIDEO_RESOLUTION_720P";
+}
+
 export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string, unknown> {
   const model = req.model && req.model !== "grok-imagine-video" ? req.model : GROK_VIDEO_MODEL;
 
-  // B. Body must include official image object when a still exists:
-  // image: { url: firstFrameDataUri or durable public/signed URL of THIS SHOT still }
-  // Never send i2v without an image. If no still, FAIL the shot — do not T2V.
-  const stillUrl = req.firstFrameUrl || req.firstFrameDataUri;
-  if (!stillUrl || !stillUrl.trim()) {
+  // Prefer durable HTTPS URL (firstFrameUrl) over data URI if firstFrameUrl is an HTTP(S) URL
+  const stillUrl = (
+    req.firstFrameUrl && (req.firstFrameUrl.startsWith("http://") || req.firstFrameUrl.startsWith("https://"))
+      ? req.firstFrameUrl
+      : req.firstFrameUrl || req.firstFrameDataUri || ""
+  ).trim();
+
+  if (!stillUrl) {
     throw new Error("Grok I2V requires this shot's still as frame 1. Refusing text-to-video (numInputImages=0 forbidden).");
   }
 
-  const trimmedUrl = stillUrl.trim();
+  const aspectRatio = mapGrokAspectRatio(req.aspectRatio);
+  let resolution: "VIDEO_RESOLUTION_720P" | "VIDEO_RESOLUTION_1080P" = mapGrokResolution(req.resolution);
+
   const body: Record<string, unknown> = {
     model,
     prompt: grokMotionPrompt(req.prompt),
     duration: snapGrokDuration(req.durationSec),
-    aspect_ratio: normalizeAspectRatio(req.aspectRatio),
-    resolution: normalizeResolution(req.resolution),
+    aspectRatio,
+    resolution,
     image: {
-      url: trimmedUrl,
+      imageUrl: stillUrl,
+      url: stillUrl,
+      detail: "DETAIL_AUTO",
     },
-    image_url: trimmedUrl,
+    // Retain compatibility aliases
+    aspect_ratio: aspectRatio,
+    image_url: stillUrl,
   };
 
-  const endUrl = (req.lastFrameUrl || req.lastFrameDataUri || (req as any).endFrameUrl)?.trim();
+  const endUrl = (
+    req.lastFrameUrl && (req.lastFrameUrl.startsWith("http://") || req.lastFrameUrl.startsWith("https://"))
+      ? req.lastFrameUrl
+      : req.lastFrameUrl || req.lastFrameDataUri || (req as any).endFrameUrl
+  )?.trim();
+
   let hasLastFrame = false;
-  if (endUrl && endUrl !== trimmedUrl) {
-    body.last_frame = { url: endUrl };
+  if (endUrl && endUrl !== stillUrl) {
+    body.last_frame = { imageUrl: endUrl, url: endUrl, detail: "DETAIL_AUTO" };
+    body.lastFrame = { imageUrl: endUrl, url: endUrl, detail: "DETAIL_AUTO" };
     hasLastFrame = true;
   }
 
@@ -364,10 +392,10 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     ...(req.referenceUrls || []),
     ...(req.referenceDataUris || []),
     ...((req as any).reference_image_urls || []),
-    ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.url)) || []),
+    ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.imageUrl || r?.url)) || []),
   ];
   const seen = new Set<string>();
-  seen.add(trimmedUrl);
+  seen.add(stillUrl);
   if (hasLastFrame && endUrl) {
     seen.add(endUrl);
   }
@@ -383,12 +411,18 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     }
   }
   if (dedupedRefs.length > 0) {
-    body.reference_images = dedupedRefs.map((u) => ({ url: u }));
+    body.reference_images = dedupedRefs.map((u) => ({
+      imageUrl: u,
+      url: u,
+      detail: "DETAIL_AUTO",
+    }));
+    body.referenceImages = body.reference_images;
   }
 
-  // When last_frame or any reference_images are present -> force resolution = "720p".
+  // When last_frame or any reference_images are present -> force resolution = "VIDEO_RESOLUTION_720P".
   if (hasLastFrame || dedupedRefs.length > 0) {
-    body.resolution = "720p";
+    resolution = "VIDEO_RESOLUTION_720P";
+    body.resolution = resolution;
   }
 
   return body;

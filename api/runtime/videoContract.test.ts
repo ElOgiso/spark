@@ -190,12 +190,13 @@ test("Grok i2v: 1. still only -> image only (keeps requested 1080p resolution)",
     resolution: "1080p",
   });
   assert.equal(body.model, "grok-imagine-video-1.5");
-  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
-  assert.equal(body.image_url, "data:image/jpeg;base64,START");
+  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
+  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
+  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_16_9");
+  assert.equal(body.resolution, "VIDEO_RESOLUTION_1080P");
   assert.equal(body.last_frame, undefined);
   assert.equal((body as any).last_frame_url, undefined);
   assert.equal(body.reference_images, undefined);
-  assert.equal(body.resolution, "1080p");
 });
 
 test("Grok i2v: 2. still + end -> image + last_frame and forces 720p even if 1080p requested", () => {
@@ -207,11 +208,14 @@ test("Grok i2v: 2. still + end -> image + last_frame and forces 720p even if 108
     aspectRatio: "16:9",
     resolution: "1080p",
   });
-  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
-  assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
+  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
+  assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
+  assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
+  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_16_9");
+  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
   assert.equal((body as any).last_frame_url, undefined);
   assert.equal(body.reference_images, undefined);
-  assert.equal(body.resolution, "720p");
 });
 
 test("Grok i2v: 3. still + refs -> image + reference_images (max 7) and forces 720p", () => {
@@ -223,14 +227,16 @@ test("Grok i2v: 3. still + refs -> image + reference_images (max 7) and forces 7
     durationSec: 6,
     aspectRatio: "9:16",
   });
-  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
+  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
+  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
+  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_9_16");
+  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
   assert.equal(body.last_frame, undefined);
   assert.equal((body as any).last_frame_url, undefined);
   assert.ok(Array.isArray(body.reference_images));
   assert.equal((body.reference_images as any[]).length, 7);
-  assert.deepEqual((body.reference_images as any[])[0], { url: "data:image/jpeg;base64,F0" });
-  assert.deepEqual((body.reference_images as any[])[6], { url: "data:image/jpeg;base64,F6" });
-  assert.equal(body.resolution, "720p");
+  assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,F0");
+  assert.equal((body.reference_images as any[])[6]?.imageUrl, "data:image/jpeg;base64,F6");
 });
 
 test("Grok i2v: 4. still + end + refs -> all three + 720p, rejects legacy last_frame_url alone", () => {
@@ -244,15 +250,17 @@ test("Grok i2v: 4. still + end + refs -> all three + 720p, rejects legacy last_f
     aspectRatio: "9:16",
   });
   assert.equal(body.model, "grok-imagine-video-1.5");
-  assert.deepEqual(body.image, { url: "data:image/jpeg;base64,START" });
-  assert.equal(body.image_url, "data:image/jpeg;base64,START");
-  assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
+  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
+  assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
+  assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
   assert.equal((body as any).last_frame_url, undefined);
-  assert.equal(body.resolution, "720p");
+  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_9_16");
+  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
   assert.ok(Array.isArray(body.reference_images));
   assert.equal((body.reference_images as any[]).length, 7);
-  assert.deepEqual((body.reference_images as any[])[0], { url: "data:image/jpeg;base64,F0" });
-  assert.deepEqual((body.reference_images as any[])[6], { url: "data:image/jpeg;base64,F6" });
+  assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,F0");
+  assert.equal((body.reference_images as any[])[6]?.imageUrl, "data:image/jpeg;base64,F6");
   assert.equal(body.reference_image_urls, undefined);
   assert.equal(snapGrokDuration(0), 1);
   assert.equal(snapGrokDuration(99), 15);

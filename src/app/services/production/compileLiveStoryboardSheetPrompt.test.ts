@@ -36,6 +36,29 @@ test("compileLiveStoryboardSheetPrompt emits multi-panel sheet laws + layout", (
   assert.ok(!/SINGLE clean cinematic still/i.test(result.prompt));
   assert.equal(chooseStoryboardLayout(5, "16:9"), "1x5");
   assert.equal(chooseStoryboardLayout(16, "16:9"), "4x4");
+  assert.ok(result.prompt.includes("Locations: Executive studio"), "Locations should reflect environment");
+});
+
+test("compileLiveStoryboardSheetPrompt resolves characters and locations from brief/context", () => {
+  const scenes = [
+    {
+      scene: 1,
+      visualDescription: "Detective enters dimly lit warehouse",
+      shotId: "shot_01",
+    },
+  ];
+  const result = compileLiveStoryboardSheetPrompt({
+    scenes,
+    aspectRatio: "16:9",
+    brief: {
+      character: { name: "Agent Vance", style: "Tactical trenchcoat" },
+      location: "Abandoned Dockyard Warehouse",
+    },
+  });
+  assert.ok(result.prompt.includes("Characters: Agent Vance"));
+  assert.ok(result.prompt.includes("Locations: Abandoned Dockyard Warehouse"));
+  assert.ok(!result.prompt.includes("Characters: none"));
+  assert.ok(!result.prompt.includes("Locations: none"));
 });
 
 test("compileLiveStoryboardSheetPrompt caps at LIVE_STORYBOARD_SHEET_MAX_PANELS", () => {

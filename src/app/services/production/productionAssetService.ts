@@ -802,15 +802,38 @@ export class ProductionAssetService {
     if (dataUrlOrBlob instanceof Blob) {
       uploadBlob = dataUrlOrBlob;
     } else if (typeof dataUrlOrBlob === "string" && dataUrlOrBlob.startsWith("data:")) {
-      const base64Data = dataUrlOrBlob.split(",")[1];
-      if (base64Data) {
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
+      try {
+        if (typeof fetch !== "undefined") {
+          const fetched = await fetch(dataUrlOrBlob);
+          if (fetched.ok) {
+            uploadBlob = await fetched.blob();
+          }
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        uploadBlob = new Blob([byteArray], { type: mimeType });
+      } catch {
+        // Fallback to manual base64 decoding
+      }
+      if (!uploadBlob) {
+        try {
+          const match = dataUrlOrBlob.match(/^data:([^;]+);base64,(.*)$/s);
+          const rawMime = match ? match[1] : mimeType;
+          const b64 = (match ? match[2] : dataUrlOrBlob.split(",")[1] || "").replace(/\s+/g, "");
+          if (b64) {
+            if (typeof Buffer !== "undefined") {
+              const buf = Buffer.from(b64, "base64");
+              uploadBlob = new Blob([buf], { type: rawMime || mimeType });
+            } else {
+              const byteCharacters = atob(b64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              uploadBlob = new Blob([byteArray], { type: rawMime || mimeType });
+            }
+          }
+        } catch (b64Err) {
+          console.warn("[ProductionAssetService] Notice decoding base64 data URI:", b64Err);
+        }
       }
     } else if (dataUrlOrBlob.startsWith("http://") || dataUrlOrBlob.startsWith("https://")) {
       if (isPersistableSparkMediaUrl(dataUrlOrBlob) && extractSparkStoragePath(dataUrlOrBlob) === storagePath) {
@@ -1113,23 +1136,42 @@ export class ProductionAssetService {
             if (ensuredResult.generated.length > 0) {
               brief.generatedAssets = brief.generatedAssets || {};
               brief.generatedAssets.propSheets = brief.generatedAssets.propSheets || {};
+              brief.generatedAssets.locationPlates = brief.generatedAssets.locationPlates || {};
+              brief.generatedAssets.wardrobeSheets = brief.generatedAssets.wardrobeSheets || {};
               for (const g of ensuredResult.generated) {
                 if (g.sheetKind === "prop") {
                   brief.generatedAssets.propSheets[g.tag] = g.url;
                 } else if (g.sheetKind === "location") {
-                  brief.generatedAssets.locationPlates = brief.generatedAssets.locationPlates || {};
                   brief.generatedAssets.locationPlates[g.tag] = g.url;
                   (brief as any).locationPlateUrl = g.url;
                   (production as any).locationPlateUrl = g.url;
+                  if (brand && typeof brand === "object") {
+                    (brand as any).locationPlateUrl = g.url;
+                  }
                 } else if (g.sheetKind === "wardrobe_variant") {
-                  brief.generatedAssets.wardrobeSheets = brief.generatedAssets.wardrobeSheets || {};
                   brief.generatedAssets.wardrobeSheets[g.tag] = g.url;
                 }
               }
               (production as any).generatedAssets = {
                 ...((production as any).generatedAssets || {}),
                 propSheets: brief.generatedAssets.propSheets,
+                locationPlates: brief.generatedAssets.locationPlates,
+                wardrobeSheets: brief.generatedAssets.wardrobeSheets,
               };
+
+              // Persist ensured asset sheets immediately to Supabase BEFORE keyframe / I2V motion loop
+              try {
+                const { persistProductionUpdate } = await import("../../backend/workspaceSync");
+                await persistProductionUpdate(production.id, {
+                  brief,
+                  generatedAssets: (production as any).generatedAssets,
+                } as any);
+                console.log(
+                  `[SPARK Asset Bible] Persisted ${ensuredResult.generated.length} ensured asset(s) to Supabase before I2V motion synthesis.`
+                );
+              } catch (persistErr) {
+                console.warn("[SPARK Asset Bible] Notice persisting ensured assets pre-I2V:", persistErr);
+              }
             }
           } catch (ensureErr) {
             console.warn("[ProductionAssetService] Non-blocking ensureAssetBibleAssets notice:", ensureErr);

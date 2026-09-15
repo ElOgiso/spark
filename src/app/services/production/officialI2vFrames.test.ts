@@ -167,15 +167,14 @@ describe("official Veo / Grok wire fields", () => {
       aspectRatio: "9:16",
     });
     assert.equal(body.model, "grok-imagine-video-1.5");
-    assert.deepEqual(body.image, { url: "data:image/jpeg;base64,STILL" });
-    assert.equal(body.image_url, "data:image/jpeg;base64,STILL");
-    assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
+    assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,STILL");
+    assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
+    assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
+    assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
     assert.equal((body as any).last_frame_url, undefined);
-    assert.equal(body.resolution, "720p");
-    assert.deepEqual(body.reference_images, [
-      { url: "data:image/jpeg;base64,SHEET" },
-      { url: "data:image/jpeg;base64,GRID" },
-    ]);
+    assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
+    assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,SHEET");
+    assert.equal((body.reference_images as any[])[1]?.imageUrl, "data:image/jpeg;base64,GRID");
   });
 
   it("resolveClipFrames uses lastFrameUrl as end/continuity, not as frame 1", () => {

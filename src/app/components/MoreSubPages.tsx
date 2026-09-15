@@ -232,6 +232,47 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
               });
             }
           }
+          // Prop sheets & location plates
+          const propSheets = p.brief?.generatedAssets?.propSheets || p.generatedAssets?.propSheets || {};
+          Object.entries(propSheets).forEach(([tag, url]) => {
+            if (typeof url === "string" && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-prop-${p.id}-${tag}`,
+                name: `${p.title || "Production"}_Prop_${tag}.png`,
+                type: "Production Prop Sheet",
+                size: "Cloud Persisted",
+                date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+                url,
+              });
+            }
+          });
+          const locPlates = p.brief?.generatedAssets?.locationPlates || p.generatedAssets?.locationPlates || {};
+          Object.entries(locPlates).forEach(([tag, url]) => {
+            if (typeof url === "string" && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              items.push({
+                id: `prod-loc-${p.id}-${tag}`,
+                name: `${p.title || "Production"}_Location_${tag}.png`,
+                type: "Production Location Plate",
+                size: "Cloud Persisted",
+                date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+                url,
+              });
+            }
+          });
+          const pPlate = p.locationPlateUrl || p.brief?.locationPlateUrl;
+          if (pPlate && typeof pPlate === "string" && !seenUrls.has(pPlate)) {
+            seenUrls.add(pPlate);
+            items.push({
+              id: `prod-locplate-${p.id}`,
+              name: `${p.title || "Production"}_Set_Plate.png`,
+              type: "Production Location Plate",
+              size: "Cloud Persisted",
+              date: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Recent",
+              url: pPlate,
+            });
+          }
         });
       }
 

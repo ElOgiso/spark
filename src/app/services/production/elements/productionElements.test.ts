@@ -261,10 +261,11 @@ test("Grok body maps referenceImageUrls from element pack (<=7, 720p)", () => {
     aspectRatio: "9:16",
   });
 
-  assert.deepEqual(body.image, { url: "https://cdn/shot-01-still.jpg" });
+  assert.equal((body.image as any)?.imageUrl, "https://cdn/shot-01-still.jpg");
+  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
   assert.ok(Array.isArray(body.reference_images));
   assert.equal((body.reference_images as any[]).length, 2);
-  assert.deepEqual((body.reference_images as any[])[0], { url: "https://cdn/eduardo-sheet.png" });
-  assert.deepEqual((body.reference_images as any[])[1], { url: "https://cdn/cabin-plate.png" });
-  assert.equal(body.resolution, "720p");
+  assert.equal((body.reference_images as any[])[0]?.imageUrl, "https://cdn/eduardo-sheet.png");
+  assert.equal((body.reference_images as any[])[1]?.imageUrl, "https://cdn/cabin-plate.png");
+  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
 });

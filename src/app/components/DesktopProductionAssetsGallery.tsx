@@ -75,6 +75,40 @@ export function DesktopProductionAssetsGallery({
     pushImg(`thumb-${t.variant || idx + 1}`, `Thumbnail ${t.variant || idx + 1}`, t.image || t.url);
   });
 
+  // Ensured & locked production props
+  const propSheets = (brief?.generatedAssets?.propSheets || activeProd?.generatedAssets?.propSheets || {}) as Record<string, string>;
+  Object.entries(propSheets).forEach(([tag, url]) => {
+    if (url && typeof url === "string") {
+      pushImg(`prop-${tag}`, `Prop: ${tag}`, url);
+    }
+  });
+
+  // Ensured & locked location plates
+  const locationPlates = (brief?.generatedAssets?.locationPlates || activeProd?.generatedAssets?.locationPlates || {}) as Record<string, string>;
+  Object.entries(locationPlates).forEach(([tag, url]) => {
+    if (url && typeof url === "string") {
+      pushImg(`loc-${tag}`, `Location: ${tag}`, url);
+    }
+  });
+  const singlePlate = (brief as any)?.locationPlateUrl || (activeProd as any)?.locationPlateUrl;
+  if (singlePlate && typeof singlePlate === "string") {
+    pushImg("location-plate-locked", "Location plate", singlePlate);
+  }
+
+  // Ensured & locked wardrobe variants
+  const wardrobeSheets = (brief?.generatedAssets?.wardrobeSheets || activeProd?.generatedAssets?.wardrobeSheets || {}) as Record<string, string>;
+  Object.entries(wardrobeSheets).forEach(([tag, url]) => {
+    if (url && typeof url === "string") {
+      pushImg(`wardrobe-${tag}`, `Wardrobe: ${tag}`, url);
+    }
+  });
+
+  // Storyboard overview sheet
+  const gridSheet = brief?.storyboardGridUrl || brief?.generatedAssets?.storyboardGridUrl || (activeProd as any)?.storyboardGridUrl;
+  if (gridSheet && typeof gridSheet === "string") {
+    pushImg("storyboard-grid-sheet", "Storyboard sheet", gridSheet);
+  }
+
   const initialScenes: DesktopSceneItem[] =
     mediaView.scenes.length > 0
       ? mediaView.scenes.map((s) => {

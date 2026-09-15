@@ -71,7 +71,15 @@ export function compileLiveStoryboardSheetPrompt(params: {
   });
 
   const panels = scenes.map((scene, i) => {
-    const panel = panelSpecFromLiveScene(scene, i);
+    const panel = panelSpecFromLiveScene(scene, i, {
+      character: params.brief?.character,
+      characters: params.brief?.characters,
+      environment: params.environment || params.brief?.environment || params.brief?.location,
+      location: params.brief?.location || params.environment,
+      brief: params.brief,
+      brandName: params.brandName,
+      formatSettings: params.formatSettings,
+    });
     return {
       ...panel,
       sequenceIndex: i,

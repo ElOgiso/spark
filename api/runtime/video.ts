@@ -431,12 +431,48 @@ async function generateKling(req: VideoClipRequest): Promise<string> {
 async function generateGrok(req: VideoClipRequest): Promise<string> {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY || process.env.VITE_XAI_API_KEY || process.env.VITE_GROK_API_KEY;
   if (!apiKey) throw new Error("xAI Grok API key not configured (XAI_API_KEY or GROK_API_KEY).");
-  const body = buildGrokVideoGenerateBody({ ...req, model: req.model || GROK_VIDEO_MODEL });
+  // Still URL policy: Prefer durable HTTPS URL for image.imageUrl.
+  // If first frame is only data: URI, upload to public Spark path first if possible, then pass HTTPS;
+  // otherwise pass data URI directly in imageUrl — never send empty image.
+  let effectiveReq = { ...req, model: req.model || GROK_VIDEO_MODEL };
+  if (
+    (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) &&
+    effectiveReq.firstFrameDataUri?.startsWith("data:")
+  ) {
+    try {
+      const { persistBufferToSpark, sparkBrandMediaPath } = await import("./_sparkStorage.js");
+      const match = effectiveReq.firstFrameDataUri.match(/^data:([^;]+);base64,(.*)$/s);
+      const mime = match ? match[1] : "image/jpeg";
+      const b64 = (match ? match[2] : effectiveReq.firstFrameDataUri.split(",")[1] || "").replace(/\s/g, "");
+      if (b64) {
+        const buf = Buffer.from(b64, "base64");
+        const ext = mime.includes("png") ? "png" : "jpg";
+        const storagePath = sparkBrandMediaPath("default-brand", "default-prod", `keyframes/still-${Date.now()}.${ext}`);
+        const persisted = await persistBufferToSpark({
+          buffer: buf,
+          storagePath,
+          contentType: mime,
+        });
+        if (persisted?.publicUrl) {
+          effectiveReq.firstFrameUrl = persisted.publicUrl;
+        }
+      }
+    } catch (uploadErr) {
+      console.warn("[Grok Video] Pre-upload of data URI to Spark Storage notice:", uploadErr);
+    }
+  }
+
+  const body = buildGrokVideoGenerateBody(effectiveReq);
 
   // Log once per shot immediately before fetch to api.x.ai
-  const imageUrl = (body.image as any)?.url || (body as any).image_url;
+  const imageUrl = (body.image as any)?.imageUrl || (body.image as any)?.url || (body as any).imageUrl || (body as any).image_url;
   const hasImageUrl = Boolean(imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0);
-  const hasLastFrame = Boolean((body.last_frame as any)?.url || (body as any).last_frame_url);
+  const hasLastFrame = Boolean(
+    (body.last_frame as any)?.imageUrl ||
+    (body.last_frame as any)?.url ||
+    (body.lastFrame as any)?.imageUrl ||
+    (body as any).last_frame_url
+  );
   const refImagesCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
   console.log(
     `[Grok Video] Shot request: model=${body.model}, hasImageUrl=${hasImageUrl}, hasLastFrame=${hasLastFrame}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
