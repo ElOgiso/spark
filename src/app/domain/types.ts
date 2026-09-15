@@ -342,6 +342,9 @@ export interface ProductionBrief {
       generationStatus?: string;
       lastError?: string;
     };
+    propSheets?: Record<string, string>;
+    locationPlates?: Record<string, string>;
+    wardrobeSheets?: Record<string, string>;
   };
   /** Preproduction Asset Bible defining required entity @tags and sheet kinds */
   assetBible?: import("../services/production/preproduction/assetBibleFromBrief").AssetBibleEntry[];

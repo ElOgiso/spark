@@ -32,6 +32,7 @@ import {
   listMissingAssetBibleEntries,
   type AssetBibleEntry,
 } from "./preproduction/assetBibleFromBrief";
+import { ensureAssetBibleAssets } from "./preproduction/ensureAssetBibleAssets";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
 import { collectSparkShotClipUrls } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
@@ -625,6 +626,7 @@ export function buildVisualLockRefs(params: {
     directorIdentityUrls,
     directorSupportUrls,
     directorPropUrl,
+    propUrls: Object.entries((params as any)?.brief?.generatedAssets?.propSheets || {}).map(([tag, url]) => ({ tag, url: url as string })),
     assetBible: params.assetBible,
   });
 
@@ -1083,8 +1085,55 @@ export class ProductionAssetService {
         if (missing.length > 0) {
           const missingSummary = missing.map((m) => `${m.tag} (${m.sheetKind})`).join(", ");
           console.warn(
-            `[SPARK Asset Bible] ${missing.length} planned asset sheet(s) unattached at preflight: ${missingSummary}. Proceeding with available anchors.`
+            `[SPARK Asset Bible] ${missing.length} planned asset sheet(s) unattached at preflight: ${missingSummary}. Ensuring missing assets before keyframes/I2V.`
           );
+
+          try {
+            const formatForEnsure = getEffectiveContentFormat({
+              brand,
+              formatSettings: activeFormatSettings,
+              production,
+              brief,
+            });
+            const ensuredResult = await ensureAssetBibleAssets({
+              bible: brief.assetBible,
+              brand,
+              character,
+              characters,
+              productionId: production.id,
+              contentFormat: formatForEnsure,
+              existingElements: preflightPack,
+              knownLocationPlateUrl:
+                (brief as any).locationPlateUrl ||
+                (production as any).locationPlateUrl ||
+                brand.locationPlateUrl,
+              signal,
+            });
+
+            if (ensuredResult.generated.length > 0) {
+              brief.generatedAssets = brief.generatedAssets || {};
+              brief.generatedAssets.propSheets = brief.generatedAssets.propSheets || {};
+              for (const g of ensuredResult.generated) {
+                if (g.sheetKind === "prop") {
+                  brief.generatedAssets.propSheets[g.tag] = g.url;
+                } else if (g.sheetKind === "location") {
+                  brief.generatedAssets.locationPlates = brief.generatedAssets.locationPlates || {};
+                  brief.generatedAssets.locationPlates[g.tag] = g.url;
+                  (brief as any).locationPlateUrl = g.url;
+                  (production as any).locationPlateUrl = g.url;
+                } else if (g.sheetKind === "wardrobe_variant") {
+                  brief.generatedAssets.wardrobeSheets = brief.generatedAssets.wardrobeSheets || {};
+                  brief.generatedAssets.wardrobeSheets[g.tag] = g.url;
+                }
+              }
+              (production as any).generatedAssets = {
+                ...((production as any).generatedAssets || {}),
+                propSheets: brief.generatedAssets.propSheets,
+              };
+            }
+          } catch (ensureErr) {
+            console.warn("[ProductionAssetService] Non-blocking ensureAssetBibleAssets notice:", ensureErr);
+          }
         } else {
           console.log(
             `[SPARK Asset Bible] All ${brief.assetBible.length} planned asset bible entities satisfied.`
@@ -2536,6 +2585,8 @@ export class ProductionAssetService {
                     character?.characterSheetUrl,
                     character?.imageUrl,
                     character?.avatarUrl,
+                    ...Object.values(brief.generatedAssets?.propSheets || {}),
+                    ...Object.values(brief.generatedAssets?.wardrobeSheets || {}),
                   ],
                   plateUrl: durableLocationPlateUrl,
                 },
@@ -2613,12 +2664,14 @@ export class ProductionAssetService {
                   ? motionMerged.locationPlateUrl
                   : undefined;
 
+              const propSheetUrls = Object.values(brief.generatedAssets?.propSheets || {});
               if (
                 (sceneCharSheetUrl && sceneFirstFrame === sceneCharSheetUrl) ||
-                (validPlate && sceneFirstFrame === validPlate)
+                (validPlate && sceneFirstFrame === validPlate) ||
+                propSheetUrls.includes(sceneFirstFrame)
               ) {
                 throw new Error(
-                  `I2V Scene ${globalSceneNum}: start frame must be this shot's still, not a character sheet or location plate.`
+                  `I2V Scene ${globalSceneNum}: start frame must be this shot's still, not a character sheet, location plate, or prop sheet.`
                 );
               }
 
@@ -2644,6 +2697,10 @@ export class ProductionAssetService {
                 directorIdentityUrls: motionMerged.identityUrls,
                 directorSupportUrls: motionMerged.supportUrls,
                 directorPropUrl: motionMerged.propUrl,
+                propUrls: [
+                  ...(motionMerged.propUrl ? [{ url: motionMerged.propUrl }] : []),
+                  ...Object.entries(brief.generatedAssets?.propSheets || {}).map(([tag, url]) => ({ tag, url })),
+                ],
                 assetBible: brief.assetBible,
               });
               const explicitTags = (s as any).elementTags || (s as any).neededTags || (s as any).tags;
