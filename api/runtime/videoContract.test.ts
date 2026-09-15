@@ -13,6 +13,7 @@ import {
   buildGrokVideoGenerateBody,
   resolveClipFrames,
   grokMotionPrompt,
+  clampGrokVideoPrompt,
   i2vMotionLock,
   I2V_MOTION_LOCK,
   I2V_NEGATIVE_PROMPT,
@@ -299,3 +300,47 @@ test("resolveClipFrames does not promote lastFrameUrl to first frame", () => {
   assert.equal(frames.firstFrameUrl, undefined);
   assert.equal(frames.endFrameUrl, "https://cdn/next-still.jpg");
 });
+
+test("clampGrokVideoPrompt leaves short prompt unchanged", () => {
+  const shortPrompt = "ACTION: Host turns and gestures to the screen. CAMERA: Slow push-in.";
+  const clamped = clampGrokVideoPrompt(shortPrompt);
+  assert.equal(clamped, shortPrompt);
+});
+
+test("clampGrokVideoPrompt clamps 6000 character prompt to <= 4096 and preserves motion lock + action", () => {
+  const giantEssay = "GENRE DIRECTIVE: Extensive essay about cinematic lighting and format history. ".repeat(60);
+  const actionLine = "ACTION: Detective opens the briefcase and reveals glowing artifact.";
+  const cameraLine = "CAMERA: Low angle slow dolly forward.";
+  const prompt6000 = `${I2V_MOTION_LOCK}\n\n${giantEssay}\n\n${actionLine}\n\n${cameraLine}\n\n${"EXTRA COMMENTARY: filler words ".repeat(80)}`;
+
+  assert.ok(prompt6000.length > 6000, `Expected prompt > 6000, got ${prompt6000.length}`);
+
+  const clamped = clampGrokVideoPrompt(prompt6000);
+  assert.ok(clamped.length <= 4096, `Expected <= 4096, got ${clamped.length}`);
+  assert.ok(clamped.length <= 4000, `Expected <= 4000, got ${clamped.length}`);
+  assert.ok(clamped.includes("Animate the provided start frame"), "Must keep leading I2V_MOTION_LOCK");
+  assert.ok(clamped.includes(actionLine), "Must prioritize action line");
+  assert.ok(clamped.includes(cameraLine), "Must prioritize camera line");
+});
+
+test("buildGrokVideoGenerateBody clamps prompt to <= 4096 and refuses T2V without image", () => {
+  const longPrompt = `${"GENRE DIRECTIVE: long essay ".repeat(150)}\n\nACTION: Character smiles and nods.`;
+  const body = buildGrokVideoGenerateBody({
+    prompt: longPrompt,
+    firstFrameUrl: "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/still.png",
+  });
+  const promptStr = body.prompt as string;
+  assert.ok(promptStr.length <= 4096, `Prompt length ${promptStr.length} must be <= 4096`);
+  assert.ok(promptStr.includes("Animate the provided start frame"));
+  assert.ok(promptStr.includes("ACTION: Character smiles and nods."));
+
+  // Still refuses T2V when firstFrame is missing
+  assert.throws(
+    () =>
+      buildGrokVideoGenerateBody({
+        prompt: "any text",
+      }),
+    /numInputImages=0 forbidden/
+  );
+});
+

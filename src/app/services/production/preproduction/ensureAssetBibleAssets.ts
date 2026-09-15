@@ -13,7 +13,7 @@
 
 import type { Brand, Character } from "../../../domain/types";
 import type { ProductionElement } from "../elements/productionElements";
-import { slugify } from "../elements/productionElements";
+import { slugify, normalizeElementTag } from "../elements/productionElements";
 import {
   listMissingAssetBibleEntries,
   type AssetBibleEntry,
@@ -33,9 +33,11 @@ export interface EnsureAssetBibleAssetsParams {
   existingElements?: ProductionElement[] | null;
   knownPropUrls?: (string | { url: string; name?: string; tag?: string })[];
   knownLocationPlateUrl?: string;
+  knownWardrobeUrls?: (string | { url: string; name?: string; tag?: string })[];
   signal?: AbortSignal;
   maxPropGenerations?: number; // default 5
   aspectRatio?: string;
+  forceRegenerate?: boolean;
 }
 
 export interface EnsuredGeneratedAsset {
@@ -79,13 +81,15 @@ export async function ensureAssetBibleAssets(
     contentFormat = "standard",
     existingElements = [],
     knownLocationPlateUrl,
+    knownWardrobeUrls,
     signal,
     maxPropGenerations = 5,
     aspectRatio = "1:1",
+    forceRegenerate = false,
   } = params;
 
   const result: EnsureAssetBibleResult = {
-    fulfilled: Array.isArray(existingElements) ? [...existingElements] : [],
+    fulfilled: forceRegenerate ? [] : (Array.isArray(existingElements) ? [...existingElements] : []),
     generated: [],
     stillMissing: [],
     errors: [],
@@ -95,9 +99,74 @@ export async function ensureAssetBibleAssets(
     return result;
   }
 
+  // Seed known prop URLs into fulfilled if not already present
+  if (!forceRegenerate && Array.isArray(params.knownPropUrls)) {
+    for (const p of params.knownPropUrls) {
+      const url = typeof p === "string" ? p : p?.url;
+      const tag = typeof p === "object" ? p?.tag : undefined;
+      const name = typeof p === "object" ? p?.name : undefined;
+      if (isValidMediaUrl(url)) {
+        const normTag = tag ? normalizeElementTag(tag) : undefined;
+        const alreadyPresent = result.fulfilled.some(
+          (e) => (normTag && normalizeElementTag(e.tag) === normTag) || e.url === url
+        );
+        if (!alreadyPresent) {
+          result.fulfilled.push({
+            tag: normTag || "@prop",
+            role: "prop",
+            label: name || "Prop",
+            url: url.trim(),
+          });
+        }
+      }
+    }
+  }
+
+  // Seed known location plate URL into fulfilled if not already present
+  if (!forceRegenerate && knownLocationPlateUrl && isValidMediaUrl(knownLocationPlateUrl)) {
+    const locTag = bible.find((b) => b.role === "location" || b.sheetKind === "location")?.tag || "@location_plate";
+    const alreadyPresent = result.fulfilled.some(
+      (e) => e.role === "location" || normalizeElementTag(e.tag) === normalizeElementTag(locTag) || e.url === knownLocationPlateUrl
+    );
+    if (!alreadyPresent) {
+      result.fulfilled.push({
+        tag: locTag,
+        role: "location",
+        label: "Location Plate",
+        url: knownLocationPlateUrl.trim(),
+      });
+    }
+  }
+
+  // Seed known wardrobe URLs into fulfilled if not already present
+  if (!forceRegenerate && Array.isArray(knownWardrobeUrls)) {
+    for (const w of knownWardrobeUrls) {
+      const url = typeof w === "string" ? w : w?.url;
+      const tag = typeof w === "object" ? w?.tag : undefined;
+      const name = typeof w === "object" ? w?.name : undefined;
+      if (isValidMediaUrl(url)) {
+        const normTag = tag ? normalizeElementTag(tag) : undefined;
+        const alreadyPresent = result.fulfilled.some(
+          (e) => (normTag && normalizeElementTag(e.tag) === normTag) || e.url === url
+        );
+        if (!alreadyPresent) {
+          result.fulfilled.push({
+            tag: normTag || "@wardrobe_variant",
+            role: "wardrobe_variant",
+            label: name || "Wardrobe Variant",
+            url: url.trim(),
+          });
+        }
+      }
+    }
+  }
+
   // Identify missing entries against current resolved elements
-  const missing = listMissingAssetBibleEntries(bible, result.fulfilled);
+  const missing = forceRegenerate
+    ? [...bible]
+    : listMissingAssetBibleEntries(bible, result.fulfilled);
   if (missing.length === 0) {
+    console.log(`[SPARK Asset Bible] All ${bible.length} bible entries already satisfied by durable assets.`);
     return result;
   }
 
@@ -111,10 +180,43 @@ export async function ensureAssetBibleAssets(
       continue;
     }
 
+    // Skip if already fulfilled and not forceRegenerate
+    if (!forceRegenerate) {
+      const normTag = normalizeElementTag(entry.tag);
+      const alreadyFulfilled = result.fulfilled.find(
+        (f) => normalizeElementTag(f.tag) === normTag && isValidMediaUrl(f.url)
+      );
+      if (alreadyFulfilled) {
+        continue;
+      }
+    }
+
     const normKind = (entry.sheetKind || entry.role || "").toLowerCase();
 
     // 1. PROP GENERATION
     if (normKind === "prop" || entry.role === "prop") {
+      // Check if known prop URL matches
+      if (!forceRegenerate) {
+        const normTag = normalizeElementTag(entry.tag);
+        const knownProp = (params.knownPropUrls || []).find((p) => {
+          if (typeof p === "string") return false;
+          return (
+            (p?.tag && normalizeElementTag(p.tag) === normTag) ||
+            (p?.name && entry.label && p.name.toLowerCase().includes(entry.label.toLowerCase()))
+          );
+        });
+        if (knownProp && typeof knownProp === "object" && isValidMediaUrl(knownProp.url)) {
+          result.fulfilled.push({
+            tag: entry.tag,
+            role: "prop",
+            label: entry.label,
+            url: knownProp.url,
+            description: entry.notes,
+          });
+          continue;
+        }
+      }
+
       // If faceless format and no prop requested or cap reached
       if (propGenCount >= maxPropGenerations) {
         console.log(
@@ -194,8 +296,16 @@ export async function ensureAssetBibleAssets(
 
     // 2. LOCATION PLATE GENERATION
     if (normKind === "location" || entry.role === "location") {
-      if (knownLocationPlateUrl && isValidMediaUrl(knownLocationPlateUrl)) {
-        // Already satisfied by known plate URL
+      if (!forceRegenerate && knownLocationPlateUrl && isValidMediaUrl(knownLocationPlateUrl)) {
+        if (!result.fulfilled.some((f) => normalizeElementTag(f.tag) === normalizeElementTag(entry.tag))) {
+          result.fulfilled.push({
+            tag: entry.tag,
+            role: "location",
+            label: entry.label,
+            url: knownLocationPlateUrl,
+            description: entry.notes,
+          });
+        }
         continue;
       }
 
@@ -278,6 +388,27 @@ export async function ensureAssetBibleAssets(
 
     // 3. WARDROBE VARIANT GENERATION
     if (normKind === "wardrobe_variant" || entry.role === "wardrobe_variant") {
+      if (!forceRegenerate) {
+        const normTag = normalizeElementTag(entry.tag);
+        const knownWardrobe = (params.knownWardrobeUrls || []).find((w) => {
+          if (typeof w === "string") return false;
+          return (
+            (w?.tag && normalizeElementTag(w.tag) === normTag) ||
+            (w?.name && entry.label && w.name.toLowerCase().includes(entry.label.toLowerCase()))
+          );
+        });
+        if (knownWardrobe && typeof knownWardrobe === "object" && isValidMediaUrl(knownWardrobe.url)) {
+          result.fulfilled.push({
+            tag: entry.tag,
+            role: "wardrobe_variant",
+            label: entry.label,
+            url: knownWardrobe.url,
+            description: entry.notes,
+          });
+          continue;
+        }
+      }
+
       const baseCharRef = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
       if (!baseCharRef || !isValidMediaUrl(baseCharRef)) {
         // Base character identity required to synthesize consistent wardrobe variant

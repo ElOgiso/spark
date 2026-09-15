@@ -1095,16 +1095,91 @@ export class ProductionAssetService {
     if (brief.assetBible) {
       production.assetBible = brief.assetBible;
 
+      // Rehydrate asset URLs from production.brief.generatedAssets / production.generatedAssets / brief.generatedAssets
+      const rehydratedGeneratedAssets = {
+        propSheets: {
+          ...((production as any)?.generatedAssets?.propSheets || {}),
+          ...((production?.brief as any)?.generatedAssets?.propSheets || {}),
+          ...((brief as any)?.generatedAssets?.propSheets || {}),
+        },
+        locationPlates: {
+          ...((production as any)?.generatedAssets?.locationPlates || {}),
+          ...((production?.brief as any)?.generatedAssets?.locationPlates || {}),
+          ...((brief as any)?.generatedAssets?.locationPlates || {}),
+        },
+        wardrobeSheets: {
+          ...((production as any)?.generatedAssets?.wardrobeSheets || {}),
+          ...((production?.brief as any)?.generatedAssets?.wardrobeSheets || {}),
+          ...((brief as any)?.generatedAssets?.wardrobeSheets || {}),
+        },
+        generatedFrames: {
+          ...((production as any)?.generatedAssets?.generatedFrames || {}),
+          ...((production?.brief as any)?.generatedAssets?.generatedFrames || {}),
+          ...((brief as any)?.generatedAssets?.generatedFrames || {}),
+        },
+      };
+
+      if (!forceRegenerate) {
+        brief.generatedAssets = {
+          ...(brief.generatedAssets || {}),
+          ...rehydratedGeneratedAssets,
+          propSheets: { ...(brief.generatedAssets?.propSheets || {}), ...rehydratedGeneratedAssets.propSheets },
+          locationPlates: { ...(brief.generatedAssets?.locationPlates || {}), ...rehydratedGeneratedAssets.locationPlates },
+          wardrobeSheets: { ...(brief.generatedAssets?.wardrobeSheets || {}), ...rehydratedGeneratedAssets.wardrobeSheets },
+        };
+        (production as any).generatedAssets = {
+          ...((production as any).generatedAssets || {}),
+          ...brief.generatedAssets,
+        };
+      }
+
+      const knownPropUrls: { tag: string; url: string; name?: string }[] = [];
+      if (!forceRegenerate && brief.generatedAssets?.propSheets) {
+        for (const [tag, url] of Object.entries(brief.generatedAssets.propSheets)) {
+          if (typeof url === "string" && isValidMediaData(url)) {
+            knownPropUrls.push({ tag, url });
+          }
+        }
+      }
+
+      const knownWardrobeUrls: { tag: string; url: string; name?: string }[] = [];
+      if (!forceRegenerate && brief.generatedAssets?.wardrobeSheets) {
+        for (const [tag, url] of Object.entries(brief.generatedAssets.wardrobeSheets)) {
+          if (typeof url === "string" && isValidMediaData(url)) {
+            knownWardrobeUrls.push({ tag, url });
+          }
+        }
+      }
+
+      const knownLocationPlateUrl = !forceRegenerate
+        ? (brief as any).locationPlateUrl ||
+          (production as any).locationPlateUrl ||
+          brand?.locationPlateUrl ||
+          (brief.generatedAssets?.locationPlates ? Object.values(brief.generatedAssets.locationPlates)[0] : undefined)
+        : undefined;
+
+      if (knownLocationPlateUrl && !forceRegenerate) {
+        (brief as any).locationPlateUrl = knownLocationPlateUrl;
+        (production as any).locationPlateUrl = knownLocationPlateUrl;
+        if (brand && typeof brand === "object") {
+          (brand as any).locationPlateUrl = knownLocationPlateUrl;
+        }
+      }
+
       // Soft-check missing planned bible assets for preflight visibility (non-blocking)
       try {
         const preflightPack = buildProductionElementPack({
           character,
           characters,
           brand,
-          locationPlateUrl: (brief as any).locationPlateUrl || (production as any).locationPlateUrl,
+          locationPlateUrl: knownLocationPlateUrl,
+          propUrls: knownPropUrls,
+          wardrobeVariantUrls: knownWardrobeUrls,
           assetBible: brief.assetBible,
         });
-        const missing = listMissingAssetBibleEntries(brief.assetBible, preflightPack);
+        const missing = forceRegenerate
+          ? [...brief.assetBible]
+          : listMissingAssetBibleEntries(brief.assetBible, preflightPack);
         if (missing.length > 0) {
           const missingSummary = missing.map((m) => `${m.tag} (${m.sheetKind})`).join(", ");
           console.warn(
@@ -1126,14 +1201,14 @@ export class ProductionAssetService {
               productionId: production.id,
               contentFormat: formatForEnsure,
               existingElements: preflightPack,
-              knownLocationPlateUrl:
-                (brief as any).locationPlateUrl ||
-                (production as any).locationPlateUrl ||
-                brand.locationPlateUrl,
+              knownPropUrls,
+              knownLocationPlateUrl,
+              knownWardrobeUrls,
               signal,
+              forceRegenerate,
             });
 
-            if (ensuredResult.generated.length > 0) {
+            if (ensuredResult.generated.length > 0 || ensuredResult.fulfilled.length > 0) {
               brief.generatedAssets = brief.generatedAssets || {};
               brief.generatedAssets.propSheets = brief.generatedAssets.propSheets || {};
               brief.generatedAssets.locationPlates = brief.generatedAssets.locationPlates || {};
@@ -1150,6 +1225,15 @@ export class ProductionAssetService {
                   }
                 } else if (g.sheetKind === "wardrobe_variant") {
                   brief.generatedAssets.wardrobeSheets[g.tag] = g.url;
+                }
+              }
+              for (const f of ensuredResult.fulfilled) {
+                if (f.role === "prop" && f.url && isSparkStorageUrl(f.url)) {
+                  brief.generatedAssets.propSheets[f.tag] = f.url;
+                } else if (f.role === "location" && f.url && isSparkStorageUrl(f.url)) {
+                  brief.generatedAssets.locationPlates[f.tag] = f.url;
+                } else if (f.role === "wardrobe_variant" && f.url && isSparkStorageUrl(f.url)) {
+                  brief.generatedAssets.wardrobeSheets[f.tag] = f.url;
                 }
               }
               (production as any).generatedAssets = {

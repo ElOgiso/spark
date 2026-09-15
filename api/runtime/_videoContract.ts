@@ -328,6 +328,122 @@ export function grokMotionPrompt(prompt: string): string {
   return i2vMotionLock(prompt);
 }
 
+/**
+ * Clamps a Grok I2V prompt so it never exceeds 4096 characters (default max = 4000).
+ * Grok image carries subject identity via `image.imageUrl`; excessive text prompts cause HTTP 400.
+ * Preserves leading I2V_MOTION_LOCK and prioritizes ACTION / CAMERA / end-pose / motion instructions.
+ */
+export function clampGrokVideoPrompt(prompt: string, max = 4000): string {
+  const effectiveMax = Math.min(4096, Math.max(100, max));
+  const trimmed = (prompt || "").trim();
+  if (!trimmed) {
+    return I2V_MOTION_LOCK;
+  }
+  if (trimmed.length <= effectiveMax) {
+    return trimmed;
+  }
+
+  const originalLen = trimmed.length;
+
+  // Ensure I2V_MOTION_LOCK is at the beginning
+  const hasLock = /do not restyle/i.test(trimmed);
+  const lockHeader = hasLock ? "" : I2V_MOTION_LOCK;
+
+  // Split into lines/blocks
+  const rawLines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // Filter out redundant long genre/format essays and repeated identity paragraphs
+  const isRedundantEssay = (line: string): boolean => {
+    return (
+      /^(GENRE DIRECTIVE|VISUAL GENRE|CINEMATIC CRAFT|OPTICAL CRAFT|CONTENT FORMAT|FORMAT DIRECTIVE|FORMAT LAWS|BRAND LAW|STYLE LOOK|DIRECTOR PHILOSOPHY|SCENE CONTEXT:)/i.test(line) ||
+      /^(SUBJECT & IDENTITY:|IDENTITY:|WARDROBE:|HAIR:|APPEARANCE:)/i.test(line) ||
+      /Face, hairstyle, skin tone, and signature wardrobe must strictly match/i.test(line) ||
+      /You are an expert director and visual continuity supervisor/i.test(line) ||
+      /Digital mapping is authoritative/i.test(line) ||
+      /NO TEXT, NO LETTERS, NO CAPTIONS/i.test(line) ||
+      /Animate the provided start frame\. Do not restyle/i.test(line)
+    );
+  };
+
+  const isHighPriority = (line: string): boolean => {
+    return (
+      /^(ACTION:|PHYSICAL ACTION:|SUBJECT ACTION:|BLOCKING:|CAMERA:|CAMERA DIRECTION:|FRAMING:|COMPOSITION:|MOTION:|MOVEMENT:|END POSE:|TARGET END:|HANDOFF:|CONTINUITY:)/i.test(line) ||
+      /^(POSITIVE LOCKS:|PHYSICS:|LIGHTING:)/i.test(line) ||
+      /^(Panel \d+|Shot \d+)/i.test(line)
+    );
+  };
+
+  const priorityLines: string[] = [];
+  const secondaryLines: string[] = [];
+
+  for (const line of rawLines) {
+    if (isRedundantEssay(line)) {
+      continue;
+    }
+    if (isHighPriority(line)) {
+      priorityLines.push(line);
+    } else {
+      secondaryLines.push(line);
+    }
+  }
+
+  // Assemble with priority
+  const assembledParts: string[] = [];
+  if (lockHeader) {
+    assembledParts.push(lockHeader);
+  } else {
+    assembledParts.push(I2V_MOTION_LOCK);
+  }
+
+  let currentLen = assembledParts.join("\n\n").length;
+
+  for (const pl of priorityLines) {
+    const nextLen = currentLen + 2 + pl.length;
+    if (nextLen <= effectiveMax) {
+      assembledParts.push(pl);
+      currentLen = nextLen;
+    } else {
+      const remaining = effectiveMax - currentLen - 2;
+      if (remaining > 50) {
+        assembledParts.push(pl.slice(0, remaining));
+        currentLen += 2 + remaining;
+      }
+      break;
+    }
+  }
+
+  if (currentLen < effectiveMax) {
+    for (const sl of secondaryLines) {
+      const nextLen = currentLen + 2 + sl.length;
+      if (nextLen <= effectiveMax) {
+        assembledParts.push(sl);
+        currentLen = nextLen;
+      } else {
+        const remaining = effectiveMax - currentLen - 2;
+        if (remaining > 50) {
+          assembledParts.push(sl.slice(0, remaining));
+          currentLen += 2 + remaining;
+        }
+        break;
+      }
+    }
+  }
+
+  let finalPrompt = assembledParts.join("\n\n").trim();
+  if (finalPrompt.length > 4096) {
+    finalPrompt = finalPrompt.slice(0, 4096).trim();
+  }
+  if (!finalPrompt) {
+    finalPrompt = I2V_MOTION_LOCK;
+  }
+
+  console.log(
+    `[Grok Video Contract] Clamped prompt from ${originalLen} to ${finalPrompt.length} chars (max allowed: 4096).`
+  );
+
+  return finalPrompt;
+}
+
 export function mapGrokAspectRatio(ratio?: string): string {
   const norm = normalizeAspectRatio(ratio);
   if (norm === "16:9") return "VIDEO_ASPECT_RATIO_16_9";
@@ -360,7 +476,7 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
 
   const body: Record<string, unknown> = {
     model,
-    prompt: grokMotionPrompt(req.prompt),
+    prompt: clampGrokVideoPrompt(grokMotionPrompt(req.prompt)),
     duration: snapGrokDuration(req.durationSec),
     aspectRatio,
     resolution,

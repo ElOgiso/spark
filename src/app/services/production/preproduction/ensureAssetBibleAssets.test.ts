@@ -196,3 +196,125 @@ test("ensureAssetBibleAssets strictly respects maxPropGenerations cap", async ()
     ProductionAssetService.uploadAssetToStorage = originalUpload;
   }
 });
+
+test("Resume: ensureAssetBibleAssets skips image generation for already-generated durable props", async () => {
+  const { ModelRouter } = await import("../../runtime/modelRouter");
+  const originalExecute = ModelRouter.executeCategoryRequest;
+
+  let executeCalled = false;
+  ModelRouter.executeCategoryRequest = async () => {
+    executeCalled = true;
+    return "https://test.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/unexpected.png";
+  };
+
+  try {
+    const existingDurableUrl = "https://test.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/props/tape_recorder.png";
+    const bible: AssetBibleEntry[] = [
+      {
+        tag: "@prop_recorder",
+        role: "prop",
+        sheetKind: "prop",
+        label: "Tape Recorder",
+        notes: "Vintage reel recorder",
+      },
+    ];
+
+    // 1. With existingElements containing the durable prop
+    const resultFromElements = await ensureAssetBibleAssets({
+      bible,
+      brand: { name: "Test Brand" },
+      productionId: "prod-resume-1",
+      contentFormat: "standard",
+      existingElements: [
+        {
+          tag: "@prop_recorder",
+          role: "prop",
+          label: "Tape Recorder",
+          url: existingDurableUrl,
+        },
+      ],
+    });
+
+    assert.equal(executeCalled, false, "Must NOT call executeCategoryRequest when prop is already in existingElements");
+    assert.equal(resultFromElements.generated.length, 0, "No new generation should occur");
+    assert.equal(resultFromElements.stillMissing.length, 0, "Prop should not be missing");
+    assert.equal(resultFromElements.fulfilled.length, 1);
+    assert.equal(resultFromElements.fulfilled[0].url, existingDurableUrl);
+
+    // 2. With knownPropUrls
+    executeCalled = false;
+    const resultFromKnown = await ensureAssetBibleAssets({
+      bible,
+      brand: { name: "Test Brand" },
+      productionId: "prod-resume-2",
+      contentFormat: "standard",
+      existingElements: [],
+      knownPropUrls: [{ tag: "@prop_recorder", url: existingDurableUrl }],
+    });
+
+    assert.equal(executeCalled, false, "Must NOT call executeCategoryRequest when prop is in knownPropUrls");
+    assert.equal(resultFromKnown.generated.length, 0);
+    assert.equal(resultFromKnown.stillMissing.length, 0);
+    assert.equal(resultFromKnown.fulfilled.length, 1);
+    assert.equal(resultFromKnown.fulfilled[0].url, existingDurableUrl);
+  } finally {
+    ModelRouter.executeCategoryRequest = originalExecute;
+  }
+});
+
+test("Resume: forceRegenerate=true regenerates even if existing assets exist", async () => {
+  const { ModelRouter } = await import("../../runtime/modelRouter");
+  const { ProductionAssetService } = await import("../productionAssetService");
+
+  const originalExecute = ModelRouter.executeCategoryRequest;
+  const originalUpload = ProductionAssetService.uploadAssetToStorage;
+
+  const newUrl = "https://test.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/props/new_recorder.png";
+  let executeCount = 0;
+  ModelRouter.executeCategoryRequest = async () => {
+    executeCount++;
+    return newUrl;
+  };
+  ProductionAssetService.uploadAssetToStorage = async (params: any) => ({
+    publicUrl: newUrl,
+    storagePath: params.storagePath,
+    assetId: "pa-new",
+    uploadSuccess: true,
+  });
+
+  try {
+    const existingDurableUrl = "https://test.supabase.co/storage/v1/object/public/Spark/brands/b1/p1/props/old_recorder.png";
+    const bible: AssetBibleEntry[] = [
+      {
+        tag: "@prop_recorder",
+        role: "prop",
+        sheetKind: "prop",
+        label: "Tape Recorder",
+        notes: "Vintage reel recorder",
+      },
+    ];
+
+    const result = await ensureAssetBibleAssets({
+      bible,
+      brand: { name: "Test Brand" },
+      productionId: "prod-force-1",
+      contentFormat: "standard",
+      existingElements: [
+        {
+          tag: "@prop_recorder",
+          role: "prop",
+          label: "Tape Recorder",
+          url: existingDurableUrl,
+        },
+      ],
+      forceRegenerate: true,
+    });
+
+    assert.equal(executeCount, 1, "Must call generator when forceRegenerate=true");
+    assert.equal(result.generated.length, 1);
+    assert.equal(result.generated[0].url, newUrl);
+  } finally {
+    ModelRouter.executeCategoryRequest = originalExecute;
+    ProductionAssetService.uploadAssetToStorage = originalUpload;
+  }
+});

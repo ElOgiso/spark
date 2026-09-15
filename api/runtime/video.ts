@@ -475,7 +475,7 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   );
   const refImagesCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
   console.log(
-    `[Grok Video] Shot request: model=${body.model}, hasImageUrl=${hasImageUrl}, hasLastFrame=${hasLastFrame}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
+    `[Grok Video] Shot request: model=${body.model}, promptLen=${(body.prompt as string)?.length || 0}, hasImageUrl=${hasImageUrl}, hasLastFrame=${hasLastFrame}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
   );
   if (!hasImageUrl) {
     throw new Error("Refusing to generate Grok video with numInputImages=0 (T2V forbidden for shot i2v).");

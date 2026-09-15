@@ -309,11 +309,22 @@ export function listMissingAssetBibleEntries(
       );
       if (hasMainMatch) return false;
     }
-    if (entry.role === "location") {
+    if (entry.role === "location" || entry.sheetKind === "location") {
       const hasLocMatch = pack.some(
-        (e) => e.role === "location" && Boolean(e.url && e.url.trim())
+        (e) => (e.role === "location" || e.tag.startsWith("@loc_")) && Boolean(e.url && e.url.trim())
       );
       if (hasLocMatch) return false;
+    }
+
+    // 4. Prop tag or label match
+    if (entry.role === "prop" || entry.sheetKind === "prop") {
+      const hasPropMatch = pack.some((e) => {
+        if (!e.url || !e.url.trim()) return false;
+        if (e.tag.trim().toLowerCase() === normTag) return true;
+        if (entry.label && e.label && e.label.trim().toLowerCase() === entry.label.trim().toLowerCase()) return true;
+        return false;
+      });
+      if (hasPropMatch) return false;
     }
 
     return true;
