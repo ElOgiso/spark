@@ -26,6 +26,11 @@ import {
   resolveElementsForShot,
   type ProductionElement,
 } from "./elements/productionElements";
+import {
+  planAssetBibleFromBrief,
+  inferNeededTagsFromScene,
+  type AssetBibleEntry,
+} from "./preproduction/assetBibleFromBrief";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
 import { collectSparkShotClipUrls } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
@@ -442,6 +447,8 @@ export function buildVisualLockRefs(params: {
   directorSupportUrls?: string[];
   /** Optional prop/product master URL for insert beats */
   directorPropUrl?: string;
+  /** Optional preproduction Asset Bible */
+  assetBible?: AssetBibleEntry[];
 }): VisualLockRefsResult {
   const {
     character,
@@ -617,6 +624,7 @@ export function buildVisualLockRefs(params: {
     directorIdentityUrls,
     directorSupportUrls,
     directorPropUrl,
+    assetBible: params.assetBible,
   });
 
   const elements: ProductionElement[] = [];
@@ -661,6 +669,7 @@ export function buildVisualLockRefsFromDirector(params: {
   contentFormat?: string;
   sceneId?: string | null;
   shotId?: string | null;
+  assetBible?: AssetBibleEntry[];
 }): VisualLockRefsResult & { directorNotes: string[] } {
   const director = resolveDirectorPixelRefs({
     production: params.production,
@@ -674,6 +683,10 @@ export function buildVisualLockRefsFromDirector(params: {
     runtimeLocationPlateUrl: params.locationPlateUrl,
   });
   const merged = mergeDirectorIdentityForLock({ director });
+  const assetBible =
+    params.assetBible ||
+    params.production?.assetBible ||
+    params.production?.brief?.assetBible;
   const lock = buildVisualLockRefs({
     character: params.character,
     supportCharacter: params.supportCharacter,
@@ -686,6 +699,7 @@ export function buildVisualLockRefsFromDirector(params: {
     directorIdentityUrls: merged.identityUrls,
     directorSupportUrls: merged.supportUrls,
     directorPropUrl: merged.propUrl,
+    assetBible,
   });
   return { ...lock, directorNotes: director.notes };
 }
@@ -1039,6 +1053,22 @@ export class ProductionAssetService {
     }
 
     checkAborted();
+
+    // Preproduction Asset Bible preflight — ensures @tags/sheet kinds are planned for element packs & downstream stills
+    if (!brief.assetBible) {
+      try {
+        brief.assetBible = planAssetBibleFromBrief(brief, {
+          brand,
+          characters: characters || (character ? [character] : undefined),
+          heroCharacter: character,
+        });
+      } catch (err) {
+        console.warn("[ProductionAssetService] Non-blocking asset bible planning fallback:", err);
+      }
+    }
+    if (brief.assetBible) {
+      production.assetBible = brief.assetBible;
+    }
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     // Authoritative mode from snapshot (when present) — never let live re-resolution drift the pipeline.
@@ -2589,8 +2619,10 @@ export class ProductionAssetService {
                 directorIdentityUrls: motionMerged.identityUrls,
                 directorSupportUrls: motionMerged.supportUrls,
                 directorPropUrl: motionMerged.propUrl,
+                assetBible: brief.assetBible,
               });
-              const neededTags = (s as any).elementTags || (s as any).neededTags || (s as any).tags;
+              const explicitTags = (s as any).elementTags || (s as any).neededTags || (s as any).tags;
+              const neededTags = explicitTags || inferNeededTagsFromScene(s, brief.assetBible);
               const shotElements = resolveElementsForShot(
                 productionElementPack,
                 neededTags,

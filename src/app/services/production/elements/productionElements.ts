@@ -6,6 +6,7 @@
  */
 
 import type { Brand, Character } from "../../../domain/types";
+import type { AssetBibleEntry } from "../preproduction/assetBibleFromBrief";
 
 export type ElementRole =
   | "character_main"
@@ -35,6 +36,7 @@ export interface BuildElementPackParams {
   directorPropUrl?: string | null;
   propUrls?: string[] | null;
   wardrobeVariantUrls?: string[] | null;
+  assetBible?: AssetBibleEntry[] | null;
 }
 
 function isValidMediaUrl(url?: string | null): url is string {
@@ -97,11 +99,17 @@ export function buildProductionElementPack(params: BuildElementPackParams): Prod
     });
   };
 
+  const bible = params.assetBible || [];
+  const bibleMain = bible.find((b) => b.role === "character_main" || b.sheetKind === "character");
+  const bibleLoc = bible.find((b) => b.role === "location" || b.sheetKind === "location");
+  const bibleProps = bible.filter((b) => b.role === "prop" || b.sheetKind === "prop");
+  const bibleWardrobes = bible.filter((b) => b.role === "wardrobe_variant" || b.sheetKind === "wardrobe_variant");
+
   // a) Main character (Spec Director masters -> character sheet -> extra sheets -> image/avatar)
   const mainChar = params.character;
-  const mainName = mainChar?.name?.trim() || "Main Character";
+  const mainName = bibleMain?.label || mainChar?.name?.trim() || "Main Character";
   const mainSlug = slugify(mainChar?.name) || "main_character";
-  const mainTag = `@${mainSlug}`;
+  const mainTag = bibleMain?.tag || `@${mainSlug}`;
 
   for (const url of params.directorIdentityUrls || []) {
     pushElement(url, "character_main", mainTag, mainName, mainChar?.id, "character identity sheet (face/wardrobe lock)");
@@ -138,18 +146,26 @@ export function buildProductionElementPack(params: BuildElementPackParams): Prod
   for (const supp of supportList) {
     const sName = supp.name?.trim() || "Support Character";
     const sSlug = slugify(supp.name) || "support";
-    const sTag = `@support_${sSlug}`;
+    const bibleSupp = bible.find(
+      (b) =>
+        (b.sourceEntityId && b.sourceEntityId === supp.id) ||
+        (supp.name && b.label.toLowerCase() === supp.name.toLowerCase()) ||
+        (supp.name && b.tag.toLowerCase().includes(slugify(supp.name)))
+    );
+    const sTag = bibleSupp?.tag || `@support_${sSlug}`;
+    const sLabel = bibleSupp?.label || sName;
+
     if (supp.characterSheetUrl) {
-      pushElement(supp.characterSheetUrl, "character_support", sTag, sName, supp.id, "supporting character identity sheet");
+      pushElement(supp.characterSheetUrl, "character_support", sTag, sLabel, supp.id, "supporting character identity sheet");
     }
     const suppSheets = (supp as any)?.sheet_image_urls;
     if (Array.isArray(suppSheets)) {
       for (const url of suppSheets) {
-        pushElement(url, "character_support", sTag, sName, supp.id, "supporting character reference");
+        pushElement(url, "character_support", sTag, sLabel, supp.id, "supporting character reference");
       }
     }
     if (supp.imageUrl || supp.avatarUrl) {
-      pushElement(supp.imageUrl || supp.avatarUrl, "character_support", sTag, sName, supp.id, "supporting character appearance reference");
+      pushElement(supp.imageUrl || supp.avatarUrl, "character_support", sTag, sLabel, supp.id, "supporting character appearance reference");
     }
   }
 
@@ -162,23 +178,35 @@ export function buildProductionElementPack(params: BuildElementPackParams): Prod
   if (plateUrl) {
     const brandName = params.brand?.name?.trim();
     const locSlug = slugify(brandName) ? `loc_${slugify(brandName)}` : "location_plate";
-    pushElement(plateUrl, "location", `@${locSlug}`, "Location Plate", params.brand?.id, "location plate (set lock)");
+    const locTag = bibleLoc?.tag || `@${locSlug}`;
+    const locLabel = bibleLoc?.label || "Location Plate";
+    pushElement(plateUrl, "location", locTag, locLabel, params.brand?.id, "location plate (set lock)");
   }
 
   // d) Props / Products
   if (params.directorPropUrl) {
-    pushElement(params.directorPropUrl, "prop", "@prop_hero", "Director Hero Prop / Product", undefined, "product / prop design lock");
+    const heroProp = bibleProps[0];
+    const pTag = heroProp?.tag || "@prop_hero";
+    const pLabel = heroProp?.label || "Director Hero Prop / Product";
+    pushElement(params.directorPropUrl, "prop", pTag, pLabel, undefined, "product / prop design lock");
   }
   if (Array.isArray(params.propUrls)) {
     params.propUrls.forEach((url, i) => {
-      pushElement(url, "prop", `@prop_${i + 1}`, `Product / Prop ${i + 1}`, undefined, "product / prop design reference");
+      const offset = params.directorPropUrl ? 1 : 0;
+      const bibleProp = bibleProps[i + offset];
+      const pTag = bibleProp?.tag || `@prop_${i + 1}`;
+      const pLabel = bibleProp?.label || `Product / Prop ${i + 1}`;
+      pushElement(url, "prop", pTag, pLabel, undefined, "product / prop design reference");
     });
   }
 
   // e) Wardrobe variants
   if (Array.isArray(params.wardrobeVariantUrls)) {
     params.wardrobeVariantUrls.forEach((url, i) => {
-      pushElement(url, "wardrobe_variant", `@wardrobe_${i + 1}`, `Wardrobe Variant ${i + 1}`, undefined, "wardrobe variant reference");
+      const bibleW = bibleWardrobes[i];
+      const wTag = bibleW?.tag || `@wardrobe_${i + 1}`;
+      const wLabel = bibleW?.label || `Wardrobe Variant ${i + 1}`;
+      pushElement(url, "wardrobe_variant", wTag, wLabel, undefined, "wardrobe variant reference");
     });
   }
 

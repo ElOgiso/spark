@@ -40,14 +40,14 @@ function extractMentionKeywords(text: string): {
   const props = new Set<string>();
 
   // Location detection patterns
-  const locRegex = /\b(office|cabin|studio|lab|laboratory|corridor|rooftop|warehouse|street|forest|cockpit|chamber|hall|boardroom|lounge)\b/gi;
+  const locRegex = /\b(office|cabin|studio|lab|laboratory|corridor|rooftop|warehouse|street|forest|cockpit|chamber|hall|boardroom|lounge|stadium|arena|bathroom|tunnel|courtyard|kitchen|garage|bedroom|gym|auditorium)\b/gi;
   let locMatch: RegExpExecArray | null;
   while ((locMatch = locRegex.exec(lower)) !== null) {
     locations.add(locMatch[1].toLowerCase());
   }
 
   // Prop / product detection patterns
-  const propRegex = /\b(recorder|folio|journal|terminal|phone|device|sword|blade|artifact|briefcase|key|locket|cube|camera|bottle|helmet)\b/gi;
+  const propRegex = /\b(recorder|folio|journal|terminal|phone|device|sword|blade|artifact|briefcase|key|locket|cube|camera|bottle|helmet|perfume|watch|ball|trophy|glass|ring|badge|guitar|bag|jacket|shoe)\b/gi;
   let propMatch: RegExpExecArray | null;
   while ((propMatch = propRegex.exec(lower)) !== null) {
     props.add(propMatch[1].toLowerCase());
@@ -198,4 +198,62 @@ export function planAssetBibleFromBrief(
   }
 
   return entries;
+}
+
+/**
+ * Infers matching @tags from scene action, description, or dialogue against the asset bible.
+ * Returns undefined if no tags match, allowing subjectType fallback.
+ */
+export function inferNeededTagsFromScene(
+  scene: any,
+  bible?: AssetBibleEntry[] | null
+): string[] | undefined {
+  if (!scene || !bible || !Array.isArray(bible) || bible.length === 0) return undefined;
+
+  const text = [
+    scene.shotList,
+    scene.physicalAction,
+    scene.action,
+    scene.visualDescription,
+    scene.description,
+    scene.spokenLines,
+    scene.scriptSnippet,
+    scene.cameraDirection,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text.trim()) return undefined;
+
+  const matchedTags = new Set<string>();
+
+  for (const entry of bible) {
+    const rawTagWithoutAt = entry.tag.replace(/^@/, "").toLowerCase();
+    const labelLower = entry.label.toLowerCase();
+
+    // Direct tag match without prefix
+    const keyword = rawTagWithoutAt.replace(/^(loc_|prop_|support_)/, "");
+    if (keyword.length >= 3) {
+      const kwRegex = new RegExp(`\\b${keyword}\\b`, "i");
+      if (kwRegex.test(text)) {
+        matchedTags.add(entry.tag);
+        continue;
+      }
+    }
+
+    if (labelLower.length >= 3) {
+      const labelWords = labelLower
+        .split(/\s+/)
+        .filter((w) => w.length >= 4 && !["environment", "hero", "lead", "character", "sheet"].includes(w));
+      for (const w of labelWords) {
+        if (new RegExp(`\\b${w}\\b`, "i").test(text)) {
+          matchedTags.add(entry.tag);
+          break;
+        }
+      }
+    }
+  }
+
+  return matchedTags.size > 0 ? Array.from(matchedTags) : undefined;
 }

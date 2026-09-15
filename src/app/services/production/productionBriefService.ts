@@ -18,6 +18,7 @@ import { resolveProductionMode } from "./resolveProductionMode";
 import { getEffectiveContentFormat } from "./characterSheetGate";
 import { ensureViralSparkProductionReady } from "./viralSparkGate";
 import { repairPhysicalAction, isPlannerMetaText } from "./directorScriptAuthority";
+import { planAssetBibleFromBrief } from "./preproduction/assetBibleFromBrief";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -1359,7 +1360,7 @@ ${prompt}`;
       };
     });
 
-    return {
+    const briefResult: ProductionBrief = {
       title: asText(parsedJson?.title, spark.title),
       productionMode: modeKey,
       targetDurationSec: effectiveDurationSec,
@@ -1381,5 +1382,17 @@ ${prompt}`;
       suggestedDuration: asText(parsedJson?.suggestedDuration, fallback.suggestedDuration),
       offerCta: fallback.offerCta,
     };
+
+    try {
+      briefResult.assetBible = planAssetBibleFromBrief(briefResult, {
+        brand,
+        characters: characters || (character ? [character] : undefined),
+        heroCharacter: character,
+      });
+    } catch (err) {
+      console.warn("[ProductionBriefService] Non-blocking asset bible planning fallback:", err);
+    }
+
+    return briefResult;
   }
 }

@@ -109,3 +109,204 @@ test("planAssetBibleFromBrief handles minimal brief with brand fallback cleanly"
   assert.ok(loc);
   assert.match(loc.tag, /@loc_/);
 });
+
+test("planAssetBibleFromBrief extracts extended heuristics: stadium, bathroom, perfume, watch, trophy", () => {
+  const brief: ProductionBrief = {
+    title: "Championship Finale",
+    productionMode: "standard",
+    visualDirection: "Crowded stadium tunnel leading into the locker room bathroom",
+    hook: "The luxury perfume bottle shattered on the stadium floor.",
+    beats: [
+      {
+        timecode: "00:00-00:05",
+        valueJob: "hook",
+        spokenLines: "Check your gold watch before lifting the trophy.",
+        physicalAction: "Athlete polishes the championship trophy in the stadium tunnel.",
+        cameraDirection: "Low angle tilt",
+      },
+    ],
+  };
+
+  const entries = planAssetBibleFromBrief(brief, {
+    brand: { id: "b-sports", name: "Apex Athletics" } as any,
+  });
+
+  const tags = entries.map((e) => e.tag);
+  assert.ok(tags.some((t) => t.includes("stadium")), "Should detect stadium location");
+  assert.ok(tags.some((t) => t.includes("bathroom")), "Should detect bathroom location");
+  assert.ok(tags.some((t) => t.includes("perfume")), "Should detect perfume prop");
+  assert.ok(tags.some((t) => t.includes("watch")), "Should detect watch prop");
+  assert.ok(tags.some((t) => t.includes("trophy")), "Should detect trophy prop");
+});
+
+test("inferNeededTagsFromScene extracts matching tags from scene text against asset bible", async () => {
+  const { inferNeededTagsFromScene } = await import("./assetBibleFromBrief");
+
+  const bible = [
+    { tag: "@santiago", role: "character_main", sheetKind: "character", label: "Santiago", notes: "" },
+    { tag: "@support_dr_elena", role: "character_support", sheetKind: "character", label: "Dr. Elena", notes: "" },
+    { tag: "@loc_office", role: "location", sheetKind: "location", label: "Consulting Office", notes: "" },
+    { tag: "@prop_recorder", role: "prop", sheetKind: "prop", label: "Hero Recorder", notes: "" },
+  ] as const;
+
+  // 1. Scene matching recorder and office
+  const scene1 = {
+    shotList: "Scene 1",
+    physicalAction: "Dr. Elena leans over the recorder on the office desk",
+    spokenLines: "Is this thing recording?",
+  };
+  const matched1 = inferNeededTagsFromScene(scene1, bible as any);
+  assert.ok(matched1, "Must find matching tags");
+  assert.ok(matched1.includes("@support_dr_elena"));
+  assert.ok(matched1.includes("@loc_office"));
+  assert.ok(matched1.includes("@prop_recorder"));
+
+  // 2. Scene with no mentions returns undefined (enabling subjectType default)
+  const sceneEmpty = {
+    shotList: "Scene 2",
+    physicalAction: "Sunlight glints through abstract window blinds",
+  };
+  const matchedEmpty = inferNeededTagsFromScene(sceneEmpty, bible as any);
+  assert.equal(matchedEmpty, undefined);
+});
+
+test("ProductionBriefService.generateBrief automatically attaches planned assetBible to brief", async () => {
+  const { ProductionBriefService } = await import("../productionBriefService");
+  const { ProductionGenerationGuard } = await import("../ProductionGenerationGuard");
+  const { ModelRouter } = await import("../../runtime/modelRouter");
+
+  ProductionGenerationGuard.setEnabled(true);
+
+  const spark = {
+    id: "spk-wired-1",
+    title: "The Great Awakening",
+    hook: "You won't believe what happened in the lab today.",
+    whyNow: "Sudden breakthrough",
+    brandFitScore: 92,
+    score: 92,
+    views: "100k",
+    velocity: "10k/day",
+    researchContext: { coreInsight: "Lab breakthrough", recommendedAngle: "scientific curiosity" },
+  } as any;
+
+  const brand = {
+    id: "brand-wired-1",
+    name: "QuantumCore",
+    niche: "Deep Tech",
+    contentPillars: [{ id: "p1", label: "Science", active: true }],
+  } as any;
+
+  const character = {
+    id: "char-lead-1",
+    name: "Professor Vance",
+    role: "Lead Scientist",
+  } as any;
+
+  const originalExecute = ModelRouter.executeCategoryRequest;
+  ModelRouter.executeCategoryRequest = async () => {
+    return JSON.stringify({
+      title: "The Great Awakening",
+      hook: "You will not believe the massive discovery we made inside our secret laboratory today.",
+      scriptOutline: "A walk through the laboratory reveals a strange device that defies all known physics.",
+      beats: [
+        {
+          timecode: "00:00-00:05",
+          valueJob: "hook",
+          spokenLines: "You will not believe the massive discovery we made inside our secret laboratory today.",
+          physicalAction: "Professor Vance checks the glowing device in the laboratory.",
+          cameraDirection: "Push in on Professor Vance",
+        },
+        {
+          timecode: "00:05-00:10",
+          valueJob: "proof",
+          spokenLines: "Every instrument confirmed the reaction is stable and ready for full scale industrial deployment immediately.",
+          physicalAction: "Professor Vance points to the glowing terminal monitors.",
+          cameraDirection: "Over the shoulder on monitor",
+        },
+        {
+          timecode: "00:10-00:15",
+          valueJob: "cta",
+          spokenLines: "Subscribe now to follow our real time experiments and download the complete engineering whitepaper today.",
+          physicalAction: "Professor Vance addresses the camera directly.",
+          cameraDirection: "Direct to lens medium close-up",
+        },
+      ],
+      visualDirection: "High-tech sterile research laboratory with stainless steel benches",
+      whyThisWorks: "Curiosity gap and scientific proof",
+    });
+  };
+
+  try {
+    const brief = await ProductionBriefService.generateBrief({
+      spark,
+      brand,
+      character,
+      productionMode: "standard",
+      targetDurationSec: 15,
+    });
+
+    assert.ok(brief.assetBible, "generateBrief must attach assetBible to brief");
+    assert.ok(Array.isArray(brief.assetBible), "assetBible must be an array");
+    assert.ok(brief.assetBible.length >= 2, "assetBible should contain at least character and location entries");
+
+    const heroEntry = brief.assetBible.find((e) => e.role === "character_main");
+    assert.ok(heroEntry, "assetBible must have hero character");
+    assert.equal(heroEntry.tag, "@professor_vance");
+
+    const locEntry = brief.assetBible.find((e) => e.sheetKind === "location" && (e.tag.includes("lab") || e.tag.includes("high_tech")));
+    assert.ok(locEntry, `assetBible must have laboratory location: ${JSON.stringify(brief.assetBible)}`);
+  } finally {
+    ModelRouter.executeCategoryRequest = originalExecute;
+  }
+});
+
+test("buildProductionElementPack aligns tags with assetBible and gracefully succeeds without it", async () => {
+  const { buildProductionElementPack } = await import("../elements/productionElements");
+
+  const character = {
+    id: "char-1",
+    name: "Dr. Elena",
+    characterSheetUrl: "https://example.com/elena.png",
+  } as any;
+
+  const brand = {
+    id: "brand-1",
+    name: "Santiago Lab",
+    locationPlateUrl: "https://example.com/plate.png",
+  } as any;
+
+  // With asset bible
+  const packWithBible = buildProductionElementPack({
+    character,
+    brand,
+    locationPlateUrl: "https://example.com/plate.png",
+    directorPropUrl: "https://example.com/recorder.png",
+    assetBible: [
+      { tag: "@elena_prime", role: "character_main", sheetKind: "character", label: "Dr. Elena Prime", notes: "" },
+      { tag: "@loc_consulting_suite", role: "location", sheetKind: "location", label: "Consulting Suite", notes: "" },
+      { tag: "@prop_audio_recorder", role: "prop", sheetKind: "prop", label: "Tape Recorder Model", notes: "" },
+    ],
+  });
+
+  const elenaEl = packWithBible.find((e) => e.role === "character_main");
+  assert.equal(elenaEl?.tag, "@elena_prime");
+  assert.equal(elenaEl?.label, "Dr. Elena Prime");
+
+  const locEl = packWithBible.find((e) => e.role === "location");
+  assert.equal(locEl?.tag, "@loc_consulting_suite");
+  assert.equal(locEl?.label, "Consulting Suite");
+
+  const propEl = packWithBible.find((e) => e.role === "prop");
+  assert.equal(propEl?.tag, "@prop_audio_recorder");
+
+  // Without asset bible (backward compatibility)
+  const packWithoutBible = buildProductionElementPack({
+    character,
+    brand,
+    locationPlateUrl: "https://example.com/plate.png",
+    directorPropUrl: "https://example.com/recorder.png",
+  });
+  assert.equal(packWithoutBible.find((e) => e.role === "character_main")?.tag, "@dr_elena");
+  assert.ok(packWithoutBible.find((e) => e.role === "location")?.tag.includes("loc_santiago"));
+  assert.equal(packWithoutBible.find((e) => e.role === "prop")?.tag, "@prop_hero");
+});

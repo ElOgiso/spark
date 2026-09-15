@@ -343,6 +343,8 @@ export interface ProductionBrief {
       lastError?: string;
     };
   };
+  /** Preproduction Asset Bible defining required entity @tags and sheet kinds */
+  assetBible?: import("../services/production/preproduction/assetBibleFromBrief").AssetBibleEntry[];
 }
 
 export interface Production {
@@ -383,6 +385,8 @@ export interface Production {
   isGeneratingAssets?: boolean;
   generationProgress?: GenerationProgress;
   lastError?: string;
+  /** Preproduction Asset Bible defining required entity @tags and sheet kinds */
+  assetBible?: import("../services/production/preproduction/assetBibleFromBrief").AssetBibleEntry[];
   /** Series linkage and persistent episode canon */
   seriesId?: string;
   seasonNumber?: number;
