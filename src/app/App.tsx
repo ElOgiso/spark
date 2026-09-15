@@ -85,7 +85,8 @@ function AppContent() {
 
   // Initialize viewState directly from cloud auth context
   const [viewState, setViewState] = useState<ViewState>(() => {
-    return isUserAuthenticated ? (auth.isOnboardingComplete ? "dashboard" : "onboarding") : "auth";
+    const hasBrands = (auth.brands && auth.brands.length > 0) || Boolean(auth.brand);
+    return isUserAuthenticated ? (auth.isOnboardingComplete || hasBrands ? "dashboard" : "onboarding") : "auth";
   });
 
   const [genesisData, setGenesisData] = useState<BrandGenesisData>({
@@ -214,10 +215,14 @@ function AppContent() {
           (auth.currentUser?.user_metadata?.role || "").toLowerCase().includes("admin")
         );
 
+        const hasOwnedBrands = (auth.brands && auth.brands.length > 0) || Boolean(auth.brand);
+
         if (isUserAdmin && (currentPage.startsWith("/admin") || !auth.brand)) {
           console.log("[SPARK AUTH] routing: ADMIN CONSOLE");
           setViewState("dashboard");
-        } else if (!auth.isOnboardingComplete) {
+        } else if (auth.error && !hasOwnedBrands) {
+          console.log("[SPARK AUTH] routing: BOOTSTRAP BRAND QUERY ERROR / STAY ON HYDRATION");
+        } else if (!auth.isOnboardingComplete && !hasOwnedBrands) {
           console.log("[SPARK AUTH] routing: GENESIS");
           setViewState((prev) => (prev === "auth" || prev === "dashboard" ? "onboarding" : prev));
         } else if (auth.isPendingApproval || auth.isBanned || auth.isRejected) {
@@ -253,7 +258,7 @@ function AppContent() {
         }
       }
     }
-  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete, auth.isAdmin, auth.isPendingApproval, auth.isBanned, currentPage]);
+  }, [isUserAuthenticated, auth.loading, auth.isOnboardingComplete, auth.brand, auth.brands, auth.error, auth.isAdmin, auth.isPendingApproval, auth.isBanned, currentPage]);
 
   const handleAuthSuccess = async (email?: string, name?: string, mode?: "signin" | "signup") => {
     console.log("[SPARK AUTH] handleAuthSuccess called for:", email, "mode:", mode);
@@ -394,8 +399,9 @@ function AppContent() {
     }
 
     // 1. Session Restoration / Hydration State (Minimal HydrationSplash only)
-    // Do not route to Genesis while auth.loading or bootstrap is in flight with unknown complete state
-    if (auth.loading || (isUserAuthenticated && !auth.profile && !auth.error && !auth.isOnboardingComplete)) {
+    // Do not route to Genesis while auth.loading or bootstrap brand query is in flight / errored with no brands
+    const hasOwnedBrands = (auth.brands && auth.brands.length > 0) || Boolean(auth.brand);
+    if (auth.loading || (isUserAuthenticated && !hasOwnedBrands && (auth.error || (!auth.profile && !auth.isOnboardingComplete)))) {
       return <HydrationSplash />;
     }
 
@@ -439,7 +445,8 @@ function AppContent() {
       }
 
       // B. First-time authenticated user whose onboarding is incomplete in cloud -> Brand Genesis
-      if (!auth.isOnboardingComplete) {
+      // Genesis only when bootstrap succeeded and user truly has ZERO brands in cloud
+      if (!auth.isOnboardingComplete && !hasOwnedBrands) {
         return (
           <ProtectedRoute>
             <BrandGenesisFlow

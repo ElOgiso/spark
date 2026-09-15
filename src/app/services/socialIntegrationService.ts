@@ -303,6 +303,19 @@ const UUID_RE =
 
 let _activeSessionBrandId: string = "";
 let _activeSessionUserId: string = "";
+let _userKnownBrandIds: Set<string> = new Set();
+
+/**
+ * Registers brand IDs owned by the authenticated user to prevent dropping tokens
+ * across active brand transitions.
+ */
+export function setUserKnownBrands(brandIds: string[]): void {
+  _userKnownBrandIds = new Set(brandIds.filter((id) => Boolean(id) && UUID_RE.test(id)));
+}
+
+export function getUserKnownBrands(): string[] {
+  return Array.from(_userKnownBrandIds);
+}
 
 /**
  * Anchors social connection operations to the currently authenticated user and active brand.
@@ -1062,9 +1075,16 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
             return;
           }
 
-          // Brand isolation: only tokens matching activeBrand
+          // Brand isolation: keep brand isolation for multi-workspace.
+          // If activeBrand is set, only match activeBrand, but do not drop tokens
+          // belonging to one of the user's known brands.
           if (activeBrand) {
-            if (tokBrand && tokBrand !== activeBrand) return;
+            if (tokBrand && tokBrand !== activeBrand) {
+              const isKnownUserBrand = _userKnownBrandIds.has(tokBrand);
+              if (!isKnownUserBrand) {
+                return;
+              }
+            }
             if (!tokBrand) return;
           }
 
@@ -1196,9 +1216,14 @@ export function getOAuthAuthorizationUrl(platform: string, targetBrandId?: strin
   let userId = targetUserId || getActiveSessionUserId();
 
   if (!brandId) {
-    brandId = crypto.randomUUID();
-    userId = userId || "demo-user";
-    setActiveSessionBrand(brandId, userId);
+    if (!userId || userId.startsWith("demo-")) {
+      brandId = crypto.randomUUID();
+      userId = userId || "demo-user";
+      setActiveSessionBrand(brandId, userId);
+    } else {
+      console.warn("[socialIntegrationService] Cannot generate OAuth URL: active brand workspace UUID missing for authenticated user.");
+      return "";
+    }
   } else if (targetBrandId || targetUserId) {
     setActiveSessionBrand(brandId, userId);
   }

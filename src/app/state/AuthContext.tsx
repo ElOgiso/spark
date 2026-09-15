@@ -17,6 +17,7 @@ import {
   getBrandWorkspaceId,
   setActiveSessionBrand,
   clearAllStoredAccountTokens,
+  setUserKnownBrands,
 } from "../services/socialIntegrationService";
 
 type AuthContextValue = {
@@ -106,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const inFlightBootstrapRef = React.useRef<Promise<any> | null>(null);
   const activeUserIdRef = React.useRef<string | null>(null);
+  const retryCountRef = React.useRef(0);
 
   const bootstrap = useCallback(async (nextSession: Session | null) => {
     if (!nextSession?.user) {
@@ -151,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBrand(result.brand);
         setBrands(result.brands || []);
         setActiveSessionBrand(result.brand?.id || null, nextSession.user.id);
+        setUserKnownBrands((result.brands || []).map((b) => b.id));
         setError(result.error);
         setIsOnboardingComplete(isComplete);
         try {
@@ -213,7 +216,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result.session) {
         console.log("[SPARK AUTH] session exists: true");
         console.log("[SPARK AUTH] user id:", result.session.user?.id);
-        await bootstrap(result.session);
+        const bootRes = await bootstrap(result.session);
+        if (bootRes?.error && retryCountRef.current < 1) {
+          retryCountRef.current += 1;
+          console.log("[SPARK AUTH] bootstrap encountered error, retrying refreshSession once...");
+          await bootstrap(result.session);
+        } else {
+          retryCountRef.current = 0;
+        }
       } else {
         console.log("[SPARK AUTH] session exists: false (no stored session found)");
         // Only clear if onAuthStateChange hasn't already received a session

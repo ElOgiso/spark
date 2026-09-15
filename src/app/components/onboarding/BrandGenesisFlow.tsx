@@ -2511,7 +2511,16 @@ export function BrandGenesisFlow({
     }, 10000);
 
     try {
-      let currentBrandId = auth.brand?.id || getBrandWorkspaceId();
+      let currentBrandId = auth.brand?.id;
+      if (!currentBrandId && auth.brands && auth.brands.length > 0) {
+        currentBrandId = auth.brands[0]?.id;
+      }
+      if (!currentBrandId) {
+        const fromStorage = getBrandWorkspaceId();
+        if (fromStorage && isUuid(fromStorage)) {
+          currentBrandId = fromStorage;
+        }
+      }
       const currentUserId = auth.currentUser?.id || (auth.mode === "demo" ? "demo-user" : undefined);
 
       if (!currentBrandId) {
@@ -2535,12 +2544,16 @@ export function BrandGenesisFlow({
           } catch (e) {
             console.warn("[BrandGenesisFlow] createDraftBrand/ensureDefaultBrand notice:", e);
           }
+        } else if (auth.mode === "demo") {
+          currentBrandId = crypto.randomUUID();
         }
       }
 
-      // Guaranteed fallback: Never allow currentBrandId to remain empty
-      if (!currentBrandId) {
-        currentBrandId = crypto.randomUUID();
+      if (!currentBrandId || (!isUuid(currentBrandId) && auth.mode !== "demo")) {
+        clearTimeout(timeout);
+        setConnectingPlatform(null);
+        setConnectError("Unable to establish brand workspace before connecting account. Please retry.");
+        return;
       }
 
       if (currentUserId) {
