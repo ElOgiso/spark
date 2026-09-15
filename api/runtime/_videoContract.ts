@@ -444,17 +444,22 @@ export function clampGrokVideoPrompt(prompt: string, max = 4000): string {
   return finalPrompt;
 }
 
-export function mapGrokAspectRatio(ratio?: string): string {
+export function mapGrokAspectRatio(ratio?: string): "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | "3:2" | "2:3" {
+  const r = (ratio || "9:16").trim();
+  if (r === "1:1" || r === "16:9" || r === "9:16" || r === "4:3" || r === "3:4" || r === "3:2" || r === "2:3") {
+    return r;
+  }
   const norm = normalizeAspectRatio(ratio);
-  if (norm === "16:9") return "VIDEO_ASPECT_RATIO_16_9";
-  if (norm === "1:1") return "VIDEO_ASPECT_RATIO_1_1";
-  return "VIDEO_ASPECT_RATIO_9_16";
+  if (norm === "16:9") return "16:9";
+  if (norm === "1:1") return "1:1";
+  return "9:16";
 }
 
-export function mapGrokResolution(res?: string): "VIDEO_RESOLUTION_720P" | "VIDEO_RESOLUTION_1080P" {
-  const norm = normalizeResolution(res);
-  if (norm === "1080p") return "VIDEO_RESOLUTION_1080P";
-  return "VIDEO_RESOLUTION_720P";
+export function mapGrokResolution(res?: string): "480p" | "720p" | "1080p" {
+  const norm = (res || "").toLowerCase();
+  if (norm.includes("1080")) return "1080p";
+  if (norm.includes("480")) return "480p";
+  return "720p";
 }
 
 export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string, unknown> {
@@ -472,49 +477,30 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
   }
 
   const aspectRatio = mapGrokAspectRatio(req.aspectRatio);
-  let resolution: "VIDEO_RESOLUTION_720P" | "VIDEO_RESOLUTION_1080P" = mapGrokResolution(req.resolution);
+  let resolution: "480p" | "720p" | "1080p" = mapGrokResolution(req.resolution);
 
   const body: Record<string, unknown> = {
     model,
     prompt: clampGrokVideoPrompt(grokMotionPrompt(req.prompt)),
     duration: snapGrokDuration(req.durationSec),
-    aspectRatio,
+    aspect_ratio: aspectRatio,
     resolution,
     image: {
-      imageUrl: stillUrl,
       url: stillUrl,
-      detail: "DETAIL_AUTO",
     },
-    // Retain compatibility aliases
-    aspect_ratio: aspectRatio,
+    // Top-level compatibility alias
     image_url: stillUrl,
   };
-
-  const endUrl = (
-    req.lastFrameUrl && (req.lastFrameUrl.startsWith("http://") || req.lastFrameUrl.startsWith("https://"))
-      ? req.lastFrameUrl
-      : req.lastFrameUrl || req.lastFrameDataUri || (req as any).endFrameUrl
-  )?.trim();
-
-  let hasLastFrame = false;
-  if (endUrl && endUrl !== stillUrl) {
-    body.last_frame = { imageUrl: endUrl, url: endUrl, detail: "DETAIL_AUTO" };
-    body.lastFrame = { imageUrl: endUrl, url: endUrl, detail: "DETAIL_AUTO" };
-    hasLastFrame = true;
-  }
 
   const rawRefs: string[] = [
     ...((req as any).referenceImageUrls || []),
     ...(req.referenceUrls || []),
     ...(req.referenceDataUris || []),
     ...((req as any).reference_image_urls || []),
-    ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.imageUrl || r?.url)) || []),
+    ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.url || r?.imageUrl)) || []),
   ];
   const seen = new Set<string>();
   seen.add(stillUrl);
-  if (hasLastFrame && endUrl) {
-    seen.add(endUrl);
-  }
   const dedupedRefs: string[] = [];
   for (const r of rawRefs) {
     if (typeof r === "string" && r.trim()) {
@@ -527,17 +513,9 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     }
   }
   if (dedupedRefs.length > 0) {
-    body.reference_images = dedupedRefs.map((u) => ({
-      imageUrl: u,
-      url: u,
-      detail: "DETAIL_AUTO",
-    }));
-    body.referenceImages = body.reference_images;
-  }
-
-  // When last_frame or any reference_images are present -> force resolution = "VIDEO_RESOLUTION_720P".
-  if (hasLastFrame || dedupedRefs.length > 0) {
-    resolution = "VIDEO_RESOLUTION_720P";
+    body.reference_images = dedupedRefs.map((u) => ({ url: u }));
+    // Force 720p when reference images are present
+    resolution = "720p";
     body.resolution = resolution;
   }
 

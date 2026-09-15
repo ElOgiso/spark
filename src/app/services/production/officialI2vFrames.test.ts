@@ -157,7 +157,7 @@ describe("official Veo / Grok wire fields", () => {
     assert.equal(snapVeoDuration(4), 4);
   });
 
-  it("Grok i2v body has image + optional last frame and reference_images (max 7, 720p)", () => {
+  it("Grok i2v body has image + reference_images (max 7, 720p) and omits undocumented last_frame", () => {
     const body = buildGrokVideoGenerateBody({
       prompt: "camera pans left",
       firstFrameDataUri: "data:image/jpeg;base64,STILL",
@@ -167,14 +167,13 @@ describe("official Veo / Grok wire fields", () => {
       aspectRatio: "9:16",
     });
     assert.equal(body.model, "grok-imagine-video-1.5");
-    assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,STILL");
-    assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
-    assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
-    assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
+    assert.equal((body.image as any)?.url, "data:image/jpeg;base64,STILL");
+    assert.equal(body.last_frame, undefined);
     assert.equal((body as any).last_frame_url, undefined);
-    assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
-    assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,SHEET");
-    assert.equal((body.reference_images as any[])[1]?.imageUrl, "data:image/jpeg;base64,GRID");
+    assert.equal(body.resolution, "720p");
+    assert.equal(body.aspect_ratio, "9:16");
+    assert.equal((body.reference_images as any[])[0]?.url, "data:image/jpeg;base64,SHEET");
+    assert.equal((body.reference_images as any[])[1]?.url, "data:image/jpeg;base64,GRID");
   });
 
   it("resolveClipFrames uses lastFrameUrl as end/continuity, not as frame 1", () => {

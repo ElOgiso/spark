@@ -465,17 +465,11 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   const body = buildGrokVideoGenerateBody(effectiveReq);
 
   // Log once per shot immediately before fetch to api.x.ai
-  const imageUrl = (body.image as any)?.imageUrl || (body.image as any)?.url || (body as any).imageUrl || (body as any).image_url;
+  const imageUrl = (body.image as any)?.url || (body.image as any)?.imageUrl || (body as any).imageUrl || (body as any).image_url;
   const hasImageUrl = Boolean(imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0);
-  const hasLastFrame = Boolean(
-    (body.last_frame as any)?.imageUrl ||
-    (body.last_frame as any)?.url ||
-    (body.lastFrame as any)?.imageUrl ||
-    (body as any).last_frame_url
-  );
   const refImagesCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
   console.log(
-    `[Grok Video] Shot request: model=${body.model}, promptLen=${(body.prompt as string)?.length || 0}, hasImageUrl=${hasImageUrl}, hasLastFrame=${hasLastFrame}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
+    `[Grok Video] Shot request: model=${body.model}, promptLen=${(body.prompt as string)?.length || 0}, hasImageUrl=${hasImageUrl}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
   );
   if (!hasImageUrl) {
     throw new Error("Refusing to generate Grok video with numInputImages=0 (T2V forbidden for shot i2v).");
@@ -497,8 +491,8 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   const immediate = extractGrokVideoUrl(data);
   if (immediate) return immediate;
 
-  // Sync SDK has no resume. If the provider still returns an id, wait in-process only.
-  const requestId = data.id || data.request_id || "";
+  // Async: response { request_id } → GET /v1/videos/{request_id} until status "done" → video.url
+  const requestId = data.request_id || data.id || data.requestId || "";
   if (!requestId) {
     throw new Error("Grok video.generate returned neither video URL nor request id.");
   }
@@ -513,10 +507,13 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
     if (!pollRes.ok) continue;
     const pollData = await pollRes.json();
     const url = extractGrokVideoUrl(pollData);
-    if (url) return url;
     const status = String(pollData.status || "").toLowerCase();
+    if (url && (status === "done" || status === "completed" || status === "succeeded" || status === "success" || !status)) {
+      return url;
+    }
     if (status === "failed" || status === "error") {
-      throw new Error(`Grok video generation failed: ${pollData.error || "unknown"}`);
+      const errMsg = pollData.error?.message || (typeof pollData.error === "string" ? pollData.error : JSON.stringify(pollData.error)) || "unknown";
+      throw new Error(`Grok video generation failed: ${errMsg}`);
     }
   }
   throw new Error("Grok video.generate timed out in-process (no resume).");

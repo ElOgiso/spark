@@ -191,16 +191,15 @@ test("Grok i2v: 1. still only -> image only (keeps requested 1080p resolution)",
     resolution: "1080p",
   });
   assert.equal(body.model, "grok-imagine-video-1.5");
-  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
-  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
-  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_16_9");
-  assert.equal(body.resolution, "VIDEO_RESOLUTION_1080P");
+  assert.equal((body.image as any)?.url, "data:image/jpeg;base64,START");
+  assert.equal(body.aspect_ratio, "16:9");
+  assert.equal(body.resolution, "1080p");
   assert.equal(body.last_frame, undefined);
   assert.equal((body as any).last_frame_url, undefined);
   assert.equal(body.reference_images, undefined);
 });
 
-test("Grok i2v: 2. still + end -> image + last_frame and forces 720p even if 1080p requested", () => {
+test("Grok i2v: 2. still + end -> omits undocumented last_frame object", () => {
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
     firstFrameDataUri: "data:image/jpeg;base64,START",
@@ -209,17 +208,15 @@ test("Grok i2v: 2. still + end -> image + last_frame and forces 720p even if 108
     aspectRatio: "16:9",
     resolution: "1080p",
   });
-  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
-  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
-  assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
-  assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
-  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_16_9");
-  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
-  assert.equal((body as any).last_frame_url, undefined);
+  assert.equal((body.image as any)?.url, "data:image/jpeg;base64,START");
+  assert.equal(body.last_frame, undefined);
+  assert.equal(body.lastFrame, undefined);
+  assert.equal(body.aspect_ratio, "16:9");
+  assert.equal(body.resolution, "1080p");
   assert.equal(body.reference_images, undefined);
 });
 
-test("Grok i2v: 3. still + refs -> image + reference_images (max 7) and forces 720p", () => {
+test("Grok i2v: 3. still + refs -> image + reference_images (max 7, [{ url }]) and forces 720p", () => {
   const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
@@ -228,41 +225,32 @@ test("Grok i2v: 3. still + refs -> image + reference_images (max 7) and forces 7
     durationSec: 6,
     aspectRatio: "9:16",
   });
-  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
-  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
-  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_9_16");
-  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
+  assert.equal((body.image as any)?.url, "data:image/jpeg;base64,START");
+  assert.equal(body.aspect_ratio, "9:16");
+  assert.equal(body.resolution, "720p");
   assert.equal(body.last_frame, undefined);
-  assert.equal((body as any).last_frame_url, undefined);
   assert.ok(Array.isArray(body.reference_images));
   assert.equal((body.reference_images as any[]).length, 7);
-  assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,F0");
-  assert.equal((body.reference_images as any[])[6]?.imageUrl, "data:image/jpeg;base64,F6");
+  assert.equal((body.reference_images as any[])[0]?.url, "data:image/jpeg;base64,F0");
+  assert.equal((body.reference_images as any[])[6]?.url, "data:image/jpeg;base64,F6");
 });
 
-test("Grok i2v: 4. still + end + refs -> all three + 720p, rejects legacy last_frame_url alone", () => {
-  const refs = Array.from({ length: 9 }, (_, i) => `data:image/jpeg;base64,F${i}`);
+test("Grok i2v: 4. durations clamp 1-15 and refuses T2V without image", () => {
+  const refs = Array.from({ length: 2 }, (_, i) => `data:image/jpeg;base64,F${i}`);
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
     firstFrameDataUri: "data:image/jpeg;base64,START",
-    lastFrameDataUri: "data:image/jpeg;base64,END",
     referenceDataUris: refs,
     durationSec: 7,
     aspectRatio: "9:16",
   });
   assert.equal(body.model, "grok-imagine-video-1.5");
-  assert.equal((body.image as any)?.imageUrl, "data:image/jpeg;base64,START");
-  assert.equal((body.image as any)?.detail, "DETAIL_AUTO");
-  assert.equal((body.last_frame as any)?.imageUrl, "data:image/jpeg;base64,END");
-  assert.equal((body.last_frame as any)?.detail, "DETAIL_AUTO");
-  assert.equal((body as any).last_frame_url, undefined);
-  assert.equal(body.aspectRatio, "VIDEO_ASPECT_RATIO_9_16");
-  assert.equal(body.resolution, "VIDEO_RESOLUTION_720P");
+  assert.equal((body.image as any)?.url, "data:image/jpeg;base64,START");
+  assert.equal(body.aspect_ratio, "9:16");
+  assert.equal(body.resolution, "720p");
+  assert.equal(body.last_frame, undefined);
   assert.ok(Array.isArray(body.reference_images));
-  assert.equal((body.reference_images as any[]).length, 7);
-  assert.equal((body.reference_images as any[])[0]?.imageUrl, "data:image/jpeg;base64,F0");
-  assert.equal((body.reference_images as any[])[6]?.imageUrl, "data:image/jpeg;base64,F6");
-  assert.equal(body.reference_image_urls, undefined);
+  assert.equal((body.reference_images as any[]).length, 2);
   assert.equal(snapGrokDuration(0), 1);
   assert.equal(snapGrokDuration(99), 15);
   assert.throws(
