@@ -88,6 +88,7 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "gemini", name: "Google Imagen 3 / Gemini", desc: "Google Imagen 3 UHD keyframes with visual lock", logoId: "gemini" },
       { id: "openai", name: "OpenAI", desc: "GPT-Image-1.5 / DALL-E 3 high-contrast stills", logoId: "openai" },
       { id: "grok", name: "xAI Grok", desc: "Grok Imagine concept rendering", logoId: "grok" },
+      { id: "higgsfield", name: "Higgsfield Soul", desc: "Higgsfield Soul 2 & Cinema photorealistic stills", logoId: "higgsfield" },
     ],
   },
   {

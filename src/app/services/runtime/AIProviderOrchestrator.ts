@@ -118,13 +118,26 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
       ],
       higgsfield: [
         p.HIGGSFIELD_API_KEY,
+        p.VITE_HIGGSFIELD_API_KEY,
+        (p as any).Higgsfield_API,
+        p.HIGGSFIELD_API,
         p.HF_CREDENTIALS,
         p.HF_KEY,
-        p.HF_API_KEY_ID,
-        p.VITE_HIGGSFIELD_API_KEY,
-        p.VITE_HF_API_KEY,
       ],
     };
+
+    if (providerId === "higgsfield") {
+      for (const val of candidates.higgsfield) {
+        if (isNonEmpty(val)) return val.trim();
+      }
+      const hfId = (p.HF_API_KEY_ID || p.HIGGSFIELD_API_KEY_ID || p.HIGGSFIELD_KEY_ID || "").trim();
+      const hfSecret = (p.HF_API_KEY_SECRET || p.HIGGSFIELD_API_KEY_SECRET || p.HIGGSFIELD_KEY_SECRET || "").trim();
+      if (hfId && hfSecret) {
+        return `${hfId}:${hfSecret}`;
+      }
+      return undefined;
+    }
+
     const list = candidates[providerId] || [];
     for (const val of list) {
       if (isNonEmpty(val)) return val.trim();
@@ -151,14 +164,26 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
         m.ELEVEN_LABS_API_KEY,
       ],
       higgsfield: [
-        m.VITE_HIGGSFIELD_API_KEY,
-        m.VITE_HF_API_KEY,
         m.HIGGSFIELD_API_KEY,
+        m.VITE_HIGGSFIELD_API_KEY,
+        m.Higgsfield_API,
+        m.HIGGSFIELD_API,
         m.HF_CREDENTIALS,
         m.HF_KEY,
-        m.HF_API_KEY_ID,
       ],
     };
+
+    if (providerId === "higgsfield") {
+      for (const val of candidates.higgsfield) {
+        if (isNonEmpty(val)) return val.trim();
+      }
+      const hfId = (m.HF_API_KEY_ID || m.HIGGSFIELD_API_KEY_ID || m.HIGGSFIELD_KEY_ID || "").trim();
+      const hfSecret = (m.HF_API_KEY_SECRET || m.HIGGSFIELD_API_KEY_SECRET || m.HIGGSFIELD_KEY_SECRET || "").trim();
+      if (hfId && hfSecret) {
+        return `${hfId}:${hfSecret}`;
+      }
+      return undefined;
+    }
     const list = candidates[providerId] || [];
     for (const val of list) {
       if (isNonEmpty(val)) return val.trim();
@@ -1539,7 +1564,7 @@ export class AIProviderOrchestrator {
       id: "higgsfield",
       name: "Higgsfield AI (Soul & Seedance)",
       capabilities: ["Image Generation", "Video Generation"],
-      isAvailable: (customKeys) => Boolean(resolveProviderKey("higgsfield", customKeys) || true),
+      isAvailable: (customKeys) => Boolean(resolveProviderKey("higgsfield", customKeys)),
       execute: async (options) => {
         // 8A. Higgsfield Image Generation (Soul 2 / Cinema) via server proxy
         if (options.capability === "Image Generation") {

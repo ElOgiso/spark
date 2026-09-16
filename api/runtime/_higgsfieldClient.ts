@@ -30,6 +30,16 @@ export function parseHiggsfieldKeyString(combined?: string): HiggsfieldCredentia
   return null;
 }
 
+/**
+ * Phase 0: Resolve Higgsfield credentials from process.env (first non-empty wins):
+ * - HIGGSFIELD_API_KEY
+ * - VITE_HIGGSFIELD_API_KEY
+ * - Higgsfield_API
+ * - HIGGSFIELD_API
+ * - HF_CREDENTIALS
+ * - HF_KEY
+ * - If HF_API_KEY_ID and HF_API_KEY_SECRET both set, return { keyId, keySecret }
+ */
 export function resolveHiggsfieldCredentials(customKey?: string): HiggsfieldCredentials | null {
   // 1. Direct custom key passed
   if (customKey) {
@@ -37,16 +47,21 @@ export function resolveHiggsfieldCredentials(customKey?: string): HiggsfieldCred
     if (parsed) return parsed;
   }
 
-  // 2. Combined environment variables
-  const envKey =
-    process.env.HIGGSFIELD_API_KEY ||
-    process.env.HF_CREDENTIALS ||
-    process.env.HF_KEY ||
-    process.env.VITE_HIGGSFIELD_API_KEY;
+  // 2. Candidate list in exact Phase 0 priority order
+  const candidates: (string | undefined)[] = [
+    process.env.HIGGSFIELD_API_KEY,
+    process.env.VITE_HIGGSFIELD_API_KEY,
+    (process.env as any).Higgsfield_API,
+    process.env.HIGGSFIELD_API,
+    process.env.HF_CREDENTIALS,
+    process.env.HF_KEY,
+  ];
 
-  if (envKey) {
-    const parsed = parseHiggsfieldKeyString(envKey);
-    if (parsed) return parsed;
+  for (const c of candidates) {
+    if (c && typeof c === "string" && c.trim()) {
+      const parsed = parseHiggsfieldKeyString(c.trim());
+      if (parsed) return parsed;
+    }
   }
 
   // 3. Separated key id and key secret environment variables
@@ -71,6 +86,15 @@ export function resolveHiggsfieldCredentials(customKey?: string): HiggsfieldCred
   return null;
 }
 
+/**
+ * Phase 1: resolveHiggsfieldAuth() -> { authorization: Key {id}:{secret} }
+ */
+export function resolveHiggsfieldAuth(customKey?: string): { authorization: string } | null {
+  const creds = resolveHiggsfieldCredentials(customKey);
+  if (!creds) return null;
+  return { authorization: `Key ${creds.keyId}:${creds.keySecret}` };
+}
+
 export function buildHiggsfieldAuthHeader(creds: HiggsfieldCredentials): string {
   return `Key ${creds.keyId}:${creds.keySecret}`;
 }
@@ -87,7 +111,10 @@ export function mapHiggsfieldAspectRatio(aspectRatio?: string): string {
   return "9:16";
 }
 
-export function firstImageUrl(result: any): string {
+/**
+ * Phase 1: extractImageUrl(result) -> images[0].url
+ */
+export function extractImageUrl(result: any): string {
   if (!result) return "";
   if (Array.isArray(result.images) && result.images.length > 0) {
     const first = result.images[0];
@@ -102,8 +129,12 @@ export function firstImageUrl(result: any): string {
   if (typeof result.url === "string") return result.url;
   return "";
 }
+export const firstImageUrl = extractImageUrl;
 
-export function videoUrl(result: any): string {
+/**
+ * Phase 1: extractVideoUrl(result) -> video.url
+ */
+export function extractVideoUrl(result: any): string {
   if (!result) return "";
   if (typeof result.video?.url === "string") return result.video.url;
   if (typeof result.video === "string") return result.video;
@@ -121,18 +152,23 @@ export function videoUrl(result: any): string {
   if (typeof result.url === "string") return result.url;
   return "";
 }
+export const videoUrl = extractVideoUrl;
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function submitHiggsfield(
+/**
+ * Phase 1: submit(path, body) -> POST https://api.higgsfield.ai[object Object]
+ */
+export async function submit(
   endpointPath: string,
   body: Record<string, unknown>,
-  customKey?: string
+  customKey?: string,
+  signal?: AbortSignal
 ): Promise<any> {
-  const creds = resolveHiggsfieldCredentials(customKey);
-  if (!creds) {
+  const auth = resolveHiggsfieldAuth(customKey);
+  if (!auth) {
     throw new Error(
       "Higgsfield credentials not configured. Please set HIGGSFIELD_API_KEY in 'key_id:key_secret' form or set HF_API_KEY_ID and HF_API_KEY_SECRET."
     );
@@ -146,9 +182,10 @@ export async function submitHiggsfield(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: buildHiggsfieldAuthHeader(creds),
+      Authorization: auth.authorization,
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) {
@@ -158,14 +195,19 @@ export async function submitHiggsfield(
 
   return res.json();
 }
+export const submitHiggsfield = submit;
 
-export async function pollHiggsfieldStatus(
+/**
+ * Phase 1: pollRequest(request_id | status_url) -> GET until status in completed|failed|nsfw|canceled
+ */
+export async function pollRequest(
   requestIdOrStatusUrl: string,
   customKey?: string,
-  timeoutMs: number = HIGGSFIELD_POLL_TIMEOUT_MS
+  timeoutMs: number = HIGGSFIELD_POLL_TIMEOUT_MS,
+  signal?: AbortSignal
 ): Promise<any> {
-  const creds = resolveHiggsfieldCredentials(customKey);
-  if (!creds) {
+  const auth = resolveHiggsfieldAuth(customKey);
+  if (!auth) {
     throw new Error("Higgsfield credentials not configured.");
   }
 
@@ -179,13 +221,18 @@ export async function pollHiggsfieldStatus(
   let lastStatus = "";
 
   while (Date.now() - started < timeoutMs) {
+    if (signal?.aborted) {
+      throw new Error("Higgsfield polling aborted by client signal.");
+    }
+
     await sleep(HIGGSFIELD_POLL_INTERVAL_MS);
 
     const res = await fetch(pollUrl, {
       method: "GET",
       headers: {
-        Authorization: buildHiggsfieldAuthHeader(creds),
+        Authorization: auth.authorization,
       },
+      signal,
     });
 
     if (!res.ok) {
@@ -216,21 +263,27 @@ export async function pollHiggsfieldStatus(
     `Higgsfield poll timed out after ${Math.round(timeoutMs / 1000)}s (last status: ${lastStatus || "unknown"}).`
   );
 }
+export const pollHiggsfieldStatus = pollRequest;
 
-export async function cancelHiggsfieldRequest(
+/**
+ * Phase 1: cancel(request_id) -> POST /requests/{id}/cancel
+ */
+export async function cancel(
   requestId: string,
-  customKey?: string
+  customKey?: string,
+  signal?: AbortSignal
 ): Promise<boolean> {
   try {
-    const creds = resolveHiggsfieldCredentials(customKey);
-    if (!creds) return false;
+    const auth = resolveHiggsfieldAuth(customKey);
+    if (!auth) return false;
 
     const cleanId = requestId.replace(/^\/requests\//, "").replace(/\/status$/, "");
     const res = await fetch(`${HIGGSFIELD_API_BASE}/requests/${cleanId}/cancel`, {
       method: "POST",
       headers: {
-        Authorization: buildHiggsfieldAuthHeader(creds),
+        Authorization: auth.authorization,
       },
+      signal,
     });
     return res.ok;
   } catch (err) {
@@ -238,6 +291,7 @@ export async function cancelHiggsfieldRequest(
     return false;
   }
 }
+export const cancelHiggsfieldRequest = cancel;
 
 export interface GenerateSoulImageOptions {
   prompt: string;
@@ -248,9 +302,15 @@ export interface GenerateSoulImageOptions {
   enhancePrompt?: boolean;
 }
 
+/**
+ * Phase 2: Soul Image Generation
+ * default model -> /higgsfield-ai/soul/v2/standard
+ * soul-cinema / cinema -> /higgsfield-ai/soul/cinema
+ */
 export async function generateSoulImage(
   options: GenerateSoulImageOptions,
-  customKey?: string
+  customKey?: string,
+  signal?: AbortSignal
 ): Promise<string> {
   const isCinema = options.model?.toLowerCase().includes("cinema");
   const endpoint = isCinema ? "/higgsfield-ai/soul/cinema" : "/higgsfield-ai/soul/v2/standard";
@@ -264,10 +324,10 @@ export async function generateSoulImage(
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
   };
 
-  const initial = await submitHiggsfield(endpoint, body, customKey);
+  const initial = await submit(endpoint, body, customKey, signal);
 
   // If endpoint immediately returned images
-  const immediateUrl = firstImageUrl(initial);
+  const immediateUrl = extractImageUrl(initial);
   if (immediateUrl) return immediateUrl;
 
   const target = initial.status_url || initial.request_id || initial.id;
@@ -277,8 +337,8 @@ export async function generateSoulImage(
     );
   }
 
-  const completed = await pollHiggsfieldStatus(target, customKey);
-  const finalUrl = firstImageUrl(completed);
+  const completed = await pollRequest(target, customKey, HIGGSFIELD_POLL_TIMEOUT_MS, signal);
+  const finalUrl = extractImageUrl(completed);
   if (!finalUrl) {
     throw new Error("Higgsfield completed image generation but images[0].url was empty.");
   }
@@ -295,9 +355,15 @@ export interface GenerateSeedanceVideoOptions {
   generateAudio?: boolean;
 }
 
+/**
+ * Phase 3: Seedance I2V on Higgsfield only
+ * default -> /bytedance/seedance-2.5/image-to-video
+ * 2.0 -> /bytedance/seedance-2.0/image-to-video
+ */
 export async function generateSeedanceVideo(
   options: GenerateSeedanceVideoOptions,
-  customKey?: string
+  customKey?: string,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!options.firstFrameUrl || !options.firstFrameUrl.trim()) {
     throw new Error("Higgsfield Seedance I2V requires a valid firstFrameUrl.");
@@ -327,9 +393,9 @@ export async function generateSeedanceVideo(
     body.end_image_url = options.endFrameUrl.trim();
   }
 
-  const initial = await submitHiggsfield(endpoint, body, customKey);
+  const initial = await submit(endpoint, body, customKey, signal);
 
-  const immediateUrl = videoUrl(initial);
+  const immediateUrl = extractVideoUrl(initial);
   if (immediateUrl) return immediateUrl;
 
   const target = initial.status_url || initial.request_id || initial.id;
@@ -339,8 +405,8 @@ export async function generateSeedanceVideo(
     );
   }
 
-  const completed = await pollHiggsfieldStatus(target, customKey);
-  const finalUrl = videoUrl(completed);
+  const completed = await pollRequest(target, customKey, HIGGSFIELD_POLL_TIMEOUT_MS, signal);
+  const finalUrl = extractVideoUrl(completed);
   if (!finalUrl) {
     throw new Error("Higgsfield completed video generation but video.url was empty.");
   }
