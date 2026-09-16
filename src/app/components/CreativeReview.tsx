@@ -30,6 +30,7 @@ import {
   Film,
 } from "lucide-react";
 import { DesktopProductionAssetsGallery } from "./DesktopProductionAssetsGallery";
+import { deriveLockedProductionReferences } from "../services/production/lockedProductionReferences";
 import { isPlayableVideoUrl, isDurableMasterVideoReady } from "../services/production/productionAssetService";
 import {
   openProductionReviewDetail,
@@ -141,6 +142,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
   const [exporting, setExporting] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
+  const [focusedAssetUrl, setFocusedAssetUrl] = useState<string | null>(null);
   const [selectedReviewSceneId, setSelectedReviewSceneId] = useState<string | null>(null);
   const [selectedReviewShotId, setSelectedReviewShotId] = useState<string | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -152,6 +154,13 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
   }, [activeReview?.status, activeProd?.status]);
 
   const brief = activeProd?.brief || activeReview?.brief;
+
+  // Derive locked production references (character sheet, location plate(s), prop sheets, wardrobe sheets)
+  const lockedRefs = useMemo(
+    () => deriveLockedProductionReferences({ activeProd, brief, character }),
+    [activeProd, brief, character]
+  );
+
   const mediaView = useMemo(
     () =>
       resolveProductionMediaView({
@@ -197,9 +206,13 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
   if (showAssetsGallery) {
     return (
       <DesktopProductionAssetsGallery
-        onBack={() => setShowAssetsGallery(false)}
+        onBack={() => {
+          setShowAssetsGallery(false);
+          setFocusedAssetUrl(null);
+        }}
         production={activeProd}
         item={activeReview}
+        initialAssetUrl={focusedAssetUrl || undefined}
       />
     );
   }
@@ -711,16 +724,73 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               />
             </div>
             
-            {/* Open Production Assets Action Button */}
-            <div className="flex items-center justify-end">
-              <button
-                onClick={() => setShowAssetsGallery(true)}
-                className="px-5 py-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
-              >
-                <Film className="w-4 h-4 text-purple-400" />
-                <span>Open Production Assets</span>
-              </button>
-            </div>
+            {/* Locked Production References Strip */}
+            {lockedRefs.length > 0 ? (
+              <div className="p-4 rounded-2xl bg-card border border-border/70 shadow-sm space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-accent" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Locked production references
+                    </h3>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-semibold">
+                      {lockedRefs.length}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFocusedAssetUrl(null);
+                      setShowAssetsGallery(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Film className="w-3.5 h-3.5 text-purple-400" />
+                    <span>View all in Production Assets</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3 overflow-x-auto scrollbar-none pb-1 pt-0.5">
+                  {lockedRefs.map((ref) => (
+                    <button
+                      key={ref.id}
+                      type="button"
+                      onClick={() => {
+                        setFocusedAssetUrl(ref.url);
+                        setShowAssetsGallery(true);
+                      }}
+                      className="group flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer text-left focus:outline-none"
+                    >
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden aspect-square border border-border/80 bg-black/40 group-hover:border-accent group-hover:ring-1 group-hover:ring-accent transition-all relative flex items-center justify-center">
+                        <img
+                          src={ref.url}
+                          alt={ref.label}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          loading="lazy"
+                        />
+                      </div>
+                      <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground truncate max-w-[68px] sm:max-w-[80px] text-center">
+                        {ref.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusedAssetUrl(null);
+                    setShowAssetsGallery(true);
+                  }}
+                  className="px-5 py-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+                >
+                  <Film className="w-4 h-4 text-purple-400" />
+                  <span>Open Production Assets</span>
+                </button>
+              </div>
+            )}
             
             <div>
               <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">

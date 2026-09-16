@@ -388,6 +388,7 @@ export interface Production {
   isGeneratingAssets?: boolean;
   generationProgress?: GenerationProgress;
   lastError?: string;
+  generatedAssets?: ProductionBrief["generatedAssets"];
   /** Preproduction Asset Bible defining required entity @tags and sheet kinds */
   assetBible?: import("../services/production/preproduction/assetBibleFromBrief").AssetBibleEntry[];
   /** Series linkage and persistent episode canon */

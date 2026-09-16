@@ -75,7 +75,10 @@ export function MobileProductionAssetsGallery({
   });
 
   // Ensured & locked production props
-  const propSheets = (brief?.generatedAssets?.propSheets || activeProd?.generatedAssets?.propSheets || {}) as Record<string, string>;
+  const propSheets = {
+    ...((activeProd?.generatedAssets as any)?.propSheets || {}),
+    ...((brief?.generatedAssets as any)?.propSheets || {}),
+  } as Record<string, string>;
   Object.entries(propSheets).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`prop-${tag}`, `Prop: ${tag}`, url);
@@ -83,7 +86,10 @@ export function MobileProductionAssetsGallery({
   });
 
   // Ensured & locked location plates
-  const locationPlates = (brief?.generatedAssets?.locationPlates || activeProd?.generatedAssets?.locationPlates || {}) as Record<string, string>;
+  const locationPlates = {
+    ...((activeProd?.generatedAssets as any)?.locationPlates || {}),
+    ...((brief?.generatedAssets as any)?.locationPlates || {}),
+  } as Record<string, string>;
   Object.entries(locationPlates).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`loc-${tag}`, `Location: ${tag}`, url);
@@ -95,7 +101,10 @@ export function MobileProductionAssetsGallery({
   }
 
   // Ensured & locked wardrobe variants
-  const wardrobeSheets = (brief?.generatedAssets?.wardrobeSheets || activeProd?.generatedAssets?.wardrobeSheets || {}) as Record<string, string>;
+  const wardrobeSheets = {
+    ...((activeProd?.generatedAssets as any)?.wardrobeSheets || {}),
+    ...((brief?.generatedAssets as any)?.wardrobeSheets || {}),
+  } as Record<string, string>;
   Object.entries(wardrobeSheets).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`wardrobe-${tag}`, `Wardrobe: ${tag}`, url);

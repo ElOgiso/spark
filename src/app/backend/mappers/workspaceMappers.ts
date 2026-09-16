@@ -297,6 +297,27 @@ export function productionRowToDomain(row: ProductionRow): Production {
     isGeneratingAssets = !isFinished && isRecent && !lastError;
   }
 
+  const rowAssets = (row.assets && typeof row.assets === "object" && !Array.isArray(row.assets)
+    ? row.assets
+    : {}) as Record<string, any>;
+
+  const generatedAssets = {
+    ...rowAssets,
+    ...((brief.generatedAssets && typeof brief.generatedAssets === "object") ? (brief.generatedAssets as any) : {}),
+    ...((briefObj.generatedAssets && typeof briefObj.generatedAssets === "object") ? (briefObj.generatedAssets as any) : {}),
+  };
+
+  const propSheets = (generatedAssets.propSheets || rowAssets.propSheets || {}) as Record<string, string>;
+  const locationPlates = (generatedAssets.locationPlates || rowAssets.locationPlates || {}) as Record<string, string>;
+  const wardrobeSheets = (generatedAssets.wardrobeSheets || rowAssets.wardrobeSheets || {}) as Record<string, string>;
+
+  const resolvedGeneratedAssets = {
+    ...generatedAssets,
+    propSheets,
+    locationPlates,
+    wardrobeSheets,
+  };
+
   const mergedBrief: import("../../domain/types").ProductionBrief | undefined =
     briefObj.title || briefObj.hook || Object.keys(briefObj).length > 0
       ? {
@@ -306,6 +327,10 @@ export function productionRowToDomain(row: ProductionRow): Production {
           storyboardGridUrl: storyboardGridUrl || (briefObj as any).storyboardGridUrl,
           generationProgress: generationProgress || (briefObj as any).generationProgress,
           lastError: lastError || (briefObj as any).lastError,
+          generatedAssets: {
+            ...((briefObj as any).generatedAssets || {}),
+            ...resolvedGeneratedAssets,
+          },
         }
       : undefined;
 
@@ -322,6 +347,7 @@ export function productionRowToDomain(row: ProductionRow): Production {
     audioUrl,
     videoUrl,
     brief: mergedBrief,
+    generatedAssets: (mergedBrief?.generatedAssets as any) || resolvedGeneratedAssets,
     generationProgress,
     isGeneratingAssets,
     lastError,

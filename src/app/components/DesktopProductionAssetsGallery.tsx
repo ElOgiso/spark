@@ -36,12 +36,14 @@ export interface DesktopProductionAssetsGalleryProps {
   onBack: () => void;
   production: any;
   item?: any;
+  initialAssetUrl?: string;
 }
 
 export function DesktopProductionAssetsGallery({
   onBack,
   production,
   item,
+  initialAssetUrl,
 }: DesktopProductionAssetsGalleryProps) {
   const { fixProductionScene, mergeProductionScenes, character } = useSpark() as any;
   const activeProd = production || item?.production;
@@ -76,7 +78,10 @@ export function DesktopProductionAssetsGallery({
   });
 
   // Ensured & locked production props
-  const propSheets = (brief?.generatedAssets?.propSheets || activeProd?.generatedAssets?.propSheets || {}) as Record<string, string>;
+  const propSheets = {
+    ...((activeProd?.generatedAssets as any)?.propSheets || {}),
+    ...((brief?.generatedAssets as any)?.propSheets || {}),
+  } as Record<string, string>;
   Object.entries(propSheets).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`prop-${tag}`, `Prop: ${tag}`, url);
@@ -84,7 +89,10 @@ export function DesktopProductionAssetsGallery({
   });
 
   // Ensured & locked location plates
-  const locationPlates = (brief?.generatedAssets?.locationPlates || activeProd?.generatedAssets?.locationPlates || {}) as Record<string, string>;
+  const locationPlates = {
+    ...((activeProd?.generatedAssets as any)?.locationPlates || {}),
+    ...((brief?.generatedAssets as any)?.locationPlates || {}),
+  } as Record<string, string>;
   Object.entries(locationPlates).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`loc-${tag}`, `Location: ${tag}`, url);
@@ -96,7 +104,10 @@ export function DesktopProductionAssetsGallery({
   }
 
   // Ensured & locked wardrobe variants
-  const wardrobeSheets = (brief?.generatedAssets?.wardrobeSheets || activeProd?.generatedAssets?.wardrobeSheets || {}) as Record<string, string>;
+  const wardrobeSheets = {
+    ...((activeProd?.generatedAssets as any)?.wardrobeSheets || {}),
+    ...((brief?.generatedAssets as any)?.wardrobeSheets || {}),
+  } as Record<string, string>;
   Object.entries(wardrobeSheets).forEach(([tag, url]) => {
     if (url && typeof url === "string") {
       pushImg(`wardrobe-${tag}`, `Wardrobe: ${tag}`, url);
@@ -155,6 +166,15 @@ export function DesktopProductionAssetsGallery({
   const [isPlayingFocus, setIsPlayingFocus] = useState(false);
   const [fullscreenVideo, setFullscreenVideo] = useState<{ url: string; title: string } | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; title: string } | null>(null);
+
+  useEffect(() => {
+    if (initialAssetUrl) {
+      const match = generatedImages.find((g) => g.url === initialAssetUrl);
+      if (match) {
+        setFullscreenImage({ url: match.url, title: match.label });
+      }
+    }
+  }, [initialAssetUrl]);
   const [fixTargetScene, setFixTargetScene] = useState<DesktopSceneItem | null>(null);
   const [fixNotes, setFixNotes] = useState("");
   const [approvedMaster, setApprovedMaster] = useState(false);
@@ -326,7 +346,11 @@ export function DesktopProductionAssetsGallery({
                         if (match) setSelectedSceneId(match.id);
                         setFullscreenImage({ url: img.url, title: img.label });
                       }}
-                      className="shrink-0 w-24 rounded-xl overflow-hidden border border-white/10 hover:border-purple-400/60 bg-black/40"
+                      className={`shrink-0 w-24 rounded-xl overflow-hidden border bg-black/40 transition-all ${
+                        initialAssetUrl === img.url
+                          ? "border-purple-400 ring-2 ring-purple-400/60 shadow-lg shadow-purple-500/20"
+                          : "border-white/10 hover:border-purple-400/60"
+                      }`}
                       title={img.label}
                     >
                       <div className={cardMediaClass}><img src={img.url} alt={img.label} className={cardImgClass} /></div>

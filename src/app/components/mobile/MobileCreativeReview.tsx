@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { InteractiveVideoPlayer, ThumbnailVariantCard } from "../MediaPreviewHelper";
 import {
@@ -17,7 +17,9 @@ import {
   Trash2,
   X,
   Film,
+  Shield,
 } from "lucide-react";
+import { deriveLockedProductionReferences } from "../../services/production/lockedProductionReferences";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
@@ -67,6 +69,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     fixProductionScene,
     selectProductionCandidate,
     automationMode,
+    character,
   } = useSpark() as any;
 
   const activeProd = productions?.find((p: any) =>
@@ -75,6 +78,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     (item?.id && item.id.replace("rev-", "") === p.id)
   );
   const brief = activeProd?.brief || item?.brief;
+
+  // Derive locked production references (character sheet, location plate(s), prop sheets, wardrobe sheets)
+  const lockedRefs = useMemo(
+    () => deriveLockedProductionReferences({ activeProd, brief, character }),
+    [activeProd, brief, character]
+  );
   const genProgress = activeProd?.generationProgress || item?.generationProgress || brief?.generationProgress;
 
   const prodId = activeProd?.id || item?.productionId || (item?.id ? item.id.replace("rev-", "") : "");
@@ -398,14 +407,62 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           />
         </div>
 
-        {/* Open Production Assets Action Button */}
-        <button
-          onClick={() => setShowAssetsGallery(true)}
-          className="w-full py-3.5 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
-        >
-          <Film className="w-4 h-4 text-purple-400" />
-          <span>Open Production Assets</span>
-        </button>
+        {/* Locked Production References Strip */}
+        {lockedRefs.length > 0 ? (
+          <div className="p-3.5 rounded-2xl bg-card border border-border/70 shadow-sm space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-accent" />
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Locked references
+                </h3>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/15 text-accent font-semibold">
+                  {lockedRefs.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAssetsGallery(true)}
+                className="px-2.5 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-[11px] flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <Film className="w-3 h-3 text-purple-400" />
+                <span>View all</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none pb-1 pt-0.5">
+              {lockedRefs.map((ref) => (
+                <button
+                  key={ref.id}
+                  type="button"
+                  onClick={() => setShowAssetsGallery(true)}
+                  className="group flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer text-left focus:outline-none"
+                >
+                  <div className="w-14 h-14 rounded-xl overflow-hidden aspect-square border border-border/80 bg-black/40 group-hover:border-accent group-hover:ring-1 group-hover:ring-accent transition-all relative flex items-center justify-center">
+                    <img
+                      src={ref.url}
+                      alt={ref.label}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      loading="lazy"
+                    />
+                  </div>
+                  <span className="text-[10px] font-medium text-muted-foreground group-hover:text-foreground truncate max-w-[56px] text-center">
+                    {ref.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAssetsGallery(true)}
+            className="w-full py-3.5 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+          >
+            <Film className="w-4 h-4 text-purple-400" />
+            <span>Open Production Assets</span>
+          </button>
+        )}
 
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-sm text-muted-foreground mb-2">Concept</p>
