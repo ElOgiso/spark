@@ -38,6 +38,7 @@ export interface EnsureAssetBibleAssetsParams {
   maxPropGenerations?: number; // default 5
   aspectRatio?: string;
   forceRegenerate?: boolean;
+  preferredImageProvider?: string;
 }
 
 export interface EnsuredGeneratedAsset {
@@ -86,6 +87,7 @@ export async function ensureAssetBibleAssets(
     maxPropGenerations = 5,
     aspectRatio = "1:1",
     forceRegenerate = false,
+    preferredImageProvider,
   } = params;
 
   const result: EnsureAssetBibleResult = {
@@ -240,6 +242,7 @@ export async function ensureAssetBibleAssets(
           prompt,
           aspectRatio,
           capability: "Image Generation",
+          preferredProvider: (preferredImageProvider as any) || undefined,
         });
 
         if (!isValidMediaUrl(rawImgUrl)) {
@@ -322,6 +325,7 @@ export async function ensureAssetBibleAssets(
           prompt,
           aspectRatio: "16:9",
           capability: "Image Generation",
+          preferredProvider: (preferredImageProvider as any) || undefined,
         });
 
         if (!isValidMediaUrl(rawImgUrl)) {
@@ -431,6 +435,7 @@ export async function ensureAssetBibleAssets(
           referenceImageUrl: baseCharRef,
           aspectRatio: "16:9",
           capability: "Image Generation",
+          preferredProvider: (preferredImageProvider as any) || undefined,
         });
 
         if (!isValidMediaUrl(rawImgUrl)) {

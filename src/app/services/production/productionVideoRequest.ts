@@ -3,6 +3,8 @@
  * to /api/runtime/video so last-frame continuity actually reaches the adapter.
  */
 
+import { looksLikeSheetOrGridUrl } from "./officialI2vFrames";
+
 export const I2V_API_PROVIDERS = new Set(["grok", "kling", "seedance", "ark", "xai", "higgsfield", "higgsfield-seedance"]);
 
 export interface ProductionVideoClipRequest {
@@ -40,6 +42,71 @@ export async function requestProductionVideoClip(
     throw new Error(
       `I2V video generation with provider "${params.provider}" requires a valid firstFrameUrl (shot still/keyframe).`
     );
+  }
+
+  const normProvider = String(params.provider || "").toLowerCase();
+  const isHf = normProvider === "higgsfield" || normProvider === "higgsfield-seedance";
+
+  if (isHf) {
+    if (params.firstFrameUrl && looksLikeSheetOrGridUrl(params.firstFrameUrl)) {
+      throw new Error(
+        `I2V video generation with provider "${params.provider}" requires this shot's still as firstFrameUrl, not a sheet or storyboard grid.`
+      );
+    }
+
+    if (params.firstFrameUrl?.startsWith("data:")) {
+      try {
+        const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+        const prodId = params.productionId || "default-prod";
+        const brandId = params.brandId || "default-brand";
+        const storagePath = `brands/${brandId}/productions/${prodId}/keyframes/shot-${params.shotIndex || Date.now()}-still.png`;
+        const ingested = await ingestRemoteMediaToSpark({
+          url: params.firstFrameUrl,
+          brandId,
+          productionId: prodId,
+          assetType: "frame",
+          storagePath,
+        });
+        if (ingested?.publicUrl) {
+          params.firstFrameUrl = ingested.publicUrl;
+        }
+      } catch (uploadErr) {
+        console.warn("[requestProductionVideoClip] Pre-upload of Higgsfield firstFrame data URI notice:", uploadErr);
+      }
+    }
+
+    if (params.endFrameUrl?.startsWith("data:")) {
+      try {
+        const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+        const prodId = params.productionId || "default-prod";
+        const brandId = params.brandId || "default-brand";
+        const storagePath = `brands/${brandId}/productions/${prodId}/keyframes/shot-${params.shotIndex || Date.now()}-end.png`;
+        const ingested = await ingestRemoteMediaToSpark({
+          url: params.endFrameUrl,
+          brandId,
+          productionId: prodId,
+          assetType: "frame",
+          storagePath,
+        });
+        if (ingested?.publicUrl) {
+          params.endFrameUrl = ingested.publicUrl;
+        } else {
+          params.endFrameUrl = undefined;
+        }
+      } catch (uploadErr) {
+        console.warn("[requestProductionVideoClip] Pre-upload of Higgsfield endFrame data URI notice:", uploadErr);
+        params.endFrameUrl = undefined;
+      }
+    }
+
+    if (
+      !params.firstFrameUrl ||
+      (!params.firstFrameUrl.startsWith("http://") && !params.firstFrameUrl.startsWith("https://"))
+    ) {
+      throw new Error(
+        `Higgsfield Seedance I2V requires a public HTTPS firstFrameUrl (received: ${params.firstFrameUrl ? params.firstFrameUrl.slice(0, 40) : "empty"}).`
+      );
+    }
   }
 
   const res = await fetch("/api/runtime/video", {

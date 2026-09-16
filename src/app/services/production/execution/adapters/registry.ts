@@ -1,13 +1,17 @@
 /**
  * Adapter registry — only providers with real integrations are registered.
- * Higgsfield is intentionally NOT registered (stub in runtime).
- * Runway/Luma exist partially in video.ts but are not claimed as fully supported here.
+ * Supports: kling, seedance (Ark), grok, higgsfield (Seedance I2V), gemini.
  *
  * Registry keys are `${kind}:${providerId}` so gemini image ≠ gemini video.
  */
 
 import type { MediaProviderAdapter, AdapterPorts } from "./types";
-import { createGrokVideoAdapter, createKlingAdapter, createSeedanceAdapter } from "./videoI2vAdapter";
+import {
+  createGrokVideoAdapter,
+  createHiggsfieldVideoAdapter,
+  createKlingAdapter,
+  createSeedanceAdapter,
+} from "./videoI2vAdapter";
 import { createImageAdapter, createMergeAdapter, createVoiceAdapter } from "./mediaAdapters";
 import type { ProviderCapabilitySnapshot } from "../types";
 import type { GenerationTaskKind } from "../../specification/generationTask";
@@ -86,6 +90,7 @@ export function createDefaultAdapterRegistry(ports: AdapterPorts = {}): Map<stri
   register("video", createKlingAdapter(ports));
   register("video", createSeedanceAdapter(ports));
   register("video", createGrokVideoAdapter(ports));
+  register("video", createHiggsfieldVideoAdapter(ports));
   register("video", createModelRouterVideoAdapter("gemini", ports));
 
   register("keyframe", createImageAdapter("openai", ports));
@@ -97,11 +102,13 @@ export function createDefaultAdapterRegistry(ports: AdapterPorts = {}): Map<stri
   // Aliases
   map.set(key("video", "ark"), createSeedanceAdapter(ports));
   map.set(key("video", "xai"), createGrokVideoAdapter(ports));
+  map.set(key("video", "higgsfield-seedance"), createHiggsfieldVideoAdapter(ports));
 
   // Kind-agnostic fallbacks for resolveAdapter(providerOnly)
   map.set("kling", createKlingAdapter(ports));
   map.set("seedance", createSeedanceAdapter(ports));
   map.set("grok", createGrokVideoAdapter(ports));
+  map.set("higgsfield", createHiggsfieldVideoAdapter(ports));
   map.set("openai", createImageAdapter("openai", ports));
   map.set("elevenlabs", createVoiceAdapter("elevenlabs", ports));
   map.set("mux", createMergeAdapter(ports));

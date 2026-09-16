@@ -15,7 +15,7 @@ import type {
 } from "../types";
 import { classifyProviderFailure, makeExecutionError } from "../errors";
 
-const I2V_PROVIDERS = ["kling", "seedance", "grok"] as const;
+const I2V_PROVIDERS = ["kling", "seedance", "grok", "higgsfield"] as const;
 
 function snap(providerId: string): ProviderCapabilitySnapshot {
   return {
@@ -25,10 +25,17 @@ function snap(providerId: string): ProviderCapabilitySnapshot {
     capabilities: [
       "image_to_video",
       "first_frame_conditioning",
-      providerId === "kling" || providerId === "seedance" ? "last_frame_conditioning" : "",
+      providerId === "kling" || providerId === "seedance" || providerId === "higgsfield" ? "last_frame_conditioning" : "",
       "motion_quality",
     ].filter(Boolean),
-    requiresCredentials: providerId === "grok" ? ["XAI_API_KEY"] : providerId === "kling" ? ["KLING_ACCESS_KEY", "KLING_SECRET_KEY"] : ["ARK_API_KEY"],
+    requiresCredentials:
+      providerId === "grok"
+        ? ["XAI_API_KEY"]
+        : providerId === "kling"
+        ? ["KLING_ACCESS_KEY", "KLING_SECRET_KEY"]
+        : providerId === "higgsfield"
+        ? ["HIGGSFIELD_API_KEY"]
+        : ["ARK_API_KEY"],
     statusMechanism: "hybrid",
     knownLimitations: [
       "Requires first-frame still",
@@ -135,6 +142,9 @@ export function createSeedanceAdapter(ports?: AdapterPorts): MediaProviderAdapte
 }
 export function createGrokVideoAdapter(ports?: AdapterPorts): MediaProviderAdapter {
   return createI2vAdapter("grok", ports);
+}
+export function createHiggsfieldVideoAdapter(ports?: AdapterPorts): MediaProviderAdapter {
+  return createI2vAdapter("higgsfield", ports);
 }
 
 export { I2V_PROVIDERS };

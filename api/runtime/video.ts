@@ -224,6 +224,9 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
     generateAudio: body.generateAudio !== false && body.generate_audio !== false,
     klingMode: body.mode === "pro" || body.mode === "std" ? body.mode : undefined,
     klingSound: body.sound === "off" ? "off" : "on",
+    productionId: body.productionId,
+    brandId: body.brandId,
+    shotIndex: body.shotIndex,
   };
 }
 
@@ -532,30 +535,61 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
   }
 
   let effectiveReq = { ...req };
-  if (
-    (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) &&
-    effectiveReq.firstFrameDataUri?.startsWith("data:")
-  ) {
+
+  const { looksLikeSheetOrGridUrl } = await import("./_videoContract.js");
+  if (effectiveReq.firstFrameUrl && looksLikeSheetOrGridUrl(effectiveReq.firstFrameUrl)) {
+    throw new Error("Higgsfield Seedance I2V requires this shot's still, not a storyboard grid or sheet.");
+  }
+
+  const uploadDataUri = async (dataUri: string, prefix: string): Promise<string | null> => {
     try {
       const { persistBufferToSpark, sparkBrandMediaPath } = await import("./_sparkStorage.js");
-      const match = effectiveReq.firstFrameDataUri.match(/^data:([^;]+);base64,(.*)$/s);
+      const match = dataUri.match(/^data:([^;]+);base64,(.*)$/s);
       const mime = match ? match[1] : "image/jpeg";
-      const b64 = (match ? match[2] : effectiveReq.firstFrameDataUri.split(",")[1] || "").replace(/\s/g, "");
-      if (b64) {
-        const buf = Buffer.from(b64, "base64");
-        const ext = mime.includes("png") ? "png" : "jpg";
-        const storagePath = sparkBrandMediaPath("default-brand", "default-prod", `keyframes/still-${Date.now()}.${ext}`);
-        const persisted = await persistBufferToSpark({
-          buffer: buf,
-          storagePath,
-          contentType: mime,
-        });
-        if (persisted?.publicUrl) {
-          effectiveReq.firstFrameUrl = persisted.publicUrl;
-        }
-      }
+      const b64 = (match ? match[2] : dataUri.split(",")[1] || "").replace(/\s/g, "");
+      if (!b64) return null;
+      const buf = Buffer.from(b64, "base64");
+      const ext = mime.includes("png") ? "png" : "jpg";
+      const storagePath = sparkBrandMediaPath(
+        req.brandId || "default-brand",
+        req.productionId || "default-prod",
+        `keyframes/${prefix}-${Date.now()}.${ext}`
+      );
+      const persisted = await persistBufferToSpark({
+        buffer: buf,
+        storagePath,
+        contentType: mime,
+      });
+      return persisted?.publicUrl || null;
     } catch (uploadErr) {
-      console.warn("[Higgsfield Video] Pre-upload of data URI to Spark Storage notice:", uploadErr);
+      console.warn(`[Higgsfield Video] Pre-upload of ${prefix} data URI to Spark Storage notice:`, uploadErr);
+      return null;
+    }
+  };
+
+  if (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) {
+    const rawDataUri =
+      effectiveReq.firstFrameDataUri ||
+      (effectiveReq.firstFrameUrl?.startsWith("data:") ? effectiveReq.firstFrameUrl : "");
+    if (rawDataUri) {
+      const uploaded = await uploadDataUri(rawDataUri, "still");
+      if (uploaded) effectiveReq.firstFrameUrl = uploaded;
+    }
+  }
+
+  if (effectiveReq.lastFrameUrl && !effectiveReq.lastFrameUrl.startsWith("http")) {
+    const rawLastUri =
+      effectiveReq.lastFrameDataUri ||
+      (effectiveReq.lastFrameUrl?.startsWith("data:") ? effectiveReq.lastFrameUrl : "");
+    if (rawLastUri) {
+      const uploaded = await uploadDataUri(rawLastUri, "end");
+      if (uploaded) {
+        effectiveReq.lastFrameUrl = uploaded;
+      } else {
+        effectiveReq.lastFrameUrl = undefined;
+      }
+    } else {
+      effectiveReq.lastFrameUrl = undefined;
     }
   }
 

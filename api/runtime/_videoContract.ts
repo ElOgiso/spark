@@ -40,6 +40,15 @@ export interface VideoClipRequest {
   generateAudio?: boolean;
   klingMode?: "std" | "pro";
   klingSound?: "on" | "off";
+  productionId?: string;
+  brandId?: string;
+  shotIndex?: number;
+}
+
+export function looksLikeSheetOrGridUrl(url: string): boolean {
+  return /storyboard[-_]?grid|contact[-_]?sheet|character[-_]?sheet|model[-_]?sheet|location[-_]?plate|thumbnail|prop[-_]?sheet|product[-_]?sheet/i.test(
+    url
+  );
 }
 
 export function clampInt(value: number, min: number, max: number): number {

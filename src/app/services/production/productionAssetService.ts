@@ -8,6 +8,7 @@ import { productionWriteHalted } from "./productionPersistGuard";
 import { brandProductionStoragePath } from "./brandProductionStoragePath";
 import { getProductionPromptPack } from "./productionPromptPacks";
 import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
+import { resolveProviderKey } from "../runtime/AIProviderOrchestrator";
 import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
@@ -1206,6 +1207,7 @@ export class ProductionAssetService {
               knownWardrobeUrls,
               signal,
               forceRegenerate,
+              preferredImageProvider: (brand as any)?.settings?.preferredImageProvider || undefined,
             });
 
             if (ensuredResult.generated.length > 0 || ensuredResult.fulfilled.length > 0) {
@@ -2929,7 +2931,14 @@ export class ProductionAssetService {
               try {
                 checkAborted();
                 const generateClip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
-                  const i2vFallbacks = ["grok", "kling", "seedance", "ark"].filter(
+                  const allI2vCandidates = [
+                    "grok",
+                    "kling",
+                    "seedance",
+                    "ark",
+                    ...(resolveProviderKey("higgsfield") ? ["higgsfield"] : []),
+                  ];
+                  const i2vFallbacks = allI2vCandidates.filter(
                     (p) => p !== String(activeVideo.providerId || "").toLowerCase()
                   );
                   const tryI2v = async (providerId: string) => {

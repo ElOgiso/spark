@@ -335,8 +335,99 @@ describe("Phase 2 & 3 — Soul Stills and Seedance Video (Mocked)", () => {
       throw new Error("Unexpected fetch: " + u);
     };
 
-    const res = await cancel("job_to_abort", "hf_id:hf_secret");
-    assert.equal(res, true);
-    assert.equal(cancelPost, true);
+      const res = await cancel("job_to_abort", "hf_id:hf_secret");
+      assert.equal(res, true);
+      assert.equal(cancelPost, true);
+    });
+  });
+
+describe("Phase 4 — Production Integration & Upstream Hardening", () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  test("looksLikeSheetOrGridUrl detects storyboard grid and sheet artifacts", async () => {
+    const { looksLikeSheetOrGridUrl } = await import("./_videoContract.js");
+    assert.equal(looksLikeSheetOrGridUrl("https://spark.storage/brands/b1/storyboard-grid.png"), true);
+    assert.equal(looksLikeSheetOrGridUrl("https://spark.storage/brands/b1/character-sheet.png"), true);
+    assert.equal(looksLikeSheetOrGridUrl("https://spark.storage/brands/b1/prop-sheet-sword.png"), true);
+    assert.equal(looksLikeSheetOrGridUrl("https://spark.storage/brands/b1/location-plate.png"), true);
+    assert.equal(looksLikeSheetOrGridUrl("https://spark.storage/brands/b1/keyframes/shot-1-still.png"), false);
+  });
+
+  test("requestProductionVideoClip rejects storyboard grid as firstFrameUrl for Higgsfield", async () => {
+    const { requestProductionVideoClip } = await import("../../src/app/services/production/productionVideoRequest.js");
+    await assert.rejects(
+      async () => {
+        await requestProductionVideoClip({
+          provider: "higgsfield",
+          prompt: "Dolly in",
+          firstFrameUrl: "https://spark.storage/storyboard-grid-9panel.png",
+        });
+      },
+      {
+        message: /requires this shot's still as firstFrameUrl, not a sheet or storyboard grid/,
+      }
+    );
+  });
+
+  test("requestProductionVideoClip with valid public HTTPS still succeeds for Higgsfield", async () => {
+    let calledBody: any = null;
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/api/runtime/video")) {
+        calledBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            videoUrl: "https://hf.ai/output.mp4",
+            provider: "higgsfield",
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const { requestProductionVideoClip } = await import("../../src/app/services/production/productionVideoRequest.js");
+    const res = await requestProductionVideoClip({
+      provider: "higgsfield",
+      prompt: "Camera moves forward",
+      firstFrameUrl: "https://spark.storage/keyframes/shot-1.png",
+      durationSec: 6,
+    });
+
+    assert.equal(res.videoUrl, "https://hf.ai/output.mp4");
+    assert.equal(calledBody.provider, "higgsfield");
+    assert.equal(calledBody.firstFrameUrl, "https://spark.storage/keyframes/shot-1.png");
+  });
+
+  test("createHiggsfieldVideoAdapter is registered in execution registry", async () => {
+    const { createDefaultAdapterRegistry } = await import("../../src/app/services/production/execution/adapters/registry.js");
+    const registry = createDefaultAdapterRegistry();
+    assert.ok(registry.has("video:higgsfield"));
+    assert.ok(registry.has("higgsfield"));
+    const adapter = registry.get("video:higgsfield");
+    assert.equal(adapter?.providerId, "higgsfield");
+  });
+
+  test("resolveActiveVideoProvider respects preferredVideoProvider = 'higgsfield'", async () => {
+    process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+    const { resolveActiveVideoProvider } = await import("../../src/app/services/runtime/providerCapabilities.js");
+    const active = resolveActiveVideoProvider({
+      preferredVideoProvider: "higgsfield",
+    });
+    assert.equal(active.providerId, "higgsfield");
+    assert.equal(active.maxVideoDurationSec, 15);
+    assert.equal(active.supportsNativeAudio, true);
   });
 });
