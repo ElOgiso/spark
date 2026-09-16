@@ -380,9 +380,8 @@ export async function generateSeedanceVideo(
     ? Math.max(4, Math.min(15, Math.round(options.durationSec)))
     : 5;
 
-  const res = is20
-    ? (options.resolution === "480p" ? "480p" : "720p")
-    : (options.resolution === "1080p" ? "1080p" : options.resolution === "480p" ? "480p" : "720p");
+  // Higgsfield Seedance 2.5 and 2.0 I2V only allow 480p | 720p. Never send 1080p to 2.5 I2V.
+  const res = options.resolution === "480p" ? "480p" : "720p";
 
   const body: Record<string, unknown> = {
     prompt: options.prompt || "",

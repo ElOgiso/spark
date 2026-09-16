@@ -1,5 +1,8 @@
 import type { AICapabilityType, AIProviderId, AIModelRoutingConfig } from "../../domain/types";
 import { resolveProviderKey } from "./AIProviderOrchestrator";
+import { isServerProviderAvailable, probeServerProviders } from "./serverProviderProbe";
+
+export { isServerProviderAvailable, probeServerProviders };
 
 export type ConcreteAIProviderId = Exclude<AIProviderId, "auto">;
 
@@ -348,7 +351,10 @@ export function resolveActiveVideoProvider(params?: {
   if (pinnedVideoProvider && pinnedVideoProvider !== "auto") {
     const profile = PROVIDER_CAPABILITY_MAP[pinnedVideoProvider as ConcreteAIProviderId];
     if (profile && profile.capabilities.includes("Video Generation")) {
-      const hasKey = resolveProviderKey(pinnedVideoProvider, customKeys);
+      const hasKey =
+        resolveProviderKey(pinnedVideoProvider, customKeys) ||
+        isServerProviderAvailable(pinnedVideoProvider) ||
+        pinnedVideoProvider === "higgsfield";
       if (hasKey) {
         const vidCap = PROVIDER_VIDEO_CAPABILITIES[pinnedVideoProvider as ConcreteAIProviderId];
         return {
@@ -369,7 +375,9 @@ export function resolveActiveVideoProvider(params?: {
   for (const candidateId of videoCandidates) {
     const profile = PROVIDER_CAPABILITY_MAP[candidateId];
     if (profile && profile.capabilities.includes("Video Generation")) {
-      const hasKey = resolveProviderKey(candidateId, customKeys);
+      const hasKey =
+        resolveProviderKey(candidateId, customKeys) ||
+        isServerProviderAvailable(candidateId);
       if (hasKey) {
         const vidCap = PROVIDER_VIDEO_CAPABILITIES[candidateId];
         return {

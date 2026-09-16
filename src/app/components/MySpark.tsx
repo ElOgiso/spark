@@ -1451,9 +1451,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         {
                           id: "higgsfield",
                           name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
-                          lengths: "4s / 8s",
+                          lengths: "4–15s",
                           maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
-                          tag: "Vertical Pop",
+                          tag: "Seedance I2V",
                         },
                       ];
 

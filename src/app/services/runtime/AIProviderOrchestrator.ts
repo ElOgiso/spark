@@ -1,4 +1,5 @@
 import type { AICapabilityType, AIProviderId, ThinkingState } from "../../domain/types";
+import { isServerProviderAvailable, probeServerProviders } from "./serverProviderProbe";
 
 export interface AIExecutionOptions {
   prompt: string;
@@ -226,6 +227,7 @@ export class AIProviderOrchestrator {
   static initialize(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
+    probeServerProviders().catch(() => {});
 
     // 1. Google Gemini Provider Plugin (Gemini 2.5 Flash / Pro / Veo / Imagen)
     this.registerPlugin({
@@ -1564,7 +1566,8 @@ export class AIProviderOrchestrator {
       id: "higgsfield",
       name: "Higgsfield AI (Soul & Seedance)",
       capabilities: ["Image Generation", "Video Generation"],
-      isAvailable: (customKeys) => Boolean(resolveProviderKey("higgsfield", customKeys)),
+      isAvailable: (customKeys) =>
+        Boolean(resolveProviderKey("higgsfield", customKeys)) || isServerProviderAvailable("higgsfield"),
       execute: async (options) => {
         // 8A. Higgsfield Image Generation (Soul 2 / Cinema) via server proxy
         if (options.capability === "Image Generation") {
@@ -1668,7 +1671,11 @@ export class AIProviderOrchestrator {
     // Priority 1: User preferred provider if available
     if (options.preferredProvider && options.preferredProvider !== "auto") {
       const pref = this.plugins.get(options.preferredProvider);
-      if (pref && pref.isAvailable(customKeys) && pref.capabilities.includes(capability)) {
+      if (
+        pref &&
+        (pref.isAvailable(customKeys) || options.preferredProvider === "higgsfield") &&
+        pref.capabilities.includes(capability)
+      ) {
         candidates.push(pref);
       }
     }
@@ -1707,7 +1714,8 @@ export class AIProviderOrchestrator {
       categoryPriority = ["openai", "gemini", "claude", "grok"];
     }
 
-    const hasExplicitKey = (p: AIProviderPlugin) => Boolean(resolveProviderKey(p.id, customKeys));
+    const hasExplicitKey = (p: AIProviderPlugin) =>
+      Boolean(resolveProviderKey(p.id, customKeys)) || isServerProviderAvailable(p.id);
 
     availableOthers.sort((a, b) => {
       const keyA = hasExplicitKey(a) ? 0 : 1;

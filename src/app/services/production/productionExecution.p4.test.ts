@@ -238,7 +238,7 @@ describe("scheduler concurrency", () => {
 });
 
 describe("adapter registry", () => {
-  it("registers only real integrations (no higgsfield claim)", () => {
+  it("registers real integrations including higgsfield", () => {
     const caps = listRegisteredAdapterCapabilities(createDefaultAdapterRegistry(mockPorts()));
     const ids = caps.map((c) => c.providerId);
     assert.ok(ids.includes("kling"));
@@ -246,7 +246,7 @@ describe("adapter registry", () => {
     assert.ok(ids.includes("grok"));
     assert.ok(ids.includes("openai"));
     assert.ok(ids.includes("elevenlabs"));
-    assert.ok(!ids.includes("higgsfield"));
+    assert.ok(ids.includes("higgsfield"));
   });
 });
 

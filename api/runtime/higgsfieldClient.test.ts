@@ -420,8 +420,10 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
     assert.equal(adapter?.providerId, "higgsfield");
   });
 
-  test("resolveActiveVideoProvider respects preferredVideoProvider = 'higgsfield'", async () => {
-    process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+  test("resolveActiveVideoProvider respects preferredVideoProvider = 'higgsfield' even when client key is absent", async () => {
+    // Completely clear env keys
+    delete process.env.HIGGSFIELD_API_KEY;
+    delete process.env.VITE_HIGGSFIELD_API_KEY;
     const { resolveActiveVideoProvider } = await import("../../src/app/services/runtime/providerCapabilities.js");
     const active = resolveActiveVideoProvider({
       preferredVideoProvider: "higgsfield",
@@ -429,5 +431,72 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
     assert.equal(active.providerId, "higgsfield");
     assert.equal(active.maxVideoDurationSec, 15);
     assert.equal(active.supportsNativeAudio, true);
+  });
+
+  test("Seedance 2.5 never sends 1080p resolution (clamps to 720p)", async () => {
+    let capturedBody: any = null;
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.5/image-to-video")) {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_res_test",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_res_test/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: { url: "https://hf.ai/res-test.mp4" },
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const url = await generateSeedanceVideo(
+      {
+        prompt: "Resolution clamp test",
+        firstFrameUrl: "https://spark.storage.supabase.co/frames/shot-res.png",
+        resolution: "1080p", // 2.5 must clamp to 720p
+      },
+      "hf_id:hf_secret"
+    );
+
+    assert.equal(url, "https://hf.ai/res-test.mp4");
+    assert.equal(capturedBody.resolution, "720p");
+    assert.notEqual(capturedBody.resolution, "1080p");
+  });
+
+  test("GET /api/runtime/execute returns server provider probe without exposing secrets", async () => {
+    process.env.HIGGSFIELD_API_KEY = "probe_id:probe_secret";
+    const handler = (await import("./execute.js")).default;
+
+    let resStatus = 0;
+    let resJson: any = null;
+    const mockReq: any = { method: "GET" };
+    const mockRes: any = {
+      status: (s: number) => {
+        resStatus = s;
+        return {
+          json: (data: any) => {
+            resJson = data;
+            return data;
+          },
+        };
+      },
+    };
+
+    await handler(mockReq, mockRes);
+    assert.equal(resStatus, 200);
+    assert.equal(resJson?.status, "ok");
+    assert.equal(resJson?.providers?.higgsfield, true);
+    // Crucial: no secret leaked
+    assert.equal(JSON.stringify(resJson).includes("probe_secret"), false);
   });
 });

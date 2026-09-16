@@ -7,7 +7,7 @@ import { isProductionTombstoned } from "./productionTombstone";
 import { productionWriteHalted } from "./productionPersistGuard";
 import { brandProductionStoragePath } from "./brandProductionStoragePath";
 import { getProductionPromptPack } from "./productionPromptPacks";
-import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration } from "../runtime/providerCapabilities";
+import { resolveActiveVideoProvider, PROVIDER_CAPABILITY_MAP, snapToAllowedDuration, isServerProviderAvailable } from "../runtime/providerCapabilities";
 import { resolveProviderKey } from "../runtime/AIProviderOrchestrator";
 import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
@@ -2936,7 +2936,7 @@ export class ProductionAssetService {
                     "kling",
                     "seedance",
                     "ark",
-                    ...(resolveProviderKey("higgsfield") ? ["higgsfield"] : []),
+                    ...(resolveProviderKey("higgsfield") || isServerProviderAvailable("higgsfield") ? ["higgsfield"] : []),
                   ];
                   const i2vFallbacks = allI2vCandidates.filter(
                     (p) => p !== String(activeVideo.providerId || "").toLowerCase()
