@@ -219,13 +219,15 @@ export async function pollRequest(
 
   const started = Date.now();
   let lastStatus = "";
+  let pollInterval = HIGGSFIELD_POLL_INTERVAL_MS;
 
   while (Date.now() - started < timeoutMs) {
     if (signal?.aborted) {
       throw new Error("Higgsfield polling aborted by client signal.");
     }
 
-    await sleep(HIGGSFIELD_POLL_INTERVAL_MS);
+    await sleep(pollInterval);
+    pollInterval = Math.min(5000, Math.round(pollInterval * 1.25));
 
     const res = await fetch(pollUrl, {
       method: "GET",
@@ -375,10 +377,12 @@ export async function generateSeedanceVideo(
     : "/bytedance/seedance-2.5/image-to-video";
 
   const dur = typeof options.durationSec === "number" && options.durationSec > 0
-    ? Math.max(1, Math.min(15, Math.round(options.durationSec)))
+    ? Math.max(4, Math.min(15, Math.round(options.durationSec)))
     : 5;
 
-  const res = options.resolution === "1080p" ? "1080p" : "720p";
+  const res = is20
+    ? (options.resolution === "480p" ? "480p" : "720p")
+    : (options.resolution === "1080p" ? "1080p" : options.resolution === "480p" ? "480p" : "720p");
 
   const body: Record<string, unknown> = {
     prompt: options.prompt || "",
@@ -386,7 +390,7 @@ export async function generateSeedanceVideo(
     duration: dur,
     resolution: res,
     generate_audio: options.generateAudio !== false,
-    output_format: "mp4",
+    ...(!is20 ? { output_format: "mp4" } : {}),
   };
 
   if (options.endFrameUrl && options.endFrameUrl.trim()) {

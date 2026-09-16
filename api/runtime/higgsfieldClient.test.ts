@@ -259,6 +259,53 @@ describe("Phase 2 & 3 — Soul Stills and Seedance Video (Mocked)", () => {
     assert.equal(calledBody.duration, 5);
   });
 
+  test("Seedance 2.0 I2V omits output_format, respects 720p/480p and clamps duration to 4-15", async () => {
+    let calledBody: any = null;
+    let calledEndpoint = "";
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.0/image-to-video")) {
+        calledEndpoint = u;
+        calledBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_seedance_20",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_seedance_20/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: { url: "https://hf.ai/seedance-20.mp4" },
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const url = await generateSeedanceVideo(
+      {
+        prompt: "Slow zoom out",
+        firstFrameUrl: "https://spark.storage.supabase.co/frames/shot-2.png",
+        model: "seedance-2.0",
+        durationSec: 2, // below 4 -> clamped to 4
+        resolution: "1080p", // 2.0 doesn't support 1080p -> fallback 720p
+      },
+      "hf_id:hf_secret"
+    );
+
+    assert.equal(url, "https://hf.ai/seedance-20.mp4");
+    assert.ok(calledEndpoint.includes("/bytedance/seedance-2.0/image-to-video"));
+    assert.equal(calledBody.duration, 4);
+    assert.equal(calledBody.resolution, "720p");
+    assert.equal(calledBody.output_format, undefined);
+  });
+
   test("Refuses Seedance video without firstFrameUrl", async () => {
     await assert.rejects(
       async () => {
