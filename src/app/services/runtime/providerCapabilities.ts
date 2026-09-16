@@ -253,7 +253,7 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
   higgsfield: {
     providerId: "higgsfield",
     displayName: "Higgsfield AI",
-    capabilities: ["Video Generation", "Video Understanding"],
+    capabilities: ["Image Generation", "Video Generation", "Video Understanding"],
     maxVideoDurationSec: 8,
     allowedDurationsSec: [4, 8],
     supportsImageRefs: true,

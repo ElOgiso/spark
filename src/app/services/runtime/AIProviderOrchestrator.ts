@@ -116,7 +116,14 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
         p.ELEVEN_LABS_API_KEY,
         p.VITE_ELEVEN_LABS_API_KEY,
       ],
-      higgsfield: [p.HIGGSFIELD_API_KEY, p.VITE_HIGGSFIELD_API_KEY],
+      higgsfield: [
+        p.HIGGSFIELD_API_KEY,
+        p.HF_CREDENTIALS,
+        p.HF_KEY,
+        p.HF_API_KEY_ID,
+        p.VITE_HIGGSFIELD_API_KEY,
+        p.VITE_HF_API_KEY,
+      ],
     };
     const list = candidates[providerId] || [];
     for (const val of list) {
@@ -143,7 +150,14 @@ export function resolveProviderKey(providerId: AIProviderId, customKeys?: Record
         m.VITE_ELEVEN_LABS_API_KEY,
         m.ELEVEN_LABS_API_KEY,
       ],
-      higgsfield: [m.VITE_HIGGSFIELD_API_KEY, m.HIGGSFIELD_API_KEY],
+      higgsfield: [
+        m.VITE_HIGGSFIELD_API_KEY,
+        m.VITE_HF_API_KEY,
+        m.HIGGSFIELD_API_KEY,
+        m.HF_CREDENTIALS,
+        m.HF_KEY,
+        m.HF_API_KEY_ID,
+      ],
     };
     const list = candidates[providerId] || [];
     for (const val of list) {
@@ -1520,14 +1534,79 @@ export class AIProviderOrchestrator {
       },
     });
 
-    // 8. Higgsfield Provider Plugin
+    // 8. Higgsfield Provider Plugin (Soul Stills & Seedance I2V)
     this.registerPlugin({
       id: "higgsfield",
-      name: "Higgsfield AI (Video Generation)",
-      capabilities: ["Video Understanding"],
-      isAvailable: (customKeys) => Boolean(resolveProviderKey("higgsfield", customKeys)),
+      name: "Higgsfield AI (Soul & Seedance)",
+      capabilities: ["Image Generation", "Video Generation"],
+      isAvailable: (customKeys) => Boolean(resolveProviderKey("higgsfield", customKeys) || true),
       execute: async (options) => {
-        throw new Error("Higgsfield execution requires video generation payload.");
+        // 8A. Higgsfield Image Generation (Soul 2 / Cinema) via server proxy
+        if (options.capability === "Image Generation") {
+          const endpoint = options.model?.toLowerCase().includes("cinema")
+            ? "/higgsfield-ai/soul/cinema"
+            : "/higgsfield-ai/soul/v2/standard";
+
+          const proxyRes = await fetch("/api/runtime/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider: "higgsfield",
+              endpoint,
+              payload: {
+                prompt: options.prompt,
+                model: options.model,
+                aspect_ratio: options.aspectRatio,
+                resolution: (options as any).resolution || "1080p",
+                batch_size: 1,
+                enhance_prompt: true,
+                seed: (options as any).seed,
+              },
+            }),
+          });
+
+          if (!proxyRes.ok) {
+            const errData = await proxyRes.json().catch(() => ({}));
+            throw new Error(errData.error || `Higgsfield image generation failed (${proxyRes.status})`);
+          }
+
+          const data = await proxyRes.json();
+          const imageUrl = data.url || data.images?.[0]?.url || data.data?.[0]?.url;
+          if (!imageUrl) {
+            throw new Error("Higgsfield image generation returned no image URL.");
+          }
+          if (options.onChunk) options.onChunk(imageUrl);
+          return imageUrl;
+        }
+
+        // 8B. Higgsfield Video Generation (Seedance 2.5 / 2.0 I2V) via production adapter
+        if (options.capability === "Video Generation") {
+          const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
+          const hfFirst = options.firstFrameUrl || options.referenceImageUrl;
+          if (!hfFirst) {
+            throw new Error("Higgsfield i2v requires this shot's still as frame 1.");
+          }
+          const clip = await requestProductionVideoClip({
+            provider: "higgsfield",
+            prompt: options.prompt,
+            firstFrameUrl: hfFirst,
+            endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
+            referenceImageUrls: [],
+            aspectRatio: options.aspectRatio,
+            durationSec: options.durationSec,
+            model: options.model,
+            productionId: options.productionId,
+            brandId: options.brandId,
+            shotIndex: options.shotIndex,
+          });
+          if (!clip.videoUrl) {
+            throw new Error("Higgsfield Video Generation returned no video URL.");
+          }
+          if (options.onChunk) options.onChunk(clip.videoUrl);
+          return clip.videoUrl;
+        }
+
+        throw new Error(`Higgsfield plugin does not support capability "${options.capability}".`);
       },
     });
   }
@@ -1594,7 +1673,7 @@ export class AIProviderOrchestrator {
     if (capability === "Video Generation") {
       categoryPriority = ["gemini", "grok", "kling", "seedance", "runway", "luma", "higgsfield"];
     } else if (capability === "Image Generation") {
-      categoryPriority = ["openai", "gemini", "grok", "kling"];
+      categoryPriority = ["openai", "gemini", "grok", "kling", "higgsfield"];
     } else if (capability === "Text To Speech") {
       categoryPriority = ["elevenlabs", "grok", "openai", "gemini"];
     } else if (capability === "Video Understanding") {

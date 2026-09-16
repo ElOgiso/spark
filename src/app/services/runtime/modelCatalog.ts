@@ -341,6 +341,38 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
       },
     ],
   },
+  {
+    provider: "higgsfield",
+    displayName: "Higgsfield AI",
+    models: [
+      {
+        id: "soul-2",
+        label: "Soul 2 Standard (higgsfield-ai/soul/v2/standard)",
+        capabilities: ["Image Generation"],
+        recommended: true,
+        status: "stable",
+      },
+      {
+        id: "soul-cinema",
+        label: "Soul Cinema (higgsfield-ai/soul/cinema)",
+        capabilities: ["Image Generation"],
+        status: "stable",
+      },
+      {
+        id: "seedance-2.5",
+        label: "Seedance 2.5 I2V (bytedance/seedance-2.5)",
+        capabilities: ["Video Generation"],
+        recommended: true,
+        status: "stable",
+      },
+      {
+        id: "seedance-2.0",
+        label: "Seedance 2.0 I2V (bytedance/seedance-2.0)",
+        capabilities: ["Video Generation"],
+        status: "stable",
+      },
+    ],
+  },
 ];
 
 /**

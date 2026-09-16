@@ -9,6 +9,10 @@ import { persistVideoBuffer } from "./_sparkStorage.js";
 import { handleIngestMedia, isIngestMediaRequest } from "./_ingestMedia.js";
 import { collectSparkShotClipUrls } from "./_sparkShotClips.js";
 import {
+  generateSeedanceVideo,
+  resolveHiggsfieldCredentials,
+} from "./_higgsfieldClient.js";
+import {
   SEEDANCE_MODEL_15_PRO,
   SEEDANCE_POLL_INTERVAL_MS,
   SEEDANCE_POLL_TIMEOUT_MS,
@@ -519,6 +523,57 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   throw new Error("Grok video.generate timed out in-process (no resume).");
 }
 
+async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
+  const creds = resolveHiggsfieldCredentials();
+  if (!creds) {
+    throw new Error(
+      "Higgsfield credentials not configured. Set HIGGSFIELD_API_KEY (in key_id:key_secret form) or HF_API_KEY_ID + HF_API_KEY_SECRET."
+    );
+  }
+
+  let effectiveReq = { ...req };
+  if (
+    (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) &&
+    effectiveReq.firstFrameDataUri?.startsWith("data:")
+  ) {
+    try {
+      const { persistBufferToSpark, sparkBrandMediaPath } = await import("./_sparkStorage.js");
+      const match = effectiveReq.firstFrameDataUri.match(/^data:([^;]+);base64,(.*)$/s);
+      const mime = match ? match[1] : "image/jpeg";
+      const b64 = (match ? match[2] : effectiveReq.firstFrameDataUri.split(",")[1] || "").replace(/\s/g, "");
+      if (b64) {
+        const buf = Buffer.from(b64, "base64");
+        const ext = mime.includes("png") ? "png" : "jpg";
+        const storagePath = sparkBrandMediaPath("default-brand", "default-prod", `keyframes/still-${Date.now()}.${ext}`);
+        const persisted = await persistBufferToSpark({
+          buffer: buf,
+          storagePath,
+          contentType: mime,
+        });
+        if (persisted?.publicUrl) {
+          effectiveReq.firstFrameUrl = persisted.publicUrl;
+        }
+      }
+    } catch (uploadErr) {
+      console.warn("[Higgsfield Video] Pre-upload of data URI to Spark Storage notice:", uploadErr);
+    }
+  }
+
+  if (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) {
+    throw new Error("Higgsfield Seedance I2V requires a public HTTPS firstFrameUrl (data URI upload failed or missing).");
+  }
+
+  return generateSeedanceVideo({
+    prompt: effectiveReq.prompt,
+    firstFrameUrl: effectiveReq.firstFrameUrl,
+    endFrameUrl: effectiveReq.lastFrameUrl,
+    durationSec: effectiveReq.durationSec,
+    resolution: effectiveReq.resolution,
+    model: effectiveReq.model,
+    generateAudio: effectiveReq.generateAudio,
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (isIngestMediaRequest(req)) {
     return handleIngestMedia(req, res);
@@ -753,13 +808,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       luma: process.env.LUMA_API_KEY,
       pika: process.env.PIKA_API_KEY,
       seedance: process.env.SEEDANCE_API_KEY || process.env.ARK_API_KEY,
-      higgsfield: process.env.HIGGSFIELD_API_KEY,
+      higgsfield: Boolean(resolveHiggsfieldCredentials()),
       wan: process.env.WAN_API_KEY,
       veo: process.env.VEO_API_KEY || process.env.GOOGLE_AI_API_KEY,
       grok: process.env.XAI_API_KEY || process.env.GROK_API_KEY,
     };
 
-    const i2vProviders = ["seedance", "ark", "kling", "grok", "xai"];
+    const i2vProviders = ["seedance", "ark", "kling", "grok", "xai", "higgsfield", "higgsfield-seedance"];
     if (i2vProviders.includes(String(provider || "").toLowerCase())) {
       const clipReq = await buildClipRequest(body);
       if (!clipReq.firstFrameDataUri) {
@@ -775,6 +830,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         providerVideoUrl = await generateSeedance(clipReq);
       } else if (p === "kling") {
         providerVideoUrl = await generateKling(clipReq);
+      } else if (p === "higgsfield" || p === "higgsfield-seedance") {
+        providerVideoUrl = await generateHiggsfield(clipReq);
       } else {
         providerVideoUrl = await generateGrok(clipReq);
       }
@@ -913,13 +970,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const errText = await response.text();
       throw new Error(`Wan Fal.ai error: ${errText}`);
-    }
-
-    if (provider === "higgsfield") {
-      return res.status(422).json({
-        error: "Higgsfield video generation is not wired for production I2V. Use Grok, Seedance, or Kling.",
-        videoUrl: null,
-      });
     }
 
     if (provider === "veo" || provider === "gemini") {

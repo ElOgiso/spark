@@ -41,6 +41,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (provider === 'elevenlabs') {
       if (!keys.elevenlabs) return res.status(400).json({ error: 'ElevenLabs API Key not configured in Vercel environment variables (ELEVENLABS_API_KEY).' });
       headers['xi-api-key'] = keys.elevenlabs;
+    } else if (provider === 'higgsfield') {
+      const {
+        resolveHiggsfieldCredentials,
+        generateSoulImage,
+        submitHiggsfield,
+        pollHiggsfieldStatus,
+        firstImageUrl,
+      } = await import('./_higgsfieldClient.js');
+
+      const creds = resolveHiggsfieldCredentials();
+      if (!creds) {
+        return res.status(400).json({
+          error:
+            'Higgsfield API credentials not configured in Vercel environment variables (HIGGSFIELD_API_KEY or HF_API_KEY_ID/HF_API_KEY_SECRET).',
+        });
+      }
+
+      if (String(endpoint || '').includes('/soul/') || payload?.prompt) {
+        const imageUrl = await generateSoulImage({
+          prompt: payload?.prompt || '',
+          model: payload?.model || (String(endpoint || '').includes('cinema') ? 'soul-cinema' : 'soul-2'),
+          aspectRatio: payload?.aspect_ratio || payload?.aspectRatio,
+          resolution: payload?.resolution,
+          seed: payload?.seed,
+          enhancePrompt: payload?.enhance_prompt !== false,
+        });
+        return res.status(200).json({
+          success: true,
+          url: imageUrl,
+          images: [{ url: imageUrl }],
+          data: [{ url: imageUrl }],
+        });
+      }
+
+      const initial = await submitHiggsfield(endpoint, payload || {});
+      const immediate = firstImageUrl(initial);
+      if (immediate) {
+        return res.status(200).json({ success: true, url: immediate, ...initial });
+      }
+      const target = initial.status_url || initial.request_id || initial.id;
+      if (target) {
+        const completed = await pollHiggsfieldStatus(target);
+        const url = firstImageUrl(completed);
+        return res.status(200).json({ success: true, url, ...completed });
+      }
+      return res.status(200).json(initial);
     }
 
     const fetchOptions: RequestInit = {

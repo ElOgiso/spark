@@ -3,7 +3,7 @@
  * to /api/runtime/video so last-frame continuity actually reaches the adapter.
  */
 
-export const I2V_API_PROVIDERS = new Set(["grok", "kling", "seedance", "ark", "xai"]);
+export const I2V_API_PROVIDERS = new Set(["grok", "kling", "seedance", "ark", "xai", "higgsfield", "higgsfield-seedance"]);
 
 export interface ProductionVideoClipRequest {
   provider: string;
