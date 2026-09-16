@@ -8,6 +8,8 @@ export const HIGGSFIELD_API_BASE = "https://api.higgsfield.ai";
 export const HIGGSFIELD_POLL_INTERVAL_MS = 2500;
 export const HIGGSFIELD_POLL_TIMEOUT_MS = 240000; // 4 minutes (fits within serverless 300s budget)
 
+import { looksLikeStoryboardGridUrl } from "./_videoContract.js";
+
 export interface HiggsfieldCredentials {
   keyId: string;
   keySecret: string;
@@ -199,12 +201,15 @@ export const submitHiggsfield = submit;
 
 /**
  * Phase 1: pollRequest(request_id | status_url) -> GET until status in completed|failed|nsfw|canceled
+ * Phase 5A: best-effort cancel on AbortSignal
+ * Phase 5D: coarse progress callback (queued -> in_progress -> completed)
  */
 export async function pollRequest(
   requestIdOrStatusUrl: string,
   customKey?: string,
   timeoutMs: number = HIGGSFIELD_POLL_TIMEOUT_MS,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (status: string, data?: any) => void
 ): Promise<any> {
   const auth = resolveHiggsfieldAuth(customKey);
   if (!auth) {
@@ -212,58 +217,102 @@ export async function pollRequest(
   }
 
   let pollUrl = requestIdOrStatusUrl;
+  let cleanId = "";
   if (!pollUrl.startsWith("http")) {
-    const cleanId = requestIdOrStatusUrl.replace(/^\/requests\//, "").replace(/\/status$/, "");
+    cleanId = requestIdOrStatusUrl.replace(/^\/requests\//, "").replace(/\/status$/, "");
     pollUrl = `${HIGGSFIELD_API_BASE}/requests/${cleanId}/status`;
+  } else {
+    const match = pollUrl.match(/\/requests\/([^/]+)/);
+    if (match) cleanId = match[1];
   }
 
   const started = Date.now();
   let lastStatus = "";
   let pollInterval = HIGGSFIELD_POLL_INTERVAL_MS;
 
-  while (Date.now() - started < timeoutMs) {
-    if (signal?.aborted) {
-      throw new Error("Higgsfield polling aborted by client signal.");
+  // Best-effort cancel when signal aborts during queued/in_progress state
+  const performCancel = () => {
+    if (cleanId && (lastStatus === "queued" || lastStatus === "in_progress" || !lastStatus)) {
+      cancel(cleanId, customKey).catch((err) => {
+        console.warn("[Higgsfield] Best-effort cancel on abort failed:", err);
+      });
     }
+  };
 
-    await sleep(pollInterval);
-    pollInterval = Math.min(5000, Math.round(pollInterval * 1.25));
-
-    const res = await fetch(pollUrl, {
-      method: "GET",
-      headers: {
-        Authorization: auth.authorization,
-      },
-      signal,
-    });
-
-    if (!res.ok) {
-      console.warn(`[Higgsfield] Poll request returned ${res.status}`);
-      continue;
-    }
-
-    const data = await res.json();
-    lastStatus = String(data.status || data.state || "").toLowerCase();
-
-    if (lastStatus === "completed" || lastStatus === "succeeded" || lastStatus === "success") {
-      return data;
-    }
-
-    if (
-      lastStatus === "failed" ||
-      lastStatus === "error" ||
-      lastStatus === "nsfw" ||
-      lastStatus === "canceled" ||
-      lastStatus === "cancelled"
-    ) {
-      const detail = data.error || data.message || data.detail || JSON.stringify(data);
-      throw new Error(`Higgsfield job ${lastStatus}: ${detail}`);
-    }
+  if (signal?.aborted) {
+    performCancel();
+    throw new Error("Higgsfield polling aborted by client signal.");
   }
 
-  throw new Error(
-    `Higgsfield poll timed out after ${Math.round(timeoutMs / 1000)}s (last status: ${lastStatus || "unknown"}).`
-  );
+  const abortListener = () => {
+    performCancel();
+  };
+
+  if (signal) {
+    signal.addEventListener("abort", abortListener, { once: true });
+  }
+
+  try {
+    while (Date.now() - started < timeoutMs) {
+      if (signal?.aborted) {
+        performCancel();
+        throw new Error("Higgsfield polling aborted by client signal.");
+      }
+
+      await sleep(pollInterval);
+      pollInterval = Math.min(5000, Math.round(pollInterval * 1.25));
+
+      const res = await fetch(pollUrl, {
+        method: "GET",
+        headers: {
+          Authorization: auth.authorization,
+        },
+        signal,
+      });
+
+      if (!res.ok) {
+        console.warn(`[Higgsfield] Poll request returned ${res.status}`);
+        continue;
+      }
+
+      const data = await res.json();
+      lastStatus = String(data.status || data.state || "").toLowerCase();
+
+      if (onProgress && lastStatus) {
+        try {
+          onProgress(lastStatus, data);
+        } catch {}
+      }
+
+      if (lastStatus === "completed" || lastStatus === "succeeded" || lastStatus === "success") {
+        return data;
+      }
+
+      if (
+        lastStatus === "failed" ||
+        lastStatus === "error" ||
+        lastStatus === "nsfw" ||
+        lastStatus === "canceled" ||
+        lastStatus === "cancelled"
+      ) {
+        const detail = data.error || data.message || data.detail || JSON.stringify(data);
+        throw new Error(`Higgsfield job ${lastStatus}: ${detail}`);
+      }
+    }
+
+    throw new Error(
+      `Higgsfield poll timed out after ${Math.round(timeoutMs / 1000)}s (last status: ${lastStatus || "unknown"}).`
+    );
+  } catch (err: any) {
+    if (signal?.aborted || err?.name === "AbortError") {
+      performCancel();
+    }
+    throw err;
+  } finally {
+    if (signal) {
+      signal.removeEventListener("abort", abortListener);
+    }
+  }
 }
 export const pollHiggsfieldStatus = pollRequest;
 
@@ -302,6 +351,7 @@ export interface GenerateSoulImageOptions {
   resolution?: string;
   seed?: number;
   enhancePrompt?: boolean;
+  onProgress?: (status: string) => void;
 }
 
 /**
@@ -339,7 +389,13 @@ export async function generateSoulImage(
     );
   }
 
-  const completed = await pollRequest(target, customKey, HIGGSFIELD_POLL_TIMEOUT_MS, signal);
+  const completed = await pollRequest(
+    target,
+    customKey,
+    HIGGSFIELD_POLL_TIMEOUT_MS,
+    signal,
+    options.onProgress
+  );
   const finalUrl = extractImageUrl(completed);
   if (!finalUrl) {
     throw new Error("Higgsfield completed image generation but images[0].url was empty.");
@@ -355,6 +411,7 @@ export interface GenerateSeedanceVideoOptions {
   resolution?: string;
   model?: string;
   generateAudio?: boolean;
+  onProgress?: (status: string) => void;
 }
 
 /**
@@ -408,10 +465,107 @@ export async function generateSeedanceVideo(
     );
   }
 
-  const completed = await pollRequest(target, customKey, HIGGSFIELD_POLL_TIMEOUT_MS, signal);
+  const completed = await pollRequest(
+    target,
+    customKey,
+    HIGGSFIELD_POLL_TIMEOUT_MS,
+    signal,
+    options.onProgress
+  );
   const finalUrl = extractVideoUrl(completed);
   if (!finalUrl) {
     throw new Error("Higgsfield completed video generation but video.url was empty.");
+  }
+  return finalUrl;
+}
+
+export interface GenerateSeedanceReferenceVideoOptions {
+  prompt: string;
+  imageUrls: string[];
+  aspectRatio: string; // REQUIRED
+  durationSec?: number;
+  resolution?: string;
+  model?: string;
+  generateAudio?: boolean;
+  videoUrls?: string[];
+  audioUrls?: string[];
+  onProgress?: (status: string) => void;
+}
+
+/**
+ * Phase 5B: Seedance Reference-to-Video (R2V) on Higgsfield only
+ * Explicit mode — not default shots.
+ * default -> /bytedance/seedance-2.5/reference-to-video
+ * 2.0 -> /bytedance/seedance-2.0/reference-to-video
+ */
+export async function generateSeedanceReferenceVideo(
+  options: GenerateSeedanceReferenceVideoOptions,
+  customKey?: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const is20 = options.model?.toLowerCase().includes("2.0");
+  const endpoint = is20
+    ? "/bytedance/seedance-2.0/reference-to-video"
+    : "/bytedance/seedance-2.5/reference-to-video";
+
+  const rawRefs = options.imageUrls || [];
+  const cleanRefs = rawRefs
+    .filter((u) => typeof u === "string" && u.trim().startsWith("http"))
+    .filter((u) => !looksLikeStoryboardGridUrl(u));
+
+  if (cleanRefs.length === 0) {
+    throw new Error(
+      "Higgsfield Seedance R2V requires at least 1 public HTTPS reference image (storyboard grids not allowed)."
+    );
+  }
+
+  const dur = typeof options.durationSec === "number" && options.durationSec > 0
+    ? Math.max(4, Math.min(15, Math.round(options.durationSec)))
+    : 5;
+
+  const res = options.resolution === "480p" ? "480p" : "720p";
+
+  const ar = mapHiggsfieldAspectRatio(options.aspectRatio || "9:16");
+
+  const body: Record<string, unknown> = {
+    prompt: options.prompt || "",
+    image_urls: cleanRefs,
+    aspect_ratio: ar,
+    duration: dur,
+    resolution: res,
+    generate_audio: options.generateAudio !== false,
+    ...(!is20 ? { output_format: "mp4" } : {}),
+  };
+
+  if (Array.isArray(options.videoUrls) && options.videoUrls.length > 0) {
+    body.video_urls = options.videoUrls;
+  }
+  if (Array.isArray(options.audioUrls) && options.audioUrls.length > 0) {
+    body.audio_urls = options.audioUrls;
+  }
+
+  const initial = await submit(endpoint, body, customKey, signal);
+
+  const immediateUrl = extractVideoUrl(initial);
+  if (immediateUrl) return immediateUrl;
+
+  const target = initial.status_url || initial.request_id || initial.id;
+  if (!target) {
+    throw new Error(
+      `Higgsfield R2V returned no video and no request_id: ${JSON.stringify(initial).slice(0, 300)}`
+    );
+  }
+
+  const completed = await pollRequest(
+    target,
+    customKey,
+    HIGGSFIELD_POLL_TIMEOUT_MS,
+    signal,
+    options.onProgress
+  );
+  const finalUrl = extractVideoUrl(completed);
+  if (!finalUrl) {
+    throw new Error("Higgsfield completed R2V video generation but video.url was empty.");
   }
   return finalUrl;
 }

@@ -1607,11 +1607,17 @@ export class AIProviderOrchestrator {
           return imageUrl;
         }
 
-        // 8B. Higgsfield Video Generation (Seedance 2.5 / 2.0 I2V) via production adapter
+        // 8B. Higgsfield Video Generation (Seedance 2.5 / 2.0 I2V / R2V) via production adapter
         if (options.capability === "Video Generation") {
           const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
+          const isR2v =
+            (options as any).mode === "reference-to-video" ||
+            (options as any).mode === "r2v" ||
+            options.model?.toLowerCase().includes("r2v") ||
+            options.model?.toLowerCase().includes("reference-to-video");
+
           const hfFirst = options.firstFrameUrl || options.referenceImageUrl;
-          if (!hfFirst) {
+          if (!isR2v && !hfFirst) {
             throw new Error("Higgsfield i2v requires this shot's still as frame 1.");
           }
           const clip = await requestProductionVideoClip({
@@ -1619,13 +1625,17 @@ export class AIProviderOrchestrator {
             prompt: options.prompt,
             firstFrameUrl: hfFirst,
             endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
-            referenceImageUrls: [],
+            referenceImageUrls: options.referenceImageUrls || (options.referenceImageUrl ? [options.referenceImageUrl] : []),
             aspectRatio: options.aspectRatio,
             durationSec: options.durationSec,
             model: options.model,
             productionId: options.productionId,
             brandId: options.brandId,
             shotIndex: options.shotIndex,
+            mode: (options as any).mode,
+            imageUrls: (options as any).imageUrls,
+            videoUrls: (options as any).videoUrls,
+            audioUrls: (options as any).audioUrls,
           });
           if (!clip.videoUrl) {
             throw new Error("Higgsfield Video Generation returned no video URL.");

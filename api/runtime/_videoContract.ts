@@ -43,12 +43,20 @@ export interface VideoClipRequest {
   productionId?: string;
   brandId?: string;
   shotIndex?: number;
+  mode?: string;
+  imageUrls?: string[];
+  videoUrls?: string[];
+  audioUrls?: string[];
 }
 
 export function looksLikeSheetOrGridUrl(url: string): boolean {
   return /storyboard[-_]?grid|contact[-_]?sheet|character[-_]?sheet|model[-_]?sheet|location[-_]?plate|thumbnail|prop[-_]?sheet|product[-_]?sheet/i.test(
     url
   );
+}
+
+export function looksLikeStoryboardGridUrl(url: string): boolean {
+  return /storyboard[-_]?grid/i.test(url);
 }
 
 export function clampInt(value: number, min: number, max: number): number {

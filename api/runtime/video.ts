@@ -10,6 +10,7 @@ import { handleIngestMedia, isIngestMediaRequest } from "./_ingestMedia.js";
 import { collectSparkShotClipUrls } from "./_sparkShotClips.js";
 import {
   generateSeedanceVideo,
+  generateSeedanceReferenceVideo,
   resolveHiggsfieldCredentials,
 } from "./_higgsfieldClient.js";
 import {
@@ -566,6 +567,52 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
       return null;
     }
   };
+
+  const isR2v =
+    effectiveReq.mode === "reference-to-video" ||
+    effectiveReq.mode === "r2v" ||
+    effectiveReq.model?.toLowerCase().includes("r2v") ||
+    effectiveReq.model?.toLowerCase().includes("reference-to-video");
+
+  if (isR2v) {
+    const { looksLikeStoryboardGridUrl } = await import("./_videoContract.js");
+    const rawRefs = [
+      ...(effectiveReq.imageUrls || []),
+      ...(effectiveReq.referenceImageUrls || []),
+      ...(effectiveReq.referenceUrls || []),
+      ...(effectiveReq.firstFrameUrl ? [effectiveReq.firstFrameUrl] : []),
+    ];
+
+    const cleanRefs: string[] = [];
+    for (const ref of rawRefs) {
+      if (!ref || typeof ref !== "string") continue;
+      if (looksLikeStoryboardGridUrl(ref)) continue;
+      if (ref.startsWith("http")) {
+        cleanRefs.push(ref);
+      } else if (ref.startsWith("data:")) {
+        const uploaded = await uploadDataUri(ref, "r2v-ref");
+        if (uploaded) cleanRefs.push(uploaded);
+      }
+    }
+
+    if (cleanRefs.length === 0) {
+      throw new Error(
+        "Higgsfield Seedance R2V requires at least 1 public HTTPS reference image (storyboard grids not allowed)."
+      );
+    }
+
+    return generateSeedanceReferenceVideo({
+      prompt: effectiveReq.prompt,
+      imageUrls: cleanRefs,
+      aspectRatio: effectiveReq.aspectRatio || "9:16",
+      durationSec: effectiveReq.durationSec,
+      resolution: effectiveReq.resolution,
+      model: effectiveReq.model,
+      generateAudio: effectiveReq.generateAudio,
+      videoUrls: effectiveReq.videoUrls,
+      audioUrls: effectiveReq.audioUrls,
+    });
+  }
 
   if (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) {
     const rawDataUri =

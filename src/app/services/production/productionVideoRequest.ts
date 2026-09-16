@@ -22,6 +22,10 @@ export interface ProductionVideoClipRequest {
   brandId?: string;
   shotIndex?: number;
   sourceImageAssetId?: string;
+  mode?: string;
+  imageUrls?: string[];
+  videoUrls?: string[];
+  audioUrls?: string[];
 }
 
 export interface ProductionVideoClipResult {
@@ -38,16 +42,21 @@ export function isI2vApiProvider(provider?: string): boolean {
 export async function requestProductionVideoClip(
   params: ProductionVideoClipRequest
 ): Promise<ProductionVideoClipResult> {
-  if (isI2vApiProvider(params.provider) && (!params.firstFrameUrl || !params.firstFrameUrl.trim())) {
+  const normProvider = String(params.provider || "").toLowerCase();
+  const isHf = normProvider === "higgsfield" || normProvider === "higgsfield-seedance";
+  const isR2v =
+    params.mode === "reference-to-video" ||
+    params.mode === "r2v" ||
+    params.model?.toLowerCase().includes("r2v") ||
+    params.model?.toLowerCase().includes("reference-to-video");
+
+  if (!isR2v && isI2vApiProvider(params.provider) && (!params.firstFrameUrl || !params.firstFrameUrl.trim())) {
     throw new Error(
       `I2V video generation with provider "${params.provider}" requires a valid firstFrameUrl (shot still/keyframe).`
     );
   }
 
-  const normProvider = String(params.provider || "").toLowerCase();
-  const isHf = normProvider === "higgsfield" || normProvider === "higgsfield-seedance";
-
-  if (isHf) {
+  if (isHf && !isR2v) {
     if (params.firstFrameUrl && looksLikeSheetOrGridUrl(params.firstFrameUrl)) {
       throw new Error(
         `I2V video generation with provider "${params.provider}" requires this shot's still as firstFrameUrl, not a sheet or storyboard grid.`
@@ -129,6 +138,10 @@ export async function requestProductionVideoClip(
       productionId: params.productionId,
       brandId: params.brandId,
       shotIndex: params.shotIndex,
+      mode: params.mode,
+      imageUrls: params.imageUrls,
+      videoUrls: params.videoUrls,
+      audioUrls: params.audioUrls,
     }),
   });
 

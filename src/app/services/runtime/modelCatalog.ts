@@ -383,6 +383,18 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
         capabilities: ["Video Generation"],
         status: "stable",
       },
+      {
+        id: "seedance-2.5-r2v",
+        label: "Seedance 2.5 R2V (bytedance/seedance-2.5/reference-to-video)",
+        capabilities: ["Video Generation"],
+        status: "stable",
+      },
+      {
+        id: "seedance-2.0-r2v",
+        label: "Seedance 2.0 R2V (bytedance/seedance-2.0/reference-to-video)",
+        capabilities: ["Video Generation"],
+        status: "stable",
+      },
     ],
   },
 ];

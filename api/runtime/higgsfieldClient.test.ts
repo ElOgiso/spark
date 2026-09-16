@@ -500,3 +500,172 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
     assert.equal(JSON.stringify(resJson).includes("probe_secret"), false);
   });
 });
+
+describe("Phase 5 — Optional Enhancements (Cancel on abort & R2V)", () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  test("5A: AbortSignal during poll triggers best-effort cancel POST", async () => {
+    const { pollRequest } = await import("./_higgsfieldClient.js");
+    let cancelCalled = false;
+    let cancelRequestId = "";
+
+    const controller = new AbortController();
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/requests/req_abort_test/cancel") && init?.method === "POST") {
+        cancelCalled = true;
+        cancelRequestId = "req_abort_test";
+        return { ok: true, json: async () => ({ status: "canceled" }) } as any;
+      }
+      if (u.includes("/requests/req_abort_test/status")) {
+        // Abort right after first poll response
+        controller.abort();
+        return {
+          ok: true,
+          json: async () => ({
+            status: "queued",
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    await assert.rejects(
+      async () => {
+        await pollRequest(
+          "req_abort_test",
+          "hf_id:hf_secret",
+          5000,
+          controller.signal
+        );
+      },
+      (err: any) => {
+        return (
+          err.message.includes("aborted") ||
+          err.name === "AbortError"
+        );
+      }
+    );
+
+    assert.equal(cancelCalled, true);
+    assert.equal(cancelRequestId, "req_abort_test");
+  });
+
+  test("5B: Seedance 2.5 R2V submits official body with image_urls and aspect_ratio", async () => {
+    const { generateSeedanceReferenceVideo } = await import("./_higgsfieldClient.js");
+    let calledBody: any = null;
+    let calledPath = "";
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.5/reference-to-video")) {
+        calledPath = u;
+        calledBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_r2v_test",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_r2v_test/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: { url: "https://hf.ai/r2v-output.mp4" },
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const url = await generateSeedanceReferenceVideo(
+      {
+        prompt: "Character walks through neon rain",
+        imageUrls: [
+          "https://spark.storage.supabase.co/characters/hero-sheet.png",
+          "https://spark.storage.supabase.co/locations/cyber-alley.png",
+        ],
+        aspectRatio: "9:16",
+        durationSec: 6,
+        resolution: "1080p", // clamped to 720p
+      },
+      "hf_id:hf_secret"
+    );
+
+    assert.equal(url, "https://hf.ai/r2v-output.mp4");
+    assert.ok(calledPath.includes("/bytedance/seedance-2.5/reference-to-video"));
+    assert.deepEqual(calledBody.image_urls, [
+      "https://spark.storage.supabase.co/characters/hero-sheet.png",
+      "https://spark.storage.supabase.co/locations/cyber-alley.png",
+    ]);
+    assert.equal(calledBody.aspect_ratio, "9:16");
+    assert.equal(calledBody.duration, 6);
+    assert.equal(calledBody.resolution, "720p");
+    assert.equal(calledBody.output_format, "mp4");
+  });
+
+  test("5B: Seedance R2V filters out storyboard grids and throws if no valid refs remain", async () => {
+    const { generateSeedanceReferenceVideo } = await import("./_higgsfieldClient.js");
+
+    await assert.rejects(
+      async () => {
+        await generateSeedanceReferenceVideo(
+          {
+            prompt: "Invalid ref test",
+            imageUrls: ["https://spark.storage.supabase.co/brands/b1/storyboard-grid-panel.png"],
+            aspectRatio: "9:16",
+          },
+          "hf_id:hf_secret"
+        );
+      },
+      {
+        message: /requires at least 1 public HTTPS reference image \(storyboard grids not allowed\)/,
+      }
+    );
+  });
+
+  test("5D: coarse progress callback is invoked during poll", async () => {
+    const { pollRequest } = await import("./_higgsfieldClient.js");
+    const progressStatuses: string[] = [];
+
+    let pollCount = 0;
+    globalThis.fetch = async (url: any) => {
+      pollCount++;
+      if (pollCount === 1) {
+        return {
+          ok: true,
+          json: async () => ({ status: "queued" }),
+        } as any;
+      }
+      return {
+        ok: true,
+        json: async () => ({ status: "completed", video: { url: "https://hf.ai/prog.mp4" } }),
+      } as any;
+    };
+
+    const res = await pollRequest(
+      "req_prog_test",
+      "hf_id:hf_secret",
+      10000,
+      undefined,
+      (status) => progressStatuses.push(status)
+    );
+
+    assert.equal(res.status, "completed");
+    assert.deepEqual(progressStatuses, ["queued", "completed"]);
+  });
+});
