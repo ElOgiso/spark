@@ -34,6 +34,7 @@ import {
   StoryCanon,
 } from "../domain/types";
 import { normalizeHandle } from "../domain/accountUtils";
+import { resolveGeneratePlan } from "../services/production/resolveGeneratePlan";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
 import { generateSessionTitle } from "../services/sessionTitleService";
 import { eventBus } from "../services/runtime/eventBus";
@@ -2205,6 +2206,17 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               const controller = new AbortController();
               activeGenerationControllers.current.set(effectiveProdId, controller);
 
+              const seedEffectiveMode =
+                (stableEnrichedProd as any)?.mode ||
+                stableEnrichedProd.brief?.productionMode ||
+                state.brand?.productionMode ||
+                "standard";
+              const seedPlan = resolveGeneratePlan(
+                seedEffectiveMode,
+                stableEnrichedProd.brief,
+                effectiveCredit
+              );
+
               // Seed Stage UI before auto asset generation starts so Review shows Stage immediately.
               setState((prev: any) => ({
                 ...prev,
@@ -2217,17 +2229,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         generationProgress: {
                           percent: 1,
                           stage: "Initializing",
-                          message: "Initializing production pipeline (single spine)...",
-                          stages: [
-                            { id: "storyboard", label: "Storyboard structure", status: "pending" },
-                            { id: "voice", label: "Voiceover synthesis", status: "pending" },
-                            { id: "keyframes", label: "Scene stills", status: "pending" },
-                            { id: "sfx", label: "Sound FX", status: "pending" },
-                            { id: "video", label: "Motion synthesis", status: "pending" },
-                            { id: "captions", label: "Captions", status: "pending" },
-                            { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
-                            { id: "saving", label: "Finalizing media package", status: "pending" },
-                          ],
+                          message: `Initializing ${seedPlan.normalizedMode.toUpperCase()} production pipeline (single spine)...`,
+                          stages: seedPlan.stages,
                           updatedAt: new Date().toISOString(),
                         },
                       }
@@ -2816,6 +2819,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     eventBus.emit("RENDER_STARTED", { prodId: productionId }, state.brand.name);
 
+    const effectiveFormat = getEffectiveFormatSettings(state);
+    const effectiveCredit = getEffectiveCreditSettings(state);
+    const effectiveProdMode =
+      prod.mode ||
+      (prod as any).productionMode ||
+      prod.brief?.productionMode ||
+      state.brand?.productionMode ||
+      "standard";
+    const seedPlan = resolveGeneratePlan(
+      effectiveProdMode,
+      prod.brief,
+      effectiveCredit
+    );
+
     setState((prev: any) => ({
       ...prev,
       productions: prev.productions.map((p: any) =>
@@ -2827,17 +2844,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               generationProgress: {
                 percent: 1,
                 stage: "Initializing",
-                message: "Initializing production pipeline (single spine)...",
-                stages: p.generationProgress?.stages || [
-                  { id: "storyboard", label: "Storyboard structure", status: "pending" },
-                  { id: "voice", label: "Voiceover synthesis", status: "pending" },
-                  { id: "keyframes", label: "Scene stills", status: "pending" },
-                  { id: "sfx", label: "Sound FX", status: "pending" },
-                  { id: "video", label: "Motion synthesis", status: "pending" },
-                  { id: "captions", label: "Captions", status: "pending" },
-                  { id: "thumbnails", label: "Thumbnail variants", status: "pending" },
-                  { id: "saving", label: "Finalizing media package", status: "pending" },
-                ],
+                message: `Initializing ${seedPlan.normalizedMode.toUpperCase()} production pipeline (single spine)...`,
+                stages: seedPlan.stages,
                 updatedAt: new Date().toISOString(),
               },
             }
@@ -2847,8 +2855,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       const { productionService } = await import("../services/productionService");
-      const effectiveFormat = getEffectiveFormatSettings(state);
-      const effectiveCredit = getEffectiveCreditSettings(state);
       const seriesBible = resolveSeriesBible({
         brand: state.brand,
         character: state.character,

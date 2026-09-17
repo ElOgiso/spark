@@ -5,6 +5,8 @@ export { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, ext
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
 import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
+import { resolveGeneratePlan } from "./resolveGeneratePlan";
+import { normalizeModeString } from "./resolveProductionMode";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
 import { isProductionTombstoned } from "./productionTombstone";
@@ -1049,7 +1051,8 @@ export class ProductionAssetService {
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     // Authoritative mode from snapshot (when present) — never let live re-resolution drift the pipeline.
-    const mode: "express" | "standard" | "deep" = generationSettings.productionMode || identityPack.mode;
+    const rawPipelineMode = generationSettings.productionMode || identityPack.mode;
+    const mode: "express" | "standard" | "deep" = normalizeModeString(rawPipelineMode) || "standard";
     const aspectRatio = identityPack.aspectRatio;
     if (generationSettings.source === "snapshot" && identityPack.mode !== mode) {
       console.warn(
@@ -1122,24 +1125,16 @@ export class ProductionAssetService {
       memoryItems,
     });
 
-    const skipExternalVoice = mode === "deep";
-    const skipSfx = mode === "deep";
-    const targetThumbCountEarly =
-      typeof activeCreditSettings.thumbnailCount === "number"
-        ? Math.max(0, activeCreditSettings.thumbnailCount)
-        : 3;
-    const skipThumbnails = targetThumbCountEarly === 0;
+    const generatePlan = resolveGeneratePlan(mode, brief, activeCreditSettings);
+    const skipExternalVoice = generatePlan.skipExternalVoice;
+    const skipSfx = generatePlan.skipSfx;
+    const skipI2V = generatePlan.skipI2V;
+    const skipThumbnails = generatePlan.stages.find((s) => s.id === "thumbnails")?.status === "skipped";
 
-    const stages: import("../../domain/types").GenerationProgressStage[] = [
-      { id: "storyboard", label: `${mode.toUpperCase()} Storyboard structure`, status: "active" },
-      { id: "voice", label: skipExternalVoice ? "Voiceover synthesis (skipped — cinematic)" : "Voiceover synthesis", status: skipExternalVoice ? "skipped" : "pending" },
-      { id: "keyframes", label: "Scene stills", status: "pending" },
-      { id: "sfx", label: skipSfx ? "Sound FX (skipped — cinematic)" : "Sound FX", status: skipSfx ? "skipped" : "pending" },
-      { id: "video", label: mode === "express" ? "Narrator Slideshow Compilation" : "Motion synthesis (Image-to-video)", status: "pending" },
-      { id: "captions", label: mode === "express" ? "Captions" : "Captions (master assemble)", status: "pending" },
-      { id: "thumbnails", label: skipThumbnails ? "Thumbnail variants (skipped — count 0)" : "Thumbnail variants", status: skipThumbnails ? "skipped" : "pending" },
-      { id: "saving", label: "Finalizing media package", status: "pending" },
-    ];
+    const stages: import("../../domain/types").GenerationProgressStage[] = generatePlan.stages.map((s, idx) => ({
+      ...s,
+      status: idx === 0 ? "active" : s.status,
+    }));
 
     const markStage = (id: string, status: import("../../domain/types").GenerationProgressStage["status"]) => {
       const stage = stages.find((s) => s.id === id);
@@ -1405,7 +1400,6 @@ export class ProductionAssetService {
     };
 
       markStage("storyboard", "done");
-      markStage("voice", "active");
 
       const isExpressMode = mode === "express";
       const scenesNeedVo = (sb: typeof currentStoryboard) => {
@@ -1414,19 +1408,21 @@ export class ProductionAssetService {
       };
 
       const shouldSynthesizeExternalVoice =
-        mode === "express" ||
-        (mode === "standard" && scenesNeedVo(currentStoryboard));
+        !skipExternalVoice &&
+        (mode === "express" || (mode === "standard" && scenesNeedVo(currentStoryboard)));
 
       if (!shouldSynthesizeExternalVoice) {
-        console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic per-scene dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
+        console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic / talent-only dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
         markStage("voice", "skipped");
         emitProgress(12, "Voice", `Skipped external VO bed for ${mode} (dialogue expected inside motion clips)`);
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
+        markStage("voice", "active");
         realVoiceUrl = production.audioUrl || brief.audioUrl;
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
         markStage("voice", "done");
       } else {
+        markStage("voice", "active");
         emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
         void persistCurrentStage("Voice");
         startHeartbeat("Voice");
@@ -2313,7 +2309,7 @@ export class ProductionAssetService {
 
       if (!realVideoUrl) {
         try {
-          const isExpressNarrator = mode === "express";
+          const isExpressNarrator = skipI2V;
 
           if (isExpressNarrator) {
             // NARRATOR PIPELINE (express): Compile stills + voiceover into video without calling videoGeneration provider
