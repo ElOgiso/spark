@@ -1,6 +1,6 @@
 import type { ProductionFormatSettings } from "../../domain/types";
 import type { ProductionBrief } from "../../domain/types";
-import type { StoryboardScene } from "../../domain/types";
+
 import { getEffectiveContentFormat } from "./characterSheetGate";
 import { resolveLiveVisualGenre } from "./visualGenreDirectives";
 
