@@ -1,5 +1,6 @@
-﻿import { ModelRouter } from "../../runtime/modelRouter";
+import { ModelRouter } from "../../runtime/modelRouter";
 import type { Brand, ViralSpark, StructuredResearchContext, NarrativeScript } from "../../../domain/types";
+import { factCheckNarrativeScript, evaluateScriptForProduction } from "./scriptQualityGates";
 
 export interface CompileNarrativeScriptParams {
   brand: Brand;
@@ -10,20 +11,27 @@ export interface CompileNarrativeScriptParams {
   referenceChannel?: string;
   sourceUrls?: string[];
   userIntent?: string;
+  mustNotCopy?: string[];
 }
 
 export function compileNarrativeScriptPrompt(params: CompileNarrativeScriptParams): string {
-  const { brand, targetDurationSec, productionModeLabel, spark, researchContext, referenceChannel, sourceUrls, userIntent } = params;
+  const { brand, targetDurationSec, productionModeLabel, spark, researchContext, referenceChannel, sourceUrls, userIntent, mustNotCopy } = params;
 
   let prompt = `YOU ARE THE WRITER. SPARK IS THE STUDIO.
 Return ONLY the typed script object.
 
 Write a complete piece the viewer would watch for the FULL ${targetDurationSec} seconds.
+Still write a full duration-sized script with substantive educational or narrative content matching the target duration.
 Educational / story value required. Specific names, dates, mechanisms, stakes.
 Open on payoff. Defer backstory.
 Plant and resolve open loops appropriate to duration.
 Do NOT write shot lists, camera manuals, or "generate a cinematic glow".
 Do NOT write placeholder copy ("in this video we will discuss").
+
+CLAIMS & FACT-CHECKING RULES:
+- List claims you are making in the "claims" array; prefer verifiable facts.
+- Use exact, verifiable dates, numbers, real entities, and mechanisms.
+- Do NOT invent fake dates, fabricated names, or artificial statistics.
 
 BRAND:
 - Name: ${brand.name}
@@ -55,6 +63,15 @@ ${productionModeLabel === "cinematic" ? "- Spoken lines are IN-WORLD / talent. N
 
   if (referenceChannel) {
     prompt += `\nREFERENCE FORMAT: Borrow FORMAT (pacing, chapter shape, curiosity) from "${referenceChannel}". Do NOT retell their specific episodes or titles.\n`;
+  }
+
+  const forbiddenTitles = [
+    ...(mustNotCopy || []),
+    ...(spark?.mustNotCopy || []),
+  ].filter(Boolean);
+
+  if (forbiddenTitles.length > 0) {
+    prompt += `\nDO NOT RETELL THESE TITLES (mustNotCopy):\n${forbiddenTitles.map((t) => `- "${t}"`).join("\n")}\nDo not retell these titles or clone their specific stories. Borrow format only; write an entirely original topic/episode.\n`;
   }
 
   if (sourceUrls && sourceUrls.length > 0) {
@@ -154,5 +171,16 @@ export async function compileNarrativeScript(params: CompileNarrativeScriptParam
     throw new Error("Validation Failed: Script payload is title-only or missing spoken hook.");
   }
 
-  return scriptObj as NarrativeScript;
+  // Single-pass fact check for claims (one model call max)
+  const factCheckedScript = await factCheckNarrativeScript(scriptObj as NarrativeScript, params.brand);
+
+  const refTitles = [
+    ...(params.mustNotCopy || []),
+    ...(params.spark?.mustNotCopy || []),
+  ].filter(Boolean);
+
+  // Evaluate script quality gates (attaches genericity, originality, and overlap scores)
+  evaluateScriptForProduction(factCheckedScript, params.spark, params.brand, refTitles);
+
+  return factCheckedScript;
 }

@@ -1,10 +1,12 @@
-﻿import type { NarrativeScript, ViralSpark, ProductionBrief, ProductionBriefBeat } from "../../../domain/types";
+import type { NarrativeScript, ViralSpark, ProductionBrief, ProductionBriefBeat, Brand } from "../../../domain/types";
+import { evaluateScriptForProduction, type ScriptEvaluationResult } from "./scriptQualityGates";
 
 export function applyNarrativeScriptToSparkAndBrief(
   script: NarrativeScript,
   spark?: ViralSpark | null,
-  briefDraft?: Partial<ProductionBrief>
-): { sparkPatch: Partial<ViralSpark>; brief: ProductionBrief } {
+  briefDraft?: Partial<ProductionBrief>,
+  options?: { brand?: Brand; referenceTitles?: string[] }
+): { sparkPatch: Partial<ViralSpark>; brief: ProductionBrief; evaluation: ScriptEvaluationResult } {
   
   let runningTime = 0;
   const beats: ProductionBriefBeat[] = script.chapters.map((c, i) => {
@@ -46,7 +48,26 @@ export function applyNarrativeScriptToSparkAndBrief(
     suggestedDuration: `${script.targetDurationSec || briefDraft?.targetDurationSec || 60}s`
   };
 
-  const sparkPatch: Partial<ViralSpark> = {};
+  const evaluation = evaluateScriptForProduction(
+    script,
+    spark,
+    options?.brand,
+    options?.referenceTitles
+  );
+
+  brief.genericityScore = evaluation.scores.genericityScore;
+  brief.originalityScore = evaluation.scores.originalityScore;
+  brief.referenceContentOverlapScore = evaluation.scores.referenceContentOverlapScore;
+  if (!evaluation.ok) {
+    brief.lastError = evaluation.reasons[0];
+  }
+
+  const sparkPatch: Partial<ViralSpark> = {
+    genericityScore: evaluation.scores.genericityScore,
+    originalityScore: evaluation.scores.originalityScore,
+    referenceContentOverlapScore: evaluation.scores.referenceContentOverlapScore,
+  };
+
   if (spark) {
     sparkPatch.opening_line = script.hook?.spoken;
     sparkPatch.spoken_beats = script.chapters.map(c => c.spoken);
@@ -58,7 +79,10 @@ export function applyNarrativeScriptToSparkAndBrief(
     }
     
     const wordCount = script.fullSpokenScript?.split(/\s+/).length || 0;
-    if (wordCount >= 50) {
+    if (!evaluation.ok) {
+      sparkPatch.status = "draft";
+      sparkPatch.lastError = evaluation.reasons[0];
+    } else if (wordCount >= 50) {
       sparkPatch.status = "ready";
     }
 
@@ -72,5 +96,5 @@ export function applyNarrativeScriptToSparkAndBrief(
     }
   }
 
-  return { sparkPatch, brief };
+  return { sparkPatch, brief, evaluation };
 }

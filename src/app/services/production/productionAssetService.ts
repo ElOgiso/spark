@@ -18,6 +18,8 @@ import { resolveProviderKey } from "../runtime/AIProviderOrchestrator";
 import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
+import { evaluateScriptForProduction } from "./os/scriptQualityGates";
+import { collectMustNotCopyTitles } from "./os/topicIntelligence";
 import { resolveLiveBeatSubject } from "./contentFormatDirectives";
 import { resolveLiveVisualGenre, visualGenreDirective } from "./visualGenreDirectives";
 import { isPhotorealVisualGenre } from "../../domain/visualGenre";
@@ -1014,6 +1016,33 @@ export class ProductionAssetService {
         `[SPARK Pipeline] Using immutable production settings snapshot (mode=${generationSettings.productionMode}, format=${activeFormatSettings.contentFormat}, provider=${preferredVideoProvider || "auto"}, model=${preferredVideoModel || "default"})`
       );
     }
+
+    const scriptToEval = brief.narrativeScript || (production as any).narrativeScriptObj;
+    if (scriptToEval) {
+      const refTitles = collectMustNotCopyTitles(brand?.researchSources || (brand as any)?.sources || []);
+      const scriptEval = evaluateScriptForProduction(scriptToEval, (production as any).spark, brand, refTitles);
+      if (!scriptEval.ok) {
+        const reason = scriptEval.reasons[0] || "Script quality gate failed.";
+        console.warn(`[ProductionAssetService] Asset generation gated by script quality check: ${reason}`);
+        return {
+          brief: {
+            ...brief,
+            lastError: reason,
+          },
+          scenes: (brief.storyboard || production.scenes || []).map((s: any, idx: number) => ({
+            scene: s.scene || idx + 1,
+            description: s.description || s.visualDescription || `Scene ${s.scene || idx + 1}`,
+            duration: s.duration || "0-10s",
+            image: s.image,
+            videoUrl: s.videoUrl,
+          })),
+          productionScenes: brief.storyboard || (production.productionScenes as any) || [],
+          audioUrl: brief.audioUrl,
+          videoUrl: brief.videoUrl,
+        };
+      }
+    }
+
     console.log(`[SPARK Pipeline] START Asset Generation for Production "${production.id}" (${brief.title})`);
 
     const gate = canStartAssetGeneration({

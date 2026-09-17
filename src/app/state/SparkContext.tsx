@@ -88,6 +88,8 @@ import { evaluateSparkForProduction } from "../services/production/productionBri
 import { resolveProductionMode } from "../services/production/resolveProductionMode";
 import { hasCanonicalPlayableMedia } from "../services/production/canonicalProductionMedia";
 import { canStartAssetGeneration } from "../services/production/characterSheetGate";
+import { evaluateScriptForProduction } from "../services/production/os/scriptQualityGates";
+import { collectMustNotCopyTitles } from "../services/production/os/topicIntelligence";
 import { recordBrandPerformanceWin } from "../services/memory/recordBrandPerformance";
 import { autonomousEngine } from "../services/runtime/autonomousEngine";
 import {
@@ -2169,6 +2171,59 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           eventBus.emit("SCRIPT_READY", { prodId: effectiveProdId, title: enrichedProd.title }, state.brand.name);
 
+          // Phase 6/12 Quality Gate: Script Fact-Check, Genericity & Reference Overlap
+          const scriptToEval = enrichedBrief?.narrativeScript || stableEnrichedProd.brief?.narrativeScript || spark.narrativeScriptObj;
+          let scriptGateOk = true;
+          let scriptGateReason = "";
+
+          if (scriptToEval) {
+            const refTitles = collectMustNotCopyTitles(state.brand?.researchSources || (state.brand as any)?.sources || []);
+            const scriptEval = evaluateScriptForProduction(scriptToEval, spark, state.brand, refTitles);
+            if (!scriptEval.ok) {
+              scriptGateOk = false;
+              scriptGateReason = scriptEval.reasons[0] || "Script quality gate failed.";
+            }
+          }
+
+          if (!scriptGateOk) {
+            console.warn(`[SparkContext] Production asset generation blocked by script quality gate for prodId ${effectiveProdId}: ${scriptGateReason}`);
+            spark.status = "draft";
+            spark.lastError = scriptGateReason;
+
+            setState((prev: any) => ({
+              ...prev,
+              viralSparks: (prev.viralSparks || []).map((s: any) =>
+                s.id === spark.id ? { ...s, status: "draft", lastError: scriptGateReason } : s
+              ),
+              productions: prev.productions.map((p: any) =>
+                p.id === effectiveProdId
+                  ? { ...p, status: "Drafting", isGeneratingAssets: false, lastError: scriptGateReason }
+                  : p
+              ),
+              reviewItems: prev.reviewItems.map((r: any) =>
+                r.productionId === effectiveProdId || r.id === effectiveReviewId
+                  ? {
+                      ...r,
+                      lastError: scriptGateReason,
+                      qualityCheck: {
+                        ...(r.qualityCheck || { brandSafety: "Passed", technicalCheck: "Passed" }),
+                        policyCheck: "Failed",
+                      },
+                    }
+                  : r
+              ),
+            }));
+
+            const bId = getBrandWorkspaceId();
+            if (isSupabaseConfigured() && bId) {
+              void persistProductionUpdate(effectiveProdId, {
+                isGeneratingAssets: false,
+                lastError: scriptGateReason,
+              });
+            }
+            return;
+          }
+
           // Chain asset generation automatically when Production Generation is ON
           if (ProductionGenerationGuard.isEnabled(productionGuardBrandId())) {
             const gate = canStartAssetGeneration({
@@ -2865,6 +2920,36 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       const effectiveCharacter = seriesBible.character || state.character;
+
+      // Phase 6/12 Quality Gate: Script Fact-Check, Genericity & Reference Overlap
+      const scriptToEval = prod.brief?.narrativeScript;
+      if (scriptToEval) {
+        const refTitles = collectMustNotCopyTitles(state.brand?.researchSources || (state.brand as any)?.sources || []);
+        const scriptEval = evaluateScriptForProduction(scriptToEval, (prod as any).spark, state.brand, refTitles);
+        if (!scriptEval.ok) {
+          const reason = scriptEval.reasons[0] || "Script quality gate failed.";
+          console.warn(`[SparkContext] Manual asset generation blocked by script quality gate for prodId ${productionId}: ${reason}`);
+          setState((prev: any) => ({
+            ...prev,
+            productions: prev.productions.map((p: any) =>
+              p.id === productionId ? { ...p, isGeneratingAssets: false, lastError: reason } : p
+            ),
+            reviewItems: prev.reviewItems.map((r: any) =>
+              r.productionId === productionId
+                ? {
+                    ...r,
+                    lastError: reason,
+                    qualityCheck: {
+                      ...(r.qualityCheck || { brandSafety: "Passed", technicalCheck: "Passed" }),
+                      policyCheck: "Failed",
+                    },
+                  }
+                : r
+            ),
+          }));
+          return;
+        }
+      }
 
       const gate = canStartAssetGeneration({
         production: prod,

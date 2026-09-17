@@ -21,6 +21,7 @@ import { repairPhysicalAction, isPlannerMetaText } from "./directorScriptAuthori
 import { planAssetBibleFromBrief } from "./preproduction/assetBibleFromBrief";
 import { compileNarrativeScript } from "./os/compileNarrativeScript";
 import { applyNarrativeScriptToSparkAndBrief } from "./os/applyNarrativeScript";
+import { collectMustNotCopyTitles } from "./os/topicIntelligence";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -1213,6 +1214,8 @@ Return a valid JSON object matching this exact structure with NO markdown format
       narrativeScriptObj = (spark as any).brief.narrativeScript;
     }
 
+    const refTitles = collectMustNotCopyTitles((brand as any).researchSources || []);
+
     if (!narrativeScriptObj) {
       try {
         narrativeScriptObj = await compileNarrativeScript({
@@ -1222,17 +1225,26 @@ Return a valid JSON object matching this exact structure with NO markdown format
           spark,
           researchContext: resolvedResearch || spark.researchContext,
           referenceChannel: (brand as any).referenceChannel || undefined,
+          mustNotCopy: refTitles,
         });
       } catch (scriptErr) {
         throw scriptErr;
       }
     }
 
-    const { sparkPatch, brief } = applyNarrativeScriptToSparkAndBrief(narrativeScriptObj, spark, {
-      productionMode: modeKey,
-      targetDurationSec: effectiveDurationSec,
-      brandFitScore: sparkScore
-    });
+    const { sparkPatch, brief } = applyNarrativeScriptToSparkAndBrief(
+      narrativeScriptObj,
+      spark,
+      {
+        productionMode: modeKey,
+        targetDurationSec: effectiveDurationSec,
+        brandFitScore: sparkScore
+      },
+      {
+        brand,
+        referenceTitles: refTitles,
+      }
+    );
 
     Object.assign(spark, sparkPatch);
 

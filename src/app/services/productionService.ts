@@ -5,6 +5,8 @@ import { persistViralSparkUpdate } from "../backend/workspaceSync";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
+import { evaluateScriptForProduction } from "./production/os/scriptQualityGates";
+import { collectMustNotCopyTitles } from "./production/os/topicIntelligence";
 import { ProductionGenerationGuard } from "./production/ProductionGenerationGuard";
 import { isProductionTombstoned } from "./production/productionTombstone";
 import { generateUuid } from "../backend/mappers/workspaceMappers";
@@ -347,6 +349,28 @@ export class ProductionService implements IProductionService {
     ProductionGenerationGuard.assertEnabled("generateAssetsForProduction", brand?.id);
     if (!production.brief) {
       throw new Error("Production brief must exist before generating assets.");
+    }
+
+    const scriptToEval = production.brief.narrativeScript;
+    if (scriptToEval) {
+      const refTitles = collectMustNotCopyTitles(brand?.researchSources || (brand as any)?.sources || []);
+      const scriptEval = evaluateScriptForProduction(scriptToEval, (production as any).spark, brand, refTitles);
+      if (!scriptEval.ok) {
+        const reason = scriptEval.reasons[0] || "Script quality gate failed.";
+        console.warn(`[ProductionService] Asset generation gated by script quality check: ${reason}`);
+        const updatedBrief: ProductionBrief = {
+          ...production.brief,
+          lastError: reason,
+        };
+        const gatedProd: Production = {
+          ...production,
+          brief: updatedBrief,
+          lastError: reason,
+          status: "Drafting",
+          isGeneratingAssets: false,
+        };
+        return { production: gatedProd, brief: updatedBrief };
+      }
     }
 
     const gate = canStartAssetGeneration({

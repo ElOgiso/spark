@@ -47,6 +47,7 @@ export interface Brand {
   sensitive_content_rules?: string[];
   account_specific_rules?: Record<string, any>;
   platform_specific_permissions?: Record<string, any>;
+  researchSources?: any[];
 }
 
 export interface Character {
@@ -169,10 +170,15 @@ export interface ViralSpark {
   estimatedViews?: string;
   whyItWorks?: string;
   suggestedScript?: string;
-    narrativeScriptObj?: NarrativeScript;
+  narrativeScriptObj?: NarrativeScript;
   sourceContent?: StructuredSourceContent;
   youtubeUrl?: string;
   sourceUrl?: string;
+  genericityScore?: number;
+  originalityScore?: number;
+  referenceContentOverlapScore?: number;
+  lastError?: string;
+  mustNotCopy?: string[];
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";
@@ -302,6 +308,9 @@ export interface ProductionBrief {
   /** Provenance of the script content: real model output vs. the deterministic template safety-net. */
   contentSource?: "ai" | "template-fallback";
   brandFitScore: number;
+  genericityScore?: number;
+  originalityScore?: number;
+  referenceContentOverlapScore?: number;
   suggestedDuration: string;
   targetDurationSec?: number;
   formatSettings?: ProductionFormatSettings;
@@ -476,6 +485,7 @@ export interface ReviewItem {
   whyThisWorks?: string;
   videoUrl?: string;
   audioUrl?: string;
+  lastError?: string;
 }
 
 export interface PublishJob {
@@ -1088,11 +1098,14 @@ export interface NarrativeScript {
   fullSpokenScript: string;
   openLoops: { plantedAtSec: number[]; resolvedAtSec: number[] };
   cta: { spoken: string; onScreen?: string };
-  claims?: Array<{ claim: string; verified: boolean | "pending"; source?: string }>;
+  claims?: Array<{ claim: string; verified: boolean | "pending"; source?: string; isCorePremise?: boolean }>;
   contentSource: "ai" | "template-fallback";
   provider?: string;
   model?: string;
   sourceUrls?: string[];
   formatBorrowedFrom?: string;
   mustNotCopy: string[];
+  genericityScore?: number;
+  originalityScore?: number;
+  referenceContentOverlapScore?: number;
 }

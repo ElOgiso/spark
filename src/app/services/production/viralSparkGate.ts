@@ -2,6 +2,8 @@ import type { ViralSpark, Brand, MemoryItem, StructuredResearchContext } from ".
 import { ModelRouter } from "../runtime/modelRouter";
 import { buildRankedBrandLaws } from "../memory/rankBrandLaws";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
+import { evaluateScriptForProduction } from "./os/scriptQualityGates";
+import { collectMustNotCopyTitles } from "./os/topicIntelligence";
 
 export const MIN_BRAND_FIT_SCORE = 70;
 
@@ -80,6 +82,17 @@ export function assertSparkReadyForProduction(
     if (!reasons.includes(r)) reasons.push(r);
   }
 
+  const scriptToEval = spark.narrativeScriptObj || (spark as any).brief?.narrativeScript;
+  if (scriptToEval) {
+    const refTitles = collectMustNotCopyTitles((brand as any)?.researchSources || []);
+    const scriptEval = evaluateScriptForProduction(scriptToEval, spark, brand, refTitles);
+    if (!scriptEval.ok) {
+      for (const r of scriptEval.reasons) {
+        if (!reasons.includes(r)) reasons.push(r);
+      }
+    }
+  }
+
   if (reasons.length > 0) {
     return {
       ok: false,
@@ -112,6 +125,20 @@ export function ensureViralSparkProductionReady(
 
   const already = assertSparkReadyForProduction(spark, brand);
   if (already.ok) {
+    const scriptToEval = spark.narrativeScriptObj || (spark as any).brief?.narrativeScript;
+    if (scriptToEval) {
+      const refTitles = collectMustNotCopyTitles((brand as any)?.researchSources || []);
+      const scriptEval = evaluateScriptForProduction(scriptToEval, spark, brand, refTitles);
+      if (!scriptEval.ok) {
+        return {
+          ok: false,
+          spark: { ...spark, status: "draft", lastError: scriptEval.reasons[0] },
+          repaired: false,
+          reasons: scriptEval.reasons,
+          message: `Cannot start production: ${scriptEval.reasons[0]}.`,
+        };
+      }
+    }
     return {
       ok: true,
       spark: { ...spark, status: "ready" },
@@ -152,6 +179,20 @@ export function markSparkReadyIfValid(
         : check.reasons,
     };
   }
+
+  const scriptToEval = spark.narrativeScriptObj || (spark as any).brief?.narrativeScript;
+  if (scriptToEval) {
+    const refTitles = collectMustNotCopyTitles((brand as any)?.researchSources || []);
+    const scriptEval = evaluateScriptForProduction(scriptToEval, spark, brand, refTitles);
+    if (!scriptEval.ok) {
+      return {
+        ok: false,
+        spark: { ...spark, status: "draft", lastError: scriptEval.reasons[0] },
+        reasons: scriptEval.reasons,
+      };
+    }
+  }
+
   return { ok: true, spark: { ...spark, status: "ready" }, reasons: [] };
 }
 
