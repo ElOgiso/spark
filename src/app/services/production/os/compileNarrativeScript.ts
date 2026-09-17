@@ -53,6 +53,9 @@ ${productionModeLabel === "cinematic" ? "- Spoken lines are IN-WORLD / talent. N
 
   if (targetDurationSec) {
     prompt += `\nTarget Duration: ${targetDurationSec} seconds. Ensure the spoken script generates enough words to hit this duration naturally (approx 120-150 words per minute).\n`;
+    prompt += `Return chapters that SUM to targetDurationSec (${targetDurationSec} seconds).\n`;
+    prompt += `Each chapter has its own durationSec and spoken (movie structure, not a blob).\n`;
+    prompt += `Do not omit durationSec. SPARK will not invent it.\n`;
   }
 
   if (spark) {
@@ -127,6 +130,9 @@ OUTPUT EXACTLY THIS JSON SHAPE:
 }
 
 export async function compileNarrativeScript(params: CompileNarrativeScriptParams): Promise<NarrativeScript> {
+  if (!params.targetDurationSec || params.targetDurationSec <= 0 || isNaN(params.targetDurationSec)) {
+    throw new Error("No target duration. SPARK will not assume 60 seconds.");
+  }
   const prompt = compileNarrativeScriptPrompt(params);
 
   let rawJson = "";

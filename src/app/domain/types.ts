@@ -285,6 +285,7 @@ export interface ProductionBriefBeat {
   audio?: "vo" | "talent";
   subject?: BeatSubject | string;
   subjectType?: BeatSubject | string;
+  durationSec?: number;
 }
 
 export interface ProductionBrief {

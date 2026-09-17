@@ -269,7 +269,10 @@ export function resolveBeatBudget(durationSec: number): {
   targetWords: number;
   label: string;
 } {
-  const sec = Math.max(10, Math.round(durationSec || 60));
+  if (!durationSec || durationSec <= 0) {
+    throw new Error("No target duration. SPARK will not assume 60 seconds.");
+  }
+  const sec = Math.max(10, Math.round(durationSec));
   let count = 4;
   if (sec <= 15) {
     count = 3; // 15s: 3 beats (hook / one value / CTA)
@@ -424,7 +427,15 @@ export function compileDeterministicBrief(params: {
     ? `GET ${defaultOffer.title.toUpperCase().slice(0, 20)}`
     : `SAVE & FOLLOW ${brand.name.toUpperCase().slice(0, 15)}`;
 
-  const durationSec = params.targetDurationSec || brand.formatSettings?.targetDurationSec || 60;
+  const durationSec =
+    params.targetDurationSec ||
+    brand.formatSettings?.targetDurationSec ||
+    (spark as any).targetDurationSec ||
+    ((spark as any).brief?.targetDurationSec) ||
+    ((spark as any).suggestedDuration ? parseInt((spark as any).suggestedDuration) : undefined);
+  if (!durationSec || durationSec <= 0) {
+    throw new Error("No target duration. SPARK will not assume 60 seconds.");
+  }
   const budget = resolveBeatBudget(durationSec);
   const totalBeats = budget.count;
 
@@ -957,7 +968,13 @@ export class ProductionBriefService {
     const effectiveDurationSec =
       targetDurationSec ||
       brand.formatSettings?.targetDurationSec ||
-      60;
+      (spark as any).targetDurationSec ||
+      ((spark as any).brief?.targetDurationSec) ||
+      ((spark as any).suggestedDuration ? parseInt((spark as any).suggestedDuration) : undefined);
+
+    if (!effectiveDurationSec || isNaN(effectiveDurationSec) || effectiveDurationSec <= 0) {
+      throw new Error("No target duration. SPARK will not assume 60 seconds.");
+    }
 
     const modeKey = resolveProductionMode({ modeOverride: productionMode, brand, spark });
     const budget = resolveBeatBudget(effectiveDurationSec);
@@ -1250,7 +1267,8 @@ Return a valid JSON object matching this exact structure with NO markdown format
 
     const storyboardScenes: import("../../domain/types").ProductionScene[] = brief.beats!.map((b, idx) => ({
       scene: idx + 1,
-      duration: `${Math.max(3, Math.round(effectiveDurationSec / brief.beats!.length))}s`,
+      duration: `${b.durationSec ?? Math.max(3, Math.round(effectiveDurationSec / brief.beats!.length))}s`,
+      durationSec: b.durationSec ?? Math.max(3, Math.round(effectiveDurationSec / brief.beats!.length)),
       shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
       cameraDirection: b.cameraDirection || "Presenter centered",
       transitions: "Continuous flow",

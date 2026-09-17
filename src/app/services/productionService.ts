@@ -125,8 +125,16 @@ export class ProductionService implements IProductionService {
     const resolvedMode = (params.productionMode as any) || "standard";
     const aspectRatio = effectiveFormat.aspectMode === "landscape" ? "16:9" : "9:16";
 
+    const initialTargetDurationSec =
+      params.targetDurationSec ||
+      effectiveFormat.targetDurationSec ||
+      (params.spark as any)?.targetDurationSec;
+
     // Brief polish FIRST so Spec shot prompts inherit cleaned beats (not raw research meta).
-    const llmBrief = await ProductionBriefService.generateBrief(params);
+    const llmBrief = await ProductionBriefService.generateBrief({
+      ...params,
+      targetDurationSec: initialTargetDurationSec,
+    });
 
     const polishedSpark: ViralSpark = {
       ...params.spark,
@@ -174,7 +182,11 @@ export class ProductionService implements IProductionService {
           ? plan.spec.project.targetDurationSec
           : typeof llmBrief.targetDurationSec === "number"
             ? llmBrief.targetDurationSec
-            : effectiveFormat.targetDurationSec || 60;
+            : effectiveFormat.targetDurationSec;
+
+    if (!targetDurationSec || targetDurationSec <= 0) {
+      throw new Error("No target duration. SPARK will not assume 60 seconds.");
+    }
 
     const brief: ProductionBrief = {
       ...llmBrief,
