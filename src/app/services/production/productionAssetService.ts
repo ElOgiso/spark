@@ -1076,6 +1076,20 @@ export class ProductionAssetService {
     });
     (brief as any).visualGenre = effectiveVisualGenre;
     (production as any).visualGenre = effectiveVisualGenre;
+
+      // --- RESOLVE IMAGE PREFERENCE ---
+      const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
+      const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
+      const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
+      const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+      const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
+      const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;
+      const resolvedImageModel = aiSettings?.models?.storyboardImages || globalImageModel || undefined;
+
+      if (resolvedImageProvider) {
+        console.log(`[SPARK Pipeline] Image preference: provider=${resolvedImageProvider} model=${resolvedImageModel || 'default'}`);
+      }
+
     console.log(
       `[SPARK Pipeline] Frame Lock: ${frameLock.frameLockId} ${frameLock.aspectRatio} ${frameLock.targetWidth}×${frameLock.targetHeight} (${frameLock.platformHint})`
     );
@@ -1574,6 +1588,8 @@ export class ProductionAssetService {
               referenceImageUrl: sheetLock.primaryRefUrl,
               referenceImageUrls: sheetLock.imageUrls,
               aspectRatio: identityPack.aspectRatio,
+                  preferredProvider: resolvedImageProvider,
+                  model: resolvedImageModel,
             }),
             90000,
             "Storyboard sheet generation timed out after 90s",
@@ -2051,6 +2067,8 @@ export class ProductionAssetService {
                 referenceImageUrl: stillVisualLock.primaryRefUrl,
                 referenceImageUrls: stillVisualLock.imageUrls,
                 aspectRatio: identityPack.aspectRatio,
+                  preferredProvider: resolvedImageProvider,
+                  model: resolvedImageModel,
               }),
               60000,
               `Scene ${globalSceneNum} still generation timed out after 60s`,
@@ -2709,7 +2727,55 @@ export class ProductionAssetService {
                   const i2vFallbacks = allI2vCandidates.filter(
                     (p) => p !== String(activeVideo.providerId || "").toLowerCase()
                   );
-                  const tryI2v = async (providerId: string) => {
+                  
+                    // --- GAP B: Durable first frame & refs before I2V ---
+                    if (sceneFirstFrame && (sceneFirstFrame.startsWith("data:") || isEphemeralMediaUrl(sceneFirstFrame))) {
+                      try {
+                        const ingested = await ProductionAssetService.uploadAssetToStorage({
+                           productionId: production.id,
+                           brandId: (brand as any)?.id,
+                           assetType: "image",
+                           dataUrlOrBlob: sceneFirstFrame,
+                           mimeType: "image/png",
+                           prompt: sceneMotionPrompt,
+                           provider: "PipelineIngest",
+                        });
+                        if (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) {
+                          sceneFirstFrame = ingested.publicUrl;
+                        } else {
+                          throw new Error("Ingest succeeded but returned non-persistable URL.");
+                        }
+                      } catch (err: any) {
+                        throw new Error(`Consistency Gate: Failed to persist ephemeral first frame for Scene ${globalSceneNum}. I2V requires durable HTTPS. (${err.message})`);
+                      }
+                    }
+
+                    if (identityRefs && identityRefs.length > 0) {
+                      const upgradedRefs = await Promise.all(identityRefs.map(async (ref) => {
+                        if (!ref) return null;
+                        if (ref.startsWith("data:") || isEphemeralMediaUrl(ref)) {
+                          try {
+                            const ingested = await ProductionAssetService.uploadAssetToStorage({
+                               productionId: production.id,
+                               brandId: (brand as any)?.id,
+                               assetType: "image",
+                               dataUrlOrBlob: ref,
+                               mimeType: "image/png",
+                               prompt: "Visual Lock Ref",
+                               provider: "PipelineIngest",
+                            });
+                            return (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) ? ingested.publicUrl : null;
+                          } catch {
+                            return null;
+                          }
+                        }
+                        return ref;
+                      }));
+                      identityRefs = upgradedRefs.filter(Boolean) as string[];
+                    }
+                    // --- END GAP B ---
+                    const tryI2v = async (providerId: string) => {
+
                     const effectiveRefs =
                       providerId.toLowerCase() === "grok"
                         ? identityRefs.slice(0, 7)
@@ -3369,6 +3435,8 @@ export class ProductionAssetService {
                   referenceImageUrl: thumbVisualLock.primaryRefUrl,
                   referenceImageUrls: thumbVisualLock.imageUrls,
                   aspectRatio: identityPack.aspectRatio,
+                  preferredProvider: resolvedImageProvider,
+                  model: resolvedImageModel,
                 }),
                 45000,
                 `Thumbnail variant ${variantLetter} generation timed out after 45s`,
@@ -3932,6 +4000,20 @@ export class ProductionAssetService {
 
     const brief = production.brief || ({} as ProductionBrief);
     const generationSettings = resolveGenerationSettings({ production, brief, brand });
+
+      // --- RESOLVE IMAGE PREFERENCE ---
+      const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
+      const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
+      const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
+      const aiSettings = production?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+      const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
+      const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;
+      const resolvedImageModel = aiSettings?.models?.storyboardImages || globalImageModel || undefined;
+
+      if (resolvedImageProvider) {
+        console.log(`[SPARK Pipeline] Image preference: provider=${resolvedImageProvider} model=${resolvedImageModel || 'default'}`);
+      }
+
     const existingScenes = production.productionScenes || ProductionAssetService.planProductionScenes({
       production,
       brief,
@@ -4094,6 +4176,8 @@ export class ProductionAssetService {
             referenceImageUrl: fixVisualLock.primaryRefUrl,
             referenceImageUrls: fixVisualLock.imageUrls,
             aspectRatio: identityPack.aspectRatio,
+                  preferredProvider: resolvedImageProvider,
+                  model: resolvedImageModel,
           }),
           60000,
           `Scene ${sceneIndex} still regeneration timed out after 60s`
