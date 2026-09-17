@@ -11,6 +11,7 @@ import {
   updateProduction,
   listViralSparks,
   createViralSpark,
+  updateViralSpark,
 } from "./repositories/productionRepository";
 import {
   listReviewItems,
@@ -570,6 +571,12 @@ function attachProductionStorageIdentity(row: ProductionRow, production: Product
         }
       : brief,
   };
+}
+
+export async function persistViralSparkUpdate(brandId: string, id: string, spark: ViralSpark) {
+  if (!isSupabaseConfigured()) return null;
+  const result = await updateViralSpark(id, domainViralSparkToInsert(brandId, spark));
+  return result.data ? viralSparkRowToDomain(result.data) : null;
 }
 
 export async function persistViralSparkCreate(brandId: string, spark: ViralSpark) {

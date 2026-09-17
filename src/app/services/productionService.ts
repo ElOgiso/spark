@@ -1,6 +1,7 @@
 import { IProductionService } from "../domain/contracts";
 import { Production, Asset, ViralSpark, Brand, Character, MemoryItem, ReviewItem, ProductionBrief, getEffectiveFormatSettings, AutomationMode, ProductionAsset } from "../domain/types";
 import { loadPersistedState, savePersistedState } from "../state/persistence";
+import { persistViralSparkUpdate } from "../backend/workspaceSync";
 import { ProductionBriefService } from "./production/productionBriefService";
 import { ProductionAssetService, isDurableMasterVideoReady, isPlayableVideoUrl } from "./production/productionAssetService";
 import { canStartAssetGeneration } from "./production/characterSheetGate";
@@ -137,7 +138,14 @@ export class ProductionService implements IProductionService {
       status: "ready",
     };
 
-    // Phase 2: Creative Director planning uses polished brief/spark — never raw meta hooks.
+    // Persist spark updates so refresh does not drop suggestedScript
+      if (params.brand?.id && polishedSpark.id) {
+        persistViralSparkUpdate(params.brand.id, polishedSpark.id, polishedSpark).catch(err => 
+          console.warn("[ProductionService] Failed to persist spark update:", err)
+        );
+      }
+
+      // Phase 2: Creative Director planning uses polished brief/spark — never raw meta hooks.
     const plan = createProductionPlan({
       idea: polishedSpark.hook || polishedSpark.title || polishedSpark.angle || "",
       productionId: prodId,

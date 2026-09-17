@@ -169,6 +169,7 @@ export interface ViralSpark {
   estimatedViews?: string;
   whyItWorks?: string;
   suggestedScript?: string;
+    narrativeScriptObj?: NarrativeScript;
   sourceContent?: StructuredSourceContent;
   youtubeUrl?: string;
   sourceUrl?: string;

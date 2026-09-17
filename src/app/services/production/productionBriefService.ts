@@ -20,6 +20,7 @@ import { ensureViralSparkProductionReady } from "./viralSparkGate";
 import { repairPhysicalAction, isPlannerMetaText } from "./directorScriptAuthority";
 import { planAssetBibleFromBrief } from "./preproduction/assetBibleFromBrief";
 import { compileNarrativeScript } from "./os/compileNarrativeScript";
+import { applyNarrativeScriptToSparkAndBrief } from "./os/applyNarrativeScript";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -1204,113 +1205,67 @@ Return a valid JSON object matching this exact structure with NO markdown format
       return { beats: mapped, words: totalWords };
     };
 
-    let parsedJson: any = null;
     let narrativeScriptObj: any = null;
-    try {
-      narrativeScriptObj = await compileNarrativeScript({
-        brand,
-        targetDurationSec: effectiveDurationSec,
-        productionModeLabel: modeKey,
-        spark,
-        researchContext: resolvedResearch || spark.researchContext,
-        referenceChannel: (brand as any).referenceChannel || undefined,
-      });
-    } catch (scriptErr) {
-      throw scriptErr;
-    }
-    const mappedBeats = narrativeScriptObj.chapters.map((c: any, i: number) => ({
-      timecode: `[${i*5}-${(i+1)*5}]`,
-      valueJob: c.job,
-      subject: 'main',
-      subjectType: 'main',
-      spokenLines: c.spoken,
-      onScreenText: 'TEXT',
-      cameraDirection: c.visualIntent,
-      physicalAction: c.visualIntent,
-      startState: c.visualIntent,
-      endState: c.visualIntent,
-      audio: modeKey === 'express' ? 'vo' : 'talent'
-    }));
-    let validBeats = mappedBeats;
-    let contentSource: "ai" | "template-fallback" = "ai";
-    spark.opening_line = narrativeScriptObj.hook?.spoken;
-    spark.spoken_beats = narrativeScriptObj.chapters.map((c: any) => c.spoken);
-    spark.suggestedScript = narrativeScriptObj.fullSpokenScript;
-    spark.status = 'ready';
-    let parsedHook = narrativeScriptObj.hook?.spoken || spark.hook;
-    if (
-      parsedHook.toLowerCase().startsWith("hook:") ||
-      parsedHook.toLowerCase().includes("curiosity opener") ||
-      parsedHook.toLowerCase().includes("pattern interrupt") ||
-      parsedHook.length < 5
-    ) {
-      parsedHook = fallback.hook;
+
+    if (spark.narrativeScriptObj && spark.narrativeScriptObj.chapters) {
+      narrativeScriptObj = spark.narrativeScriptObj;
+    } else if ((spark as any).brief?.narrativeScript) {
+      narrativeScriptObj = (spark as any).brief.narrativeScript;
     }
 
-    let parsedOutline = asText(parsedJson?.scriptOutline, fallback.scriptOutline);
-    if (!parsedOutline.includes("00:") && !parsedOutline.includes("1.") && !parsedOutline.includes("Beat")) {
-      parsedOutline = fallback.scriptOutline;
+    if (!narrativeScriptObj) {
+      try {
+        narrativeScriptObj = await compileNarrativeScript({
+          brand,
+          targetDurationSec: effectiveDurationSec,
+          productionModeLabel: modeKey,
+          spark,
+          researchContext: resolvedResearch || spark.researchContext,
+          referenceChannel: (brand as any).referenceChannel || undefined,
+        });
+      } catch (scriptErr) {
+        throw scriptErr;
+      }
     }
 
-    const storyboardScenes: ProductionScene[] = validBeats.map((b: any, idx: number) => {
-      const rawAction = String(b.physicalAction || "").trim();
-      const action = rawAction && !isPlannerMetaText(rawAction)
-        ? rawAction
-        : repairPhysicalAction({
-            metaOrEmpty: "",
-            cameraDirection: b.cameraDirection,
-            environment: asText(parsedJson?.visualDirection, fallback.visualDirection),
-            sceneIndex: idx,
-            contentFormat,
-          });
-
-      return {
-        scene: idx + 1,
-        duration: `${Math.max(3, Math.round(effectiveDurationSec / validBeats.length))}s`,
-        shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
-        cameraDirection: b.cameraDirection || "Presenter centered",
-        transitions: "Continuous flow",
-        onScreenText: b.onScreenText,
-        pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
-        scriptSnippet: b.spokenLines,
-        spokenLines: b.spokenLines,
-        audio: b.audio || (modeKey === "express" ? "vo" : modeKey === "deep" ? "talent" : "talent"),
-        valueJob: b.valueJob,
-        subject: b.subject,
-        subjectType: b.subject,
-        physicalAction: action,
-        action,
-        visualDescription: action,
-        startState: b.startState,
-        endState: b.endState,
-        primaryChange: action,
-      };
-    });
-
-    const briefResult: ProductionBrief = {
-      title: asText(parsedJson?.title, spark.title),
+    const { sparkPatch, brief } = applyNarrativeScriptToSparkAndBrief(narrativeScriptObj, spark, {
       productionMode: modeKey,
       targetDurationSec: effectiveDurationSec,
-      hook: parsedHook,
-      scriptOutline: parsedOutline,
-      narrativeScript: narrativeScriptObj,
-      beats: validBeats,
-      storyboard: storyboardScenes,
-      spokenCta: asText(parsedJson?.spokenCta, fallback.spokenCta),
-      onScreenCta: asText(parsedJson?.onScreenCta, fallback.onScreenCta),
-      visualDirection: asText(parsedJson?.visualDirection, fallback.visualDirection),
-      caption: asText(parsedJson?.caption, fallback.caption),
-      platformRecommendation: asText(parsedJson?.platformRecommendation, fallback.platformRecommendation),
-      whyThisWorks: asText(parsedJson?.whyThisWorks, fallback.whyThisWorks),
-      researchContext: resolvedResearch || undefined,
-      sourceContent: spark.sourceContent || resolvedResearch?.sourceContent,
-      youtubeUrl: spark.youtubeUrl || resolvedResearch?.youtubeUrl,
-      contentSource,
-      brandFitScore: typeof parsedJson?.brandFitScore === "number" ? parsedJson.brandFitScore : sparkScore,
-      suggestedDuration: asText(parsedJson?.suggestedDuration, fallback.suggestedDuration),
-      offerCta: fallback.offerCta,
-    };
+      brandFitScore: sparkScore
+    });
 
+    Object.assign(spark, sparkPatch);
+
+    const storyboardScenes: import("../../domain/types").ProductionScene[] = brief.beats!.map((b, idx) => ({
+      scene: idx + 1,
+      duration: `${Math.max(3, Math.round(effectiveDurationSec / brief.beats!.length))}s`,
+      shotList: `${b.timecode} Scene ${idx + 1} (${b.valueJob}) [${(b.subject || "main").toUpperCase()}]`,
+      cameraDirection: b.cameraDirection || "Presenter centered",
+      transitions: "Continuous flow",
+      onScreenText: b.onScreenText,
+      pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
+      scriptSnippet: b.spokenLines,
+      spokenLines: b.spokenLines,
+      audio: b.audio || (modeKey === "express" ? "vo" : "talent"),
+      valueJob: b.valueJob,
+      subject: b.subject,
+      subjectType: b.subjectType,
+      physicalAction: b.physicalAction,
+      action: b.physicalAction,
+      visualDescription: b.physicalAction || "",
+      startState: b.startState,
+      endState: b.endState,
+      primaryChange: b.physicalAction || "",
+    }));
+
+    brief.storyboard = storyboardScenes;
+    brief.researchContext = resolvedResearch || undefined;
+    brief.sourceContent = spark.sourceContent || resolvedResearch?.sourceContent;
+    brief.youtubeUrl = spark.youtubeUrl || resolvedResearch?.youtubeUrl;
+    brief.offerCta = fallback.offerCta;
+
+    const briefResult = brief as import("../../domain/types").ProductionBrief;
+    
     try {
       briefResult.assetBible = planAssetBibleFromBrief(briefResult, {
         brand,

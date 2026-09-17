@@ -25,3 +25,7 @@ export async function listViralSparks(brandId: string): Promise<RepositoryResult
 export async function createViralSpark(values: Partial<ViralSparkRow>): Promise<RepositoryResult<ViralSparkRow>> {
   return insertRow("viral_sparks", values);
 }
+
+export async function updateViralSpark(id: string, values: Partial<ViralSparkRow>): Promise<RepositoryResult<ViralSparkRow>> {
+  return updateRow("viral_sparks", id, values);
+}
