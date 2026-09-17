@@ -4072,7 +4072,7 @@ export class ProductionAssetService {
         primaryChange: `${sceneToFix.primaryChange || sceneToFix.action || sceneToFix.visualDescription || ""} — apply: ${editNotes}`,
       };
 
-      const compiledStill = compileLiveStillPrompt({ lookLaw, scene: revisedScene,
+      const compiledStill = compileLiveStillPrompt({  scene: revisedScene,
         sceneIndexZeroBased: targetSceneIdx,
         aspectRatio: identityPack.aspectRatio,
         production,
@@ -4235,7 +4235,7 @@ export class ProductionAssetService {
         (revisedScene as any).physicalAction = (sceneToFix as any).physicalAction;
       }
 
-      const motionPrompt = compileLiveMotionPrompt({ lookLaw, mode,
+      const motionPrompt = compileLiveMotionPrompt({  mode,
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,

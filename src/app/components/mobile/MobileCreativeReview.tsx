@@ -1,3 +1,6 @@
+import { resolveProductionContentFormat } from "../../services/production/contentFormatDirectives";
+import { resolveLiveVisualGenre } from "../../services/production/visualGenreDirectives";
+import { VISUAL_GENRE_OPTIONS } from "../../domain/visualGenre";
 import { useState, useEffect, useMemo } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { InteractiveVideoPlayer, ThumbnailVariantCard } from "../MediaPreviewHelper";
@@ -60,12 +63,12 @@ function asText(value: unknown, fallback = ""): string {
 
 
 function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any, brief: any, brand: any }) {
-  const { resolveProductionContentFormat } = require("../../services/production/contentFormatDirectives");
+  
   const formatSettings = activeProd?.settingsSnapshot?.formatSettings || brief?.formatSettings || brand?.settings || {};
   let contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
   
-  const { resolveLiveVisualGenre } = require("../../services/production/visualGenreDirectives");
-  const { VISUAL_GENRE_OPTIONS } = require("../../domain/visualGenre");
+  
+  
   let genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
   let genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
 

@@ -40,6 +40,7 @@ import {
 } from "./shotDirectionSpec";
 
 export function compileLiveMotionPrompt(params: {
+  lookLaw?: ProductionLookLaw;
   mode: "express" | "standard" | "deep";
   aspectRatio: string;
   sceneIndex: number;

@@ -219,6 +219,7 @@ export function panelSpecFromLiveScene(
 }
 
 export function compileLiveStillPrompt(params: {
+  lookLaw?: ProductionLookLaw;
   scene: any;
   sceneIndexZeroBased: number;
   aspectRatio: string;

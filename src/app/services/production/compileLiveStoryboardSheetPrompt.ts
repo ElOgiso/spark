@@ -31,6 +31,7 @@ import { visualGenreOption } from "../../domain/visualGenre";
 export const LIVE_STORYBOARD_SHEET_MAX_PANELS = 16;
 
 export function compileLiveStoryboardSheetPrompt(params: {
+  lookLaw?: ProductionLookLaw;
   scenes: any[];
   aspectRatio: string;
   productionId?: string;
