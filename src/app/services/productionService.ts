@@ -136,6 +136,9 @@ export class ProductionService implements IProductionService {
       targetDurationSec: initialTargetDurationSec,
     });
 
+    const scriptToPersist = llmBrief.narrativeScript || (params.spark as any).narrativeScriptObj;
+    const isQualityOk = !llmBrief.lastError && (params.spark as any).status !== "draft";
+
     const polishedSpark: ViralSpark = {
       ...params.spark,
       title: llmBrief.title || params.spark.title,
@@ -145,15 +148,21 @@ export class ProductionService implements IProductionService {
       suggestedFormat: llmBrief.platformRecommendation || params.spark.suggestedFormat,
       suggestedProductionMode:
         (llmBrief.productionMode as string) || params.spark.suggestedProductionMode,
-      status: "ready",
+      status: isQualityOk ? "ready" : "draft",
+      lastError: llmBrief.lastError || (params.spark as any).lastError,
+      narrativeScriptObj: scriptToPersist,
+      suggestedScript: scriptToPersist?.fullSpokenScript || params.spark.suggestedScript,
+      spoken_beats: scriptToPersist?.chapters?.map((c: any) => c.spoken).filter(Boolean) || params.spark.spoken_beats,
+      opening_line: llmBrief.hook || scriptToPersist?.hook?.spoken || params.spark.opening_line,
+      targetDurationSec: initialTargetDurationSec,
     };
 
-    // Persist spark updates so refresh does not drop suggestedScript
-      if (params.brand?.id && polishedSpark.id) {
-        persistViralSparkUpdate(params.brand.id, polishedSpark.id, polishedSpark).catch(err => 
-          console.warn("[ProductionService] Failed to persist spark update:", err)
-        );
-      }
+    // Persist spark updates so refresh does not drop suggestedScript / evidence
+    if (params.brand?.id && polishedSpark.id) {
+      await persistViralSparkUpdate(params.brand.id, polishedSpark.id, polishedSpark).catch(err => 
+        console.warn("[ProductionService] Failed to persist spark update:", err)
+      );
+    }
 
       // Phase 2: Creative Director planning uses polished brief/spark — never raw meta hooks.
     const plan = createProductionPlan({
@@ -222,6 +231,8 @@ export class ProductionService implements IProductionService {
       formatSettings: { ...effectiveFormat, targetDurationSec },
       targetDurationSec,
       productionMode: resolvedMode,
+      narrativeScript: llmBrief.narrativeScript,
+      lastError: llmBrief.lastError || (params.spark as any).lastError,
     };
 
     const platformRec = brief.platformRecommendation || params.spark.platformFit || "YouTube Shorts";

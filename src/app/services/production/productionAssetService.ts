@@ -1222,9 +1222,8 @@ export class ProductionAssetService {
     const persistCurrentStage = async (stageName: string) => {
       if (productionWriteHalted({ productionId: production.id, brandId: brandIdForGuard, signal })) return;
       try {
-        const { persistProductionUpdate } = await import("../../backend/workspaceSync");
-        const stageBrief: ProductionBrief = {
-          ...brief,
+        const { persistProductionUpdate, mergeProductionBrief } = await import("../../backend/workspaceSync");
+        const stageBrief: ProductionBrief = mergeProductionBrief(brief, {
           storyboard: currentStoryboard.length > 0 ? currentStoryboard : brief.storyboard,
           storyboardGridUrl: realGridUrl,
           generationProgress: latestProgressSnapshot,
@@ -1240,7 +1239,7 @@ export class ProductionAssetService {
           audioUrl: realVoiceUrl,
           videoUrl: realVideoUrl,
           video_storage_path: extractSparkStoragePath(realVideoUrl) || production.videoStoragePath || brief.video_storage_path,
-        };
+        })!;
         await persistProductionUpdate(production.id, {
           brief: stageBrief,
           audioUrl: realVoiceUrl,

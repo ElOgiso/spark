@@ -186,6 +186,7 @@ export function buildSpecDrivenBrief(
     scriptOutline: existing?.scriptOutline || fromSpec.scriptOutline,
     beats: mergedBeats.length ? mergedBeats : fromSpec.beats,
     storyboard: mergedStoryboard,
+    narrativeScript: existing?.narrativeScript || fromSpec.narrativeScript,
   };
 }
 

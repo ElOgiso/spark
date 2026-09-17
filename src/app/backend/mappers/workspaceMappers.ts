@@ -25,6 +25,7 @@ import {
   extractSparkStoragePath,
   sanitizePersistedMediaUrl,
 } from "../../services/production/productionAssetService";
+export { mergeProductionBrief, isFullNarrativeScript } from "../../services/production/os/mergeProductionBrief";
 
 // The DB `memory_items.category` CHECK constraint allows ONLY these snake_case values. The app's
 // MemoryItem category labels map 1:1 to them. (The MemoryCategory enum is a separate/legacy
@@ -118,6 +119,29 @@ export function viralSparkRowToDomain(row: ViralSparkRow): ViralSpark {
     riskVal = rawRisk;
   }
 
+  const narrativeScript = (evidence.narrativeScript as any) || (evidence.narrativeScriptObj as any) || undefined;
+  const suggestedScript =
+    typeof evidence.suggestedScript === "string" && evidence.suggestedScript
+      ? evidence.suggestedScript
+      : (narrativeScript?.fullSpokenScript || undefined);
+  const spoken_beats = Array.isArray(evidence.spoken_beats)
+    ? (evidence.spoken_beats as string[])
+    : Array.isArray(narrativeScript?.chapters)
+    ? narrativeScript.chapters.map((c: any) => c.spoken).filter(Boolean)
+    : undefined;
+  const opening_line =
+    typeof evidence.opening_line === "string" && evidence.opening_line
+      ? evidence.opening_line
+      : (narrativeScript?.hook?.spoken || undefined);
+  const targetDurationSec =
+    typeof evidence.targetDurationSec === "number" && evidence.targetDurationSec > 0
+      ? evidence.targetDurationSec
+      : narrativeScript?.targetDurationSec;
+
+  const rawStatus = evidence.status || row.status;
+  const status: "ready" | "draft" | undefined =
+    rawStatus === "ready" ? "ready" : rawStatus === "draft" ? "draft" : undefined;
+
   return {
     id: row.id,
     title: row.title,
@@ -137,17 +161,65 @@ export function viralSparkRowToDomain(row: ViralSparkRow): ViralSpark {
     riskLevel: riskVal,
     suggestedFormat: String(evidence.suggestedFormat ?? "Short-form (45–60 sec)"),
     suggestedProductionMode: String(evidence.suggestedProductionMode ?? "Autonomous Draft"),
-    status: evidence.status === "ready" ? "ready" : evidence.status === "draft" ? "draft" : undefined,
+    status,
     researchContext: (evidence.researchContext as ViralSpark["researchContext"]) || undefined,
     createdAt: row.created_at || undefined,
     firstSeenAt: typeof evidence.firstSeenAt === "string" ? evidence.firstSeenAt : undefined,
+    suggestedScript,
+    narrativeScriptObj: narrativeScript,
+    spoken_beats,
+    opening_line,
+    targetDurationSec,
+    genericityScore: typeof evidence.genericityScore === "number" ? evidence.genericityScore : undefined,
+    originalityScore: typeof evidence.originalityScore === "number" ? evidence.originalityScore : undefined,
+    referenceContentOverlapScore: typeof evidence.referenceContentOverlapScore === "number" ? evidence.referenceContentOverlapScore : undefined,
+    lastError: typeof evidence.lastError === "string" ? evidence.lastError : undefined,
   };
 }
 
 export function domainViralSparkToInsert(
   brandId: string,
   spark: ViralSpark,
+  existingEvidence?: Record<string, unknown>
 ): Partial<ViralSparkRow> {
+  const script = spark.narrativeScriptObj || (spark as any).narrativeScript;
+  const suggestedScript = spark.suggestedScript || script?.fullSpokenScript;
+  const spoken_beats = spark.spoken_beats || (script?.chapters ? script.chapters.map((c: any) => c.spoken).filter(Boolean) : undefined);
+  const opening_line = spark.opening_line || script?.hook?.spoken || spark.hook;
+  const targetDurationSec = spark.targetDurationSec || script?.targetDurationSec;
+
+  const mergedEvidence: Record<string, unknown> = {
+    ...(existingEvidence || {}),
+    platforms: spark.platformFit,
+    hook: spark.hook,
+    views: spark.views,
+    velocity: spark.velocity,
+    platformFit: spark.platformFit,
+    brandFitScore: spark.brandFitScore,
+    category: spark.category,
+    timeWindow: spark.timeWindow,
+    productionTime: spark.productionTime,
+    angle: spark.angle,
+    audienceEmotion: spark.audienceEmotion,
+    expectedRetention: spark.expectedRetention,
+    difficulty: spark.difficulty,
+    suggestedFormat: spark.suggestedFormat,
+    suggestedProductionMode: spark.suggestedProductionMode,
+    status: spark.status || "draft",
+    researchContext: spark.researchContext,
+    firstSeenAt: spark.firstSeenAt,
+    createdAt: spark.createdAt || spark.firstSeenAt,
+    ...(script ? { narrativeScript: script } : {}),
+    ...(suggestedScript ? { suggestedScript } : {}),
+    ...(spoken_beats ? { spoken_beats } : {}),
+    ...(opening_line ? { opening_line } : {}),
+    ...(targetDurationSec ? { targetDurationSec } : {}),
+    ...(spark.genericityScore !== undefined ? { genericityScore: spark.genericityScore } : {}),
+    ...(spark.originalityScore !== undefined ? { originalityScore: spark.originalityScore } : {}),
+    ...(spark.referenceContentOverlapScore !== undefined ? { referenceContentOverlapScore: spark.referenceContentOverlapScore } : {}),
+    ...(spark.lastError ? { lastError: spark.lastError } : {}),
+  };
+
   return {
     brand_id: brandId,
     title: spark.title,
@@ -159,28 +231,8 @@ export function domainViralSparkToInsert(
     confidence: String(spark.brandFitScore),
     risk: spark.riskLevel,
     expected_outcome: spark.views,
-    evidence: {
-      platforms: spark.platformFit,
-      hook: spark.hook,
-      views: spark.views,
-      velocity: spark.velocity,
-      platformFit: spark.platformFit,
-      brandFitScore: spark.brandFitScore,
-      category: spark.category,
-      timeWindow: spark.timeWindow,
-      productionTime: spark.productionTime,
-      angle: spark.angle,
-      audienceEmotion: spark.audienceEmotion,
-      expectedRetention: spark.expectedRetention,
-      difficulty: spark.difficulty,
-      suggestedFormat: spark.suggestedFormat,
-      suggestedProductionMode: spark.suggestedProductionMode,
-      status: spark.status || "draft",
-      researchContext: spark.researchContext,
-      firstSeenAt: spark.firstSeenAt,
-      createdAt: spark.createdAt || spark.firstSeenAt,
-    } as Json,
-    status: "new",
+    evidence: mergedEvidence as Json,
+    status: spark.status === "ready" ? "ready" : "draft",
   };
 }
 
@@ -318,17 +370,25 @@ export function productionRowToDomain(row: ProductionRow): Production {
     wardrobeSheets,
   };
 
+  const scriptCandidate =
+    (briefObj.narrativeScript as any) ||
+    (brief.narrativeScript as any) ||
+    (briefObj as any)?.narrativeScriptObj ||
+    (brief as any)?.narrativeScriptObj;
+
+  const baseBriefObj = Object.keys(briefObj).length > 0 ? briefObj : brief;
   const mergedBrief: import("../../domain/types").ProductionBrief | undefined =
-    briefObj.title || briefObj.hook || Object.keys(briefObj).length > 0
+    baseBriefObj.title || baseBriefObj.hook || Object.keys(baseBriefObj).length > 0
       ? {
-          ...(briefObj as any),
-          audioUrl: audioUrl || (briefObj as any).audioUrl,
-          videoUrl: videoUrl || (briefObj as any).videoUrl,
-          storyboardGridUrl: storyboardGridUrl || (briefObj as any).storyboardGridUrl,
-          generationProgress: generationProgress || (briefObj as any).generationProgress,
-          lastError: lastError || (briefObj as any).lastError,
+          ...(baseBriefObj as any),
+          audioUrl: audioUrl || (baseBriefObj as any).audioUrl,
+          videoUrl: videoUrl || (baseBriefObj as any).videoUrl,
+          storyboardGridUrl: storyboardGridUrl || (baseBriefObj as any).storyboardGridUrl,
+          generationProgress: generationProgress || (baseBriefObj as any).generationProgress,
+          lastError: lastError || (baseBriefObj as any).lastError,
+          narrativeScript: scriptCandidate || (baseBriefObj as any).narrativeScript,
           generatedAssets: {
-            ...((briefObj as any).generatedAssets || {}),
+            ...((baseBriefObj as any).generatedAssets || {}),
             ...resolvedGeneratedAssets,
           },
         }
@@ -435,7 +495,8 @@ export function domainProductionToInsert(
       generationProgress: genProg,
       video_storage_path: videoStoragePath,
       briefObject,
-    } as Json,
+      ...(production.brief?.narrativeScript ? { narrativeScript: production.brief.narrativeScript } : {}),
+    } as unknown as Json,
     assets: {
       ...((production.brief?.generatedAssets as any) || {}),
       video_url: videoUrl || null,

@@ -91,12 +91,14 @@ import {
   domainReviewToInsert,
   domainViralSparkToInsert,
   memoryRowToDomain,
+  mergeProductionBrief,
   normalizeMemoryCategoryForDb,
   productionRowToDomain,
   publishJobRowToDomain,
   reviewRowToDomain,
   viralSparkRowToDomain,
 } from "./mappers/workspaceMappers";
+export { mergeProductionBrief } from "./mappers/workspaceMappers";
 import { ExecutiveContext, createEmptyExecutiveContext } from "../state/ExecutiveContext";
 
 export type WorkspaceSnapshot = {
@@ -574,8 +576,19 @@ function attachProductionStorageIdentity(row: ProductionRow, production: Product
 }
 
 export async function persistViralSparkUpdate(brandId: string, id: string, spark: ViralSpark) {
-  if (!isSupabaseConfigured()) return null;
-  const result = await updateViralSpark(id, domainViralSparkToInsert(brandId, spark));
+  if (!isSupabaseConfigured() || !isUuid(id)) return null;
+  const supabase = getSupabaseClient();
+  let existingEvidence: Record<string, unknown> | undefined;
+  if (supabase) {
+    const { data: existing } = await (supabase.from("viral_sparks") as any)
+      .select("evidence")
+      .eq("id", id)
+      .maybeSingle();
+    if (existing?.evidence && typeof existing.evidence === "object" && !Array.isArray(existing.evidence)) {
+      existingEvidence = existing.evidence;
+    }
+  }
+  const result = await updateViralSpark(id, domainViralSparkToInsert(brandId, spark, existingEvidence));
   return result.data ? viralSparkRowToDomain(result.data) : null;
 }
 
@@ -608,7 +621,13 @@ export async function persistProductionCreate(brandId: string, production: Produ
     console.error("[workspaceSync] persistProductionCreate failed:", result.error);
     return null;
   }
-  return result.data ? productionRowToDomain(result.data) : null;
+  const domainProd = result.data ? productionRowToDomain(result.data) : null;
+  if (domainProd && production.brief?.narrativeScript && !domainProd.brief?.narrativeScript) {
+    if (domainProd.brief) {
+      domainProd.brief.narrativeScript = production.brief.narrativeScript;
+    }
+  }
+  return domainProd;
 }
 
 export async function persistProductionUpdate(id: string, production: Partial<Production>) {
@@ -731,9 +750,14 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     voiceoverUrl: audioUrl,
   };
 
-  const briefObject = (production as any).brief
+  const mergedBriefCandidate = mergeProductionBrief(
+    existingBriefObj.title || existingBriefObj.hook || existingBrief.title || existingBrief.hook ? (existingBriefObj.title ? existingBriefObj : existingBrief) : existingBriefObj,
+    (production as any).brief
+  );
+
+  const briefObject = mergedBriefCandidate
     ? {
-        ...(production as any).brief,
+        ...mergedBriefCandidate,
         audioUrl,
         videoUrl,
         playablePreviewUrl,
@@ -741,7 +765,7 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
         generationProgress: genProg,
         video_storage_path: videoStoragePath,
         generatedAssets: sanitizedGeneratedAssets,
-        storyboard: sanitizeScenes((production as any).brief?.storyboard),
+        storyboard: sanitizeScenes(mergedBriefCandidate.storyboard),
       }
     : existingBriefObj;
 
@@ -758,6 +782,7 @@ export async function persistProductionUpdate(id: string, production: Partial<Pr
     generationProgress: genProg,
     video_storage_path: videoStoragePath,
     briefObject,
+    ...(briefObject?.narrativeScript ? { narrativeScript: briefObject.narrativeScript } : {}),
   };
 
   patch.assets = {
@@ -829,7 +854,9 @@ export async function persistReviewUpdate(id: string, item: Partial<ReviewItem>)
     return;
   }
 
-  if (item.brief) reasoningPatch.brief = item.brief;
+  if (item.brief) {
+    reasoningPatch.brief = mergeProductionBrief(existingReasoning.brief as any, item.brief);
+  }
   if (item.videoUrl) {
     const persistableReviewVideo = sanitizePersistedMediaUrl(item.videoUrl, existingReasoning.videoUrl as string | undefined);
     if (persistableReviewVideo) reasoningPatch.videoUrl = persistableReviewVideo;

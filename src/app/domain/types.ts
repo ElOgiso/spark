@@ -179,6 +179,7 @@ export interface ViralSpark {
   referenceContentOverlapScore?: number;
   lastError?: string;
   mustNotCopy?: string[];
+  targetDurationSec?: number;
 }
 
 export type SceneStatus = "pending" | "generating" | "ready" | "needs_edit" | "approved" | "failed";

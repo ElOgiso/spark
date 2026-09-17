@@ -45,6 +45,7 @@ import {
   persistAccountToken,
   persistExecutiveMessage,
   persistMemoryCreate,
+  mergeProductionBrief,
   persistProductionCreate,
   persistProductionUpdate,
   persistReviewCreate,
@@ -2073,6 +2074,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...enrichedProd,
             id: prodId,
             sparkId: spark.id,
+            brief: mergeProductionBrief(enrichedProd.brief, enrichedBrief),
             mode: resolvedMode as any,
             formatSettings: effectiveFormat,
             targetDurationSec: effectiveDuration,
@@ -2084,6 +2086,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...enrichedReview,
             id: reviewId,
             productionId: prodId,
+            brief: mergeProductionBrief(enrichedReview.brief, enrichedBrief),
           };
 
           const brandId = getBrandWorkspaceId();
@@ -2099,8 +2102,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               if (dbProd?.id && dbProd.id !== prodId) {
                 const oldProdId = prodId;
                 effectiveProdId = dbProd.id;
-                stableEnrichedProd = { ...stableEnrichedProd, ...dbProd, id: dbProd.id, sparkId: spark.id };
-                stableEnrichedReview = { ...stableEnrichedReview, productionId: dbProd.id };
+                const preservedBrief = mergeProductionBrief(stableEnrichedProd.brief, dbProd.brief);
+                stableEnrichedProd = { ...stableEnrichedProd, ...dbProd, id: dbProd.id, sparkId: spark.id, brief: preservedBrief };
+                stableEnrichedReview = { ...stableEnrichedReview, productionId: dbProd.id, brief: preservedBrief };
 
                 setState((prev: any) => ({
                   ...prev,
@@ -2331,22 +2335,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                           }))
                         : p.scenes;
 
-                      const mergedBrief = p.brief
-                        ? {
-                            ...p.brief,
-                            storyboard: partial?.storyboard || p.brief.storyboard,
-                            audioUrl: partial?.voiceUrl || p.brief.audioUrl,
-                            videoUrl: partial?.videoUrl || p.brief.videoUrl,
-                            generatedAssets: {
-                              ...p.brief.generatedAssets,
-                              generationProgress: progress,
-                              generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief.generatedAssets?.generatedFrames,
-                              thumbnails: partial?.thumbnails || p.brief.generatedAssets?.thumbnails,
-                              voiceoverUrl: partial?.voiceUrl || p.brief.generatedAssets?.voiceoverUrl,
-                              generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief.generatedAssets?.generatedVideos,
-                            },
-                          }
-                        : p.brief;
+                      const mergedBrief = mergeProductionBrief(p.brief, {
+                        storyboard: partial?.storyboard || p.brief?.storyboard,
+                        audioUrl: partial?.voiceUrl || p.brief?.audioUrl,
+                        videoUrl: partial?.videoUrl || p.brief?.videoUrl,
+                        generationProgress: progress,
+                        generatedAssets: {
+                          ...p.brief?.generatedAssets,
+                          generationProgress: progress,
+                          generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief?.generatedAssets?.generatedFrames,
+                          thumbnails: partial?.thumbnails || p.brief?.generatedAssets?.thumbnails,
+                          voiceoverUrl: partial?.voiceUrl || p.brief?.generatedAssets?.voiceoverUrl,
+                          generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief?.generatedAssets?.generatedVideos,
+                        },
+                      });
 
                       return {
                         ...p,
@@ -2361,22 +2363,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                       if (r.productionId !== effectiveProdId && r.id !== effectiveReviewId) return r;
                       const partial = progress.partialAssets;
                       const currentBrief = r.brief || enrichedBrief;
-                      const mergedBrief = currentBrief
-                        ? {
-                            ...currentBrief,
-                            storyboard: partial?.storyboard || currentBrief.storyboard,
-                            audioUrl: partial?.voiceUrl || currentBrief.audioUrl,
-                            videoUrl: partial?.videoUrl || currentBrief.videoUrl,
-                            generatedAssets: {
-                              ...currentBrief.generatedAssets,
-                              generationProgress: progress,
-                              generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || currentBrief.generatedAssets?.generatedFrames,
-                              thumbnails: partial?.thumbnails || currentBrief.generatedAssets?.thumbnails,
-                              voiceoverUrl: partial?.voiceUrl || currentBrief.generatedAssets?.voiceoverUrl,
-                              generatedVideos: partial?.videoUrl ? [partial.videoUrl] : currentBrief.generatedAssets?.generatedVideos,
-                            },
-                          }
-                        : currentBrief;
+                      const mergedBrief = mergeProductionBrief(currentBrief, {
+                        storyboard: partial?.storyboard || currentBrief?.storyboard,
+                        audioUrl: partial?.voiceUrl || currentBrief?.audioUrl,
+                        videoUrl: partial?.videoUrl || currentBrief?.videoUrl,
+                        generationProgress: progress,
+                        generatedAssets: {
+                          ...currentBrief?.generatedAssets,
+                          generationProgress: progress,
+                          generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || currentBrief?.generatedAssets?.generatedFrames,
+                          thumbnails: partial?.thumbnails || currentBrief?.generatedAssets?.thumbnails,
+                          voiceoverUrl: partial?.voiceUrl || currentBrief?.generatedAssets?.voiceoverUrl,
+                          generatedVideos: partial?.videoUrl ? [partial.videoUrl] : currentBrief?.generatedAssets?.generatedVideos,
+                        },
+                      });
 
                       return {
                         ...r,
@@ -2415,7 +2415,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || p.audioUrl,
                         scenes: updatedProd.scenes || p.scenes,
                         productionScenes: updatedProd.productionScenes || p.productionScenes,
-                        brief: updatedBrief,
+                        brief: mergeProductionBrief(p.brief, updatedBrief),
                         isGeneratingAssets: false,
                       }
                     : p
@@ -2424,7 +2424,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   r.productionId === effectiveProdId || r.id === effectiveReviewId
                     ? {
                         ...r,
-                        brief: updatedBrief,
+                        brief: mergeProductionBrief(r.brief || enrichedBrief, updatedBrief),
                         videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || r.videoUrl,
                         audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl || r.audioUrl,
                         openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
@@ -2439,13 +2439,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   ...updatedProd,
                   videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
                   audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
-                  brief: updatedBrief,
+                  brief: mergeProductionBrief(stableEnrichedProd.brief, updatedBrief),
                 });
                 if (effectiveReviewId) {
                   void persistReviewUpdate(effectiveReviewId, {
                     videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
                     audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
-                    brief: updatedBrief,
+                    brief: mergeProductionBrief(stableEnrichedReview.brief || enrichedBrief, updatedBrief),
                   });
                 }
               }
@@ -3021,22 +3021,20 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   }))
                 : p.scenes;
 
-              const mergedBrief = p.brief
-                ? {
-                    ...p.brief,
-                    storyboard: partial?.storyboard || p.brief.storyboard,
-                    audioUrl: partial?.voiceUrl || p.brief.audioUrl,
-                    videoUrl: partial?.videoUrl || p.brief.videoUrl,
-                    generatedAssets: {
-                      ...p.brief.generatedAssets,
-                      generationProgress: progress,
-                      generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief.generatedAssets?.generatedFrames,
-                      thumbnails: partial?.thumbnails || p.brief.generatedAssets?.thumbnails,
-                      voiceoverUrl: partial?.voiceUrl || p.brief.generatedAssets?.voiceoverUrl,
-                      generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief.generatedAssets?.generatedVideos,
-                    },
-                  }
-                : p.brief;
+              const mergedBrief = mergeProductionBrief(p.brief, {
+                storyboard: partial?.storyboard || p.brief?.storyboard,
+                audioUrl: partial?.voiceUrl || p.brief?.audioUrl,
+                videoUrl: partial?.videoUrl || p.brief?.videoUrl,
+                generationProgress: progress,
+                generatedAssets: {
+                  ...p.brief?.generatedAssets,
+                  generationProgress: progress,
+                  generatedFrames: partial?.storyboard?.map((s) => s.image).filter(Boolean) as string[] || p.brief?.generatedAssets?.generatedFrames,
+                  thumbnails: partial?.thumbnails || p.brief?.generatedAssets?.thumbnails,
+                  voiceoverUrl: partial?.voiceUrl || p.brief?.generatedAssets?.voiceoverUrl,
+                  generatedVideos: partial?.videoUrl ? [partial.videoUrl] : p.brief?.generatedAssets?.generatedVideos,
+                },
+              });
 
               return {
                 ...p,
@@ -3050,11 +3048,11 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             reviewItems: prev.reviewItems.map((r: any) => {
               if (r.productionId !== productionId || !r.brief) return r;
               const partial = progress.partialAssets;
-              const mergedBrief = {
-                ...r.brief,
+              const mergedBrief = mergeProductionBrief(r.brief, {
                 storyboard: partial?.storyboard || r.brief.storyboard,
                 audioUrl: partial?.voiceUrl || r.brief.audioUrl,
                 videoUrl: partial?.videoUrl || r.brief.videoUrl,
+                generationProgress: progress,
                 generatedAssets: {
                   ...r.brief.generatedAssets,
                   generationProgress: progress,
@@ -3063,7 +3061,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   voiceoverUrl: partial?.voiceUrl || r.brief.generatedAssets?.voiceoverUrl,
                   generatedVideos: partial?.videoUrl ? [partial.videoUrl] : r.brief.generatedAssets?.generatedVideos,
                 },
-              };
+              });
               return {
                 ...r,
                 openingMoment: partial?.storyboard?.[0]?.visualDescription || r.openingMoment,
@@ -3099,6 +3097,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 ...updatedProd,
                 id: productionId,
                 productionScenes: updatedProd.productionScenes || p.productionScenes,
+                brief: mergeProductionBrief(p.brief, updatedBrief),
                 isGeneratingAssets: false,
               }
             : p
@@ -3107,7 +3106,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           r.productionId === productionId
             ? {
                 ...r,
-                brief: updatedBrief,
+                brief: mergeProductionBrief(r.brief, updatedBrief),
                 videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl || r.videoUrl,
                 openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || r.openingMoment,
               }
@@ -3118,7 +3117,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const bId = getBrandWorkspaceId();
       if (isSupabaseConfigured() && bId) {
         void persistProductionUpdate(productionId, {
-          brief: updatedBrief,
+          brief: mergeProductionBrief(prod?.brief, updatedBrief),
           audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
           videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
           status: updatedProd.status,
@@ -3129,7 +3128,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const revItem = state.reviewItems?.find((r: any) => r.productionId === productionId);
         if (revItem?.id) {
           void persistReviewUpdate(revItem.id, {
-            brief: updatedBrief,
+            brief: mergeProductionBrief(revItem?.brief || prod?.brief, updatedBrief),
             audioUrl: updatedProd.audioUrl || updatedBrief.audioUrl,
             videoUrl: updatedProd.videoUrl || updatedBrief.videoUrl,
             openingMoment: updatedBrief.storyboard?.[0]?.visualDescription || revItem.openingMoment,

@@ -556,6 +556,7 @@ export function productionSpecToBrief(spec: ProductionSpec, existing?: Productio
     generationProgress: existing?.generationProgress,
     offerCta: existing?.offerCta,
     generatedAssets: existing?.generatedAssets,
+    narrativeScript: existing?.narrativeScript,
   };
 }
 
