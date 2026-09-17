@@ -26,6 +26,8 @@ import { getStoredTheme, applyTheme, THEME_OPTIONS, ThemeMode } from "../theme";
 import { ModelRouter } from "../services/runtime/modelRouter";
 import type { AIRoutingCategory, AIProviderId, AIModelRoutingConfig, AIModelSelectionConfig } from "../domain/types";
 import { getModelsForProviderAndCapability, getModelLabel, CATALOG_VERSION } from "../services/runtime/modelCatalog";
+import { probeServerProviders, isServerProviderAvailable } from "../services/runtime/serverProviderProbe";
+import { resolveProviderKey } from "../services/runtime/AIProviderOrchestrator";
 import {
   ArrowLeft,
   Zap,
@@ -557,6 +559,17 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const [aiModelSelectionConfig, setAiModelSelectionConfig] = useState<AIModelSelectionConfig>(() =>
     ModelRouter.getUserModelSelectionConfig()
   );
+  const [, setServerProbeEpoch] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    probeServerProviders().then(() => {
+      if (active) setServerProbeEpoch((e) => e + 1);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleUpdateAIRouting = (category: AIRoutingCategory, provider: AIProviderId) => {
     const updated = ModelRouter.setUserRoutingConfig({ [category]: provider });
@@ -661,6 +674,18 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                               {categoryKey === "voice" && (
                                 <option value="elevenlabs">ElevenLabs</option>
                               )}
+                              {categoryKey === "storyboardImages" && (
+                                <option value="higgsfield">Higgsfield Soul</option>
+                              )}
+                              {categoryKey === "videoGeneration" && (
+                                <>
+                                  <option value="kling">Kling</option>
+                                  <option value="seedance">Seedance Ark</option>
+                                  <option value="runway">Runway</option>
+                                  <option value="luma">Luma</option>
+                                  <option value="higgsfield">Higgsfield</option>
+                                </>
+                              )}
                             </select>
 
                             {/* Selector 2: Specific Model */}
@@ -691,7 +716,24 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                           {configuredProvider === "auto" ? (
                             <span>Best Available chooses provider & model (currently {effectiveProvider.toUpperCase()} · {effectiveLabel})</span>
                           ) : (
-                            <span>Uses {effectiveLabel || effectiveModelId}</span>
+                            <span className="flex items-center gap-2">
+                              <span>Uses {effectiveLabel || effectiveModelId}</span>
+                              {configuredProvider === "higgsfield" && (
+                                <span
+                                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                                    isServerProviderAvailable("higgsfield") ||
+                                    Boolean(resolveProviderKey("higgsfield", spark?.aiSettings?.customApiKeys))
+                                      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                                      : "text-muted-foreground bg-white/5 border border-white/10"
+                                  }`}
+                                >
+                                  {isServerProviderAvailable("higgsfield") ||
+                                  Boolean(resolveProviderKey("higgsfield", spark?.aiSettings?.customApiKeys))
+                                    ? "Configured"
+                                    : "Not configured"}
+                                </span>
+                              )}
+                            </span>
                           )}
                         </div>
                       </div>

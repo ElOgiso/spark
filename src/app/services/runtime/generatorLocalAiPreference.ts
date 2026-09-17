@@ -26,6 +26,7 @@ export const IMAGE_AI_PROVIDER_OPTIONS: Array<{
   { id: "gemini", label: "Google Imagen / Gemini" },
   { id: "openai", label: "OpenAI GPT Image" },
   { id: "grok", label: "xAI Grok Imagine" },
+  { id: "higgsfield", label: "Higgsfield Soul" },
 ];
 
 const STORAGE_PREFIX = "spark.generatorLocalAiPref.v1";

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowLeft, Sparkles, Check, ChevronRight, RotateCcw, X, Info, ShieldCheck } from "lucide-react";
 import { ModelRouter } from "../../services/runtime/modelRouter";
 import { getModelsForProviderAndCapability, getModelLabel } from "../../services/runtime/modelCatalog";
@@ -6,6 +6,8 @@ import type { AIRoutingCategory, AIProviderId } from "../../domain/types";
 import { useSpark } from "../../state/SparkContext";
 import { getProviderLogo } from "./AIProviderLogos";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
+import { probeServerProviders, isServerProviderAvailable } from "../../services/runtime/serverProviderProbe";
+import { resolveProviderKey } from "../../services/runtime/AIProviderOrchestrator";
 
 interface AIPreferencesPanelProps {
   onNavigate: (path: string) => void;
@@ -165,6 +167,21 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
   });
 
   const [activeTaskModal, setActiveTaskModal] = useState<TaskDefinition | null>(null);
+  const [, setServerProbeEpoch] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    probeServerProviders().then(() => {
+      if (active) setServerProbeEpoch((e) => e + 1);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const isHiggsfieldConfigured =
+    isServerProviderAvailable("higgsfield") ||
+    Boolean(resolveProviderKey("higgsfield", aiSettings?.customApiKeys));
 
   const handleUpdateProvider = (categoryKey: AIRoutingCategory, providerId: AIProviderId | "auto") => {
     const updatedRouting = ModelRouter.setUserRoutingConfig({ [categoryKey]: providerId });
@@ -189,7 +206,18 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
         models: ModelRouter.getUserModelSelectionConfig(),
       });
     }
-    setActiveTaskModal(null);
+  };
+
+  const handleUpdateModel = (categoryKey: AIRoutingCategory, modelId: string) => {
+    const updatedModels = ModelRouter.setUserModelSelectionConfig({ [categoryKey]: modelId });
+    setAiModelSelectionConfig(updatedModels as any);
+
+    if (typeof updateAISettings === "function") {
+      updateAISettings({
+        routing: ModelRouter.getUserRoutingConfig(),
+        models: updatedModels,
+      });
+    }
   };
 
   const handleResetAllToAuto = () => {
@@ -352,7 +380,14 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground truncate">
-                        {task.desc}
+                        {!isAuto && effectiveLabel ? (
+                          <>
+                            <span>{task.desc}</span>
+                            <span className="text-purple-300 font-mono ml-1.5">· {effectiveLabel}</span>
+                          </>
+                        ) : (
+                          task.desc
+                        )}
                       </p>
                     </div>
                   </div>
@@ -376,6 +411,17 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
                           configuredProvider.toUpperCase()
                         )}
                       </span>
+                      {activeProviderId === "higgsfield" && (
+                        <span
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                            isHiggsfieldConfigured
+                              ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                              : "text-muted-foreground bg-white/5 border border-white/10"
+                          }`}
+                        >
+                          {isHiggsfieldConfigured ? "Configured" : "Not configured"}
+                        </span>
+                      )}
                     </div>
 
                     <button className="px-3 py-1.5 rounded-xl bg-white/5 group-hover:bg-purple-600 group-hover:text-white border border-white/10 group-hover:border-purple-500 text-xs font-semibold text-muted-foreground transition-all flex items-center gap-1">
@@ -452,7 +498,20 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
                           {getProviderLogo(prov.logoId, 26)}
                         </div>
                         <div className="space-y-0.5 min-w-0">
-                          <div className="text-sm font-semibold text-white truncate">{prov.name}</div>
+                          <div className="text-sm font-semibold text-white truncate flex items-center gap-2">
+                            <span>{prov.name}</span>
+                            {prov.id === "higgsfield" && (
+                              <span
+                                className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border ${
+                                  isHiggsfieldConfigured
+                                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                                    : "text-muted-foreground bg-white/5 border border-white/10"
+                                }`}
+                              >
+                                {isHiggsfieldConfigured ? "Configured" : "Not configured"}
+                              </span>
+                            )}
+                          </div>
                           {prov.desc && <div className="text-xs text-muted-foreground truncate">{prov.desc}</div>}
                         </div>
                       </div>
@@ -469,6 +528,47 @@ export function AIPreferencesPanel({ onNavigate }: AIPreferencesPanelProps) {
                 })}
               </div>
             </div>
+
+            {/* Model Selection for Active Modal Provider */}
+            {(() => {
+              const categoryKey = activeTaskModal.key;
+              const currentProvider = aiRoutingConfig[categoryKey] || "auto";
+              if (currentProvider === "auto") return null;
+
+              const capability = ModelRouter.mapCategoryToCapability(categoryKey);
+              const models = getModelsForProviderAndCapability(currentProvider as AIProviderId, capability);
+              if (!models || models.length === 0) return null;
+
+              const selectedModel = aiModelSelectionConfig[categoryKey] || "";
+
+              return (
+                <div className="space-y-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                      Model Selection
+                    </label>
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      {models.length} model{models.length > 1 ? "s" : ""} available
+                    </span>
+                  </div>
+                  <select
+                    aria-label={`Model selection for ${activeTaskModal.name}`}
+                    value={selectedModel}
+                    onChange={(e) => handleUpdateModel(categoryKey, e.target.value)}
+                    className="w-full bg-[#0E131F] border border-white/15 text-xs text-foreground font-semibold px-3 py-2.5 rounded-xl outline-none focus:border-purple-500 cursor-pointer"
+                  >
+                    <option value="" className="bg-[#0E131F] text-white">
+                      Recommended default
+                    </option>
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id} className="bg-[#0E131F] text-white">
+                        {m.label}{m.recommended ? " ★" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
 
             {/* Modal Actions */}
             <div className="pt-2">

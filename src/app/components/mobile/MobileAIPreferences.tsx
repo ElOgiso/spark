@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { ModelRouter } from "../../services/runtime/modelRouter";
 import type { AIProviderId, AICapabilityType, AIRoutingCategory } from "../../domain/types";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { MODEL_CATALOG, getModelsForProviderAndCapability, getModelLabel } from "../../services/runtime/modelCatalog";
 import { PROVIDER_VIDEO_CAPABILITIES } from "../../services/runtime/providerCapabilities";
+import { probeServerProviders, isServerProviderAvailable } from "../../services/runtime/serverProviderProbe";
+import { resolveProviderKey } from "../../services/runtime/AIProviderOrchestrator";
 import {
   Sparkles,
   ChevronRight,
@@ -96,6 +98,21 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
 
   const customCount = Object.values(currentRouting).filter((p) => p && p !== "auto").length;
   const isMasterAuto = customCount === 0;
+  const [, setServerProbeEpoch] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    probeServerProviders().then(() => {
+      if (active) setServerProbeEpoch((e) => e + 1);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const isHiggsfieldConfigured =
+    isServerProviderAvailable("higgsfield") ||
+    Boolean(resolveProviderKey("higgsfield", aiSettings?.customApiKeys));
 
   const handleSetMasterAuto = async () => {
     const autoRouting = ModelRouter.getDefaultRoutingConfig();
@@ -308,7 +325,7 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
           const matchingModels = getModelsForProviderAndCapability(cat.provider, capability);
           if (matchingModels.length > 0) {
             const recommended = matchingModels.find((m) => m.recommended) || matchingModels[0];
-            const currentSelectedModel = (currentModels as any)[capability];
+            const currentSelectedModel = (currentModels as any)[selectedTaskKey] || (currentModels as any)[capability];
             const activeLabel = currentSelectedModel
               ? getModelLabel(cat.provider, currentSelectedModel)
               : recommended?.label || cat.displayName;
@@ -386,8 +403,19 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
                             {getProviderLogo(opt.logoId, 26)}
                           </div>
                           <div className="min-w-0 space-y-0.5">
-                            <span className="text-xs font-semibold text-foreground block truncate">
-                              {opt.name}
+                            <span className="text-xs font-semibold text-foreground flex items-center gap-2 truncate">
+                              <span>{opt.name}</span>
+                              {opt.id === "higgsfield" && (
+                                <span
+                                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                                    isHiggsfieldConfigured
+                                      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                                      : "text-muted-foreground bg-white/5 border border-white/10"
+                                  }`}
+                                >
+                                  {isHiggsfieldConfigured ? "Configured" : "Not configured"}
+                                </span>
+                              )}
                             </span>
                             <p className="text-[11px] text-muted-foreground line-clamp-1">
                               {opt.note}
@@ -426,7 +454,11 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
                             Available Models
                           </p>
                           {opt.models.map((m: any) => {
-                            const activeModelId = (currentModels as any)[opt.id] || opt.models[0]?.id;
+                            const activeModelId =
+                              (currentModels as any)[selectedTaskKey] ||
+                              (currentModels as any)[opt.id] ||
+                              opt.models.find((mod: any) => mod.recommended)?.id ||
+                              opt.models[0]?.id;
                             const isModelActive = activeModelId === m.id;
                             return (
                               <button
