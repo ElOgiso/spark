@@ -1,3 +1,6 @@
+import { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, extractSparkStoragePath } from "./mediaUrlUtils";
+import { buildProductionLookLaw, ProductionLookLaw } from "./productionLookLaw";
+export { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, extractSparkStoragePath };
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
 import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
@@ -286,37 +289,9 @@ export function isPlayableVideoUrl(val?: string | null): val is string {
   );
 }
 
-export function isEphemeralMediaUrl(val?: string | null): boolean {
-  if (!val || typeof val !== "string") return false;
-  const trimmed = val.trim().toLowerCase();
-  return (
-    trimmed.startsWith("blob:") ||
-    trimmed.startsWith("data:") ||
-    trimmed.includes("vidgen.x.ai") ||
-    trimmed.includes("generativelanguage.googleapis.com") ||
-    trimmed.includes("oaidalleapiprodscus.blob.core.windows.net") ||
-    trimmed.includes("fal.media") ||
-    trimmed.includes("klingai.com") ||
-    trimmed.includes("runwayml.com") ||
-    trimmed.includes("lumalabs.ai") ||
-    trimmed.includes("ark.cn-beijing") ||
-    trimmed.includes("byteimg.com")
-  );
-}
 
-export function isSparkStorageUrl(val?: string | null): boolean {
-  if (!val || typeof val !== "string") return false;
-  const trimmed = val.trim();
-  if (extractSparkStoragePath(trimmed)) return true;
-  return /\/storage\/v1\/object\/(?:sign|public)\/Spark\//i.test(trimmed);
-}
 
 /** Playable identity we are allowed to write onto production.videoUrl / scene.videoUrl. */
-export function isPersistableSparkMediaUrl(val?: string | null): boolean {
-  if (!val || typeof val !== "string") return false;
-  if (isEphemeralMediaUrl(val)) return false;
-  return isSparkStorageUrl(val);
-}
 
 export function sanitizePersistedMediaUrl(
   incoming?: string | null,
@@ -328,18 +303,6 @@ export function sanitizePersistedMediaUrl(
   return undefined;
 }
 
-export function extractSparkStoragePath(url?: string | null): string | null {
-  if (!url || typeof url !== "string") return null;
-  const match = url.match(/\/storage\/v1\/object\/(?:sign|public)\/Spark\/([^?#]+)/i);
-  if (match && match[1]) {
-    try {
-      return decodeURIComponent(match[1]);
-    } catch {
-      return match[1];
-    }
-  }
-  return null;
-}
 
 export function isSignedUrlExpiredOrExpiringSoon(url?: string | null, thresholdSec = 60): boolean {
   if (!url || typeof url !== "string") return false;
@@ -1082,195 +1045,6 @@ export class ProductionAssetService {
     checkAborted();
 
     // Preproduction Asset Bible preflight — ensures @tags/sheet kinds are planned for element packs & downstream stills
-    if (!brief.assetBible) {
-      try {
-        brief.assetBible = planAssetBibleFromBrief(brief, {
-          brand,
-          characters: characters || (character ? [character] : undefined),
-          heroCharacter: character,
-        });
-      } catch (err) {
-        console.warn("[ProductionAssetService] Non-blocking asset bible planning fallback:", err);
-      }
-    }
-    if (brief.assetBible) {
-      production.assetBible = brief.assetBible;
-
-      // Rehydrate asset URLs from production.brief.generatedAssets / production.generatedAssets / brief.generatedAssets
-      const rehydratedGeneratedAssets = {
-        propSheets: {
-          ...((production as any)?.generatedAssets?.propSheets || {}),
-          ...((production?.brief as any)?.generatedAssets?.propSheets || {}),
-          ...((brief as any)?.generatedAssets?.propSheets || {}),
-        },
-        locationPlates: {
-          ...((production as any)?.generatedAssets?.locationPlates || {}),
-          ...((production?.brief as any)?.generatedAssets?.locationPlates || {}),
-          ...((brief as any)?.generatedAssets?.locationPlates || {}),
-        },
-        wardrobeSheets: {
-          ...((production as any)?.generatedAssets?.wardrobeSheets || {}),
-          ...((production?.brief as any)?.generatedAssets?.wardrobeSheets || {}),
-          ...((brief as any)?.generatedAssets?.wardrobeSheets || {}),
-        },
-        generatedFrames: {
-          ...((production as any)?.generatedAssets?.generatedFrames || {}),
-          ...((production?.brief as any)?.generatedAssets?.generatedFrames || {}),
-          ...((brief as any)?.generatedAssets?.generatedFrames || {}),
-        },
-      };
-
-      if (!forceRegenerate) {
-        brief.generatedAssets = {
-          ...(brief.generatedAssets || {}),
-          ...rehydratedGeneratedAssets,
-          propSheets: { ...(brief.generatedAssets?.propSheets || {}), ...rehydratedGeneratedAssets.propSheets },
-          locationPlates: { ...(brief.generatedAssets?.locationPlates || {}), ...rehydratedGeneratedAssets.locationPlates },
-          wardrobeSheets: { ...(brief.generatedAssets?.wardrobeSheets || {}), ...rehydratedGeneratedAssets.wardrobeSheets },
-        };
-        (production as any).generatedAssets = {
-          ...((production as any).generatedAssets || {}),
-          ...brief.generatedAssets,
-        };
-      }
-
-      const knownPropUrls: { tag: string; url: string; name?: string }[] = [];
-      if (!forceRegenerate && brief.generatedAssets?.propSheets) {
-        for (const [tag, url] of Object.entries(brief.generatedAssets.propSheets)) {
-          if (typeof url === "string" && isValidMediaData(url)) {
-            knownPropUrls.push({ tag, url });
-          }
-        }
-      }
-
-      const knownWardrobeUrls: { tag: string; url: string; name?: string }[] = [];
-      if (!forceRegenerate && brief.generatedAssets?.wardrobeSheets) {
-        for (const [tag, url] of Object.entries(brief.generatedAssets.wardrobeSheets)) {
-          if (typeof url === "string" && isValidMediaData(url)) {
-            knownWardrobeUrls.push({ tag, url });
-          }
-        }
-      }
-
-      const knownLocationPlateUrl = !forceRegenerate
-        ? (brief as any).locationPlateUrl ||
-          (production as any).locationPlateUrl ||
-          brand?.locationPlateUrl ||
-          (brief.generatedAssets?.locationPlates ? Object.values(brief.generatedAssets.locationPlates)[0] : undefined)
-        : undefined;
-
-      if (knownLocationPlateUrl && !forceRegenerate) {
-        (brief as any).locationPlateUrl = knownLocationPlateUrl;
-        (production as any).locationPlateUrl = knownLocationPlateUrl;
-        if (brand && typeof brand === "object") {
-          (brand as any).locationPlateUrl = knownLocationPlateUrl;
-        }
-      }
-
-      // Soft-check missing planned bible assets for preflight visibility (non-blocking)
-      try {
-        const preflightPack = buildProductionElementPack({
-          character,
-          characters,
-          brand,
-          locationPlateUrl: knownLocationPlateUrl,
-          propUrls: knownPropUrls,
-          wardrobeVariantUrls: knownWardrobeUrls,
-          assetBible: brief.assetBible,
-        });
-        const missing = forceRegenerate
-          ? [...brief.assetBible]
-          : listMissingAssetBibleEntries(brief.assetBible, preflightPack);
-        if (missing.length > 0) {
-          const missingSummary = missing.map((m) => `${m.tag} (${m.sheetKind})`).join(", ");
-          console.warn(
-            `[SPARK Asset Bible] ${missing.length} planned asset sheet(s) unattached at preflight: ${missingSummary}. Ensuring missing assets before keyframes/I2V.`
-          );
-
-          try {
-            const formatForEnsure = getEffectiveContentFormat({
-              brand,
-              formatSettings: activeFormatSettings,
-              production,
-              brief,
-            });
-            const ensuredResult = await ensureAssetBibleAssets({
-              bible: brief.assetBible,
-              brand,
-              character,
-              characters,
-              productionId: production.id,
-              contentFormat: formatForEnsure,
-              existingElements: preflightPack,
-              knownPropUrls,
-              knownLocationPlateUrl,
-              knownWardrobeUrls,
-              signal,
-              forceRegenerate,
-              preferredImageProvider: (brand as any)?.settings?.preferredImageProvider || undefined,
-            });
-
-            if (ensuredResult.generated.length > 0 || ensuredResult.fulfilled.length > 0) {
-              brief.generatedAssets = brief.generatedAssets || {};
-              brief.generatedAssets.propSheets = brief.generatedAssets.propSheets || {};
-              brief.generatedAssets.locationPlates = brief.generatedAssets.locationPlates || {};
-              brief.generatedAssets.wardrobeSheets = brief.generatedAssets.wardrobeSheets || {};
-              for (const g of ensuredResult.generated) {
-                if (g.sheetKind === "prop") {
-                  brief.generatedAssets.propSheets[g.tag] = g.url;
-                } else if (g.sheetKind === "location") {
-                  brief.generatedAssets.locationPlates[g.tag] = g.url;
-                  (brief as any).locationPlateUrl = g.url;
-                  (production as any).locationPlateUrl = g.url;
-                  if (brand && typeof brand === "object") {
-                    (brand as any).locationPlateUrl = g.url;
-                  }
-                } else if (g.sheetKind === "wardrobe_variant") {
-                  brief.generatedAssets.wardrobeSheets[g.tag] = g.url;
-                }
-              }
-              for (const f of ensuredResult.fulfilled) {
-                if (f.role === "prop" && f.url && isSparkStorageUrl(f.url)) {
-                  brief.generatedAssets.propSheets[f.tag] = f.url;
-                } else if (f.role === "location" && f.url && isSparkStorageUrl(f.url)) {
-                  brief.generatedAssets.locationPlates[f.tag] = f.url;
-                } else if (f.role === "wardrobe_variant" && f.url && isSparkStorageUrl(f.url)) {
-                  brief.generatedAssets.wardrobeSheets[f.tag] = f.url;
-                }
-              }
-              (production as any).generatedAssets = {
-                ...((production as any).generatedAssets || {}),
-                propSheets: brief.generatedAssets.propSheets,
-                locationPlates: brief.generatedAssets.locationPlates,
-                wardrobeSheets: brief.generatedAssets.wardrobeSheets,
-              };
-
-              // Persist ensured asset sheets immediately to Supabase BEFORE keyframe / I2V motion loop
-              try {
-                const { persistProductionUpdate } = await import("../../backend/workspaceSync");
-                await persistProductionUpdate(production.id, {
-                  brief,
-                  generatedAssets: (production as any).generatedAssets,
-                } as any);
-                console.log(
-                  `[SPARK Asset Bible] Persisted ${ensuredResult.generated.length} ensured asset(s) to Supabase before I2V motion synthesis.`
-                );
-              } catch (persistErr) {
-                console.warn("[SPARK Asset Bible] Notice persisting ensured assets pre-I2V:", persistErr);
-              }
-            }
-          } catch (ensureErr) {
-            console.warn("[ProductionAssetService] Non-blocking ensureAssetBibleAssets notice:", ensureErr);
-          }
-        } else {
-          console.log(
-            `[SPARK Asset Bible] All ${brief.assetBible.length} planned asset bible entities satisfied.`
-          );
-        }
-      } catch (err) {
-        console.warn("[ProductionAssetService] Non-blocking missing asset bible inspection fallback:", err);
-      }
-    }
 
     const identityPack = buildLockedIdentityPack({ brand, character, brief, production });
     // Authoritative mode from snapshot (when present) — never let live re-resolution drift the pipeline.
@@ -1291,12 +1065,8 @@ export class ProductionAssetService {
     });
     (production as any).frameLock = frameLock;
     (brief as any).frameLock = frameLock;
-    const effectiveContentFormat = getEffectiveContentFormat({
-      brand,
-      formatSettings: activeFormatSettings,
-      production,
-      brief,
-    });
+    const lookLaw = buildProductionLookLaw({ production, brief, formatSettings: activeFormatSettings, brand });
+    const effectiveContentFormat = lookLaw.contentFormat;
     const effectiveVisualGenre = resolveLiveVisualGenre({
       formatSettings: activeFormatSettings,
       contentFormat: effectiveContentFormat,
@@ -1769,7 +1539,7 @@ export class ProductionAssetService {
         try {
           checkAborted();
           emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels, ${label})...`);
-          const sheetCompiled = compileLiveStoryboardSheetPrompt({
+          const sheetCompiled = compileLiveStoryboardSheetPrompt({ lookLaw,
             scenes: currentStoryboard,
             aspectRatio: identityPack.aspectRatio,
             productionId: production.id,
@@ -2257,7 +2027,7 @@ export class ProductionAssetService {
             contentFormat,
             visualGenre: effectiveVisualGenre,
           });
-          const compiledStill = compileLiveStillPrompt({
+          const compiledStill = compileLiveStillPrompt({ lookLaw,
             scene: s,
             sceneIndexZeroBased: sIdx,
             aspectRatio: identityPack.aspectRatio,
@@ -2713,8 +2483,8 @@ export class ProductionAssetService {
                     character?.characterSheetUrl,
                     character?.imageUrl,
                     character?.avatarUrl,
-                    ...Object.values(brief.generatedAssets?.propSheets || {}),
-                    ...Object.values(brief.generatedAssets?.wardrobeSheets || {}),
+                    ...Object.values(brief.generatedAssets?.propSheets || {}).filter(u => typeof u === "string" && isPersistableSparkMediaUrl(u)),
+                    ...Object.values(brief.generatedAssets?.wardrobeSheets || {}).filter(u => typeof u === "string" && isPersistableSparkMediaUrl(u)),
                   ],
                   plateUrl: durableLocationPlateUrl,
                 },
@@ -2827,7 +2597,7 @@ export class ProductionAssetService {
                 directorPropUrl: motionMerged.propUrl,
                 propUrls: [
                   ...(motionMerged.propUrl ? [{ url: motionMerged.propUrl }] : []),
-                  ...Object.entries(brief.generatedAssets?.propSheets || {}).map(([tag, url]) => ({ tag, url })),
+                  ...Object.entries(brief.generatedAssets?.propSheets || {}).filter(([, url]) => typeof url === "string" && isPersistableSparkMediaUrl(url)).map(([tag, url]) => ({ tag, url })),
                 ],
                 assetBible: brief.assetBible,
               });
@@ -2851,8 +2621,8 @@ export class ProductionAssetService {
                 refLabels.push(`ELEMENT ${el.tag} → ${el.label} (${el.description || el.role})`);
               }
 
-              const sceneMotionCompiled = compileLiveMotionPrompt({
-                mode,
+              const sceneMotionCompiled = compileLiveMotionPrompt({ lookLaw,
+            mode,
                 aspectRatio: identityPack.aspectRatio,
                 sceneIndex: globalSceneNum,
                 totalScenes: currentStoryboard.length,
@@ -4304,8 +4074,8 @@ export class ProductionAssetService {
         primaryChange: `${sceneToFix.primaryChange || sceneToFix.action || sceneToFix.visualDescription || ""} — apply: ${editNotes}`,
       };
 
-      const compiledStill = compileLiveStillPrompt({
-        scene: revisedScene,
+      const compiledStill = compileLiveStillPrompt({ lookLaw,
+            scene: revisedScene,
         sceneIndexZeroBased: targetSceneIdx,
         aspectRatio: identityPack.aspectRatio,
         production,
@@ -4468,8 +4238,8 @@ export class ProductionAssetService {
         (revisedScene as any).physicalAction = (sceneToFix as any).physicalAction;
       }
 
-      const motionPrompt = compileLiveMotionPrompt({
-        mode,
+      const motionPrompt = compileLiveMotionPrompt({ lookLaw,
+            mode,
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,

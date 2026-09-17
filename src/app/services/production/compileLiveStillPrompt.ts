@@ -1,3 +1,5 @@
+import type { ProductionLookLaw } from "./productionLookLaw";
+import { assertLookLawInPrompt } from "./productionLookLaw";
 /**
  * Live still prompt compiler — OS spine entry for pixel generation.
  * Prefer Spec shot compiled prompts; else StoryboardPanelSpec compiler;

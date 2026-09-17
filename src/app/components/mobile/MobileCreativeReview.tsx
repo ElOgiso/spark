@@ -58,6 +58,40 @@ function asText(value: unknown, fallback = ""): string {
   return String(value);
 }
 
+
+function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any, brief: any, brand: any }) {
+  const { resolveProductionContentFormat } = require("../../services/production/contentFormatDirectives");
+  const formatSettings = activeProd?.settingsSnapshot?.formatSettings || brief?.formatSettings || brand?.settings || {};
+  let contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
+  
+  const { resolveLiveVisualGenre } = require("../../services/production/visualGenreDirectives");
+  const { VISUAL_GENRE_OPTIONS } = require("../../domain/visualGenre");
+  let genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
+  let genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
+
+  const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+  const imageProvider = aiSettings?.routing?.storyboardImages || "Best Available";
+  const imageModel = aiSettings?.models?.storyboardImages;
+  
+  const videoProvider = formatSettings.preferredVideoProvider || aiSettings?.routing?.videoGeneration || "Best Available";
+  const videoModel = formatSettings.preferredVideoModel || aiSettings?.models?.videoGeneration;
+
+  const fmtMode = activeProd?.settingsSnapshot?.productionMode || "express";
+  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || "16:9";
+
+  return (
+    <div className="mx-4 mt-4 mb-2 p-3 rounded-xl bg-card border border-border/70 shadow-sm flex flex-col gap-2">
+      <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Production identity</h3>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono text-muted-foreground">
+        <span>Format &middot; <span className="text-foreground">{contentFormat} ({fmtMode} {fmtAspect})</span></span>
+        <span>Genre &middot; <span className="text-foreground">{genreLabel}</span></span>
+        <span>Stills &middot; <span className="text-foreground">{imageProvider}{imageModel ? " \u00B7 " + imageModel : ""}</span></span>
+        <span>Video &middot; <span className="text-foreground">{videoProvider}{videoModel ? " \u00B7 " + videoModel : ""}</span></span>
+      </div>
+    </div>
+  );
+}
+
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
   const {
     approveReviewItem,
@@ -407,7 +441,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           />
         </div>
 
-        {/* Locked Production References Strip */}
+        {/* Production Identity */}
+      <ProductionIdentityStrip activeProd={activeProd} brief={brief} brand={brand} />
+
+      {/* Locked Production References Strip */}
         {lockedRefs.length > 0 ? (
           <div className="p-3.5 rounded-2xl bg-card border border-border/70 shadow-sm space-y-2.5">
             <div className="flex items-center justify-between gap-2">

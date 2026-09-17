@@ -1,3 +1,4 @@
+import { isEphemeralMediaUrl } from "../mediaUrlUtils";
 /**
  * SPARK Preproduction — Asset Bible Planner
  * Derives the required production asset bible (@tags + sheet kinds)
@@ -290,14 +291,14 @@ export function listMissingAssetBibleEntries(
 
     // 1. Direct tag match with valid non-empty URL
     const hasTagMatch = pack.some(
-      (e) => e.tag.trim().toLowerCase() === normTag && Boolean(e.url && e.url.trim())
+      (e) => e.tag.trim().toLowerCase() === normTag && Boolean(e.url && e.url.trim() && !isEphemeralMediaUrl(e.url))
     );
     if (hasTagMatch) return false;
 
     // 2. Entity ID match with valid URL
     if (entry.sourceEntityId) {
       const hasEntityMatch = pack.some(
-        (e) => e.entityId === entry.sourceEntityId && Boolean(e.url && e.url.trim())
+        (e) => e.entityId === entry.sourceEntityId && Boolean(e.url && e.url.trim() && !isEphemeralMediaUrl(e.url))
       );
       if (hasEntityMatch) return false;
     }
@@ -305,13 +306,13 @@ export function listMissingAssetBibleEntries(
     // 3. Role-level singleton anchor match (character_main, location)
     if (entry.role === "character_main") {
       const hasMainMatch = pack.some(
-        (e) => e.role === "character_main" && Boolean(e.url && e.url.trim())
+        (e) => e.role === "character_main" && Boolean(e.url && e.url.trim() && !isEphemeralMediaUrl(e.url))
       );
       if (hasMainMatch) return false;
     }
     if (entry.role === "location" || entry.sheetKind === "location") {
       const hasLocMatch = pack.some(
-        (e) => (e.role === "location" || e.tag.startsWith("@loc_")) && Boolean(e.url && e.url.trim())
+        (e) => (e.role === "location" || e.tag.startsWith("@loc_")) && Boolean(e.url && e.url.trim() && !isEphemeralMediaUrl(e.url))
       );
       if (hasLocMatch) return false;
     }
@@ -319,7 +320,7 @@ export function listMissingAssetBibleEntries(
     // 4. Prop tag or label match
     if (entry.role === "prop" || entry.sheetKind === "prop") {
       const hasPropMatch = pack.some((e) => {
-        if (!e.url || !e.url.trim()) return false;
+        if (!e.url || !e.url.trim() || isEphemeralMediaUrl(e.url)) return false;
         if (e.tag.trim().toLowerCase() === normTag) return true;
         if (entry.label && e.label && e.label.trim().toLowerCase() === entry.label.trim().toLowerCase()) return true;
         return false;

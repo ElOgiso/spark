@@ -85,6 +85,60 @@ function asText(value: unknown, fallback = ""): string {
   return String(value);
 }
 
+
+function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any, brief: any, brand: any }) {
+  // 1. Content Format
+  const { resolveProductionContentFormat } = require("../services/production/contentFormatDirectives");
+  const formatSettings = activeProd?.settingsSnapshot?.formatSettings || brief?.formatSettings || brand?.settings || {};
+  let contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
+  
+  // 2. Visual Genre
+  const { resolveLiveVisualGenre } = require("../services/production/visualGenreDirectives");
+  const { VISUAL_GENRE_OPTIONS } = require("../domain/visualGenre");
+  let genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
+  let genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
+
+  // 3. Image AI
+  const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+  const imageProvider = aiSettings?.routing?.storyboardImages || "Best Available";
+  const imageModel = aiSettings?.models?.storyboardImages;
+  
+  // 4. Video AI
+  const videoProvider = formatSettings.preferredVideoProvider || aiSettings?.routing?.videoGeneration || "Best Available";
+  const videoModel = formatSettings.preferredVideoModel || aiSettings?.models?.videoGeneration;
+
+  const fmtMode = activeProd?.settingsSnapshot?.productionMode || "express";
+  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || "16:9";
+
+  return (
+    <div className="p-4 rounded-2xl bg-card border border-border/70 shadow-sm space-y-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          Production identity
+        </h3>
+      </div>
+      <div className="flex flex-wrap gap-4 text-sm font-mono text-muted-foreground">
+        <div className="flex items-center gap-1">
+          <span className="opacity-70">Format &middot;</span>
+          <span className="text-foreground">{contentFormat} ({fmtMode} {fmtAspect})</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="opacity-70">Genre &middot;</span>
+          <span className="text-foreground">{genreLabel}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="opacity-70">Stills &middot;</span>
+          <span className="text-foreground">{imageProvider}{imageModel ? " \u00B7 " + imageModel : ""}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="opacity-70">Video &middot;</span>
+          <span className="text-foreground">{videoProvider}{videoModel ? " \u00B7 " + videoModel : ""}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeReviewProps) {
   const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode } = useSpark() as any;
 
@@ -356,7 +410,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
     ),
     targetAudience: asText(activeProd?.reasoning?.research?.audience, "Audience not stored on this production"),
     expectedReach: "Unavailable",
-    format: `${asText(brief?.suggestedDuration, activeProd?.targetDurationSec ? `${activeProd.targetDurationSec}s` : "Duration unset")} · ${asText(activeProd?.aspectRatio || brief?.aspectRatio, "9:16")} · ${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)}`,
+    format: `${asText(brief?.suggestedDuration, activeProd?.targetDurationSec ? `${activeProd.targetDurationSec}s` : "Duration unset")} &middot; ${asText(activeProd?.aspectRatio || brief?.aspectRatio, "9:16")} &middot; ${getNotionModeLabel(brief?.productionMode || activeProd?.productionMode || activeProd?.mode)}`,
     platforms: (() => {
       const honest = buildHonestPlatformStrategy({ production: activeProd, brief });
       return honest.map((p) => p.label);
@@ -551,7 +605,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold truncate text-foreground">{p.title}</p>
                         <p className="text-[10px] text-muted-foreground truncate">
-                          {isGenerating ? `${stageLabel} · ${percent > 0 ? `${percent}%` : "Active"}` : videoUrl ? "Playable MP4" : p.status || "Ready"}
+                          {isGenerating ? `${stageLabel} &middot; ${percent > 0 ? `${percent}%` : "Active"}` : videoUrl ? "Playable MP4" : p.status || "Ready"}
                         </p>
                       </div>
                     </button>
@@ -724,6 +778,9 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               />
             </div>
             
+            {/* Production Identity Strip */}
+            <ProductionIdentityStrip activeProd={activeProd} brief={brief} brand={brand} />
+
             {/* Locked Production References Strip */}
             {lockedRefs.length > 0 ? (
               <div className="p-4 rounded-2xl bg-card border border-border/70 shadow-sm space-y-3">

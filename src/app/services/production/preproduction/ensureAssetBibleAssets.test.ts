@@ -318,3 +318,67 @@ test("Resume: forceRegenerate=true regenerates even if existing assets exist", a
     ProductionAssetService.uploadAssetToStorage = originalUpload;
   }
 });
+
+test("ephemeral provider URL returned by ensure is NOT treated as a durable fulfilled asset", async () => {
+  const { ModelRouter } = await import("../../runtime/modelRouter");
+  const { ProductionAssetService, isPersistableSparkMediaUrl } = await import("../productionAssetService");
+
+  const ephemeralUrl = "https://oaidalleapiprodscus.blob.core.windows.net/private/abc123/img.png";
+  const originalExecute = ModelRouter.executeCategoryRequest;
+  const originalUpload = ProductionAssetService.uploadAssetToStorage;
+
+  ModelRouter.executeCategoryRequest = async () => ephemeralUrl;
+  ProductionAssetService.uploadAssetToStorage = async () => ({
+    publicUrl: "",
+    storagePath: "",
+    assetId: "",
+    uploadSuccess: false,
+  });
+
+  try {
+    const bible = [{ tag: "@prop_test", role: "prop" as const, sheetKind: "prop", label: "Test Prop", notes: "" }];
+    const { ensureAssetBibleAssets } = await import("./ensureAssetBibleAssets");
+    const result = await ensureAssetBibleAssets({
+      bible,
+      brand: { name: "TestBrand" },
+      productionId: "prod-test-ephemeral",
+      contentFormat: "standard",
+      existingElements: [],
+    });
+
+    const assert = (await import("node:assert/strict")).default;
+    assert.equal(result.generated.length, 0);
+    assert.ok(!result.fulfilled.some(f => f.url === ephemeralUrl));
+    assert.equal(result.errors.length, 1);
+    assert.equal(result.stillMissing.length, 1);
+
+    assert.equal(isPersistableSparkMediaUrl(ephemeralUrl), false);
+  } finally {
+    ModelRouter.executeCategoryRequest = originalExecute;
+    ProductionAssetService.uploadAssetToStorage = originalUpload;
+  }
+});
+
+test("durable Spark URL in generatedAssets.propSheets is reused on resume", async () => {
+  const durableUrl = "https://supabase.co/storage/v1/object/public/Spark/brands/b1/prod-1/props/sword.png";
+  const { isPersistableSparkMediaUrl, isEphemeralMediaUrl } = await import("../productionAssetService");
+  const assert = (await import("node:assert/strict")).default;
+  assert.equal(isPersistableSparkMediaUrl(durableUrl), true);
+  assert.equal(isEphemeralMediaUrl(durableUrl), false);
+
+  const { listMissingAssetBibleEntries } = await import("./assetBibleFromBrief");
+  const bible = [{ tag: "@prop_sword", role: "prop" as const, sheetKind: "prop", label: "Sword", notes: "" }];
+  const elements = [{ tag: "@prop_sword", role: "prop" as const, label: "Sword", url: durableUrl }];
+  const missing = listMissingAssetBibleEntries(bible, elements);
+  assert.equal(missing.length, 0);
+});
+
+test("ephemeral URL in fulfilled elements does NOT satisfy listMissingAssetBibleEntries", async () => {
+  const { listMissingAssetBibleEntries } = await import("./assetBibleFromBrief");
+  const assert = (await import("node:assert/strict")).default;
+  const ephemeralUrl = "https://fal.media/files/abc/image.png";
+  const bible = [{ tag: "@prop_tool", role: "prop" as const, sheetKind: "prop", label: "Tool", notes: "" }];
+  const elements = [{ tag: "@prop_tool", role: "prop" as const, label: "Tool", url: ephemeralUrl }];
+  const missing = listMissingAssetBibleEntries(bible, elements);
+  assert.equal(missing.length, 1);
+});

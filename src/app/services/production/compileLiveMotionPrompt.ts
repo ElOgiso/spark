@@ -1,3 +1,5 @@
+import type { ProductionLookLaw } from "./productionLookLaw";
+import { assertLookLawInPrompt } from "./productionLookLaw";
 /**
  * Live motion prompt compiler — OS spine for I2V / scene motion.
  *

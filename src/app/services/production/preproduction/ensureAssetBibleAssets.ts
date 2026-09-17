@@ -39,6 +39,7 @@ export interface EnsureAssetBibleAssetsParams {
   aspectRatio?: string;
   forceRegenerate?: boolean;
   preferredImageProvider?: string;
+  onProgress?: (tag: string, index: number, total: number) => void;
 }
 
 export interface EnsuredGeneratedAsset {
@@ -176,7 +177,9 @@ export async function ensureAssetBibleAssets(
   const brandId = (brand as any)?.id || "default-brand";
   let propGenCount = 0;
 
-  for (const entry of missing) {
+  for (let i = 0; i < missing.length; i++) {
+    const entry = missing[i];
+    if (params.onProgress) params.onProgress(entry.tag, i, missing.length);
     if (signal?.aborted) {
       result.stillMissing.push(entry);
       continue;

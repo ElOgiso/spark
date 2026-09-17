@@ -1,3 +1,5 @@
+import type { ProductionLookLaw } from "./productionLookLaw";
+import { assertLookLawInPrompt } from "./productionLookLaw";
 /**
  * Live multi-panel storyboard sheet compiler.
  * Converts finalized text panels into ONE sequential storyboard sheet image prompt.
