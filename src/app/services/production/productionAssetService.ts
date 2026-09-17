@@ -1081,7 +1081,7 @@ export class ProductionAssetService {
       const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
       const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
       const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
-      const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+      const aiSettings = (production as any)?.settingsSnapshot?.aiSettings || (brief as any)?.aiSettings || (brand as any)?.settings?.aiSettings || (brand as any)?.aiSettings;
       const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
       const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;
       const resolvedImageModel = aiSettings?.models?.storyboardImages || globalImageModel || undefined;
@@ -2507,7 +2507,7 @@ export class ProductionAssetService {
                 },
                 sceneLabel: `Scene ${globalSceneNum}`,
               });
-              const sceneFirstFrame = officialI2v.firstFrameUrl;
+              let sceneFirstFrame = officialI2v.firstFrameUrl;
               const sceneEndFrame = officialI2v.endFrameUrl;
               const sceneLastFrame = officialI2v.lastFrameUrl;
               if (continuityPlan.continuityGap) {
@@ -2735,6 +2735,7 @@ export class ProductionAssetService {
                            productionId: production.id,
                            brandId: (brand as any)?.id,
                            assetType: "image",
+                           storagePath: `tmp-ingest-firstframe-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
                            dataUrlOrBlob: sceneFirstFrame,
                            mimeType: "image/png",
                            prompt: sceneMotionPrompt,
@@ -2759,6 +2760,7 @@ export class ProductionAssetService {
                                productionId: production.id,
                                brandId: (brand as any)?.id,
                                assetType: "image",
+                               storagePath: `tmp-ingest-ref-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
                                dataUrlOrBlob: ref,
                                mimeType: "image/png",
                                prompt: "Visual Lock Ref",
@@ -2771,7 +2773,8 @@ export class ProductionAssetService {
                         }
                         return ref;
                       }));
-                      identityRefs = upgradedRefs.filter(Boolean) as string[];
+                      identityRefs.length = 0;
+                      identityRefs.push(...(upgradedRefs.filter(Boolean) as string[]));
                     }
                     // --- END GAP B ---
                     const tryI2v = async (providerId: string) => {
@@ -4005,7 +4008,7 @@ export class ProductionAssetService {
       const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
       const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
       const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
-      const aiSettings = production?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
+      const aiSettings = (production as any)?.settingsSnapshot?.aiSettings || (brief as any)?.aiSettings || (brand as any)?.settings?.aiSettings || (brand as any)?.aiSettings;
       const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
       const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;
       const resolvedImageModel = aiSettings?.models?.storyboardImages || globalImageModel || undefined;
