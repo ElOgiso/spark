@@ -1,3 +1,4 @@
+import { getModelsForProviderAndCapability } from "../../services/runtime/modelCatalog";
 import { useState } from "react";
 import { useSpark } from "../../state/SparkContext";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
@@ -1187,9 +1188,9 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                     {(() => {
                       const currentProv = formatSettings?.preferredVideoProvider;
                       if (!currentProv || currentProv === "auto") return null;
-                      const models = listVideoModelsForProvider(currentProv as AIProviderId);
-                      if (!models || models.length <= 1) return null;
                       const currentModelId = aiSettings?.models?.videoGeneration || "";
+                              const models = listVideoModelsForProvider(currentProv as AIProviderId, currentModelId);
+                              if (!models || models.length <= 1) return null;
                       return (
                         <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border bg-card/60 mt-1">
                           <span className="text-[11px] font-mono text-muted-foreground font-medium">
@@ -1503,15 +1504,15 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                     <div className="mt-3 pt-2.5 border-t border-border/50 space-y-2 text-[11px] text-muted-foreground">
                       <div>
                         <p className="font-semibold text-[10px] uppercase text-foreground">Why It Exists</p>
-                        <p className="mt-0.5 leading-relaxed">{meta.whyExists}</p>
+                        <p className="mt-0.5 leading-relaxed line-clamp-1" title={meta.whyExists}>{meta.whyExists}</p>
                       </div>
                       <div>
                         <p className="font-semibold text-[10px] uppercase text-foreground">What It Affects</p>
-                        <p className="mt-0.5 leading-relaxed">{meta.affects}</p>
+                        <p className="mt-0.5 leading-relaxed line-clamp-1" title={meta.affects}>{meta.affects}</p>
                       </div>
                       <div>
                         <p className="font-semibold text-[10px] uppercase text-foreground">Changes Spark Behavior</p>
-                        <p className="mt-0.5 leading-relaxed">{meta.behavior}</p>
+                        <p className="mt-0.5 leading-relaxed line-clamp-1" title={meta.behavior}>{meta.behavior}</p>
                       </div>
                     </div>
                   )}

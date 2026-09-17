@@ -71,7 +71,16 @@ export function buildPreferredVideoAiPreferenceUpdate(params: {
   };
 }
 
-export function listVideoModelsForProvider(providerId: AIProviderId | "auto") {
+export function listVideoModelsForProvider(providerId: AIProviderId | "auto", currentModelId?: string) {
   if (!providerId || providerId === "auto") return [];
-  return getModelsForProviderAndCapability(providerId, "Video Generation");
+  const models = getModelsForProviderAndCapability(providerId, "Video Generation");
+  return models.filter((m) => {
+    if (currentModelId && m.id === currentModelId) return true;
+    const str = (m.id + " " + m.label).toLowerCase();
+    if (str.includes("r2v") || str.includes("reference-to-video")) return false;
+    if (str.includes("t2v") || str.includes("text-to-video")) return false;
+    if (str.includes("edit") || str.includes("extend")) return false;
+    return true;
+  });
 }
+

@@ -1,3 +1,4 @@
+import { getModelsForProviderAndCapability } from "../services/runtime/modelCatalog";
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
@@ -1387,6 +1388,74 @@ export function MySpark({ onNavigate }: MySparkProps) {
                   </div>
                 </div>
 
+                {/* Sub-row 1.5: Image Engine */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Image Engine (Stills & Sheets)
+                    </p>
+                    <a href="/more/ai-preferences" className="text-[11px] font-mono text-purple-400 hover:text-purple-300">
+                      All AI tasks →
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    {(() => {
+                      const currentProv = aiSettings?.routing?.storyboardImages || "auto";
+                      const currentModelId = aiSettings?.models?.storyboardImages || "";
+                      const imgProviders = [
+                        { id: "auto", name: "Auto" },
+                        { id: "gemini", name: "Gemini" },
+                        { id: "openai", name: "OpenAI" },
+                        { id: "grok", name: "Grok" },
+                        { id: "higgsfield", name: "Higgsfield" }
+                      ];
+                      
+                      let imgModels: any[] = [];
+                      if (currentProv !== "auto") {
+                        
+                        imgModels = getModelsForProviderAndCapability(currentProv, "Image Generation");
+                      }
+                      
+                      return (
+                        <div className="col-span-full flex items-center gap-3 p-3 rounded-xl border border-border bg-card shadow-sm">
+                          <select
+                            value={currentProv}
+                            onChange={(e) => {
+                              const newProv = e.target.value;
+                              updateAISettings({
+                                routing: { ...aiSettings?.routing, storyboardImages: newProv },
+                                models: { ...aiSettings?.models, storyboardImages: "" }
+                              });
+                            }}
+                            className="bg-[#0E131F] border border-white/10 text-xs text-foreground font-semibold px-3 py-1.5 rounded-lg outline-none focus:border-purple-500 cursor-pointer min-w-[120px]"
+                          >
+                            {imgProviders.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+
+                          {imgModels.length > 1 && (
+                            <select
+                              value={currentModelId}
+                              onChange={(e) => {
+                                updateAISettings({
+                                  models: { ...aiSettings?.models, storyboardImages: e.target.value }
+                                });
+                              }}
+                              className="bg-[#0E131F] border border-white/10 text-xs text-muted-foreground px-3 py-1.5 rounded-lg outline-none focus:border-purple-500 cursor-pointer flex-1"
+                            >
+                              <option value="">Recommended default</option>
+                              {imgModels.map(m => (
+                                <option key={m.id} value={m.id}>{m.label}{m.recommended ? " ★" : ""}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
                 {/* Sub-row 2: Clip Engine & Video Models */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1513,9 +1582,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
                           {(() => {
                             const currentProv = formatSettings?.preferredVideoProvider;
                             if (!currentProv || currentProv === "auto") return null;
-                            const models = listVideoModelsForProvider(currentProv as AIProviderId);
-                            if (!models || models.length <= 1) return null;
                             const currentModelId = aiSettings?.models?.videoGeneration || "";
+                              const models = listVideoModelsForProvider(currentProv as AIProviderId, currentModelId);
+                              if (!models || models.length <= 1) return null;
                             return (
                               <div className="col-span-full flex items-center justify-between gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.02] mt-1">
                                 <div className="flex items-center gap-2">
@@ -1791,17 +1860,17 @@ export function MySpark({ onNavigate }: MySparkProps) {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Why It Exists</p>
-                                <p className="mt-1 leading-relaxed">{meta.whyExists}</p>
+                                <p className="mt-1 leading-relaxed line-clamp-1" title={meta.whyExists}>{meta.whyExists}</p>
                               </div>
                               <div>
                                 <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">What It Affects</p>
-                                <p className="mt-1 leading-relaxed">{meta.affects}</p>
+                                <p className="mt-1 leading-relaxed line-clamp-1" title={meta.affects}>{meta.affects}</p>
                               </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3 pt-1">
                               <div>
                                 <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Influenced Productions</p>
-                                <p className="mt-1 leading-relaxed">{meta.influences}</p>
+                                <p className="mt-1 leading-relaxed line-clamp-1" title={meta.influences}>{meta.influences}</p>
                               </div>
                               <div>
                                 <p className="font-semibold text-[10px] uppercase tracking-wide text-foreground">Changes Spark Behavior</p>
