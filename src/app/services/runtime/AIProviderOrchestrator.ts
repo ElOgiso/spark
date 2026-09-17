@@ -15,6 +15,7 @@ export interface AIExecutionOptions {
   frames?: string[];
   referenceImageUrl?: string;
   referenceImageUrls?: string[];
+  characterSheetUrl?: string;
   aspectRatio?: string;
   durationSec?: number;
   lastFrameUrl?: string;
@@ -333,6 +334,9 @@ export class AIProviderOrchestrator {
           };
           const snappedVeoDuration = veoBuilt.parameters.durationSeconds;
           const targetAspect = veoBuilt.parameters.aspectRatio;
+          console.log(
+            `[Gemini Video] provider=gemini hasImage=${Boolean(shotStill)} hasSheet=${Boolean(options.characterSheetUrl || (options.referenceImageUrls && options.referenceImageUrls.length > 0))} hasLastFrame=${Boolean(veoBuilt.lastFrameDataUri)} duration=${snappedVeoDuration} aspect=${targetAspect}`
+          );
           console.log(
             `[Gemini Provider] Official Veo i2v: image bytes + ${veoBuilt.lastFrameDataUri ? "lastFrame" : "no lastFrame"} duration=${snappedVeoDuration}s`
           );

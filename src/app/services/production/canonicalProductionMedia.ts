@@ -57,7 +57,7 @@ export interface CanonicalProductionMediaView {
 }
 
 function pushClip(out: string[], url?: string | null) {
-  if (!url || !isDurableMasterVideoReady(url)) return;
+  if (!url || !isPlayableVideoUrl(url)) return;
   if (isEmergencySlideshowFallbackUrl(url)) return;
   if (!out.includes(url)) out.push(url);
 }
@@ -77,10 +77,10 @@ function collectSceneClips(production: any, brief: any): string[] {
       : [];
   const len = Math.max(storyboard.length, productionScenes.length, generated.length);
   for (let i = 0; i < len; i++) {
-    pushClip(clips, storyboard[i]?.videoUrl);
-    pushClip(clips, productionScenes[i]?.videoUrl);
+    pushClip(clips, storyboard[i]?.videoUrl || storyboard[i]?.playablePreviewUrl);
+    pushClip(clips, productionScenes[i]?.videoUrl || productionScenes[i]?.playablePreviewUrl);
     const g = generated[i];
-    pushClip(clips, typeof g === "string" ? g : g?.url || g?.videoUrl);
+    pushClip(clips, typeof g === "string" ? g : g?.url || g?.videoUrl || g?.playablePreviewUrl);
   }
   return clips;
 }
@@ -92,8 +92,8 @@ function buildScenes(production: any, brief: any): CanonicalSceneMedia[] {
       ? brief.generatedAssets.sceneClips
       : [];
   const pick = (s: any, idx: number): string | undefined => {
-    const fromScene = s?.videoUrl;
-    const fromGen = typeof rawClips[idx] === "string" ? rawClips[idx] : rawClips[idx]?.videoUrl;
+    const fromScene = s?.videoUrl || s?.playablePreviewUrl;
+    const fromGen = typeof rawClips[idx] === "string" ? rawClips[idx] : rawClips[idx]?.videoUrl || rawClips[idx]?.playablePreviewUrl;
     const url = fromScene || fromGen;
     if (!url || !isPlayableVideoUrl(url) || isEmergencySlideshowFallbackUrl(url)) return undefined;
     return url;
@@ -172,11 +172,21 @@ export function resolveCanonicalMasterVideoUrl(input: {
   const sceneClips = collectSceneClips(production, brief);
   const sceneSet = new Set(sceneClips);
 
-  const candidates = [production.videoUrl, review.videoUrl, brief.videoUrl].filter(
-    (u): u is string => Boolean(u && isDurableMasterVideoReady(u))
-  );
+  const candidates = [
+    production.videoUrl,
+    review.videoUrl,
+    brief.videoUrl,
+    production.playablePreviewUrl,
+    brief.playablePreviewUrl,
+  ].filter((u): u is string => Boolean(u && isPlayableVideoUrl(u)));
 
-  // Prefer non-fallback, non-scene-clip hero URLs.
+  // Priority 1: Durable Spark master
+  const durableMaster = candidates.find(
+    (u) => isDurableMasterVideoReady(u) && !isEmergencySlideshowFallbackUrl(u) && !sceneSet.has(u)
+  );
+  if (durableMaster) return durableMaster;
+
+  // Priority 2: In-flight playable provider master (plays immediately while ingest is running)
   const trueMaster = candidates.find(
     (u) => !isEmergencySlideshowFallbackUrl(u) && !sceneSet.has(u)
   );
@@ -230,7 +240,7 @@ export function resolveCanonicalProductionMedia(input: {
   const isSingleShot = totalSceneCount <= 1;
 
   let canonicalMasterUrl = resolveCanonicalMasterVideoUrl({ production, review, brief });
-  if (!canonicalMasterUrl && isSingleShot && sceneClips.length === 1 && isDurableMasterVideoReady(sceneClips[0])) {
+  if (!canonicalMasterUrl && isSingleShot && sceneClips.length === 1 && isPlayableVideoUrl(sceneClips[0])) {
     canonicalMasterUrl = sceneClips[0];
   }
 

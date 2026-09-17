@@ -3,7 +3,7 @@
  * to /api/runtime/video so last-frame continuity actually reaches the adapter.
  */
 
-import { looksLikeSheetOrGridUrl } from "./officialI2vFrames";
+import { looksLikeSheetOrGridUrl, looksLikeStoryboardGridUrl } from "./officialI2vFrames";
 
 export const I2V_API_PROVIDERS = new Set(["grok", "kling", "seedance", "ark", "xai", "higgsfield", "higgsfield-seedance"]);
 
@@ -11,8 +11,11 @@ export interface ProductionVideoClipRequest {
   provider: string;
   prompt: string;
   firstFrameUrl?: string;
+  /** Continuation frame from previous clip (or planned end pose). */
+  lastFrameUrl?: string;
   /** Desired end pose for this clip (Kling image_tail / Seedance last_frame). Not the previous clip's last frame. */
   endFrameUrl?: string;
+  characterSheetUrl?: string;
   referenceImageUrls?: string[];
   aspectRatio?: string;
   durationSec?: number;
@@ -52,17 +55,17 @@ export async function requestProductionVideoClip(
 
   if (!isR2v && isI2vApiProvider(params.provider) && (!params.firstFrameUrl || !params.firstFrameUrl.trim())) {
     throw new Error(
-      `I2V video generation with provider "${params.provider}" requires a valid firstFrameUrl (shot still/keyframe).`
+      `Still required before motion. I2V video generation with provider "${params.provider}" requires a valid firstFrameUrl (shot still/keyframe).`
     );
   }
 
-  if (isHf && !isR2v) {
-    if (params.firstFrameUrl && looksLikeSheetOrGridUrl(params.firstFrameUrl)) {
-      throw new Error(
-        `I2V video generation with provider "${params.provider}" requires this shot's still as firstFrameUrl, not a sheet or storyboard grid.`
-      );
-    }
+  if (!isR2v && isI2vApiProvider(params.provider) && params.firstFrameUrl && (looksLikeSheetOrGridUrl(params.firstFrameUrl) || looksLikeStoryboardGridUrl(params.firstFrameUrl))) {
+    throw new Error(
+      `Still required before motion. I2V video generation with provider "${params.provider}" requires this shot's still as firstFrameUrl, not a sheet or storyboard grid.`
+    );
+  }
 
+  if (isHf) {
     if (params.firstFrameUrl?.startsWith("data:")) {
       try {
         const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
@@ -128,8 +131,9 @@ export async function requestProductionVideoClip(
       firstFrameUrl: params.firstFrameUrl,
       sourceImageAssetId: params.sourceImageAssetId,
       // End-frame conditioning must NOT silently reuse the first frame.
-      lastFrameUrl: params.endFrameUrl,
-      endFrameUrl: params.endFrameUrl,
+      lastFrameUrl: params.lastFrameUrl || params.endFrameUrl,
+      endFrameUrl: params.endFrameUrl || params.lastFrameUrl,
+      characterSheetUrl: params.characterSheetUrl,
       referenceImageUrls: params.referenceImageUrls || [],
       aspectRatio: params.aspectRatio,
       durationSec: params.durationSec,

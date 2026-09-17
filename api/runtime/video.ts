@@ -215,6 +215,7 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
     firstFrameUrl: frames.firstFrameUrl,
     lastFrameDataUri,
     lastFrameUrl: frames.endFrameUrl,
+    characterSheetUrl: frames.characterSheetUrl || body.characterSheetUrl,
     referenceDataUris,
     referenceUrls: frames.referenceImageUrls,
     referenceImageUrls: frames.referenceImageUrls,
@@ -343,6 +344,13 @@ async function generateSeedance(req: VideoClipRequest): Promise<string> {
   const base = (process.env.ARK_BASE_URL || process.env.SEEDANCE_BASE_URL || "https://ark.cn-beijing.volces.com").replace(/\/$/, "");
   const body = buildSeedanceTaskBody({ ...req, model: req.model || SEEDANCE_MODEL_15_PRO });
 
+  const hasImage = Boolean(req.firstFrameUrl || req.firstFrameDataUri);
+  const hasSheet = Boolean(req.characterSheetUrl || (req.referenceImageUrls && req.referenceImageUrls.length > 0));
+  const hasLastFrame = Boolean(req.lastFrameUrl || req.lastFrameDataUri);
+  console.log(
+    `[Seedance Video] provider=seedance hasImage=${hasImage} hasSheet=${hasSheet} hasLastFrame=${hasLastFrame} duration=${req.durationSec || 5} aspect=${req.aspectRatio || "9:16"}`
+  );
+
   const createRes = await fetch(`${base}/api/v3/contents/generations/tasks`, {
     method: "POST",
     headers: {
@@ -394,6 +402,13 @@ async function generateKling(req: VideoClipRequest): Promise<string> {
     "Content-Type": "application/json",
     Authorization: `Bearer ${getKlingJwt(keys.accessKey, keys.secretKey)}`,
   });
+
+  const hasImage = Boolean(req.firstFrameUrl || req.firstFrameDataUri);
+  const hasSheet = Boolean(req.characterSheetUrl || (req.referenceImageUrls && req.referenceImageUrls.length > 0));
+  const hasLastFrame = Boolean(req.lastFrameUrl || req.lastFrameDataUri);
+  console.log(
+    `[Kling Video] provider=kling hasImage=${hasImage} hasSheet=${hasSheet} hasLastFrame=${hasLastFrame} duration=${req.durationSec || 5} aspect=${req.aspectRatio || "9:16"}`
+  );
 
   const createRes = await fetch("https://api.klingai.com/v1/videos/image2video", {
     method: "POST",
@@ -472,14 +487,15 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
 
   const body = buildGrokVideoGenerateBody(effectiveReq);
 
-  // Log once per shot immediately before fetch to api.x.ai
+  // Log after each submit: provider, hasImage, hasSheet, hasLastFrame, duration, aspect
   const imageUrl = (body.image as any)?.url || (body.image as any)?.imageUrl || (body as any).imageUrl || (body as any).image_url;
-  const hasImageUrl = Boolean(imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0);
-  const refImagesCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
+  const hasImage = Boolean(imageUrl && typeof imageUrl === "string" && imageUrl.trim().length > 0);
+  const hasSheet = Boolean(Array.isArray(body.reference_images) && body.reference_images.length > 0);
+  const hasLastFrame = Boolean(body.last_frame && (body.last_frame as any).url);
   console.log(
-    `[Grok Video] Shot request: model=${body.model}, promptLen=${(body.prompt as string)?.length || 0}, hasImageUrl=${hasImageUrl}, reference_images count=${refImagesCount}, resolution=${body.resolution || "default"}`
+    `[Grok Video] provider=grok hasImage=${hasImage} hasSheet=${hasSheet} hasLastFrame=${hasLastFrame} duration=${body.duration} aspect=${body.aspect_ratio}`
   );
-  if (!hasImageUrl) {
+  if (!hasImage) {
     throw new Error("Refusing to generate Grok video with numInputImages=0 (T2V forbidden for shot i2v).");
   }
 

@@ -199,7 +199,7 @@ test("Grok i2v: 1. still only -> image only (keeps requested 1080p resolution)",
   assert.equal(body.reference_images, undefined);
 });
 
-test("Grok i2v: 2. still + end -> omits undocumented last_frame object", () => {
+test("Grok i2v: 2. still + end -> sends structured last_frame object", () => {
   const body = buildGrokVideoGenerateBody({
     prompt: "camera pans left",
     firstFrameDataUri: "data:image/jpeg;base64,START",
@@ -209,8 +209,7 @@ test("Grok i2v: 2. still + end -> omits undocumented last_frame object", () => {
     resolution: "1080p",
   });
   assert.equal((body.image as any)?.url, "data:image/jpeg;base64,START");
-  assert.equal(body.last_frame, undefined);
-  assert.equal(body.lastFrame, undefined);
+  assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
   assert.equal(body.aspect_ratio, "16:9");
   assert.equal(body.resolution, "1080p");
   assert.equal(body.reference_images, undefined);
@@ -233,6 +232,43 @@ test("Grok i2v: 3. still + refs -> image + reference_images (max 7, [{ url }]) a
   assert.equal((body.reference_images as any[]).length, 7);
   assert.equal((body.reference_images as any[])[0]?.url, "data:image/jpeg;base64,F0");
   assert.equal((body.reference_images as any[])[6]?.url, "data:image/jpeg;base64,F6");
+});
+
+test("Grok i2v: characterSheetUrl is placed at index 0 of reference_images", () => {
+  const body = buildGrokVideoGenerateBody({
+    prompt: "camera pans left",
+    firstFrameUrl: "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/shot1.jpg",
+    characterSheetUrl: "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/character-sheet.jpg",
+    referenceImageUrls: [
+      "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/location.jpg",
+      "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/character-sheet.jpg", // Duplicate should be deduped
+    ],
+    durationSec: 5,
+  });
+  assert.equal((body.image as any)?.url, "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/shot1.jpg");
+  assert.ok(Array.isArray(body.reference_images));
+  assert.equal((body.reference_images as any[]).length, 2);
+  assert.equal((body.reference_images as any[])[0]?.url, "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/character-sheet.jpg");
+  assert.equal((body.reference_images as any[])[1]?.url, "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/location.jpg");
+});
+
+test("Grok i2v: refuses storyboard grid / sheet as motion source", () => {
+  assert.throws(
+    () =>
+      buildGrokVideoGenerateBody({
+        prompt: "animate grid",
+        firstFrameUrl: "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/storyboard-grid.png",
+      }),
+    /Still required before motion/
+  );
+  assert.throws(
+    () =>
+      buildGrokVideoGenerateBody({
+        prompt: "animate sheet",
+        firstFrameUrl: "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/character-sheet.png",
+      }),
+    /Still required before motion/
+  );
 });
 
 test("Grok i2v: 4. durations clamp 1-15 and refuses T2V without image", () => {

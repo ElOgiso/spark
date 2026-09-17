@@ -2353,16 +2353,35 @@ export class ProductionAssetService {
                   prompt: "Narrator compiled slideshow video with voiceover muxing",
                   provider: "NarratorSlideshowCompiler",
                 });
-                if (storedCompiledVid?.publicUrl && isDurableMasterVideoReady(storedCompiledVid.publicUrl)) {
+                if (storedCompiledVid?.publicUrl) {
                   realVideoUrl = storedCompiledVid.publicUrl;
+                  production.videoUrl = realVideoUrl;
+                  (production as any).playablePreviewUrl = realVideoUrl;
+                  (production as any).videoStoragePath = storedCompiledVid.storagePath;
                   sceneClips.length = 0;
                   // In Narrator mode: production.videoUrl = master, scenes stay still-only (scene.videoUrl undefined)
                   currentStoryboard.forEach((s) => {
                     s.videoUrl = undefined;
                   });
                   console.log(`[SPARK Pipeline] Storage Upload: Narrator Compiled Video (${compileResult.mimeType}, ${Math.round(compileResult.durationSec)}s) -> ${realVideoUrl}`);
+
+                  if (!isSparkStorageUrl(realVideoUrl)) {
+                    void import("./ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
+                      scheduleAutoIngestMedia({
+                        url: realVideoUrl!,
+                        brandId: (brand as any).id,
+                        productionId: production.id,
+                        assetType: "video",
+                        storagePath: getStoragePath(`video/master.${ext}`),
+                        onSuccess: (sparkUrl) => {
+                          production.videoUrl = sparkUrl;
+                          (production as any).playablePreviewUrl = sparkUrl;
+                        },
+                      });
+                    });
+                  }
                 } else {
-                  throw new Error("Narrator compiled video upload failed to return a verified durable URL in Supabase Storage.");
+                  throw new Error("Narrator compiled video upload failed to return a verified video URL.");
                 }
               } else {
                 throw new Error("Narrator slideshow compiler produced an empty video blob.");
@@ -2517,7 +2536,7 @@ export class ProductionAssetService {
 
               // Consistency Gate: scene image must exist
               if (!sceneFirstFrame || !isValidMediaData(sceneFirstFrame)) {
-                const errMsg = `Consistency Gate Failure: Scene ${globalSceneNum} still frame is missing or invalid. I2V motion requires a verified scene still.`;
+                const errMsg = `Still required before motion. Scene ${globalSceneNum} still frame is missing or invalid. I2V motion requires a verified scene still.`;
                 console.error(`[SPARK Pipeline] ${errMsg}`);
                 throw new Error(errMsg);
               }
@@ -2676,21 +2695,24 @@ export class ProductionAssetService {
                 }
               };
 
+              // Step 1: Fixed order for I2V:
+              // 1. characterSheetUrl (brand/character sheet — identity lock)
+              addIdentityRef(sceneCharSheetUrl);
+              if (supportChar) {
+                const supportSheetUrl =
+                  motionMerged.supportUrls[0] ||
+                  supportChar.characterSheetUrl ||
+                  supportChar.imageUrl ||
+                  supportChar.avatarUrl;
+                addIdentityRef(supportSheetUrl);
+              }
+
+              // 4. optional location plate
+              addIdentityRef(validPlate);
+
+              // 5. Shot elements (props, wardrobe, etc.)
               for (const el of shotElements) {
                 addIdentityRef(el.url);
-              }
-              // Safety fallback: if no elements were resolved, retain main character & plate fallbacks
-              if (identityRefs.length === 0) {
-                addIdentityRef(sceneCharSheetUrl);
-                if (supportChar) {
-                  const supportSheetUrl =
-                    motionMerged.supportUrls[0] ||
-                    supportChar.characterSheetUrl ||
-                    supportChar.imageUrl ||
-                    supportChar.avatarUrl;
-                  addIdentityRef(supportSheetUrl);
-                }
-                addIdentityRef(validPlate);
               }
 
               const continuity = evaluateVisualContinuity({
@@ -2784,7 +2806,9 @@ export class ProductionAssetService {
                       prompt: sceneMotionPrompt,
                       firstFrameUrl: sceneFirstFrame,
                       sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
-                      endFrameUrl: sceneEndFrame,
+                      lastFrameUrl: sceneLastFrame,
+                      endFrameUrl: sceneEndFrame || sceneLastFrame,
+                      characterSheetUrl: sceneCharSheetUrl || undefined,
                       referenceImageUrls: effectiveRefs,
                       aspectRatio: identityPack.aspectRatio,
                       durationSec: sceneTargetDuration,
@@ -2830,6 +2854,7 @@ export class ProductionAssetService {
                     prompt: sceneMotionPrompt,
                     aspectRatio: identityPack.aspectRatio,
                     firstFrameUrl: sceneFirstFrame,
+                    characterSheetUrl: sceneCharSheetUrl || undefined,
                     referenceImageUrls: identityRefs,
                     durationSec: sceneTargetDuration,
                     lastFrameUrl: sceneLastFrame,
@@ -2890,12 +2915,17 @@ export class ProductionAssetService {
                   }
                   if (!finalClip) {
                     throw new Error(`Scene ${globalSceneNum} Video: no playable video URL returned`);
-                  } else {
-                    s.videoUrl = finalClip;
-                    (s as any).playablePreviewUrl = finalClip;
+                  }
 
-                    // If the clip is an ephemeral provider URL, fire background ingest to Spark
-                    if (isEphemeralMediaUrl(finalClip)) {
+                  s.videoUrl = finalClip;
+                  (s as any).playablePreviewUrl = finalClip;
+                    if (currentStoryboard[sIdx]) {
+                      currentStoryboard[sIdx].videoUrl = finalClip;
+                      (currentStoryboard[sIdx] as any).playablePreviewUrl = finalClip;
+                    }
+
+                    // Always ingest non-Spark URLs to bucket "Spark" so provider expiry cannot empty Review
+                    if (!isSparkStorageUrl(finalClip)) {
                       void import("./ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
                         scheduleAutoIngestMedia({
                           url: finalClip,
@@ -2909,6 +2939,7 @@ export class ProductionAssetService {
                             (s as any).playablePreviewUrl = sparkUrl;
                             if (currentStoryboard[sIdx]) {
                               currentStoryboard[sIdx].videoUrl = sparkUrl;
+                              (currentStoryboard[sIdx] as any).playablePreviewUrl = sparkUrl;
                             }
                           },
                         });
@@ -2975,7 +3006,6 @@ export class ProductionAssetService {
                   sceneClips.push(finalClip);
                   if (sIdx === 0 && (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false && currentStoryboard.length === 1) {
                     realVideoUrl = finalClip;
-                  }
                   }
                 } else {
                   console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));

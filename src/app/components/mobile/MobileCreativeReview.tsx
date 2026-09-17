@@ -25,6 +25,7 @@ import {
 import { deriveLockedProductionReferences } from "../../services/production/lockedProductionReferences";
 import { MobileProductionAssetsGallery } from "./MobileProductionAssetsGallery";
 import { isDurableMasterVideoReady } from "../../services/production/productionAssetService";
+import { resolveImmediatePlayableVideoUrl } from "../../services/production/canonicalProductionMedia";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import { buildReviewProductionView } from "../../services/production/reviewPresentation";
 import { ReviewIntelligencePanel } from "../ReviewIntelligencePanel";
@@ -132,7 +133,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     brief,
   });
   const canonicalMedia = mediaView.canonical;
-  const reviewHeroVideoUrl = canonicalMedia.canonicalMasterUrl;
+  const reviewHeroVideoUrl =
+    canonicalMedia.canonicalMasterUrl ||
+    canonicalMedia.immediatePlayableUrl ||
+    resolveImmediatePlayableVideoUrl(activeProd, { review: item, brief });
   const hasPlayableVideo = Boolean(reviewHeroVideoUrl);
   const isGenerating = mediaView.isGenerating;
 

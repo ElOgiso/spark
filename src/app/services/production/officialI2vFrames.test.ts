@@ -157,7 +157,7 @@ describe("official Veo / Grok wire fields", () => {
     assert.equal(snapVeoDuration(4), 4);
   });
 
-  it("Grok i2v body has image + reference_images (max 7, 720p) and omits undocumented last_frame", () => {
+  it("Grok i2v body has image + reference_images (max 7, 720p) and structured last_frame object", () => {
     const body = buildGrokVideoGenerateBody({
       prompt: "camera pans left",
       firstFrameDataUri: "data:image/jpeg;base64,STILL",
@@ -168,8 +168,7 @@ describe("official Veo / Grok wire fields", () => {
     });
     assert.equal(body.model, "grok-imagine-video-1.5");
     assert.equal((body.image as any)?.url, "data:image/jpeg;base64,STILL");
-    assert.equal(body.last_frame, undefined);
-    assert.equal((body as any).last_frame_url, undefined);
+    assert.deepEqual(body.last_frame, { url: "data:image/jpeg;base64,END" });
     assert.equal(body.resolution, "720p");
     assert.equal(body.aspect_ratio, "9:16");
     assert.equal((body.reference_images as any[])[0]?.url, "data:image/jpeg;base64,SHEET");

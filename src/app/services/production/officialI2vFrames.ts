@@ -16,6 +16,10 @@ export function looksLikeSheetOrGridUrl(url: string): boolean {
   );
 }
 
+export function looksLikeStoryboardGridUrl(url: string): boolean {
+  return /storyboard[-_]?grid/i.test(url);
+}
+
 export function isForbiddenI2vStartFrame(
   url: string | undefined,
   forbidden: {

@@ -30,6 +30,7 @@ export interface VideoClipRequest {
   firstFrameUrl?: string; // Direct durable public/signed URL of this shot still
   lastFrameDataUri?: string;
   lastFrameUrl?: string;
+  characterSheetUrl?: string;
   referenceDataUris?: string[];
   referenceUrls?: string[];
   referenceImageUrls?: string[];
@@ -490,7 +491,11 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
   ).trim();
 
   if (!stillUrl) {
-    throw new Error("Grok I2V requires this shot's still as frame 1. Refusing text-to-video (numInputImages=0 forbidden).");
+    throw new Error("Still required before motion. Grok I2V requires this shot's still as frame 1. Refusing text-to-video (numInputImages=0 forbidden).");
+  }
+
+  if (looksLikeStoryboardGridUrl(stillUrl) || looksLikeSheetOrGridUrl(stillUrl)) {
+    throw new Error("Still required before motion. Storyboard grids or sheet URLs cannot be used as the I2V first frame.");
   }
 
   const aspectRatio = mapGrokAspectRatio(req.aspectRatio);
@@ -509,20 +514,34 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
     image_url: stillUrl,
   };
 
+  const seen = new Set<string>();
+  seen.add(stillUrl);
+
+  const rawLastFrame =
+    req.lastFrameUrl && (req.lastFrameUrl.startsWith("http://") || req.lastFrameUrl.startsWith("https://"))
+      ? req.lastFrameUrl
+      : req.lastFrameUrl || req.lastFrameDataUri || (req as any).last_frame?.url || (req as any).last_frame_url || "";
+  const lastFrameUrl = typeof rawLastFrame === "string" ? rawLastFrame.trim() : "";
+
+  if (lastFrameUrl && lastFrameUrl !== stillUrl && !looksLikeStoryboardGridUrl(lastFrameUrl)) {
+    body.last_frame = { url: lastFrameUrl };
+    seen.add(lastFrameUrl);
+  }
+
   const rawRefs: string[] = [
+    ...((req as any).characterSheetUrl ? [(req as any).characterSheetUrl] : []),
     ...((req as any).referenceImageUrls || []),
     ...(req.referenceUrls || []),
     ...(req.referenceDataUris || []),
     ...((req as any).reference_image_urls || []),
     ...((req as any).reference_images?.map((r: any) => (typeof r === "string" ? r : r?.url || r?.imageUrl)) || []),
   ];
-  const seen = new Set<string>();
-  seen.add(stillUrl);
+
   const dedupedRefs: string[] = [];
   for (const r of rawRefs) {
     if (typeof r === "string" && r.trim()) {
       const trimmedRef = r.trim();
-      if (!seen.has(trimmedRef)) {
+      if (!seen.has(trimmedRef) && !looksLikeStoryboardGridUrl(trimmedRef)) {
         seen.add(trimmedRef);
         dedupedRefs.push(trimmedRef);
         if (dedupedRefs.length >= 7) break;
@@ -565,6 +584,7 @@ export function extractGrokVideoUrl(data: any): string {
 export function resolveClipFrames(body: Record<string, any>): {
   firstFrameUrl?: string;
   endFrameUrl?: string;
+  characterSheetUrl?: string;
   referenceImageUrls: string[];
 } {
   const firstRaw = body.imageUrl || body.firstFrameUrl || body.image_url || undefined;
@@ -576,12 +596,19 @@ export function resolveClipFrames(body: Record<string, any>): {
     body.lastFrameUrl ||
     undefined;
   const end = typeof endRaw === "string" && endRaw.trim() && endRaw.trim() !== first ? endRaw.trim() : undefined;
-  const refsRaw = body.referenceImageUrls || body.reference_image_urls || [];
+  const sheetRaw = body.characterSheetUrl || body.character_sheet_url || undefined;
+  const sheet = typeof sheetRaw === "string" && sheetRaw.trim() && sheetRaw.trim() !== first ? sheetRaw.trim() : undefined;
+  const refsRaw = [
+    ...(sheet ? [sheet] : []),
+    ...(Array.isArray(body.referenceImageUrls) ? body.referenceImageUrls : []),
+    ...(Array.isArray(body.reference_image_urls) ? body.reference_image_urls : []),
+  ];
   const refs = Array.isArray(refsRaw) ? refsRaw.filter((u: unknown) => typeof u === "string" && u.trim()) : [];
   const lastRaw = typeof body.lastFrameUrl === "string" ? body.lastFrameUrl.trim() : "";
   return {
     firstFrameUrl: first,
     endFrameUrl: end,
+    characterSheetUrl: sheet,
     referenceImageUrls: refs
       .map((u: string) => u.trim())
       .filter((u: string) => u && u !== first && u !== end && u !== lastRaw),

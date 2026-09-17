@@ -106,7 +106,7 @@ export async function scheduleAutoIngestMedia(params: {
 }): Promise<{ publicUrl: string; storagePath: string } | null> {
   const url = String(params.url || "").trim();
   if (!url) return null;
-  if (!isEphemeralMediaUrl(url) || isSparkStorageUrl(url)) {
+  if (isSparkStorageUrl(url)) {
     return { publicUrl: url, storagePath: extractSparkStoragePath(url) || "" };
   }
 
@@ -130,16 +130,30 @@ export async function scheduleAutoIngestMedia(params: {
       : `${assetType}/asset-${Date.now()}.png`);
 
   const promise = (async () => {
-    try {
-      const result = await ingestRemoteMediaToSpark({
-        url,
-        brandId,
-        productionId,
-        assetType,
-        storagePath: defaultStoragePath,
-        mimeType: params.mimeType || (assetType === "video" ? "video/mp4" : undefined),
-      });
+    let result: { publicUrl: string; storagePath: string } | null = null;
+    let attemptErr: any = null;
 
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        result = await ingestRemoteMediaToSpark({
+          url,
+          brandId,
+          productionId,
+          assetType,
+          storagePath: defaultStoragePath,
+          mimeType: params.mimeType || (assetType === "video" ? "video/mp4" : undefined),
+        });
+        if (result?.publicUrl) break;
+      } catch (err) {
+        attemptErr = err;
+        if (attempt === 1) {
+          console.warn("[scheduleAutoIngestMedia] Ingest attempt 1 failed, retrying once...", err);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+    }
+
+    try {
       if (result?.publicUrl) {
         notifyIngestSuccess(url, result.publicUrl);
 
@@ -164,10 +178,14 @@ export async function scheduleAutoIngestMedia(params: {
         return result;
       }
 
-      console.warn("[scheduleAutoIngestMedia] Ingest returned null; keeping provider preview URL.");
-      return null;
-    } catch (err) {
-      console.warn("[scheduleAutoIngestMedia] Ingest notice:", err);
+      // If ingest fails: keep provider URL, set lastError ingest-failed, retry ingest once already done. Do not mark production complete-with-no-file.
+      console.warn("[scheduleAutoIngestMedia] Ingest failed after retry; keeping provider preview URL.", attemptErr);
+      try {
+        const { updateProduction } = await import("../../backend/repositories/productionRepository");
+        await updateProduction(productionId, {
+          last_error: "ingest-failed",
+        } as any);
+      } catch {}
       return null;
     } finally {
       inFlightIngests.delete(dedupeKey);
