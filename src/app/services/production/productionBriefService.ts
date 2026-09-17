@@ -19,6 +19,7 @@ import { getEffectiveContentFormat } from "./characterSheetGate";
 import { ensureViralSparkProductionReady } from "./viralSparkGate";
 import { repairPhysicalAction, isPlannerMetaText } from "./directorScriptAuthority";
 import { planAssetBibleFromBrief } from "./preproduction/assetBibleFromBrief";
+import { compileNarrativeScript } from "./os/compileNarrativeScript";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -1204,113 +1205,39 @@ Return a valid JSON object matching this exact structure with NO markdown format
     };
 
     let parsedJson: any = null;
+    let narrativeScriptObj: any = null;
     try {
-      const rawResponse = await ModelRouter.executeCategoryRequest("production", {
-        prompt,
-        systemInstruction,
+      narrativeScriptObj = await compileNarrativeScript({
+        brand,
+        targetDurationSec: effectiveDurationSec,
+        productionModeLabel: modeKey,
+        spark,
+        researchContext: resolvedResearch || spark.researchContext,
+        referenceChannel: (brand as any).referenceChannel || undefined,
       });
-
-      parsedJson = extractJsonFromModelResponse(rawResponse);
-    } catch (parseErr) {
-      console.warn("[ProductionBriefService] Initial LLM generation notice:", parseErr);
+    } catch (scriptErr) {
+      throw scriptErr;
     }
-
-    let evaluated = mapParsedBeats(parsedJson?.beats);
-
-    // If initial LLM output is below word floor or missing required beats, RETRY the real,
-    // configured production model (up to 2 rewrite passes) before ever considering the
-    // deterministic template. We fix thin output with the proven model — we never fake premium
-    // content. Keep the best result across passes.
-    const MAX_REWRITE_PASSES = 2;
-    for (let pass = 1; pass <= MAX_REWRITE_PASSES; pass++) {
-      if (evaluated.beats.length >= budget.count && evaluated.words >= budget.wordFloor) break;
-      console.log(
-        `[ProductionBriefService] LLM brief too thin (${evaluated.words} words, ${evaluated.beats.length}/${budget.count} beats < ${budget.wordFloor}-word floor for ${effectiveDurationSec}s). WORD LAW rewrite pass ${pass}/${MAX_REWRITE_PASSES}...`
-      );
-
-      try {
-        const rewriteInstruction = `${systemInstruction}\n\nCRITICAL WORD LAW REWRITE (pass ${pass}):\nThe previous output was too thin (${evaluated.words} words). For ${effectiveDurationSec} seconds, you MUST generate at least ${budget.wordFloor} total words (~${budget.targetWords} words at 2.4 words/sec) across all ${budget.count} beats. Add concrete proof, detailed examples, or actionable steps for every beat's valueJob. NO fluff.`;
-
-        const rewritePrompt = `REWRITE SCRIPT TO FILL FULL ${effectiveDurationSec}s TARGET:
-Target Duration: ${effectiveDurationSec} seconds (${modeKey.toUpperCase()} mode).
-Required Beats: EXACTLY ${budget.count} beats.
-Word Floor: >= ${budget.wordFloor} spoken words.
-
-Expand each beat's "spokenLines" into 2-4 complete, substantive sentences that thoroughly execute that beat's valueJob with concrete domain mechanics and proof.
-
-${prompt}`;
-
-        const rewriteResponse = await ModelRouter.executeCategoryRequest("production", {
-          prompt: rewritePrompt,
-          systemInstruction: rewriteInstruction,
-        });
-
-        const rewrittenParsed = extractJsonFromModelResponse(rewriteResponse);
-        const rewrittenEvaluated = mapParsedBeats(rewrittenParsed?.beats);
-
-        // Keep the strongest result so far (more words / more beats is closer to the floor).
-        if (
-          rewrittenEvaluated.words > evaluated.words ||
-          rewrittenEvaluated.beats.length > evaluated.beats.length
-        ) {
-          parsedJson = rewrittenParsed;
-          evaluated = rewrittenEvaluated;
-        }
-
-        if (evaluated.beats.length >= budget.count && evaluated.words >= budget.wordFloor) {
-          console.log(
-            `[ProductionBriefService] Rewrite pass ${pass} succeeded: ${evaluated.words} words across ${evaluated.beats.length} beats.`
-          );
-          break;
-        }
-      } catch (rewriteErr) {
-        console.warn(`[ProductionBriefService] Rewrite pass ${pass} error:`, rewriteErr);
-      }
-    }
-
-    // Final validation: only if the real model still fails the floor after all retries do we fall
-    // back to the domain-grounded deterministic template satisfying Word Law floor.
-    let validBeats: ProductionBriefBeat[] = evaluated.beats;
-    let totalWords = evaluated.words;
+    const mappedBeats = narrativeScriptObj.chapters.map((c: any, i: number) => ({
+      timecode: `[${i*5}-${(i+1)*5}]`,
+      valueJob: c.job,
+      subject: 'main',
+      subjectType: 'main',
+      spokenLines: c.spoken,
+      onScreenText: 'TEXT',
+      cameraDirection: c.visualIntent,
+      physicalAction: c.visualIntent,
+      startState: c.visualIntent,
+      endState: c.visualIntent,
+      audio: modeKey === 'express' ? 'vo' : 'talent'
+    }));
+    let validBeats = mappedBeats;
     let contentSource: "ai" | "template-fallback" = "ai";
-
-    if (validBeats.length < budget.count || totalWords < budget.wordFloor) {
-      const fallbackWords = (fallback.beats || []).reduce(
-        (acc, b) => acc + countScriptWords(b.spokenLines),
-        0
-      );
-
-      // Spoken lines priority:
-      // 1) Viral Spark researched spoken beats (if available from source video)
-      // 2) Live brief LLM output (if meets floor)
-      // 3) Domain-grounded deterministic Word Law brief (adapted to brand, niche, pillars, audience, offer)
-      const hasViralSpokenBeats = Boolean(
-        (Array.isArray(spark.spoken_beats) && spark.spoken_beats.length >= 3) ||
-        (Array.isArray(resolvedResearch?.spokenBeats) && resolvedResearch.spokenBeats.length >= 3)
-      );
-
-      if (hasViralSpokenBeats && fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
-        console.log(
-          `[ProductionBriefService] Prioritizing Viral Spark researched spoken beats (${fallback.beats?.length || 0} beats, ${fallbackWords} words).`
-        );
-        validBeats = fallback.beats || [];
-        totalWords = fallbackWords;
-        contentSource = "ai";
-      } else if (fallbackWords >= budget.wordFloor && (fallback.beats?.length || 0) >= budget.count) {
-        console.log(
-          `[ProductionBriefService] Prioritizing domain-grounded Word Law brief (${fallback.beats?.length || 0} beats, ${fallbackWords} words).`
-        );
-        validBeats = fallback.beats || [];
-        totalWords = fallbackWords;
-        contentSource = "template-fallback";
-      } else {
-        const errMsg = `Production brief generation failed: LLM output did not meet quality floor (${totalWords} words < ${budget.wordFloor} minimum words, ${validBeats.length}/${budget.count} beats). Refusing to ship generic template copy.`;
-        console.error(`[ProductionBriefService] ${errMsg}`);
-        throw new Error(errMsg);
-      }
-    }
-
-    let parsedHook = asText(parsedJson?.hook, fallback.hook);
+    spark.opening_line = narrativeScriptObj.hook?.spoken;
+    spark.spoken_beats = narrativeScriptObj.chapters.map((c: any) => c.spoken);
+    spark.suggestedScript = narrativeScriptObj.fullSpokenScript;
+    spark.status = 'ready';
+    let parsedHook = narrativeScriptObj.hook?.spoken || spark.hook;
     if (
       parsedHook.toLowerCase().startsWith("hook:") ||
       parsedHook.toLowerCase().includes("curiosity opener") ||
@@ -1325,7 +1252,7 @@ ${prompt}`;
       parsedOutline = fallback.scriptOutline;
     }
 
-    const storyboardScenes: ProductionScene[] = validBeats.map((b, idx) => {
+    const storyboardScenes: ProductionScene[] = validBeats.map((b: any, idx: number) => {
       const rawAction = String(b.physicalAction || "").trim();
       const action = rawAction && !isPlannerMetaText(rawAction)
         ? rawAction
@@ -1366,6 +1293,7 @@ ${prompt}`;
       targetDurationSec: effectiveDurationSec,
       hook: parsedHook,
       scriptOutline: parsedOutline,
+      narrativeScript: narrativeScriptObj,
       beats: validBeats,
       storyboard: storyboardScenes,
       spokenCta: asText(parsedJson?.spokenCta, fallback.spokenCta),

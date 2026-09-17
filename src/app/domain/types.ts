@@ -281,6 +281,7 @@ export interface ProductionBriefBeat {
 }
 
 export interface ProductionBrief {
+    narrativeScript?: NarrativeScript;
   title: string;
   productionMode: string;
   hook: string;
@@ -1060,3 +1061,37 @@ export interface ThinkingState {
 }
 
 
+
+
+export interface NarrativeScript {
+  title: string;
+  logline: string;
+  premise: string;
+  targetDurationSec: number;
+  format: "faceless" | "host" | "story" | "anime" | string;
+  hook: {
+    spoken: string;
+    opensOnPayoff: boolean;
+    backstoryDeferred: boolean;
+  };
+  chapters: Array<{
+    id: string;
+    order: number;
+    title: string;
+    durationSec: number;
+    job: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
+    spoken: string;
+    visualIntent: string;
+    setsUpNextChapterId?: string;
+  }>;
+  fullSpokenScript: string;
+  openLoops: { plantedAtSec: number[]; resolvedAtSec: number[] };
+  cta: { spoken: string; onScreen?: string };
+  claims?: Array<{ claim: string; verified: boolean | "pending"; source?: string }>;
+  contentSource: "ai" | "template-fallback";
+  provider?: string;
+  model?: string;
+  sourceUrls?: string[];
+  formatBorrowedFrom?: string;
+  mustNotCopy: string[];
+}
