@@ -13,7 +13,8 @@ export type GenerationTaskKind =
   | "music"
   | "merge"
   | "edit"
-  | "extend";
+  | "extend"
+  | "short_cut";
 
 export type GenerationTaskStatus =
   | "planned"

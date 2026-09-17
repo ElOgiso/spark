@@ -37,6 +37,7 @@ export interface ProductionSettingsSnapshot {
   /** Flat convenience fields for resolvers / debug */
   productionMode: ResolvedMode;
   contentFormat: ContentFormat;
+  targetLanguage?: string;
   brand: {
     id?: string;
     name: string;
@@ -52,6 +53,7 @@ export interface ProductionSettingsSnapshot {
     aspectMode: AspectMode;
     targetDurationSec: number;
     automationMode?: string;
+    targetLanguage?: string;
   };
   video: {
     preferredVideoProvider?: string;
@@ -143,9 +145,15 @@ export function buildProductionSettingsSnapshot(params: {
   creditSettings?: GenerationCreditSettings;
   productionMode?: string | ResolvedMode;
   automationMode?: string;
+  targetLanguage?: string;
   capturedAt?: string;
 }): ProductionSettingsSnapshot {
   const { brand, spark } = params;
+  const targetLanguage =
+    params.targetLanguage ||
+    (brand as any).targetLanguage ||
+    brand.language ||
+    undefined;
   const formatSettings = getEffectiveFormatSettings({
     formatSettings: params.formatSettings || brand.formatSettings,
     brand,
@@ -188,6 +196,7 @@ export function buildProductionSettingsSnapshot(params: {
     capturedAt: params.capturedAt || new Date().toISOString(),
     productionMode,
     contentFormat,
+    targetLanguage,
     brand: {
       id: brand.id,
       name: brand.name,
@@ -203,6 +212,7 @@ export function buildProductionSettingsSnapshot(params: {
       aspectMode: formatSettings.aspectMode,
       targetDurationSec: formatSettings.targetDurationSec,
       automationMode: params.automationMode || brand.automation_mode,
+      targetLanguage,
     },
     video: {
       preferredVideoProvider: formatSettings.preferredVideoProvider,

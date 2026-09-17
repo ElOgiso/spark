@@ -38,6 +38,9 @@ export type {
   CandidateRejection,
   FallbackPlanEntry,
   MediaRoutingDecision,
+  VoiceMode,
+  CaptioningCapability,
+  DistributionProfile,
 } from "./types";
 
 export { provenance, andBool, minControlLevel, isStale } from "./provenance";
@@ -72,6 +75,9 @@ export {
 } from "./router";
 export {
   SPARK_SYSTEM_CAPABILITIES,
+  CAPTIONING_CAPABILITY,
+  DISTRIBUTION_PROFILES,
+  validateVoiceClonePreset,
   getSparkCapability,
   listSparkCapabilities,
   type SparkSystemCapability,

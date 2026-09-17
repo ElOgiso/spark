@@ -374,3 +374,21 @@ export interface MediaRoutingDecision {
   reasonCodes: string[];
   objective: RoutingObjective;
 }
+
+export type VoiceMode = "stock" | "cloned";
+
+export interface CaptioningCapability {
+  supported: boolean;
+  formats: ("srt" | "vtt" | "json")[];
+  autoAlign: boolean;
+  provenance?: CapabilityProvenance;
+}
+
+export interface DistributionProfile {
+  platform: "youtube" | "tiktok" | "reels" | "twitter" | string;
+  status: "live" | "stub" | "unavailable";
+  requiresOAuth: boolean;
+  supportsResumableUpload: boolean;
+  supportsDirectPublish: boolean;
+  notes?: string;
+}

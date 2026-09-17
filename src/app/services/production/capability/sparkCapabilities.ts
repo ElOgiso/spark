@@ -1,9 +1,12 @@
-﻿/**
+/**
  * SPARK Native System Capability Registry
  *
  * Machine-readable declaration of SPARK's internal media production capabilities,
  * what inputs they require, what outputs they produce, and which AI providers they orchestrate.
  */
+
+import type { CaptioningCapability, DistributionProfile, VoiceMode } from "./types";
+import type { Brand, Character } from "../../../domain/types";
 
 export interface SparkSystemCapability {
   id: string;
@@ -163,7 +166,127 @@ export const SPARK_SYSTEM_CAPABILITIES: SparkSystemCapability[] = [
     supportsSerializedContinuity: true,
     status: "active",
   },
+  {
+    id: "captioning",
+    name: "Automated Subtitle & Caption Alignment",
+    category: "post_production",
+    description: "Generates synchronized SRT/VTT caption tracks from spoken dialogue with boundary alignment.",
+    orchestratesProviders: ["gemini", "openai"],
+    inputRequirements: ["spoken_audio_url", "narrative_script"],
+    outputArtifacts: ["caption_track_srt", "caption_track_vtt", "timed_captions_json"],
+    supportedProductionModes: ["standard", "deep", "express"],
+    supportsSerializedContinuity: false,
+    status: "active",
+  },
+  {
+    id: "narration_voice_cloning",
+    name: "Voice Cloning & Custom Preset Synthesis",
+    category: "generation",
+    description: "Executes voiceover using user-verified voice clone presets stored in brand settings.",
+    orchestratesProviders: ["elevenlabs"],
+    inputRequirements: ["spoken_script", "preset_id"],
+    outputArtifacts: ["cloned_voiceover_audio_url"],
+    supportedProductionModes: ["standard", "deep", "express"],
+    supportsSerializedContinuity: true,
+    status: "active",
+  },
+  {
+    id: "distribution_youtube",
+    name: "YouTube Shorts & Longform Distribution",
+    category: "publishing",
+    description: "Publishes master and derived short packages to YouTube using OAuth channel tokens.",
+    orchestratesProviders: [],
+    inputRequirements: ["canonical_video_url", "title", "description"],
+    outputArtifacts: ["PublishJob", "youtube_video_id"],
+    supportedProductionModes: ["standard", "deep", "express"],
+    supportsSerializedContinuity: false,
+    status: "active",
+  },
+  {
+    id: "distribution_tiktok",
+    name: "TikTok Video Distribution Profile",
+    category: "publishing",
+    description: "Direct TikTok video publication profile (stub execute with package pointer).",
+    orchestratesProviders: [],
+    inputRequirements: ["canonical_video_url", "caption"],
+    outputArtifacts: ["PublishJob"],
+    supportedProductionModes: ["standard", "deep", "express"],
+    supportsSerializedContinuity: false,
+    status: "experimental",
+  },
+  {
+    id: "distribution_reels",
+    name: "Instagram Reels Distribution Profile",
+    category: "publishing",
+    description: "Direct Instagram Reels video publication profile (stub execute with package pointer).",
+    orchestratesProviders: [],
+    inputRequirements: ["canonical_video_url", "caption"],
+    outputArtifacts: ["PublishJob"],
+    supportedProductionModes: ["standard", "deep", "express"],
+    supportsSerializedContinuity: false,
+    status: "experimental",
+  },
 ];
+
+export const CAPTIONING_CAPABILITY: CaptioningCapability = {
+  supported: true,
+  formats: ["srt", "vtt", "json"],
+  autoAlign: true,
+};
+
+export const DISTRIBUTION_PROFILES: Record<string, DistributionProfile> = {
+  youtube: {
+    platform: "youtube",
+    status: "stub",
+    requiresOAuth: true,
+    supportsResumableUpload: false,
+    supportsDirectPublish: false,
+    notes: "Resumable upload API pending. Transitions to Export Ready.",
+  },
+  tiktok: {
+    platform: "tiktok",
+    status: "unavailable",
+    requiresOAuth: true,
+    supportsResumableUpload: false,
+    supportsDirectPublish: false,
+    notes: "Direct publish unavailable without platform partner verification.",
+  },
+  reels: {
+    platform: "reels",
+    status: "unavailable",
+    requiresOAuth: true,
+    supportsResumableUpload: false,
+    supportsDirectPublish: false,
+    notes: "Direct publish unavailable without platform partner verification.",
+  },
+};
+
+/**
+ * Validates that an existing voice clone preset ID is configured on the brand or character.
+ * Hard-fails if cloned voice is requested without a preset ID.
+ */
+export function validateVoiceClonePreset(
+  brand?: Brand | null,
+  character?: Character | null
+): { ok: boolean; presetId?: string; error?: string } {
+  const settings = brand?.settings || {};
+  const presetId =
+    settings.brand_voices?.presetId ||
+    settings.voicePresetId ||
+    settings.voiceCloneId ||
+    (character as any)?.voice?.presetId ||
+    (character as any)?.voiceCloneId;
+
+  if (!presetId || typeof presetId !== "string" || presetId.trim().length === 0) {
+    return {
+      ok: false,
+      error:
+        "Voice mode 'cloned' requested but no voice clone preset ID exists for this brand/character. Set up voice preset in brand settings before requesting cloned voice variants.",
+    };
+  }
+
+  return { ok: true, presetId: presetId.trim() };
+}
 
 /**
  * Returns the machine-readable capability for a specific SPARK capability ID.
@@ -181,3 +304,4 @@ export function listSparkCapabilities(category?: SparkSystemCapability["category
   }
   return [...SPARK_SYSTEM_CAPABILITIES];
 }
+

@@ -43,6 +43,15 @@ export interface PlanTopicsInput {
   patterns?: ResearchPattern[];
   count?: number; // default 5, capped at 8 (e.g. for calendar mode)
   allowOverride?: boolean; // executive explicit override
+  /**
+   * Optional cadence config read from brand.settings.cadence.
+   * Adjusts the default topic count and adds calendar-aware notes to the prompt.
+   */
+  cadenceConfig?: {
+    longFormPerWeek?: number;
+    shortsPerDay?: number;
+    timezone?: string;
+  };
 }
 
 /**
@@ -146,8 +155,11 @@ export function collectMustNotCopyTitles(sources: ResearchSource[] = []): string
  * Generates up to count (5 default, max 8) niche-locked TopicCandidate items.
  */
 export async function planTopics(input: PlanTopicsInput): Promise<TopicCandidate[]> {
-  const count = Math.min(Math.max(1, input.count ?? 5), 8);
   const brand = input.brand;
+  // Read cadence config (brand.settings.cadence) to adapt topic count
+  const cadence = input.cadenceConfig ?? (brand?.settings?.cadence as { longFormPerWeek?: number; shortsPerDay?: number; timezone?: string } | undefined);
+  const cadenceOverrideCount = cadence?.longFormPerWeek != null ? Math.min(cadence.longFormPerWeek, 8) : undefined;
+  const count = Math.min(Math.max(1, cadenceOverrideCount ?? input.count ?? 5), 8);
   const lockedNiche = (
     input.lockedNicheTag ||
     brand.settings?.nicheTag ||
@@ -184,6 +196,9 @@ export async function planTopics(input: PlanTopicsInput): Promise<TopicCandidate
       : "";
 
   const userIntentPrompt = input.userIntent ? `User Intent / Focus: "${input.userIntent}"` : "";
+  const cadenceNote = cadence
+    ? `Publishing Cadence: ${cadence.longFormPerWeek ?? "?"} long-form/week, ${cadence.shortsPerDay ?? "?"} shorts/day${cadence.timezone ? ` (${cadence.timezone})` : ""}. Align topic count and pacing to this cadence.`
+    : "";
 
   const prompt = `You are the Executive Creative Director for brand "${brand.name}".
 Your task is to plan up to ${count} original, high-performing video topic candidates.
@@ -198,6 +213,7 @@ STRICT CONSTRAINTS:
 ${refChannelNote}
 ${mustNotCopyNote}
 ${userIntentPrompt}
+${cadenceNote}
 
 FORMAT SIGNATURE TO BORROW (Pacing & Structure Only):
 - Hook Style: ${formatSig.hookStyle}
