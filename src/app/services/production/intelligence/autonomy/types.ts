@@ -218,3 +218,4 @@ export interface LearningUpdateResult {
 }
 
 export type { CreativeLearning, AdaptiveStrategyAdvice, PerformanceSnapshot, MemoryItem };
+export type { RetentionObservation, RetentionPolicy } from "./retentionPolicy";

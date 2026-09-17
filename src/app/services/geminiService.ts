@@ -161,6 +161,14 @@ function generateSmartFallbackResponse(
     responseText = `Maurice Otabor (ElOgiso) is the founder of SPARK. He's a Nigerian AI enthusiast, hand-paint artist, crypto investor, and developer building at the intersection of culture, technology, and media systems (ElOgiso.art · @ElOgiso).`;
   } else if (/reading|paying attention|listening|understand me|get what i said/i.test(query)) {
     responseText = `Yeah... I'm right here with you on ${brandName}. What's on your mind?`;
+  } else if (/what did we learn|what have we learned|retention policy|open loop|audience learning/i.test(query)) {
+    const retPolicy = context?.brand?.settings?.retentionPolicy;
+    const interval = retPolicy?.targetOpenLoopIntervalSec || 60;
+    const sampleSize = retPolicy?.sampleSize || 0;
+    const hookMemory = (context?.memoryItems || []).find(
+      (m: any) => m.category === "Winning hooks" || m.category === "Audience preferences"
+    );
+    responseText = `We learned that for ${brandName}, open loops land best every ~${interval}s (${sampleSize} observation sample). ${hookMemory?.text || "First open loop should land before early drop-off."}`;
   } else if (/what are you doing|what's up|status/i.test(query)) {
     responseText = `Just monitoring active workspace performance and keeping our short-form pipeline synced for ${brandName}.`;
   } else if (/approve|accept|publish|ship it|schedule/i.test(query)) {

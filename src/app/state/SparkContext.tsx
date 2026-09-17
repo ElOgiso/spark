@@ -4096,6 +4096,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const urlMatch = prompt.match(/https?:\/\/[^\s]+/i);
     const isResearchReq = !taskMedia && (/\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch);
     const isMemoryReq = !taskMedia && /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
+    const isWhatDidWeLearnReq =
+      !taskMedia &&
+      /\b(what did we learn|what have we learned|retention policy|learned retention|open loop policy|what worked)\b/i.test(lower);
     const isTopicsReq =
       !taskMedia &&
       /\b(give me topics|generate ideas|suggest topics|topic ideas|content ideas|what should i make|what's working in|plan topics|brainstorm topics)\b/i.test(lower);
@@ -4308,6 +4311,24 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         category: "Strategy",
         source: "Executive Chat",
         meta: "Committed to SPARK workspace memory bank",
+      };
+    } else if (isWhatDidWeLearnReq) {
+      const retPolicy = state.brand?.settings?.retentionPolicy;
+      const interval = retPolicy?.targetOpenLoopIntervalSec || 60;
+      const sampleSize = retPolicy?.sampleSize || 0;
+      const hookMemory = (state.memoryItems || []).find(
+        (m: any) => m.category === "Winning hooks" || m.category === "Audience preferences"
+      );
+      taskMedia = {
+        type: "retention_learning",
+        id: `ret-${Date.now()}`,
+        title: "Learned Retention Policy",
+        targetOpenLoopIntervalSec: interval,
+        sampleSize,
+        notes: retPolicy?.notes || ["Default baseline pacing; pending live observation data."],
+        winningHookRule: hookMemory?.text,
+        status: "Active Policy",
+        meta: `Target open loop every ~${interval}s (${sampleSize} observation sample).`,
       };
     } else if (isSampleReq) {
       const spark = state.viralSparks?.[0];
@@ -4585,6 +4606,50 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       } catch (learnErr) {
         console.warn("[SparkContext] Post-publish learning update notice:", learnErr);
+      }
+
+      // Prompt 7: Post-publish retention observation -> Phase 11 retention learner
+      try {
+        const { recordRetentionObservation, learnRetentionPolicy, getStoredRetentionObservations } = await import(
+          "../services/production/intelligence/autonomy/retentionPolicy"
+        );
+        const durationVal =
+          typeof (production as any)?.duration === "number"
+            ? (production as any).duration
+            : parseInt(String((production as any)?.duration || "60").replace(/[^\d]/g, ""), 10) || 60;
+
+        recordRetentionObservation({
+          brandId: brandId || state.brand?.id || "brand",
+          productionId,
+          platform: String(platform),
+          sourceUrl: postUrl || undefined,
+          durationSec: durationVal,
+          capturedAt: new Date().toISOString(),
+          contentSource: "spark_manual",
+        });
+
+        const allObs = getStoredRetentionObservations(brandId || state.brand?.id);
+        const learnRes = learnRetentionPolicy(allObs, state.brand, state.memoryItems || []);
+        if (learnRes.policy) {
+          setState((prev: any) => ({
+            ...prev,
+            brand: prev.brand
+              ? {
+                  ...prev.brand,
+                  settings: {
+                    ...(prev.brand.settings || {}),
+                    retentionPolicy: learnRes.policy,
+                  },
+                }
+              : prev.brand,
+            memoryItems: learnRes.updatedMemories || prev.memoryItems,
+          }));
+          if (brandId && isSupabaseConfigured() && learnRes.memoryItem) {
+            void persistMemoryCreate(brandId, learnRes.memoryItem);
+          }
+        }
+      } catch (retErr) {
+        console.warn("[SparkContext] Post-publish retention policy notice:", retErr);
       }
 
       alert(`Successfully published to ${platform}!${postUrl ? ` URL: ${postUrl}` : ""}`);

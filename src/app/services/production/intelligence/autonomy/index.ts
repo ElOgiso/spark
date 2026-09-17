@@ -37,3 +37,22 @@ export {
   buildAutonomousPlan,
   planProductionWithLearning,
 } from "./autonomousLoop";
+export {
+  learnRetentionPolicy,
+  quarantineNoiseAndOutliers,
+  calculateObservationWeight,
+  getStoredRetentionObservations,
+  saveStoredRetentionObservations,
+  recordRetentionObservation,
+  DEFAULT_RETENTION_POLICY,
+  MIN_RETENTION_SAMPLE_SIZE,
+  DEFAULT_OPEN_LOOP_INTERVAL_SEC,
+  MIN_OPEN_LOOP_INTERVAL_SEC,
+  MAX_OPEN_LOOP_INTERVAL_SEC,
+  RETENTION_DECAY_HALF_LIFE_DAYS,
+} from "./retentionPolicy";
+export type {
+  RetentionObservation,
+  RetentionPolicy,
+  LearnRetentionPolicyResult,
+} from "./retentionPolicy";

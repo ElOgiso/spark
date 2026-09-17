@@ -1,6 +1,7 @@
 import { ModelRouter } from "../../runtime/modelRouter";
 import type { Brand, ViralSpark, StructuredResearchContext, NarrativeScript } from "../../../domain/types";
 import { factCheckNarrativeScript, evaluateScriptForProduction } from "./scriptQualityGates";
+import type { RetentionPolicy } from "../intelligence/autonomy";
 
 export interface CompileNarrativeScriptParams {
   brand: Brand;
@@ -12,10 +13,11 @@ export interface CompileNarrativeScriptParams {
   sourceUrls?: string[];
   userIntent?: string;
   mustNotCopy?: string[];
+  retentionPolicy?: RetentionPolicy;
 }
 
 export function compileNarrativeScriptPrompt(params: CompileNarrativeScriptParams): string {
-  const { brand, targetDurationSec, productionModeLabel, spark, researchContext, referenceChannel, sourceUrls, userIntent, mustNotCopy } = params;
+  const { brand, targetDurationSec, productionModeLabel, spark, researchContext, referenceChannel, sourceUrls, userIntent, mustNotCopy, retentionPolicy } = params;
 
   let prompt = `YOU ARE THE WRITER. SPARK IS THE STUDIO.
 Return ONLY the typed script object.
@@ -76,6 +78,13 @@ ${productionModeLabel === "cinematic" ? "- Spoken lines are IN-WORLD / talent. N
 
   if (sourceUrls && sourceUrls.length > 0) {
     prompt += `\nSOURCE URLs:\n${sourceUrls.join("\n")}\nIf you can fetch/watch/read this context with your tools, USE it. If you cannot access it, say so in claims and write from verified general knowledge. Do not invent a fake transcript.\n`;
+  }
+
+  const effectiveRetentionPolicy = retentionPolicy || (brand.settings?.retentionPolicy as RetentionPolicy | undefined);
+  if (effectiveRetentionPolicy?.targetOpenLoopIntervalSec) {
+    const interval = effectiveRetentionPolicy.targetOpenLoopIntervalSec;
+    const plantEarly = Math.min(20, Math.max(10, Math.round(interval * 0.4)));
+    prompt += `\nRETENTION OPEN-LOOP POLICY (DATA HINT):\n- Target open-loop interval: Plant open loops every ~${interval}s throughout the script.\n- Plant first open loop early (before ~${plantEarly}s) to prevent viewer drop-off.\n- Plant and resolve loops in openLoops.plantedAtSec and openLoops.resolvedAtSec.\n- Open on payoff, defer backstory.\n- Do NOT inject spoken lines from memory or copy past hook text verbatim; keep all narrative content original.\n`;
   }
 
   prompt += `

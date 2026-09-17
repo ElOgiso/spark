@@ -26,6 +26,7 @@ export interface ScriptEvaluationScores {
 export interface ScriptEvaluationResult {
   ok: boolean;
   reasons: string[];
+  warnings?: string[];
   scores: ScriptEvaluationScores;
   claims?: Array<{ claim: string; verified: boolean | "pending"; source?: string; isCorePremise?: boolean }>;
 }
@@ -346,6 +347,7 @@ export function evaluateScriptForProduction(
   referenceTitles: string[] = []
 ): ScriptEvaluationResult {
   const reasons: string[] = [];
+  const warnings: string[] = [];
 
   const overlapScore = computeReferenceContentOverlapScore(script, spark, referenceTitles);
   const genericity = computeGenericityScore(script, spark);
@@ -394,6 +396,21 @@ export function evaluateScriptForProduction(
     }
   }
 
+  // Gate 4: Retention Open-Loop Pacing Warning
+  // Warn if long script has zero planted loops when brand retention policy has sampleSize >= 3
+  const targetDurationSec = script.targetDurationSec || 60;
+  const plantedLoops = script.openLoops?.plantedAtSec || [];
+  const retPolicy = brand?.settings?.retentionPolicy;
+  const sampleSize = typeof retPolicy?.sampleSize === "number" ? retPolicy.sampleSize : 0;
+
+  if (targetDurationSec >= 45 && plantedLoops.length === 0 && sampleSize >= 3) {
+    const isEducational = formatStr.includes("faceless") || formatStr.includes("educational") || formatStr.includes("host") || formatStr.includes("explainer");
+    const targetInterval = retPolicy?.targetOpenLoopIntervalSec || 60;
+    warnings.push(
+      `Script has no planted open loops despite retention policy recommending loops every ~${targetInterval}s. For ${isEducational ? "educational/faceless" : "long"} content, viewer drop-off is likely without early open loops.`
+    );
+  }
+
   // Attach scores to script in place
   script.genericityScore = genericity;
   script.originalityScore = originality;
@@ -402,6 +419,7 @@ export function evaluateScriptForProduction(
   return {
     ok: reasons.length === 0,
     reasons,
+    warnings,
     scores: {
       genericityScore: genericity,
       originalityScore: originality,

@@ -81,6 +81,14 @@ export class PromptContextBuilder {
       }
     }
 
+    // 3b. Retention & Open-Loop Policy (Phase 11 Pacing Laws)
+    if (workspaceState?.brand?.settings?.retentionPolicy) {
+      const rp = workspaceState.brand.settings.retentionPolicy;
+      contextParts.push(
+        `RETENTION OPEN-LOOP POLICY: Target loop interval: ~${rp.targetOpenLoopIntervalSec || 60}s (Sample size: ${rp.sampleSize || 0}). Notes: ${(rp.notes || []).join("; ")}`
+      );
+    }
+
     // 4. Current Workspace State
     if (workspaceState) {
       const activeProds = workspaceState.productions?.length || 0;

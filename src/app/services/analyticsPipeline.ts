@@ -498,6 +498,55 @@ export async function syncConnectedPlatformAnalytics(): Promise<AnalyticsSyncRes
           console.warn("[analyticsPipeline] memory write failed", memErr);
         }
       }
+
+      // Prompt 7: Retention observation ingest -> Phase 11 retention policy
+      if (brandId && record.available && !record.syncFailure && !record.emptyGenuine) {
+        try {
+          const { recordRetentionObservation, learnRetentionPolicy, getStoredRetentionObservations } = await import(
+            "./production/intelligence/autonomy/retentionPolicy"
+          );
+
+          let avgViewDurationSec: number | undefined;
+          if (record.watchTimeHours && record.watchTimeHours > 0 && record.views && record.views > 0) {
+            avgViewDurationSec = Math.round((record.watchTimeHours * 3600) / record.views);
+          }
+
+          if (avgViewDurationSec && avgViewDurationSec > 0) {
+            recordRetentionObservation({
+              brandId,
+              platform: token.platform,
+              avgViewDurationSec,
+              capturedAt: new Date().toISOString(),
+              contentSource: "youtube_analytics",
+            });
+            const allObs = getStoredRetentionObservations(brandId);
+            const state = loadPersistedState<any>() || {};
+            const learnRes = learnRetentionPolicy(allObs, state.brand, state.memoryItems || []);
+            if (learnRes.policy) {
+              const updatedBrand = state.brand
+                ? {
+                    ...state.brand,
+                    settings: {
+                      ...(state.brand.settings || {}),
+                      retentionPolicy: learnRes.policy,
+                    },
+                  }
+                : state.brand;
+              savePersistedState({
+                ...state,
+                brand: updatedBrand,
+                memoryItems: learnRes.updatedMemories || state.memoryItems,
+              });
+              if (learnRes.memoryItem) {
+                const { persistMemoryCreate } = await import("../backend/workspaceSync");
+                void persistMemoryCreate(brandId, learnRes.memoryItem);
+              }
+            }
+          }
+        } catch (retErr) {
+          console.warn("[analyticsPipeline] retention observation ingest notice:", retErr);
+        }
+      }
     } catch (err: any) {
       console.error("[analyticsPipeline] platform sync failed", token.platform, err);
       const fail: PlatformAnalyticsRecord = {
