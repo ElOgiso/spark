@@ -179,6 +179,7 @@ interface SparkContextType {
   addResearchSource: (url: string) => Promise<void>;
   removeResearchSource: (id: string) => void;
   syncResearchSource: (id: string, forceManual?: boolean) => Promise<void>;
+  planBrandTopics: (userIntent?: string, count?: number) => Promise<ViralSpark[]>;
   addAsset: (name: string, type: "video" | "audio" | "image" | "document", size: string) => void;
   toggleContentPillar: (label: string) => void;
   toggleTone: (label: string) => void;
@@ -3713,6 +3714,39 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const planBrandTopics = async (userIntent?: string, count: number = 5): Promise<ViralSpark[]> => {
+    if (!state.brand) return [];
+    try {
+      const { planTopics, createViralSparksFromTopics } = await import(
+        "../services/production/os/topicIntelligence"
+      );
+      const candidates = await planTopics({
+        brand: state.brand,
+        userIntent,
+        count,
+        researchSources: state.researchSources || [],
+        patterns: state.researchPatterns || [],
+      });
+      if (!candidates || candidates.length === 0) return [];
+
+      const { created } = await createViralSparksFromTopics(candidates, state.brand, {
+        existingSparks: state.viralSparks || [],
+        autoHydrateFirst: true,
+      });
+
+      if (created.length > 0) {
+        setState((prev: any) => ({
+          ...prev,
+          viralSparks: [...created, ...(prev.viralSparks || [])],
+        }));
+      }
+      return created;
+    } catch (err) {
+      console.warn("[SparkContext] planBrandTopics notice:", err);
+      return [];
+    }
+  };
+
   const addAsset = (name: string, type: "video" | "audio" | "image" | "document", size: string) => {
     const newAsset: Asset = {
       id: `as-${Date.now()}`,
@@ -3977,6 +4011,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const urlMatch = prompt.match(/https?:\/\/[^\s]+/i);
     const isResearchReq = !taskMedia && (/\b(research this|study this|add this channel|add this creator|add this video|add this as research)\b/i.test(lower) || !!urlMatch);
     const isMemoryReq = !taskMedia && /^(remember|save this|add memory|never forget|note that)\b/i.test(lower);
+    const isTopicsReq =
+      !taskMedia &&
+      /\b(give me topics|generate ideas|suggest topics|topic ideas|content ideas|what should i make|what's working in|plan topics|brainstorm topics)\b/i.test(lower);
 
     const isFormatCommand =
       !taskMedia &&
@@ -4250,6 +4287,18 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateAutomationMode("autonomous");
     } else if (lower.includes("copilot mode") || lower.includes("semi auto")) {
       updateAutomationMode("balanced");
+    } else if (isTopicsReq) {
+      const isCalendarBatch = /\b(calendar|schedule|cadence|batch|week|month)\b/i.test(lower);
+      const targetCount = isCalendarBatch ? 8 : 5;
+      const createdSparks = await planBrandTopics(prompt, targetCount);
+      taskMedia = {
+        type: "topic_ideas",
+        id: `topics-${Date.now()}`,
+        title: `Topic Intelligence (${createdSparks.length} Niche Sparks)`,
+        status: "Planned",
+        sparksCount: createdSparks.length,
+        meta: `Niche-locked topic cards generated and added to Viral Sparks queue.`,
+      };
     }
 
     try {
@@ -4501,6 +4550,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addResearchSource,
         removeResearchSource,
         syncResearchSource,
+        planBrandTopics,
         addAsset,
         addOffer,
         updateOffer,
