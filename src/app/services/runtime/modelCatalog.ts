@@ -15,6 +15,7 @@ export interface ProviderModel {
   capabilities: ModelCapability[];
   recommended?: boolean;
   status?: "stable" | "preview" | "deprecated";
+  source?: "live" | "static" | "live+static";
 }
 
 export interface ProviderCatalog {
@@ -399,23 +400,85 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
   },
 ];
 
+const LIVE_MODELS_STORAGE_KEY = "spark_live_models_cache_v1";
+
+let clientLiveModelsByProvider: Record<string, ProviderModel[]> = {};
+
+function hydrateClientLiveModels(): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const raw = localStorage.getItem(LIVE_MODELS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        clientLiveModelsByProvider = parsed;
+      }
+    }
+  } catch (err) {
+    console.warn("[modelCatalog] LocalStorage hydration notice:", err);
+  }
+}
+
+hydrateClientLiveModels();
+
+/**
+ * Merges server-discovered live provider models into the client-side catalog.
+ * Does not overwrite static recommended policies.
+ */
+export function mergeLiveModelsIntoCatalog(modelsByProvider: Record<string, ProviderModel[]>): void {
+  if (!modelsByProvider || typeof modelsByProvider !== "object") return;
+  clientLiveModelsByProvider = { ...clientLiveModelsByProvider, ...modelsByProvider };
+
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(LIVE_MODELS_STORAGE_KEY, JSON.stringify(clientLiveModelsByProvider));
+    } catch {
+      // ignore storage quota error
+    }
+  }
+}
+
+export function clearClientLiveCatalog(): void {
+  clientLiveModelsByProvider = {};
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.removeItem(LIVE_MODELS_STORAGE_KEY);
+    } catch {}
+  }
+}
+
+export function getClientLiveCatalog(): Record<string, ProviderModel[]> {
+  return { ...clientLiveModelsByProvider };
+}
+
 /**
  * Filter models for a provider that support the specified capability.
+ * Merges live provider models with the static spine.
  */
 export function getModelsForProviderAndCapability(
   provider: AIProviderId,
   capability?: AICapabilityType
 ): ProviderModel[] {
   const prov = MODEL_CATALOG.find((p) => p.provider === provider);
-  if (!prov) return [];
-  if (!capability) return prov.models;
+  const staticModels = prov ? prov.models : [];
+  const liveModels = clientLiveModelsByProvider[provider] || [];
 
-  return prov.models.filter((m) => {
+  // If liveModels is populated, it represents the merged static + live list from server.
+  // Otherwise, fall back cleanly to static models.
+  const candidateModels: ProviderModel[] = liveModels.length > 0 ? liveModels : staticModels;
+
+  if (!capability) return candidateModels;
+
+  return candidateModels.filter((m) => {
     if (capability === "Chat" || capability === "Reasoning") {
       return m.capabilities.includes("Chat") || m.capabilities.includes("Reasoning");
     }
     if (capability === "Vision" || capability === "Video Understanding") {
-      return m.capabilities.includes("Vision") || m.capabilities.includes("Video Understanding") || m.capabilities.includes("Chat");
+      return (
+        m.capabilities.includes("Vision") ||
+        m.capabilities.includes("Video Understanding") ||
+        m.capabilities.includes("Chat")
+      );
     }
     return m.capabilities.includes(capability as ModelCapability);
   });
@@ -436,8 +499,7 @@ export function getRecommendedModel(
  * Resolve human-readable label for a model ID.
  */
 export function getModelLabel(provider: AIProviderId, modelId: string): string {
-  const prov = MODEL_CATALOG.find((p) => p.provider === provider);
-  if (!prov) return modelId;
-  const match = prov.models.find((m) => m.id === modelId);
+  const models = getModelsForProviderAndCapability(provider);
+  const match = models.find((m) => m.id === modelId);
   return match?.label || modelId;
 }

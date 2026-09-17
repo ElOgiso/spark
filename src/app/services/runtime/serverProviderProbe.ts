@@ -3,6 +3,8 @@
  * Avoids treating server-only keyed providers (like Higgsfield) as unavailable in the browser.
  */
 
+import { mergeLiveModelsIntoCatalog } from "./modelCatalog";
+
 let serverProviderCache: Record<string, boolean> = {};
 let probePromise: Promise<Record<string, boolean>> | null = null;
 
@@ -39,6 +41,9 @@ export async function probeServerProviders(): Promise<Record<string, boolean>> {
         const data = await res.json();
         if (data && typeof data.providers === "object") {
           serverProviderCache = { ...serverProviderCache, ...data.providers };
+        }
+        if (data && typeof data.modelsByProvider === "object") {
+          mergeLiveModelsIntoCatalog(data.modelsByProvider);
         }
       }
     } catch (err) {
