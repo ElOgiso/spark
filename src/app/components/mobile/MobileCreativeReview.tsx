@@ -95,6 +95,7 @@ function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any
 export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
   const {
     approveReviewItem,
+    brand,
     rejectOrRequestEditReviewItem,
     generateProductionAssets,
     cancelProduction,

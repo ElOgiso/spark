@@ -1,5 +1,6 @@
 import { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, extractSparkStoragePath } from "./mediaUrlUtils";
 import { buildProductionLookLaw, ProductionLookLaw } from "./productionLookLaw";
+// LOOKLAW_IMPORT_MARKER
 export { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, extractSparkStoragePath };
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
 import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
@@ -1539,8 +1540,7 @@ export class ProductionAssetService {
         try {
           checkAborted();
           emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels, ${label})...`);
-          const sheetCompiled = compileLiveStoryboardSheetPrompt({ lookLaw,
-            scenes: currentStoryboard,
+          const sheetCompiled = compileLiveStoryboardSheetPrompt({ lookLaw, scenes: currentStoryboard,
             aspectRatio: identityPack.aspectRatio,
             productionId: production.id,
             brandName: brand?.name,
@@ -2027,8 +2027,7 @@ export class ProductionAssetService {
             contentFormat,
             visualGenre: effectiveVisualGenre,
           });
-          const compiledStill = compileLiveStillPrompt({ lookLaw,
-            scene: s,
+          const compiledStill = compileLiveStillPrompt({ lookLaw, scene: s,
             sceneIndexZeroBased: sIdx,
             aspectRatio: identityPack.aspectRatio,
             production,
@@ -2621,8 +2620,7 @@ export class ProductionAssetService {
                 refLabels.push(`ELEMENT ${el.tag} → ${el.label} (${el.description || el.role})`);
               }
 
-              const sceneMotionCompiled = compileLiveMotionPrompt({ lookLaw,
-            mode,
+              const sceneMotionCompiled = compileLiveMotionPrompt({ lookLaw, mode,
                 aspectRatio: identityPack.aspectRatio,
                 sceneIndex: globalSceneNum,
                 totalScenes: currentStoryboard.length,
@@ -4074,8 +4072,7 @@ export class ProductionAssetService {
         primaryChange: `${sceneToFix.primaryChange || sceneToFix.action || sceneToFix.visualDescription || ""} — apply: ${editNotes}`,
       };
 
-      const compiledStill = compileLiveStillPrompt({ lookLaw,
-            scene: revisedScene,
+      const compiledStill = compileLiveStillPrompt({ lookLaw, scene: revisedScene,
         sceneIndexZeroBased: targetSceneIdx,
         aspectRatio: identityPack.aspectRatio,
         production,
@@ -4238,8 +4235,7 @@ export class ProductionAssetService {
         (revisedScene as any).physicalAction = (sceneToFix as any).physicalAction;
       }
 
-      const motionPrompt = compileLiveMotionPrompt({ lookLaw,
-            mode,
+      const motionPrompt = compileLiveMotionPrompt({ lookLaw, mode,
         aspectRatio: identityPack.aspectRatio,
         sceneIndex,
         totalScenes: existingScenes.length,
