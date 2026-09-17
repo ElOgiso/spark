@@ -44,7 +44,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../../services/runtime/providerCapabilities";
-import { buildPreferredVideoAiPreferenceUpdate } from "../../services/runtime/preferredVideoAiPreference";
+import { buildPreferredVideoAiPreferenceUpdate, listVideoModelsForProvider } from "../../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "../ui/AIProviderLogos";
 import { SearchableSelect } from "../ui/SearchableSelect";
 import {
@@ -1134,7 +1134,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                   {
                     id: "higgsfield",
                     name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
-                    lengths: "4–15s",
+                    lengths: "4–30s",
                     maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
                   },
                 ];
@@ -1183,6 +1183,34 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
                         );
                       })}
                     </div>
+
+                    {(() => {
+                      const currentProv = formatSettings?.preferredVideoProvider;
+                      if (!currentProv || currentProv === "auto") return null;
+                      const models = listVideoModelsForProvider(currentProv as AIProviderId);
+                      if (!models || models.length <= 1) return null;
+                      const currentModelId = aiSettings?.models?.videoGeneration || "";
+                      return (
+                        <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border bg-card/60 mt-1">
+                          <span className="text-[11px] font-mono text-muted-foreground font-medium">
+                            Model:
+                          </span>
+                          <select
+                            aria-label="Preferred video model selection"
+                            value={currentModelId}
+                            onChange={(e) => applyPreferredVideoAiPreference(currentProv as AIProviderId, e.target.value)}
+                            className="bg-[#0E131F] border border-border text-xs text-foreground font-medium px-2 py-1 rounded outline-none focus:border-purple-500 cursor-pointer"
+                          >
+                            <option value="">Recommended default</option>
+                            {models.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label}{m.recommended ? " ★" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}

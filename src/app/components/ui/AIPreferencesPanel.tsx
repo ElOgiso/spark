@@ -107,7 +107,7 @@ export const AI_PREFERENCES_TASKS: TaskDefinition[] = [
       { id: "seedance", name: PROVIDER_VIDEO_CAPABILITIES.seedance.displayName, desc: "Seedance Ark I2V (4–15s first/last/reference frames)", logoId: "seedance" },
       { id: "runway", name: PROVIDER_VIDEO_CAPABILITIES.runway.displayName, desc: "Runway Gen-3 Alpha cinematic motion (5s or 10s)", logoId: "runway" },
       { id: "luma", name: PROVIDER_VIDEO_CAPABILITIES.luma.displayName, desc: "Luma Ray 2 keyframe motion (5s or 9s)", logoId: "luma" },
-      { id: "higgsfield", name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName, desc: "Higgsfield Seedance I2V (4–15s first-frame motion with audio)", logoId: "higgsfield" },
+      { id: "higgsfield", name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName, desc: "Higgsfield Seedance 2.5 (4–30s) / 2.0 (4–15s) I2V/R2V with audio", logoId: "higgsfield" },
     ],
   },
   {

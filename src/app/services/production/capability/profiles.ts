@@ -247,7 +247,7 @@ export const MEDIA_CAPABILITY_PROFILES: MediaCapabilityProfile[] = [
   },
   {
     providerId: "higgsfield",
-    modelId: "seedance-2.5",
+    modelId: "seedance-2.5-i2v",
     displayName: "Higgsfield Seedance I2V",
     modalities: ["video", "image"],
     generationModes: ["image_to_video"],
@@ -277,7 +277,7 @@ export const MEDIA_CAPABILITY_PROFILES: MediaCapabilityProfile[] = [
       duration: {
         supportedValues: [...PROVIDER_VIDEO_CAPABILITIES.higgsfield.allowedDurationsSec],
         minSeconds: 4,
-        maxSeconds: 15,
+        maxSeconds: 30,
       },
       aspectRatios: ["16:9", "9:16", "1:1"],
       supportsNativeAudio: true,
@@ -291,7 +291,7 @@ export const MEDIA_CAPABILITY_PROFILES: MediaCapabilityProfile[] = [
       provenance: ADAPTER("Controls limited to what videoI2vAdapter passes today"),
     },
     limits: {
-      maxDurationSec: 15,
+      maxDurationSec: 30,
       maxReferenceCount: 1,
       supportedOutputFormats: ["video/mp4"],
     },

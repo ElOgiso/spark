@@ -259,7 +259,7 @@ describe("Phase 2 & 3 — Soul Stills and Seedance Video (Mocked)", () => {
     assert.equal(calledBody.duration, 5);
   });
 
-  test("Seedance 2.0 I2V omits output_format, respects 720p/480p and clamps duration to 4-15", async () => {
+  test("Seedance 2.0 I2V omits output_format, allows 1080p and clamps duration to 4-15", async () => {
     let calledBody: any = null;
     let calledEndpoint = "";
 
@@ -292,9 +292,9 @@ describe("Phase 2 & 3 — Soul Stills and Seedance Video (Mocked)", () => {
       {
         prompt: "Slow zoom out",
         firstFrameUrl: "https://spark.storage.supabase.co/frames/shot-2.png",
-        model: "seedance-2.0",
+        model: "seedance-2.0-i2v",
         durationSec: 2, // below 4 -> clamped to 4
-        resolution: "1080p", // 2.0 doesn't support 1080p -> fallback 720p
+        resolution: "1080p", // 2.0 supports 1080p per docs
       },
       "hf_id:hf_secret"
     );
@@ -302,7 +302,7 @@ describe("Phase 2 & 3 — Soul Stills and Seedance Video (Mocked)", () => {
     assert.equal(url, "https://hf.ai/seedance-20.mp4");
     assert.ok(calledEndpoint.includes("/bytedance/seedance-2.0/image-to-video"));
     assert.equal(calledBody.duration, 4);
-    assert.equal(calledBody.resolution, "720p");
+    assert.equal(calledBody.resolution, "1080p");
     assert.equal(calledBody.output_format, undefined);
   });
 
@@ -429,11 +429,11 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
       preferredVideoProvider: "higgsfield",
     });
     assert.equal(active.providerId, "higgsfield");
-    assert.equal(active.maxVideoDurationSec, 15);
+    assert.equal(active.maxVideoDurationSec, 30);
     assert.equal(active.supportsNativeAudio, true);
   });
 
-  test("Seedance 2.5 never sends 1080p resolution (clamps to 720p)", async () => {
+  test("Seedance 2.5 never sends 1080p resolution (clamps to 720p) and allows up to 30s duration", async () => {
     let capturedBody: any = null;
     globalThis.fetch = async (url: any, init?: any) => {
       const u = String(url);
@@ -463,7 +463,9 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
       {
         prompt: "Resolution clamp test",
         firstFrameUrl: "https://spark.storage.supabase.co/frames/shot-res.png",
+        model: "seedance-2.5-i2v",
         resolution: "1080p", // 2.5 must clamp to 720p
+        durationSec: 25, // 2.5 supports up to 30s
       },
       "hf_id:hf_secret"
     );
@@ -471,6 +473,49 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
     assert.equal(url, "https://hf.ai/res-test.mp4");
     assert.equal(capturedBody.resolution, "720p");
     assert.notEqual(capturedBody.resolution, "1080p");
+    assert.equal(capturedBody.duration, 25);
+  });
+
+  test("Seedance 2.0 clamps duration above 15s to 15s", async () => {
+    let capturedBody: any = null;
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.0/image-to-video")) {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_dur_test",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_dur_test/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: { url: "https://hf.ai/dur-test.mp4" },
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const url = await generateSeedanceVideo(
+      {
+        prompt: "Duration clamp test",
+        firstFrameUrl: "https://spark.storage.supabase.co/frames/shot-dur.png",
+        model: "seedance-2.0-i2v",
+        resolution: "4k", // 2.0 supports 4k
+        durationSec: 25, // 2.0 must clamp to 15s
+      },
+      "hf_id:hf_secret"
+    );
+
+    assert.equal(url, "https://hf.ai/dur-test.mp4");
+    assert.equal(capturedBody.duration, 15);
+    assert.equal(capturedBody.resolution, "4k");
   });
 
   test("GET /api/runtime/execute returns server provider probe without exposing secrets", async () => {

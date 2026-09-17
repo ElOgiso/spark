@@ -360,39 +360,27 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
         status: "stable",
       },
       {
-        id: "seedance-2.5",
-        label: "Seedance 2.5 I2V (bytedance/seedance-2.5)",
+        id: "seedance-2.5-i2v",
+        label: "Seedance 2.5 I2V",
         capabilities: ["Video Generation"],
         recommended: true,
         status: "stable",
       },
       {
-        id: "seedance-2.5-i2v",
-        label: "Seedance 2.5 I2V (Alias)",
-        capabilities: ["Video Generation"],
-        status: "stable",
-      },
-      {
-        id: "seedance-2.0",
-        label: "Seedance 2.0 I2V (bytedance/seedance-2.0)",
-        capabilities: ["Video Generation"],
-        status: "stable",
-      },
-      {
         id: "seedance-2.0-i2v",
-        label: "Seedance 2.0 I2V (Alias)",
+        label: "Seedance 2.0 I2V",
         capabilities: ["Video Generation"],
         status: "stable",
       },
       {
         id: "seedance-2.5-r2v",
-        label: "Seedance 2.5 R2V (bytedance/seedance-2.5/reference-to-video)",
+        label: "Seedance 2.5 R2V",
         capabilities: ["Video Generation"],
         status: "stable",
       },
       {
         id: "seedance-2.0-r2v",
-        label: "Seedance 2.0 R2V (bytedance/seedance-2.0/reference-to-video)",
+        label: "Seedance 2.0 R2V",
         capabilities: ["Video Generation"],
         status: "stable",
       },
@@ -501,5 +489,14 @@ export function getRecommendedModel(
 export function getModelLabel(provider: AIProviderId, modelId: string): string {
   const models = getModelsForProviderAndCapability(provider);
   const match = models.find((m) => m.id === modelId);
-  return match?.label || modelId;
+  if (match) return match.label;
+  if (provider === "higgsfield") {
+    if (modelId === "seedance-2.5" || modelId === "seedance-2.5-i2v") return "Seedance 2.5 I2V";
+    if (modelId === "seedance-2.0" || modelId === "seedance-2.0-i2v") return "Seedance 2.0 I2V";
+    if (modelId === "seedance-2.5-r2v") return "Seedance 2.5 R2V";
+    if (modelId === "seedance-2.0-r2v") return "Seedance 2.0 R2V";
+    if (modelId === "soul-2") return "Soul 2 Standard (higgsfield-ai/soul/v2/standard)";
+    if (modelId === "soul-cinema") return "Soul Cinema (higgsfield-ai/soul/cinema)";
+  }
+  return modelId;
 }

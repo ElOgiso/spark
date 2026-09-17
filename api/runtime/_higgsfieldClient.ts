@@ -414,6 +414,26 @@ export interface GenerateSeedanceVideoOptions {
   onProgress?: (status: string) => void;
 }
 
+function resolveSeedanceResolution(requestedRes?: string, is20?: boolean): string {
+  const raw = (requestedRes || "720p").toLowerCase().trim();
+  if (is20) {
+    if (raw === "4k" || raw === "2160p") return "4k";
+    if (raw === "1080p" || raw === "fhd") return "1080p";
+    if (raw === "480p" || raw === "sd") return "480p";
+    return "720p";
+  }
+  // Model 2.5: only 480p | 720p (never 1080p/4k)
+  return raw === "480p" || raw === "sd" ? "480p" : "720p";
+}
+
+function resolveSeedanceDuration(requestedDuration?: number, is20?: boolean): number {
+  const maxDur = is20 ? 15 : 30;
+  if (typeof requestedDuration === "number" && requestedDuration > 0) {
+    return Math.max(4, Math.min(maxDur, Math.round(requestedDuration)));
+  }
+  return 5;
+}
+
 /**
  * Phase 3: Seedance I2V on Higgsfield only
  * default -> /bytedance/seedance-2.5/image-to-video
@@ -433,12 +453,8 @@ export async function generateSeedanceVideo(
     ? "/bytedance/seedance-2.0/image-to-video"
     : "/bytedance/seedance-2.5/image-to-video";
 
-  const dur = typeof options.durationSec === "number" && options.durationSec > 0
-    ? Math.max(4, Math.min(15, Math.round(options.durationSec)))
-    : 5;
-
-  // Higgsfield Seedance 2.5 and 2.0 I2V only allow 480p | 720p. Never send 1080p to 2.5 I2V.
-  const res = options.resolution === "480p" ? "480p" : "720p";
+  const dur = resolveSeedanceDuration(options.durationSec, is20);
+  const res = resolveSeedanceResolution(options.resolution, is20);
 
   const body: Record<string, unknown> = {
     prompt: options.prompt || "",
@@ -519,11 +535,8 @@ export async function generateSeedanceReferenceVideo(
     );
   }
 
-  const dur = typeof options.durationSec === "number" && options.durationSec > 0
-    ? Math.max(4, Math.min(15, Math.round(options.durationSec)))
-    : 5;
-
-  const res = options.resolution === "480p" ? "480p" : "720p";
+  const dur = resolveSeedanceDuration(options.durationSec, is20);
+  const res = resolveSeedanceResolution(options.resolution, is20);
 
   const ar = mapHiggsfieldAspectRatio(options.aspectRatio || "9:16");
 

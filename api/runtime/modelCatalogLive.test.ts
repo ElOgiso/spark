@@ -44,8 +44,9 @@ test('Hybrid Live Model Catalog — Baseline and Static Spine', async () => {
   assert.ok(soul2, 'soul-2 must exist in higgsfield models');
   assert.ok(soul2.recommended, 'soul-2 must remain recommended');
 
-  const seedance25 = higgsfieldModels.find((m) => m.id === 'seedance-2.5');
-  assert.ok(seedance25, 'seedance-2.5 must exist in higgsfield models');
+  const seedance25 = higgsfieldModels.find((m) => m.id === 'seedance-2.5-i2v' || m.id === 'seedance-2.5');
+  assert.ok(seedance25, 'seedance-2.5-i2v must exist in higgsfield models');
+  assert.ok(seedance25.recommended, 'seedance-2.5-i2v must remain recommended');
 });
 
 test('Hybrid Live Model Catalog — Policy Filtering and Normalization', async () => {

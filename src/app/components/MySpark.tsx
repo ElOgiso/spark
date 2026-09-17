@@ -44,7 +44,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { PROVIDER_VIDEO_CAPABILITIES, resolveActiveVideoProvider, deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
-import { buildPreferredVideoAiPreferenceUpdate } from "../services/runtime/preferredVideoAiPreference";
+import { buildPreferredVideoAiPreferenceUpdate, listVideoModelsForProvider } from "../services/runtime/preferredVideoAiPreference";
 import { getProviderLogo } from "./ui/AIProviderLogos";
 import { SearchableSelect } from "./ui/SearchableSelect";
 import {
@@ -1451,9 +1451,9 @@ export function MySpark({ onNavigate }: MySparkProps) {
                         {
                           id: "higgsfield",
                           name: PROVIDER_VIDEO_CAPABILITIES.higgsfield.displayName,
-                          lengths: "4–15s",
+                          lengths: "4–30s",
                           maxSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxNativeSec,
-                          tag: "Seedance I2V",
+                          tag: "Seedance I2V / R2V",
                         },
                       ];
 
@@ -1509,6 +1509,36 @@ export function MySpark({ onNavigate }: MySparkProps) {
                               </button>
                             );
                           })}
+
+                          {(() => {
+                            const currentProv = formatSettings?.preferredVideoProvider;
+                            if (!currentProv || currentProv === "auto") return null;
+                            const models = listVideoModelsForProvider(currentProv as AIProviderId);
+                            if (!models || models.length <= 1) return null;
+                            const currentModelId = aiSettings?.models?.videoGeneration || "";
+                            return (
+                              <div className="col-span-full flex items-center justify-between gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.02] mt-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground font-semibold">
+                                    Engine Model:
+                                  </span>
+                                </div>
+                                <select
+                                  aria-label="Preferred video model selection"
+                                  value={currentModelId}
+                                  onChange={(e) => applyPreferredVideoAiPreference(currentProv as AIProviderId, e.target.value)}
+                                  className="bg-[#0E131F] border border-white/15 text-xs text-foreground font-semibold px-3 py-1.5 rounded-lg outline-none focus:border-purple-500 cursor-pointer"
+                                >
+                                  <option value="">Recommended default</option>
+                                  {models.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.label}{m.recommended ? " ★" : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })()}
                         </>
                       );
                     })()}

@@ -351,7 +351,7 @@ export function MobileAIPreferences({ onBack, onNavigate }: MobileAIPreferencesP
                 name: spec.displayName,
                 note: `${spec.allowedDurationsSec.map((d: number) => `${d}s`).join(" or ")} native motion clips`,
                 logoId: engId,
-                models: [],
+                models: getModelsForProviderAndCapability(engId, "Video Generation"),
               });
             }
           });

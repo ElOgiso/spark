@@ -111,10 +111,12 @@ test("generatorLocalAiPreference includes Higgsfield Soul and lists Soul models"
 test("preferredVideoAiPreference listVideoModelsForProvider returns Seedance models for higgsfield", () => {
   const models = listVideoModelsForProvider("higgsfield");
   assert.ok(models.length > 0, "Must return video models for higgsfield");
-  const seedance25 = models.find((m) => m.id === "seedance-2.5");
-  const seedance20 = models.find((m) => m.id === "seedance-2.0");
-  assert.ok(seedance25, "seedance-2.5 must exist in video models");
-  assert.ok(seedance20, "seedance-2.0 must exist in video models");
-  assert.ok(seedance25.recommended, "seedance-2.5 should be recommended");
+  const seedance25 = models.find((m) => m.id === "seedance-2.5-i2v" || m.id === "seedance-2.5");
+  const seedance20 = models.find((m) => m.id === "seedance-2.0-i2v" || m.id === "seedance-2.0");
+  assert.ok(seedance25, "seedance-2.5-i2v must exist in video models");
+  assert.ok(seedance20, "seedance-2.0-i2v must exist in video models");
+  assert.ok(seedance25.recommended, "seedance-2.5-i2v should be recommended");
+  assert.equal(seedance25.label, "Seedance 2.5 I2V");
+  assert.equal(seedance20.label, "Seedance 2.0 I2V");
 });
 
