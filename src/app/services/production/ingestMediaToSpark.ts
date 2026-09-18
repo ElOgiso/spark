@@ -175,6 +175,23 @@ export async function scheduleAutoIngestMedia(params: {
           console.warn("[scheduleAutoIngestMedia] DB persist notice:", dbErr);
         }
 
+        // Persist to production_assets / media_assets table
+        try {
+          const { createProductionAsset } = await import("../../backend/repositories/productionAssetRepository");
+          await createProductionAsset({
+            production_id: productionId,
+            brand_id: brandId,
+            asset_type: assetType,
+            public_url: result.publicUrl,
+            storage_path: result.storagePath,
+            storage_bucket: "Spark",
+            mime_type: params.mimeType || (assetType === "video" ? "video/mp4" : "image/jpeg"),
+            source_tool: "SparkIngest",
+          } as any);
+        } catch (assetErr) {
+          console.warn("[scheduleAutoIngestMedia] production_assets persist notice:", assetErr);
+        }
+
         return result;
       }
 

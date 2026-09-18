@@ -525,6 +525,7 @@ export function buildGrokVideoGenerateBody(req: VideoClipRequest): Record<string
 
   if (lastFrameUrl && lastFrameUrl !== stillUrl && !looksLikeStoryboardGridUrl(lastFrameUrl)) {
     body.last_frame = { url: lastFrameUrl };
+    (body as any).last_frame_url = lastFrameUrl;
     seen.add(lastFrameUrl);
   }
 

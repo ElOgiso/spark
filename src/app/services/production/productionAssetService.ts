@@ -2531,10 +2531,11 @@ export class ProductionAssetService {
 
               // Consistency Gate: scene image must exist
               if (!sceneFirstFrame || !isValidMediaData(sceneFirstFrame)) {
-                const errMsg = `Still required before motion. Scene ${globalSceneNum} still frame is missing or invalid. I2V motion requires a verified scene still.`;
-                console.error(`[SPARK Pipeline] ${errMsg}`);
+                const errMsg = "Still required before motion.";
+                console.error(`[SPARK Pipeline] ${errMsg} Scene ${globalSceneNum} still frame is missing or invalid.`);
+                s.status = "failed";
                 s.lastError = errMsg;
-                currentStoryboard[sIdx] = { ...s, lastError: errMsg };
+                currentStoryboard[sIdx] = { ...s, status: "failed", lastError: errMsg };
                 continue;
               }
 
@@ -2723,6 +2724,13 @@ export class ProductionAssetService {
                 }
 
                 const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
+                const hasStill = Boolean(subclipStartFrame);
+                const hasSheet = Boolean(sceneCharSheetUrl || identityRefs.length > 0);
+                const hasLastFrame = Boolean(subclipPrevLast);
+                const spokenLength = (s.spokenLines || "").length;
+                console.log(
+                  `[SPARK Pipeline] Motion Submit: provider=${activeVideo.providerId} hasStill=${hasStill} hasSheet=${hasSheet} hasLastFrame=${hasLastFrame} duration=${subclipDur} spokenLength=${spokenLength}`
+                );
                 console.log(
                   `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum}${subclipLabel} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [still=${Boolean(subclipStartFrame)}, lastFrame=${Boolean(subclipPrevLast)}, Dur: ${subclipDur}s, Refs: ${identityRefs.length}]...`
                 );
@@ -4594,9 +4602,10 @@ export async function resolveFreshPlayableUrl(params: {
     return { url: undefined, storagePath: targetPath, resigned: false, isEphemeralWithoutStorage: false };
   }
 
-  // If URL is ephemeral and we found no storage path
+  // If URL is ephemeral and we found no storage path yet (pre-ingest or ingest in-flight):
+  // Do NOT wipe the only playable URL pre-ingest; keep provider URL for immediate playback.
   if (url && isEphemeralMediaUrl(url)) {
-    return { url: undefined, storagePath: undefined, resigned: false, isEphemeralWithoutStorage: true };
+    return { url, storagePath: undefined, resigned: false, isEphemeralWithoutStorage: true };
   }
 
   // Otherwise return whatever valid non-ephemeral URL we had
