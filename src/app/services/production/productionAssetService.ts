@@ -2364,8 +2364,9 @@ export class ProductionAssetService {
             const activeVideo = resolveActiveVideoProvider({
               preferredVideoProvider: (preferredVideoProvider || activeFormatSettings?.preferredVideoProvider) as any,
             });
-            const nativeMaxClipSec = activeVideo.videoCapability?.maxNativeSec || activeVideo.maxVideoDurationSec || 8;
-            const allowedDurationsSec = activeVideo.allowedDurationsSec || [4, 6, 8];
+            const { resolveMaxNativeClipSec, resolveAllowedDurationsSec } = await import("../runtime/providerCapabilities");
+            const nativeMaxClipSec = resolveMaxNativeClipSec(activeVideo.providerId, preferredVideoModel);
+            const allowedDurationsSec = resolveAllowedDurationsSec(activeVideo.providerId, preferredVideoModel);
             const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
 
             for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
@@ -2798,11 +2799,25 @@ export class ProductionAssetService {
                       identityRefs.push(...(upgradedRefs.filter(Boolean) as string[]));
                     }
 
+                    // Skip submit if durable video already exists for this scene and !forceRegenerate
+                    if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
+                      console.log(`[SPARK Pipeline] Skipping I2V submit: Scene ${globalSceneNum} already has durable videoUrl.`);
+                      return { url: s.videoUrl, provider: (s as any).videoProvider || activeVideo.providerId };
+                    }
+
                     const tryI2v = async (providerId: string) => {
+                      const normP = providerId.toLowerCase();
                       const effectiveRefs =
-                        providerId.toLowerCase() === "grok"
+                        normP === "grok"
                           ? identityRefs.slice(0, 7)
                           : identityRefs;
+
+                      if ((normP === "higgsfield" || normP === "higgsfield-seedance") && identityRefs.length > 0) {
+                        console.info(
+                          `[HF I2V Honesty] Scene ${globalSceneNum}${subclipLabel}: Higgsfield Seedance I2V only conditions on start frame (and optional end frame). ${identityRefs.length} identity reference(s) are baked into the still and not passed in the HF API body.`
+                        );
+                      }
+
                       const apiClip = await requestProductionVideoClip({
                         provider: providerId,
                         prompt: sceneMotionPrompt,
@@ -2818,7 +2833,14 @@ export class ProductionAssetService {
                         productionId: production.id,
                         brandId: (brand as any).id,
                         shotIndex: globalSceneNum,
+                        subclipIndex: k + 1,
                       });
+
+                      const billableReqId = apiClip.requestId || "req_completed";
+                      console.log(
+                        `[I2V BILLABLE] provider=${providerId} model=${preferredVideoModel || "default"} durationSec=${subclipDur} scene=${globalSceneNum} subclipIndex=${k + 1} request_id=${billableReqId}`
+                      );
+
                       return {
                         url: apiClip.videoUrl,
                         lastFrameDataUrl: apiClip.lastFrameDataUrl,
@@ -2834,6 +2856,17 @@ export class ProductionAssetService {
                           `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} notice Scene ${globalSceneNum}${subclipLabel}:`,
                           primaryI2vErr
                         );
+                        const errStr = String(primaryI2vErr?.message || primaryI2vErr);
+                        const isTimeoutAfterSubmit =
+                          /poll timed out|timeout exceeded|timed out/i.test(errStr) &&
+                          !/create task failed|image2video failed|video\.generate failed/i.test(errStr);
+                        if (isTimeoutAfterSubmit) {
+                          console.warn(
+                            `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} timed out after submit. Aborting failover to avoid double-billing.`
+                          );
+                          throw primaryI2vErr;
+                        }
+
                         for (const fallbackProvider of i2vFallbacks) {
                           try {
                             console.log(

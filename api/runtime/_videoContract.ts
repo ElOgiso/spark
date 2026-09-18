@@ -44,6 +44,7 @@ export interface VideoClipRequest {
   productionId?: string;
   brandId?: string;
   shotIndex?: number;
+  subclipIndex?: number;
   mode?: string;
   imageUrls?: string[];
   videoUrls?: string[];

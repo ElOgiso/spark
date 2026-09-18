@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildScenesFromNarrativeChapters,
   calculateSubclipDurations,
+  resolveMaxNativeClipSec,
+  resolveAllowedDurationsSec,
 } from "./chapterToClip";
 import type { NarrativeScript } from "../../../domain/types";
 
@@ -50,6 +52,37 @@ describe("SPARK — CHAPTER -> CLIP", () => {
 
     const grokSubclips = calculateSubclipDurations(12, 15);
     assert.deepEqual(grokSubclips, [12]);
+  });
+
+  it("11s chapter + maxNativeSec 30 (Higgsfield Seedance 2.5) yields exactly 1 subclip [11]", () => {
+    const maxNativeSec = resolveMaxNativeClipSec("higgsfield", "seedance-2.5-i2v");
+    const allowed = resolveAllowedDurationsSec("higgsfield", "seedance-2.5-i2v");
+    assert.equal(maxNativeSec, 30);
+    assert.equal(allowed.length, 27); // 4..30
+    const subclips = calculateSubclipDurations(11, maxNativeSec, allowed);
+    assert.deepEqual(subclips, [11]);
+    assert.equal(subclips.length, 1);
+  });
+
+  it("11s chapter + maxNativeSec 8 (e.g. Veo) yields 2 subclips", () => {
+    const maxNativeSec = resolveMaxNativeClipSec("gemini");
+    const allowed = resolveAllowedDurationsSec("gemini");
+    assert.equal(maxNativeSec, 8);
+    assert.deepEqual(allowed, [4, 6, 8]);
+    const subclips = calculateSubclipDurations(11, maxNativeSec, allowed);
+    assert.equal(subclips.length, 2);
+    assert.equal(subclips.reduce((a, b) => a + b, 0), 11);
+  });
+
+  it("resolves accurate maxNativeSec and allowed durations per provider/model", () => {
+    assert.equal(resolveMaxNativeClipSec("higgsfield", "seedance-2.5-i2v"), 30);
+    assert.equal(resolveMaxNativeClipSec("higgsfield", "seedance-2.0-i2v"), 15);
+    assert.equal(resolveMaxNativeClipSec("grok"), 15);
+    assert.equal(resolveMaxNativeClipSec("seedance"), 15);
+    assert.equal(resolveMaxNativeClipSec("kling"), 10);
+    assert.equal(resolveMaxNativeClipSec("runway"), 10);
+    assert.equal(resolveMaxNativeClipSec("luma"), 9);
+    assert.equal(resolveMaxNativeClipSec("gemini"), 8);
   });
 
   it("throws loud if narrativeScript.chapters is empty", () => {

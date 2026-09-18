@@ -24,6 +24,7 @@ export interface ProductionVideoClipRequest {
   productionId?: string;
   brandId?: string;
   shotIndex?: number;
+  subclipIndex?: number;
   sourceImageAssetId?: string;
   mode?: string;
   imageUrls?: string[];
@@ -36,6 +37,7 @@ export interface ProductionVideoClipResult {
   storagePath?: string;
   lastFrameDataUrl?: string;
   provider: string;
+  requestId?: string;
 }
 
 export function isI2vApiProvider(provider?: string): boolean {
@@ -125,6 +127,12 @@ export async function requestProductionVideoClip(
         `Higgsfield Seedance I2V requires a public HTTPS firstFrameUrl (received: ${params.firstFrameUrl ? params.firstFrameUrl.slice(0, 40) : "empty"}).`
       );
     }
+
+    if (!isR2v && params.referenceImageUrls && params.referenceImageUrls.length > 0) {
+      console.info(
+        `[HF I2V Honesty] Higgsfield Seedance I2V only conditions on first frame (and optional end frame); ${params.referenceImageUrls.length} reference image(s) are baked into the still and not passed in the HF I2V API payload.`
+      );
+    }
   }
 
   const res = await fetch("/api/runtime/video", {
@@ -148,6 +156,7 @@ export async function requestProductionVideoClip(
       productionId: params.productionId,
       brandId: params.brandId,
       shotIndex: params.shotIndex,
+      subclipIndex: params.subclipIndex,
       mode: params.mode,
       imageUrls: params.imageUrls,
       videoUrls: params.videoUrls,
@@ -192,5 +201,10 @@ export async function requestProductionVideoClip(
     lastFrameDataUrl:
       typeof data.lastFrameDataUrl === "string" ? data.lastFrameDataUrl : undefined,
     provider: (typeof data.provider === "string" && data.provider) || params.provider,
+    requestId:
+      (typeof data.requestId === "string" && data.requestId) ||
+      (typeof data.request_id === "string" && data.request_id) ||
+      (typeof data.id === "string" && data.id) ||
+      undefined,
   };
 }

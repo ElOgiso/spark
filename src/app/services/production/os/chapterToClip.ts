@@ -141,3 +141,5 @@ export function formatChapterClipLog(params: {
   const fullPart = typeof fullScriptLength === "number" ? `, fullScriptLength=${fullScriptLength}` : "";
   return `[SPARK Pipeline] Chapter ${chapterIndex}: chapterDur=${chapterDur}s, maxNativeSec=${maxNativeSec}s, subclipCount=${subclipCount}, spokenChars=${spokenChars}${fullPart}`;
 }
+
+export { resolveMaxNativeClipSec, resolveAllowedDurationsSec } from "../../runtime/providerCapabilities";

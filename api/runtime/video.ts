@@ -229,6 +229,7 @@ async function buildClipRequest(body: any): Promise<VideoClipRequest> {
     productionId: body.productionId,
     brandId: body.brandId,
     shotIndex: body.shotIndex,
+    subclipIndex: typeof body.subclipIndex === "number" ? body.subclipIndex : undefined,
   };
 }
 
@@ -338,7 +339,7 @@ async function finalizeClip(params: {
   };
 }
 
-async function generateSeedance(req: VideoClipRequest): Promise<string> {
+async function generateSeedance(req: VideoClipRequest): Promise<{ videoUrl: string; requestId?: string }> {
   const apiKey = process.env.ARK_API_KEY || process.env.SEEDANCE_API_KEY || process.env.VITE_ARK_API_KEY || process.env.VITE_SEEDANCE_API_KEY;
   if (!apiKey) throw new Error("Seedance/Ark API key not configured (ARK_API_KEY or SEEDANCE_API_KEY).");
   const base = (process.env.ARK_BASE_URL || process.env.SEEDANCE_BASE_URL || "https://ark.cn-beijing.volces.com").replace(/\/$/, "");
@@ -367,6 +368,10 @@ async function generateSeedance(req: VideoClipRequest): Promise<string> {
   const taskId = created.id || created.task_id || created.data?.id;
   if (!taskId) throw new Error(`Seedance create task returned no id: ${JSON.stringify(created).slice(0, 300)}`);
 
+  console.log(
+    `[I2V BILLABLE] provider=seedance model=${req.model || SEEDANCE_MODEL_15_PRO} durationSec=${req.durationSec || 5} scene=${req.shotIndex ?? "unknown"} subclipIndex=${req.subclipIndex ?? 1} request_id=${taskId}`
+  );
+
   const started = Date.now();
   let lastStatus = "";
   while (Date.now() - started < SEEDANCE_POLL_TIMEOUT_MS) {
@@ -383,7 +388,7 @@ async function generateSeedance(req: VideoClipRequest): Promise<string> {
     if (lastStatus === "succeeded" || lastStatus === "success") {
       const videoUrl = extractSeedanceVideoUrl(data);
       if (!videoUrl) throw new Error("Seedance succeeded but content.video_url was empty.");
-      return videoUrl;
+      return { videoUrl, requestId: taskId };
     }
     if (lastStatus === "failed" || lastStatus === "error" || lastStatus === "cancelled") {
       throw new Error(`Seedance task ${lastStatus}: ${JSON.stringify(data.error || data.message || data)}`);
@@ -392,7 +397,7 @@ async function generateSeedance(req: VideoClipRequest): Promise<string> {
   throw new Error(`Seedance poll timed out after ${Math.round(SEEDANCE_POLL_TIMEOUT_MS / 60000)} min (last status: ${lastStatus || "unknown"}). Task ${taskId} was not recreated.`);
 }
 
-async function generateKling(req: VideoClipRequest): Promise<string> {
+async function generateKling(req: VideoClipRequest): Promise<{ videoUrl: string; requestId?: string }> {
   const keys = resolveKlingKeys();
   if (!keys) {
     throw new Error("Kling JWT keys not configured (KLING_ACCESS_KEY + KLING_SECRET_KEY). Static Bearer is not supported.");
@@ -426,6 +431,10 @@ async function generateKling(req: VideoClipRequest): Promise<string> {
   const taskId = extractKlingTaskId(created);
   if (!taskId) throw new Error(`Kling image2video returned no task_id: ${JSON.stringify(created).slice(0, 300)}`);
 
+  console.log(
+    `[I2V BILLABLE] provider=kling model=${req.model || KLING_DEFAULT_MODEL} durationSec=${req.durationSec || 5} scene=${req.shotIndex ?? "unknown"} subclipIndex=${req.subclipIndex ?? 1} request_id=${taskId}`
+  );
+
   const started = Date.now();
   let lastStatus = "";
   while (Date.now() - started < KLING_POLL_TIMEOUT_MS) {
@@ -442,7 +451,7 @@ async function generateKling(req: VideoClipRequest): Promise<string> {
     if (lastStatus === "succeed" || lastStatus === "succeeded" || lastStatus === "success") {
       const videoUrl = extractKlingVideoUrl(data);
       if (!videoUrl) throw new Error("Kling succeeded but task_result.videos[0].url was empty.");
-      return videoUrl;
+      return { videoUrl, requestId: taskId };
     }
     if (lastStatus === "failed" || lastStatus === "fail" || lastStatus === "error") {
       throw new Error(`Kling task failed: ${JSON.stringify(data.data || data)}`);
@@ -451,7 +460,7 @@ async function generateKling(req: VideoClipRequest): Promise<string> {
   throw new Error(`Kling poll timed out after ${Math.round(KLING_POLL_TIMEOUT_MS / 60000)} min (last status: ${lastStatus || "unknown"}).`);
 }
 
-async function generateGrok(req: VideoClipRequest): Promise<string> {
+async function generateGrok(req: VideoClipRequest): Promise<{ videoUrl: string; requestId?: string }> {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY || process.env.VITE_XAI_API_KEY || process.env.VITE_GROK_API_KEY;
   if (!apiKey) throw new Error("xAI Grok API key not configured (XAI_API_KEY or GROK_API_KEY).");
   // Still URL policy: Prefer durable HTTPS URL for image.imageUrl.
@@ -513,10 +522,13 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   }
   const data = await res.json();
   const immediate = extractGrokVideoUrl(data);
-  if (immediate) return immediate;
+  const requestId = data.request_id || data.id || data.requestId || "";
+  console.log(
+    `[I2V BILLABLE] provider=grok model=${effectiveReq.model || GROK_VIDEO_MODEL} durationSec=${body.duration || effectiveReq.durationSec || 5} scene=${effectiveReq.shotIndex ?? "unknown"} subclipIndex=${effectiveReq.subclipIndex ?? 1} request_id=${requestId || "immediate"}`
+  );
+  if (immediate) return { videoUrl: immediate, requestId: requestId || undefined };
 
   // Async: response { request_id } → GET /v1/videos/{request_id} until status "done" → video.url
-  const requestId = data.request_id || data.id || data.requestId || "";
   if (!requestId) {
     throw new Error("Grok video.generate returned neither video URL nor request id.");
   }
@@ -533,7 +545,7 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
     const url = extractGrokVideoUrl(pollData);
     const status = String(pollData.status || "").toLowerCase();
     if (url && (status === "done" || status === "completed" || status === "succeeded" || status === "success" || !status)) {
-      return url;
+      return { videoUrl: url, requestId };
     }
     if (status === "failed" || status === "error") {
       const errMsg = pollData.error?.message || (typeof pollData.error === "string" ? pollData.error : JSON.stringify(pollData.error)) || "unknown";
@@ -543,7 +555,7 @@ async function generateGrok(req: VideoClipRequest): Promise<string> {
   throw new Error("Grok video.generate timed out in-process (no resume).");
 }
 
-async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
+async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: string; requestId?: string }> {
   const creds = resolveHiggsfieldCredentials();
   if (!creds) {
     throw new Error(
@@ -552,6 +564,7 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
   }
 
   let effectiveReq = { ...req };
+  let lastRequestId: string | undefined;
 
   if (effectiveReq.firstFrameUrl && effectiveReq.firstFrameUrl.startsWith("asset://")) {
     throw new Error("Higgsfield Seedance I2V does not support asset:// URI scheme. A public HTTPS image_url is required.");
@@ -633,7 +646,7 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
       );
     }
 
-    return generateSeedanceReferenceVideo({
+    const videoUrl = await generateSeedanceReferenceVideo({
       prompt: effectiveReq.prompt,
       imageUrls: cleanRefs,
       aspectRatio: effectiveReq.aspectRatio || "9:16",
@@ -643,7 +656,13 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
       generateAudio: effectiveReq.generateAudio,
       videoUrls: effectiveReq.videoUrls,
       audioUrls: effectiveReq.audioUrls,
+      shotIndex: effectiveReq.shotIndex,
+      subclipIndex: effectiveReq.subclipIndex,
+      onSubmit: (id) => {
+        lastRequestId = id;
+      },
     });
+    return { videoUrl, requestId: lastRequestId };
   }
 
   if (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) {
@@ -676,7 +695,7 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
     throw new Error("Higgsfield Seedance I2V requires a public HTTPS firstFrameUrl (data URI upload failed or missing).");
   }
 
-  return generateSeedanceVideo({
+  const videoUrl = await generateSeedanceVideo({
     prompt: effectiveReq.prompt,
     firstFrameUrl: effectiveReq.firstFrameUrl,
     endFrameUrl: effectiveReq.lastFrameUrl,
@@ -684,7 +703,13 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
     resolution: effectiveReq.resolution,
     model: effectiveReq.model,
     generateAudio: effectiveReq.generateAudio,
+    shotIndex: effectiveReq.shotIndex,
+    subclipIndex: effectiveReq.subclipIndex,
+    onSubmit: (id) => {
+      lastRequestId = id;
+    },
   });
+  return { videoUrl, requestId: lastRequestId };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -938,15 +963,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       let providerVideoUrl = "";
+      let providerRequestId: string | undefined;
       const p = String(provider).toLowerCase();
       if (p === "seedance" || p === "ark") {
-        providerVideoUrl = await generateSeedance(clipReq);
+        const genRes = await generateSeedance(clipReq);
+        providerVideoUrl = genRes.videoUrl;
+        providerRequestId = genRes.requestId;
       } else if (p === "kling") {
-        providerVideoUrl = await generateKling(clipReq);
+        const genRes = await generateKling(clipReq);
+        providerVideoUrl = genRes.videoUrl;
+        providerRequestId = genRes.requestId;
       } else if (p === "higgsfield" || p === "higgsfield-seedance") {
-        providerVideoUrl = await generateHiggsfield(clipReq);
+        const genRes = await generateHiggsfield(clipReq);
+        providerVideoUrl = genRes.videoUrl;
+        providerRequestId = genRes.requestId;
       } else {
-        providerVideoUrl = await generateGrok(clipReq);
+        const genRes = await generateGrok(clipReq);
+        providerVideoUrl = genRes.videoUrl;
+        providerRequestId = genRes.requestId;
       }
 
       const shotIndex = Number(body.shotIndex || body.sceneIndex || body.shot);
@@ -968,6 +1002,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         videoUrl: finalized.publicUrl || finalized.videoUrl,
         lastFrameDataUrl: finalized.lastFrameDataUrl,
         provider,
+        requestId: providerRequestId || undefined,
         costUsd: p === "kling" ? 0.2 : p === "seedance" || p === "ark" ? 0.18 : 0.15,
       });
     }

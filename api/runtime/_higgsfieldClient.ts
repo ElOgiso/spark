@@ -472,6 +472,9 @@ export interface GenerateSeedanceVideoOptions {
   model?: string;
   generateAudio?: boolean;
   onProgress?: (status: string) => void;
+  onSubmit?: (requestId: string) => void;
+  shotIndex?: number;
+  subclipIndex?: number;
 }
 
 function resolveSeedanceResolution(requestedRes?: string, is20?: boolean): string {
@@ -538,11 +541,18 @@ export async function generateSeedanceVideo(
   }
 
   const initial = await submit(endpoint, body, customKey, signal);
+  const target = initial.status_url || initial.request_id || initial.id;
+  const billableId = initial.request_id || initial.id || target || "hf_sub";
+  if (options.onSubmit) {
+    try { options.onSubmit(billableId); } catch {}
+  }
+  console.log(
+    `[I2V BILLABLE] provider=higgsfield model=${options.model || (is20 ? "seedance-2.0" : "seedance-2.5")} durationSec=${dur} scene=${options.shotIndex ?? "unknown"} subclipIndex=${options.subclipIndex ?? 1} request_id=${billableId}`
+  );
 
   const immediateUrl = extractVideoUrl(initial);
   if (immediateUrl) return immediateUrl;
 
-  const target = initial.status_url || initial.request_id || initial.id;
   if (!target) {
     throw new Error(
       `Higgsfield video generation returned no video and no request_id: ${JSON.stringify(initial).slice(0, 300)}`
@@ -574,6 +584,9 @@ export interface GenerateSeedanceReferenceVideoOptions {
   videoUrls?: string[];
   audioUrls?: string[];
   onProgress?: (status: string) => void;
+  onSubmit?: (requestId: string) => void;
+  shotIndex?: number;
+  subclipIndex?: number;
 }
 
 /**
@@ -626,11 +639,18 @@ export async function generateSeedanceReferenceVideo(
   }
 
   const initial = await submit(endpoint, body, customKey, signal);
+  const target = initial.status_url || initial.request_id || initial.id;
+  const billableId = initial.request_id || initial.id || target || "hf_sub";
+  if (options.onSubmit) {
+    try { options.onSubmit(billableId); } catch {}
+  }
+  console.log(
+    `[I2V BILLABLE] provider=higgsfield model=${options.model || (is20 ? "seedance-2.0" : "seedance-2.5")} durationSec=${options.durationSec || 5} scene=${options.shotIndex ?? "unknown"} subclipIndex=${options.subclipIndex ?? 1} request_id=${billableId}`
+  );
 
   const immediateUrl = extractVideoUrl(initial);
   if (immediateUrl) return immediateUrl;
 
-  const target = initial.status_url || initial.request_id || initial.id;
   if (!target) {
     throw new Error(
       `Higgsfield R2V returned no video and no request_id: ${JSON.stringify(initial).slice(0, 300)}`

@@ -267,6 +267,60 @@ export const PROVIDER_CAPABILITY_MAP: Record<ConcreteAIProviderId, ProviderCapab
 };
 
 /**
+ * Resolves the accurate native max clip duration in seconds for a provider and model.
+ * - Higgsfield Seedance 2.5: 30s
+ * - Higgsfield Seedance 2.0: 15s
+ * - Grok / Seedance Ark: 15s
+ * - Kling / Runway: 10s
+ * - Luma: 9s
+ * - Gemini Veo: 8s
+ * Never defaults to 8 unless the provider truly maxes at 8.
+ */
+export function resolveMaxNativeClipSec(providerId?: string, modelId?: string): number {
+  const p = String(providerId || "").toLowerCase();
+  const m = String(modelId || "").toLowerCase();
+  if (p === "higgsfield" || p === "higgsfield-seedance") {
+    if (m.includes("2.0")) return 15;
+    return 30; // Seedance 2.5 allows up to 30s
+  }
+  if (p === "grok") return 15;
+  if (p === "seedance" || p === "ark") return 15;
+  if (p === "kling") return 10;
+  if (p === "runway") return 10;
+  if (p === "luma") return 9;
+  if (p === "gemini" || p === "google") return 8;
+  const cap = PROVIDER_VIDEO_CAPABILITIES[p as ConcreteAIProviderId];
+  if (cap && cap.maxNativeSec > 0) return cap.maxNativeSec;
+  return 8;
+}
+
+export function resolveAllowedDurationsSec(providerId?: string, modelId?: string): number[] {
+  const p = String(providerId || "").toLowerCase();
+  const m = String(modelId || "").toLowerCase();
+  if (p === "higgsfield" || p === "higgsfield-seedance") {
+    const max = m.includes("2.0") ? 15 : 30;
+    const res: number[] = [];
+    for (let i = 4; i <= max; i++) res.push(i);
+    return res;
+  }
+  if (p === "grok") {
+    const res: number[] = [];
+    for (let i = 1; i <= 15; i++) res.push(i);
+    return res;
+  }
+  if (p === "seedance" || p === "ark") {
+    const res: number[] = [];
+    for (let i = 4; i <= 15; i++) res.push(i);
+    return res;
+  }
+  if (p === "kling") return [5, 10];
+  if (p === "runway") return [5, 10];
+  if (p === "luma") return [5, 9];
+  if (p === "gemini" || p === "google") return [4, 6, 8];
+  return [4, 6, 8];
+}
+
+/**
  * Snaps a target scene duration to the largest legal duration supported by the provider.
  * For example: for Gemini/Veo (allowed: [4, 6, 8]), 8s -> 8, 7s -> 6, 5s -> 4.
  */

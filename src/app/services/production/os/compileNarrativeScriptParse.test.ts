@@ -139,10 +139,9 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
     }
   });
 
-  await t.test("5. Primary recovery: regenerates complete JSON when first attempt is cut off or invalid", async () => {
+  await t.test("5. Single call: processes complete valid JSON in one call without retrying", async () => {
     const originalExecute = ModelRouter.executeCategoryRequest;
 
-    const callPrompts: string[] = [];
     let callCount = 0;
 
     const validCompleteScript = {
@@ -187,16 +186,8 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
       mustNotCopy: [],
     };
 
-    ModelRouter.executeCategoryRequest = (async (cat: any, opts: any) => {
+    ModelRouter.executeCategoryRequest = (async () => {
       callCount++;
-      callPrompts.push(opts.prompt);
-
-      if (callCount === 1) {
-        // Truncated model output (as happened in the confirmed bug)
-        return '{"title": "Deep Sea Geothermal Vents", "chapters": [{"id": "c1", "spoken": "Two miles beneath the Pacific';
-      }
-
-      // Second call: return valid complete JSON
       return JSON.stringify(validCompleteScript);
     }) as any;
 
@@ -207,25 +198,19 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
         productionModeLabel: "narrator",
       });
 
-      assert.equal(callCount, 2, "Must make second call on parse failure");
-      assert.ok(
-        callPrompts[1].includes("IMPORTANT RECOVERY INSTRUCTION"),
-        "Second call must be a full regenerate with recovery instructions"
-      );
-      assert.ok(
-        !callPrompts[1].includes("FIX THIS JSON"),
-        "Must NOT use the broken 'FIX THIS JSON' prompt on truncated output"
-      );
+      assert.equal(callCount, 1, "Must make exactly 1 call with no retry");
       assert.equal(script.title, "Deep Sea Geothermal Vents");
     } finally {
       ModelRouter.executeCategoryRequest = originalExecute;
     }
   });
 
-  await t.test("6. Throws descriptive error with length and tail if retry also fails", async () => {
+  await t.test("6. Throws descriptive error directly when model output cannot be normalized into a valid script", async () => {
     const originalExecute = ModelRouter.executeCategoryRequest;
+    let callCount = 0;
 
     ModelRouter.executeCategoryRequest = (async () => {
+      callCount++;
       return "Broken output without braces";
     }) as any;
 
@@ -238,8 +223,9 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
             productionModeLabel: "narrator",
           });
         },
-        /Failed to parse NarrativeScript JSON after retry/
+        /Validation Failed|fullSpokenScript/
       );
+      assert.equal(callCount, 1, "Must fail on single call without retry");
     } finally {
       ModelRouter.executeCategoryRequest = originalExecute;
     }
@@ -329,74 +315,30 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
     );
   });
 
-  await t.test("10. compileNarrativeScript: recovers cleanly when first call throws stop_reason: max_tokens truncation", async () => {
+  await t.test("10. compileNarrativeScript: makes exactly ONE production call only (no paid retry loop)", async () => {
     const originalExecute = ModelRouter.executeCategoryRequest;
-    const callPrompts: string[] = [];
     let callCount = 0;
 
-    const validScript = {
-      title: "Concise Recovered Script",
-      logline: "Fast and punchy script delivery.",
-      premise: "Short narratives fit within token boundaries.",
-      targetDurationSec: 30,
-      format: "host",
-      hook: {
-        spoken: "Here is the concise hook.",
-        opensOnPayoff: true,
-        backstoryDeferred: true,
-      },
-      chapters: [
-        {
-          id: "c1",
-          order: 1,
-          title: "Main Point",
-          durationSec: 30,
-          job: "hook",
-          audio: "talent",
-          spoken: "Here is the concise hook with sufficient words to satisfy the target duration requirements for the thirty-second production format cleanly. We ensure that every structural chapter provides clear value, actionable insights, and verifiable engineering principles so the audience stays engaged from the opening frame all the way to the final call to action.",
-          visualIntent: "Host looks directly into lens.",
-        },
-      ],
-      openLoops: { plantedAtSec: [0], resolvedAtSec: [25] },
-      cta: { spoken: "Follow for more concise insights.", onScreen: "Follow" },
-      claims: [{ claim: "Short scripts have higher completion rates.", verified: true, source: "Media Analytics" }],
-      contentSource: "ai",
-      mustNotCopy: [],
-    };
-
-    ModelRouter.executeCategoryRequest = (async (cat: any, opts: any) => {
+    ModelRouter.executeCategoryRequest = (async () => {
       callCount++;
-      callPrompts.push(opts.prompt);
-
-      if (callCount === 1) {
-        // First call hits Anthropic token limit
-        throw new Error(
-          "Anthropic Claude output truncated (stop_reason: max_tokens, output_chars: 1574). Model hit token limit."
-        );
-      }
-
-      // Second call returns complete valid JSON
-      return JSON.stringify(validScript);
+      throw new Error(
+        "Anthropic Claude output truncated (stop_reason: max_tokens, output_chars: 1574). Model hit token limit."
+      );
     }) as any;
 
     try {
-      const script = await compileNarrativeScript({
-        brand: mockBrand,
-        targetDurationSec: 30,
-        productionModeLabel: "hybrid",
-      });
+      await assert.rejects(
+        async () => {
+          await compileNarrativeScript({
+            brand: mockBrand,
+            targetDurationSec: 30,
+            productionModeLabel: "hybrid",
+          });
+        },
+        /Failed to execute narrative script prompt/
+      );
 
-      assert.equal(callCount, 2, "Must retry on token limit truncation");
-      assert.ok(
-        callPrompts[1].includes("CRITICAL RECOVERY INSTRUCTION"),
-        "Retry prompt must include CRITICAL RECOVERY INSTRUCTION for token limit"
-      );
-      assert.ok(
-        callPrompts[1].includes("Previous attempt exceeded token limit"),
-        "Retry prompt must mention token limit"
-      );
-      assert.equal(script.title, "Concise Recovered Script");
-      assert.ok(script.fullSpokenScript, "Must derive fullSpokenScript automatically");
+      assert.equal(callCount, 1, "Must make exactly ONE call and NOT execute a paid retry loop");
     } finally {
       ModelRouter.executeCategoryRequest = originalExecute;
     }

@@ -646,8 +646,8 @@ export async function compileNarrativeScript(params: CompileNarrativeScriptParam
   }
   const prompt = compileNarrativeScriptPrompt(params);
 
+  // Exactly one production call — no paid Claude retry loop
   let rawOutput = "";
-  let firstCallHitTokenLimit = false;
   try {
     rawOutput = await ModelRouter.executeCategoryRequest("production", {
       prompt,
@@ -655,61 +655,15 @@ export async function compileNarrativeScript(params: CompileNarrativeScriptParam
       maxTokens: 8192,
     });
   } catch (error: any) {
-    if (String(error?.message || error).includes("stop_reason: max_tokens") || String(error?.message || error).includes("token limit")) {
-      firstCallHitTokenLimit = true;
-      console.warn(`[compileNarrativeScript] First call truncated by token limit: ${error?.message || error}`);
-    } else {
-      throw new Error(`Failed to execute narrative script prompt: ${error}`);
-    }
+    throw new Error(`Failed to execute narrative script prompt: ${error?.message || error}`);
   }
 
-  let scriptObj: NarrativeScript | null = null;
-
-  // Try normalizing Call 1 response if we got usable text
-  if (!firstCallHitTokenLimit && rawOutput && rawOutput.trim().length > 0) {
-    try {
-      const normalized = normalizeToNarrativeScript(rawOutput, params);
-      const wordCount = (normalized.fullSpokenScript || "").split(/\s+/).filter(Boolean).length;
-      if (wordCount >= 20 && Array.isArray(normalized.chapters) && normalized.chapters.length > 0) {
-        scriptObj = normalized;
-      }
-    } catch (normErr: any) {
-      console.warn(
-        `[compileNarrativeScript] First response normalization failed (length=${rawOutput.length}): ${normErr?.message || normErr}`
-      );
-    }
+  if (!rawOutput || !rawOutput.trim()) {
+    throw new Error("Model returned empty output for narrative script.");
   }
 
-  // If first call was truncated by token limit, empty, or failed normalization, execute single recovery attempt
-  if (!scriptObj) {
-    const recoveryInstruction = firstCallHitTokenLimit
-      ? `CRITICAL RECOVERY INSTRUCTION:\nPrevious attempt exceeded token limit. Keep spoken lines punchy and concise. Use 3-5 chapters maximum. Do not emit duplicate fullSpokenScript. Return one COMPLETE valid JSON object only.`
-      : `IMPORTANT RECOVERY INSTRUCTION:\nPrevious output was invalid or incomplete. Return one COMPLETE valid JSON object only. No markdown. Ensure all brackets, braces, and strings are fully closed.`;
-
-    const retryPrompt = `${prompt}\n\n${recoveryInstruction}`;
-    let retryRaw = "";
-    try {
-      retryRaw = await ModelRouter.executeCategoryRequest("production", {
-        prompt: retryPrompt,
-        systemInstruction: "You are the SPARK scriptwriter. Return ONLY one complete valid JSON object matching the narrative script schema.",
-        maxTokens: 8192,
-      });
-
-      const normalizedRetry = normalizeToNarrativeScript(retryRaw, params);
-      const retryWords = (normalizedRetry.fullSpokenScript || "").split(/\s+/).filter(Boolean).length;
-      if (retryWords < 20) {
-        throw new Error(`Output too short (${retryWords} words).`);
-      }
-      scriptObj = normalizedRetry;
-    } catch (retryError: any) {
-      console.error(
-        `[compileNarrativeScript] parse_fail_retry length=${retryRaw.length} tail=${JSON.stringify(retryRaw.slice(-120))}`
-      );
-      throw new Error(
-        `Failed to parse NarrativeScript JSON after retry: ${retryError?.message || retryError}`
-      );
-    }
-  }
+  // Normalize directly (JSON extraction or prose fallback)
+  const scriptObj = normalizeToNarrativeScript(rawOutput, params);
 
   // fullSpokenScript safety: derive from chapters[].spoken if missing or empty
   if (!scriptObj.fullSpokenScript || typeof scriptObj.fullSpokenScript !== "string" || !scriptObj.fullSpokenScript.trim()) {
