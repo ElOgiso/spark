@@ -19,6 +19,11 @@ import { resolveDurationPolicy } from "./durationPolicy";
 import { extractVideoLastFrame } from "./videoFrameExtractor";
 import { canStartAssetGeneration, getEffectiveContentFormat } from "./characterSheetGate";
 import { evaluateScriptForProduction } from "./os/scriptQualityGates";
+import {
+  buildScenesFromNarrativeChapters,
+  calculateSubclipDurations,
+  formatChapterClipLog,
+} from "./os/chapterToClip";
 import { collectMustNotCopyTitles } from "./os/topicIntelligence";
 import { resolveLiveBeatSubject } from "./contentFormatDirectives";
 import { resolveLiveVisualGenre, visualGenreDirective } from "./visualGenreDirectives";
@@ -1017,7 +1022,21 @@ export class ProductionAssetService {
       );
     }
 
-    const scriptToEval = brief.narrativeScript || (production as any).narrativeScriptObj;
+    const scriptToEval = brief.narrativeScript || (production as any).narrativeScriptObj || (production as any).narrativeScript;
+    if (!scriptToEval || !Array.isArray(scriptToEval.chapters) || scriptToEval.chapters.length === 0) {
+      const errMsg = "No writer chapters. SPARK will not invent clips.";
+      console.error(`[ProductionAssetService] ${errMsg}`);
+      return {
+        brief: {
+          ...brief,
+          lastError: errMsg,
+        },
+        scenes: [],
+        productionScenes: [],
+        audioUrl: brief.audioUrl,
+        videoUrl: brief.videoUrl,
+      };
+    }
     if (scriptToEval) {
       const refTitles = collectMustNotCopyTitles(brand?.researchSources || (brand as any)?.sources || []);
       const scriptEval = evaluateScriptForProduction(scriptToEval, (production as any).spark, brand, refTitles);
@@ -1297,113 +1316,34 @@ export class ProductionAssetService {
     startHeartbeat("Storyboard");
 
     try {
-      // PART 2 — Storyboard structure via OS plan compiler (or reuse Spec/brief panels)
-    const planned = compileStoryboardPlanPrompt({
-      mode,
-      aspectRatio,
-      brief,
-      brand,
-      character,
-      contentFormat: getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings, production, brief }),
-    });
-    const systemInstruction = planned.systemInstruction;
-    const prompt = planned.prompt;
-
-    let parsedStoryboard: any[] = [];
-    let thumbnails: any[] = [];
-
-    const hasProductionSpec = Boolean(
-      (production as any)?.reasoning?.productionSpec?.scenes?.length ||
-        (production as any)?.productionSpec?.scenes?.length
-    );
-    const reuseStoryboard = shouldReuseExistingStoryboard({
-      forceRegenerate,
-      brief,
-      hasProductionSpec,
-    });
-
-    try {
-      checkAborted();
-      if (reuseStoryboard) {
-        console.log(
-          `[SPARK Pipeline] Reusing Spec/brief storyboard (${brief.storyboard!.length} panels) — AssetService skips creative structure invent`
-        );
-        parsedStoryboard = brief.storyboard as any[];
-        thumbnails = Array.isArray((brief as any).thumbnails) ? (brief as any).thumbnails : [];
-      } else {
-      console.log(`[SPARK Pipeline] Provider Request: ${mode.toUpperCase()} Storyboard structure via ModelRouter...`);
-      const rawResponse = await withTimeout(
-        ModelRouter.executeCategoryRequest("production", {
-          prompt,
-          systemInstruction,
-        }),
-        45000,
-        "Storyboard structure generation timed out after 45s",
-        signal
-      );
-
-      checkAborted();
-      console.log(`[SPARK Pipeline] Provider Response: Storyboard structure received (${rawResponse.length} chars)`);
-
-      const cleanJson = rawResponse.replace(/```json/gi, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleanJson);
-
-      parsedStoryboard = Array.isArray(parsed.storyboard) ? parsed.storyboard : [];
-      thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
-      }
-    } catch (llmErr: any) {
-      if (llmErr?.name === "AbortError" || signal?.aborted) throw llmErr;
-      console.warn("[SPARK Pipeline] Storyboard LLM generation notice, using structured fallback:", llmErr);
-      if (!lastError) lastError = `Storyboard: ${llmErr?.message || String(llmErr)}`;
-    }
-
-    // Ensure every parsed scene has valueJob, spokenLines, and audio mode
-    const storyboard: ProductionScene[] = parsedStoryboard.length > 0
-      ? parsedStoryboard.map((s, idx) => {
-          const job = s.valueJob || brief.beats?.[idx]?.valueJob || "context";
-          const resolvedAudio: "vo" | "talent" =
-            s.audio ||
-            (mode === "express"
-              ? "vo"
-              : mode === "deep"
-              ? "talent"
-              : (job === "slide" || job === "still" || job === "b-roll" || job === "context" || job === "example" || job === "problem" || job === "myth_bust"
-                  ? "vo"
-                  : "talent"));
-
+      // PART 2 — Shot list = writer narrative chapters (SPARK provider script authority)
+      const chapterScenes = buildScenesFromNarrativeChapters(scriptToEval, mode);
+      const existingStoryboard = brief.storyboard || [];
+      const storyboard: ProductionScene[] = chapterScenes.map((cs, idx) => {
+        const ex = existingStoryboard[idx];
+        if (ex) {
           return {
-            ...s,
-            scene: typeof s.scene === "number" ? s.scene : idx + 1,
-            audio: resolvedAudio,
-            valueJob: job,
-            spokenLines: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-            scriptSnippet: s.spokenLines || s.scriptSnippet || brief.beats?.[idx]?.spokenLines || (idx === 0 ? brief.hook : ""),
-            onScreenText: s.onScreenText || brief.beats?.[idx]?.onScreenText || `BEAT ${idx + 1}`,
-            cameraDirection: s.cameraDirection || brief.beats?.[idx]?.cameraDirection || (mode === "deep" ? "Tracking shot" : "Medium shot"),
+            ...cs,
+            image: ex.image || cs.image,
+            videoUrl: ex.videoUrl || cs.videoUrl,
+            lastFrameUrl: ex.lastFrameUrl || cs.lastFrameUrl,
           };
-        })
-      : ProductionAssetService.planProductionScenes({
-          production,
-          brief,
-          brand,
-          formatSettings: activeFormatSettings,
-          creditSettings: activeCreditSettings,
-        });
+        }
+        return cs;
+      });
 
-    // Even when a storyboard already exists, honor credit clip/panel budget.
-    const creditCap =
-      typeof activeCreditSettings?.maxVideoClips === "number"
-        ? activeCreditSettings.maxVideoClips
-        : typeof activeCreditSettings?.keyframeCount === "number"
-          ? activeCreditSettings.keyframeCount
-          : undefined;
-    const budgetedStoryboard =
-      typeof creditCap === "number" && creditCap > 0 && storyboard.length > creditCap
-        ? storyboard.slice(0, Math.max(1, Math.floor(creditCap)))
-        : storyboard;
+      const sumDuration = storyboard.reduce((acc, s) => acc + (s.durationSec || 0), 0);
+      if (scriptToEval.targetDurationSec && Math.abs(sumDuration - scriptToEval.targetDurationSec) > 5) {
+        const warnMsg = `Warning: Sum of chapter durations (${sumDuration}s) diverges from script.targetDurationSec (${scriptToEval.targetDurationSec}s). Using chapter durations, no rescaling to 60.`;
+        console.warn(`[SPARK Pipeline] ${warnMsg}`);
+        if (!lastError) {
+          lastError = warnMsg;
+        }
+      }
 
-    currentStoryboard = budgetedStoryboard;
-    currentThumbnails = thumbnails.length > 0
+      currentStoryboard = storyboard;
+      let thumbnails: any[] = Array.isArray((brief as any).thumbnails) ? (brief as any).thumbnails : [];
+      currentThumbnails = thumbnails.length > 0
       ? thumbnails.map((t: any, idx: number) => ({
           id: t.id || `t${idx + 1}`,
           variant: t.variant || ["A", "B", "C"][idx] || "A",
@@ -2425,14 +2365,22 @@ export class ProductionAssetService {
             const activeVideo = resolveActiveVideoProvider({
               preferredVideoProvider: (preferredVideoProvider || activeFormatSettings?.preferredVideoProvider) as any,
             });
-            const nativeMaxClipSec = activeVideo.maxVideoDurationSec || 8;
-            const targetSec = activeFormatSettings?.targetDurationSec || 60;
+            const nativeMaxClipSec = activeVideo.videoCapability?.maxNativeSec || activeVideo.maxVideoDurationSec || 8;
+            const allowedDurationsSec = activeVideo.allowedDurationsSec || [4, 6, 8];
             const charSheetUrl = character?.characterSheetUrl || character?.imageUrl || character?.avatarUrl;
 
             for (let sIdx = 0; sIdx < currentStoryboard.length; sIdx++) {
               checkAborted();
               const s = currentStoryboard[sIdx];
               const globalSceneNum = s.scene || sIdx + 1;
+
+              if (skipI2V) {
+                console.log(
+                  `[SPARK Pipeline] Mode Gate: Scene ${globalSceneNum} skipI2V is active — still + VO path only; no video model.`
+                );
+                s.videoUrl = undefined;
+                continue;
+              }
 
               // HYBRID (standard) mode: respect beat audio ("vo" | "talent")
               // "talent beat: still → i2v from THAT still as firstFrame, NO ElevenLabs on that beat. vo beat: still stays still, ElevenLabs only for those lines."
@@ -2443,6 +2391,25 @@ export class ProductionAssetService {
                 s.videoUrl = undefined;
                 continue;
               }
+
+              const chapterDur = s.durationSec;
+              if (typeof chapterDur !== "number" || chapterDur <= 0 || isNaN(chapterDur)) {
+                throw new Error(`Chapter ${globalSceneNum} missing required durationSec.`);
+              }
+
+              const subclipDurations = calculateSubclipDurations(chapterDur, nativeMaxClipSec, allowedDurationsSec);
+              const subclipCount = subclipDurations.length;
+              const spokenChars = (s.spokenLines || "").length;
+
+              console.log(
+                formatChapterClipLog({
+                  chapterIndex: globalSceneNum,
+                  chapterDur,
+                  maxNativeSec: nativeMaxClipSec,
+                  subclipCount,
+                  spokenChars,
+                })
+              );
 
               const prevScene = sIdx > 0 ? currentStoryboard[sIdx - 1] : undefined;
               const shotIdForScene = (s as any).shotId || (s as any).id || `shot_${globalSceneNum}`;
@@ -2566,11 +2533,10 @@ export class ProductionAssetService {
               if (!sceneFirstFrame || !isValidMediaData(sceneFirstFrame)) {
                 const errMsg = `Still required before motion. Scene ${globalSceneNum} still frame is missing or invalid. I2V motion requires a verified scene still.`;
                 console.error(`[SPARK Pipeline] ${errMsg}`);
-                throw new Error(errMsg);
+                s.lastError = errMsg;
+                currentStoryboard[sIdx] = { ...s, lastError: errMsg };
+                continue;
               }
-
-              // Calculate native duration after we know whether Veo lastFrame is present (must be 8).
-              const rawSceneDur = s.durationSec || parseInt(s.duration) || Math.max(4, Math.round(targetSec / currentStoryboard.length));
 
               // 1. Resolve content format & subject rules (honor stamped beat subjects)
               const effectiveContentFormat = getEffectiveContentFormat({ brand, formatSettings: activeFormatSettings });
@@ -2633,17 +2599,6 @@ export class ProductionAssetService {
                 );
               }
 
-              // STAGE 3 DURATION & MULTISHOT POLICY:
-              // 1. Durations are strictly clamped to each provider's legal limits (Grok 1-15, Kling 5/10, Veo 4/6/8, Seedance 4-15).
-              // 2. If a Stage-3 beat describes multiple hard cuts or an overall duration > provider max:
-              //    SPARK maps this to multiple discrete shots (one still per segment -> individual I2V clips -> assemble / assembly_pending).
-              //    SPARK never issues an illegal single generation claiming a 30s multi-cut film beyond provider capabilities.
-              const veoLike = /^(gemini|veo|google)$/i.test(String(activeVideo.providerId || ""));
-              const sceneTargetDuration =
-                veoLike && sceneLastFrame
-                  ? 8
-                  : snapToAllowedDuration(Math.min(rawSceneDur, nativeMaxClipSec), activeVideo.providerId) ||
-                    Math.min(rawSceneDur, 8);
 
               // 4. Resolve Production Elements & Shot-level needed tags
               const productionElementPack = buildProductionElementPack({
@@ -2668,50 +2623,6 @@ export class ProductionAssetService {
                 neededTags,
                 resolvedMotionSubject
               ).filter((e) => e.url !== sceneFirstFrame && e.url !== sceneEndFrame);
-
-              // 5. Prompt labels & ELEMENT BINDING — sheets/plates/grid never occupy the i2v start-frame field.
-              const isChainingLastFrame = Boolean(sceneLastFrame);
-              const refLabels: string[] = [
-                `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum} shot still)`,
-              ];
-              if (isChainingLastFrame) {
-                refLabels.push(`INPUT REF [lastFrame]: Next panel crop (or previous last-frame extract as fallback)`);
-              }
-              for (const el of shotElements) {
-                refLabels.push(`ELEMENT ${el.tag} → ${el.label} (${el.description || el.role})`);
-              }
-
-              const sceneMotionCompiled = compileLiveMotionPrompt({ lookLaw, mode,
-                aspectRatio: identityPack.aspectRatio,
-                sceneIndex: globalSceneNum,
-                totalScenes: currentStoryboard.length,
-                durationSec: sceneTargetDuration,
-                scene: s,
-                refLabels,
-                isInsertOrSet,
-                characterName: activeChar?.name,
-                characterStyle: activeChar?.style,
-                environment: identityPack.environmentString,
-                brief,
-                contentFormat: effectiveContentFormat,
-                followStoryboardStill: true,
-                elements: shotElements,
-                shotDirection: (s as any).shotDirection,
-              });
-              const sceneMotionPrompt = sceneMotionCompiled.prompt;
-              (s as any).shotDirection = sceneMotionCompiled.shotDirection;
-              if (s.motionLock) {
-                (s.motionLock as any).shotDirection = sceneMotionCompiled.shotDirection;
-              }
-              if (!sceneMotionCompiled.fromPersistedLock) {
-                console.warn(
-                  `[SPARK Pipeline] Scene ${globalSceneNum} motion lock was missing at I2V — rebuilt from scene (prefer still-time lock)`
-                );
-              } else {
-                console.log(
-                  `[SPARK Pipeline] Scene ${globalSceneNum} I2V follows storyboard motionLock (${sceneMotionCompiled.motionLock.sourceStill})`
-                );
-              }
 
               const identityRefs: string[] = [];
               const addIdentityRef = (url?: string | null) => {
@@ -2749,10 +2660,6 @@ export class ProductionAssetService {
                 previousLastFrameUrl: prevScene?.lastFrameUrl,
                 identityRefUrls: identityRefs,
               });
-              const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
-              console.log(
-                `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [Official i2v still + lastFrame=${Boolean(sceneLastFrame)}, Duration: ${sceneTargetDuration}s, Refs: ${identityRefs.length}]...`
-              );
               if (!continuity.ok || continuityPlan.continuityGap) {
                 console.warn(
                   `[SPARK Pipeline] Visual continuity notice Scene ${globalSceneNum}:`,
@@ -2760,35 +2667,95 @@ export class ProductionAssetService {
                 );
               }
 
-              try {
+              let subclipStartFrame = sceneFirstFrame;
+              let currentChapterLastFrame: string | undefined = undefined;
+              const chapterSubclips: string[] = [];
+
+              for (let k = 0; k < subclipCount; k++) {
                 checkAborted();
-                const generateClip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
-                  const allI2vCandidates = [
-                    "grok",
-                    "kling",
-                    "seedance",
-                    "ark",
-                    ...(resolveProviderKey("higgsfield") || isServerProviderAvailable("higgsfield") ? ["higgsfield"] : []),
-                  ];
-                  const i2vFallbacks = allI2vCandidates.filter(
-                    (p) => p !== String(activeVideo.providerId || "").toLowerCase()
-                  );
-                  
-                    // --- GAP B: Durable first frame & refs before I2V ---
-                    if (sceneFirstFrame && (sceneFirstFrame.startsWith("data:") || isEphemeralMediaUrl(sceneFirstFrame))) {
+                const subclipDur = subclipDurations[k];
+                const isFirstSubclip = k === 0;
+                const isLastSubclip = k === subclipCount - 1;
+                const subclipLabel = subclipCount > 1 ? ` (part ${k + 1}/${subclipCount})` : "";
+                const subclipIndexNum = subclipCount > 1 ? `${globalSceneNum}-${k + 1}` : `${globalSceneNum}`;
+
+                const subclipPrevLast = isFirstSubclip
+                  ? (sIdx > 0 ? prevScene?.lastFrameUrl : undefined)
+                  : currentChapterLastFrame;
+                const subclipPlannedEnd = isLastSubclip
+                  ? (sceneEndFrame || sceneLastFrame)
+                  : undefined;
+
+                const isChainingLastFrame = Boolean(subclipPlannedEnd || subclipPrevLast);
+                const subclipRefLabels: string[] = [
+                  `INPUT REF [1]: First Frame Keyframe (Scene ${globalSceneNum}${subclipLabel} shot still)`,
+                ];
+                if (isChainingLastFrame) {
+                  subclipRefLabels.push(`INPUT REF [lastFrame]: Next panel crop (or previous last-frame extract as fallback)`);
+                }
+                for (const el of shotElements) {
+                  subclipRefLabels.push(`ELEMENT ${el.tag} → ${el.label} (${el.description || el.role})`);
+                }
+
+                const sceneMotionCompiled = compileLiveMotionPrompt({
+                  lookLaw,
+                  mode,
+                  aspectRatio: identityPack.aspectRatio,
+                  sceneIndex: globalSceneNum,
+                  totalScenes: currentStoryboard.length,
+                  durationSec: subclipDur,
+                  scene: s,
+                  refLabels: subclipRefLabels,
+                  isInsertOrSet,
+                  characterName: activeChar?.name,
+                  characterStyle: activeChar?.style,
+                  environment: identityPack.environmentString,
+                  brief,
+                  contentFormat: effectiveContentFormat,
+                  followStoryboardStill: true,
+                  elements: shotElements,
+                  shotDirection: (s as any).shotDirection,
+                });
+                const sceneMotionPrompt = sceneMotionCompiled.prompt;
+                (s as any).shotDirection = sceneMotionCompiled.shotDirection;
+                if (s.motionLock) {
+                  (s.motionLock as any).shotDirection = sceneMotionCompiled.shotDirection;
+                }
+
+                const videoTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
+                console.log(
+                  `[SPARK Pipeline] Provider Request: Scene ${globalSceneNum}${subclipLabel} of ${currentStoryboard.length} I2V (${mode.toUpperCase()}) via ${activeVideo.providerId} [still=${Boolean(subclipStartFrame)}, lastFrame=${Boolean(subclipPrevLast)}, Dur: ${subclipDur}s, Refs: ${identityRefs.length}]...`
+                );
+
+                try {
+                  checkAborted();
+                  const generateSubclip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
+                    const allI2vCandidates = [
+                      "grok",
+                      "kling",
+                      "seedance",
+                      "ark",
+                      ...(resolveProviderKey("higgsfield") || isServerProviderAvailable("higgsfield") ? ["higgsfield"] : []),
+                    ];
+                    const i2vFallbacks = allI2vCandidates.filter(
+                      (p) => p !== String(activeVideo.providerId || "").toLowerCase()
+                    );
+
+                    // Durable first frame & refs before I2V
+                    if (subclipStartFrame && (subclipStartFrame.startsWith("data:") || isEphemeralMediaUrl(subclipStartFrame))) {
                       try {
                         const ingested = await ProductionAssetService.uploadAssetToStorage({
-                           productionId: production.id,
-                           brandId: (brand as any)?.id,
-                           assetType: "image",
-                           storagePath: `tmp-ingest-firstframe-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
-                           dataUrlOrBlob: sceneFirstFrame,
-                           mimeType: "image/png",
-                           prompt: sceneMotionPrompt,
-                           provider: "PipelineIngest",
+                          productionId: production.id,
+                          brandId: (brand as any)?.id,
+                          assetType: "image",
+                          storagePath: `tmp-ingest-firstframe-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
+                          dataUrlOrBlob: subclipStartFrame,
+                          mimeType: "image/png",
+                          prompt: sceneMotionPrompt,
+                          provider: "PipelineIngest",
                         });
                         if (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) {
-                          sceneFirstFrame = ingested.publicUrl;
+                          subclipStartFrame = ingested.publicUrl;
                         } else {
                           throw new Error("Ingest succeeded but returned non-persistable URL.");
                         }
@@ -2803,14 +2770,14 @@ export class ProductionAssetService {
                         if (ref.startsWith("data:") || isEphemeralMediaUrl(ref)) {
                           try {
                             const ingested = await ProductionAssetService.uploadAssetToStorage({
-                               productionId: production.id,
-                               brandId: (brand as any)?.id,
-                               assetType: "image",
-                               storagePath: `tmp-ingest-ref-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
-                               dataUrlOrBlob: ref,
-                               mimeType: "image/png",
-                               prompt: "Visual Lock Ref",
-                               provider: "PipelineIngest",
+                              productionId: production.id,
+                              brandId: (brand as any)?.id,
+                              assetType: "image",
+                              storagePath: `tmp-ingest-ref-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`,
+                              dataUrlOrBlob: ref,
+                              mimeType: "image/png",
+                              prompt: "Visual Lock Ref",
+                              provider: "PipelineIngest",
                             });
                             return (ingested?.publicUrl && isPersistableSparkMediaUrl(ingested.publicUrl)) ? ingested.publicUrl : null;
                           } catch {
@@ -2822,137 +2789,133 @@ export class ProductionAssetService {
                       identityRefs.length = 0;
                       identityRefs.push(...(upgradedRefs.filter(Boolean) as string[]));
                     }
-                    // --- END GAP B ---
-                    const tryI2v = async (providerId: string) => {
 
-                    const effectiveRefs =
-                      providerId.toLowerCase() === "grok"
-                        ? identityRefs.slice(0, 7)
-                        : identityRefs;
-                    const apiClip = await requestProductionVideoClip({
-                      provider: providerId,
+                    const tryI2v = async (providerId: string) => {
+                      const effectiveRefs =
+                        providerId.toLowerCase() === "grok"
+                          ? identityRefs.slice(0, 7)
+                          : identityRefs;
+                      const apiClip = await requestProductionVideoClip({
+                        provider: providerId,
+                        prompt: sceneMotionPrompt,
+                        firstFrameUrl: subclipStartFrame,
+                        sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
+                        lastFrameUrl: subclipPrevLast,
+                        endFrameUrl: subclipPlannedEnd,
+                        characterSheetUrl: sceneCharSheetUrl || undefined,
+                        referenceImageUrls: effectiveRefs,
+                        aspectRatio: identityPack.aspectRatio,
+                        durationSec: subclipDur,
+                        model: preferredVideoModel,
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        shotIndex: globalSceneNum,
+                      });
+                      return {
+                        url: apiClip.videoUrl,
+                        lastFrameDataUrl: apiClip.lastFrameDataUrl,
+                        provider: apiClip.provider,
+                      };
+                    };
+
+                    if (isI2vApiProvider(activeVideo.providerId)) {
+                      try {
+                        return await tryI2v(activeVideo.providerId);
+                      } catch (primaryI2vErr: any) {
+                        console.warn(
+                          `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} notice Scene ${globalSceneNum}${subclipLabel}:`,
+                          primaryI2vErr
+                        );
+                        for (const fallbackProvider of i2vFallbacks) {
+                          try {
+                            console.log(
+                              `[SPARK Pipeline] Attempting I2V fallback to ${fallbackProvider} for Scene ${globalSceneNum}${subclipLabel}...`
+                            );
+                            return await tryI2v(fallbackProvider);
+                          } catch (fallbackErr: any) {
+                            console.warn(
+                              `[SPARK Pipeline] Fallback I2V provider ${fallbackProvider} notice Scene ${globalSceneNum}${subclipLabel}:`,
+                              fallbackErr
+                            );
+                          }
+                        }
+                      }
+                    }
+
+                    const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
                       prompt: sceneMotionPrompt,
-                      firstFrameUrl: sceneFirstFrame,
-                      sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
-                      lastFrameUrl: sceneLastFrame,
-                      endFrameUrl: sceneEndFrame || sceneLastFrame,
-                      characterSheetUrl: sceneCharSheetUrl || undefined,
-                      referenceImageUrls: effectiveRefs,
                       aspectRatio: identityPack.aspectRatio,
-                      durationSec: sceneTargetDuration,
+                      firstFrameUrl: subclipStartFrame,
+                      characterSheetUrl: sceneCharSheetUrl || undefined,
+                      referenceImageUrls: identityRefs,
+                      durationSec: subclipDur,
+                      lastFrameUrl: subclipPrevLast,
+                      endFrameUrl: subclipPlannedEnd,
+                      preferredProvider: activeVideo.providerId,
                       model: preferredVideoModel,
                       productionId: production.id,
                       brandId: (brand as any).id,
                       shotIndex: globalSceneNum,
                     });
-                    return {
-                      url: apiClip.videoUrl,
-                      lastFrameDataUrl: apiClip.lastFrameDataUrl,
-                      provider: apiClip.provider,
-                    };
+                    return { url: routed, provider: activeVideo.providerId };
                   };
 
-                  // Primary: selected I2V API provider (Grok/Kling/Seedance)
-                  if (isI2vApiProvider(activeVideo.providerId)) {
+                  const generated = await withTimeout(
+                    generateSubclip(),
+                    videoTimeoutMs,
+                    `Scene ${globalSceneNum}${subclipLabel} video generation timed out after ${Math.round(videoTimeoutMs / 1000)}s`,
+                    signal
+                  );
+                  checkAborted();
+
+                  if (isValidMediaData(generated.url)) {
+                    let finalClip = "";
+                    let clipAssetId: string | undefined;
                     try {
-                      return await tryI2v(activeVideo.providerId);
-                    } catch (primaryI2vErr: any) {
-                      console.warn(
-                        `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} notice Scene ${globalSceneNum}:`,
-                        primaryI2vErr
-                      );
-                      for (const fallbackProvider of i2vFallbacks) {
-                        try {
-                          console.log(
-                            `[SPARK Pipeline] Attempting I2V fallback to ${fallbackProvider} for Scene ${globalSceneNum}...`
-                          );
-                          return await tryI2v(fallbackProvider);
-                        } catch (fallbackErr: any) {
-                          console.warn(
-                            `[SPARK Pipeline] Fallback I2V provider ${fallbackProvider} notice Scene ${globalSceneNum}:`,
-                            fallbackErr
-                          );
-                        }
+                      const storedClip = await this.uploadAssetToStorage({
+                        productionId: production.id,
+                        brandId: (brand as any).id,
+                        assetType: "video",
+                        storagePath: getStoragePath(`video/shot-${subclipIndexNum}.mp4`),
+                        dataUrlOrBlob: generated.url,
+                        mimeType: "video/mp4",
+                        prompt: sceneMotionPrompt,
+                        provider: generated.provider || "ModelRouter",
+                        sceneId: s.sceneId,
+                        shotId: shotIdForScene,
+                        taskId: s.generationTaskId,
+                      });
+                      if (storedClip?.assetId) {
+                        clipAssetId = storedClip.assetId;
                       }
+                      if (
+                        storedClip?.uploadSuccess &&
+                        storedClip.publicUrl &&
+                        isPersistableSparkMediaUrl(storedClip.publicUrl)
+                      ) {
+                        finalClip = storedClip.publicUrl;
+                      }
+                      console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum}${subclipLabel} Video -> ${finalClip || "(persist failed)"}`);
+                    } catch (storageErr: any) {
+                      console.warn(`[SPARK Pipeline] Scene ${globalSceneNum}${subclipLabel} video upload notice:`, storageErr);
                     }
-                  }
-
-                  // Standard ModelRouter fallback (Veo / Runway / Pika / etc.)
-                  const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                    prompt: sceneMotionPrompt,
-                    aspectRatio: identityPack.aspectRatio,
-                    firstFrameUrl: sceneFirstFrame,
-                    characterSheetUrl: sceneCharSheetUrl || undefined,
-                    referenceImageUrls: identityRefs,
-                    durationSec: sceneTargetDuration,
-                    lastFrameUrl: sceneLastFrame,
-                    endFrameUrl: sceneEndFrame,
-                    preferredProvider: activeVideo.providerId,
-                    model: preferredVideoModel,
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    shotIndex: globalSceneNum,
-                  });
-                  return { url: routed, provider: activeVideo.providerId };
-                };
-
-                const generated = await withTimeout(
-                  generateClip(),
-                  videoTimeoutMs,
-                  `Scene ${globalSceneNum} video generation timed out after ${Math.round(videoTimeoutMs / 1000)}s`,
-                  signal
-                );
-                checkAborted();
-
-                if (isValidMediaData(generated.url)) {
-                  let finalClip = "";
-                  let clipAssetId: string | undefined;
-                  try {
-                    const storedClip = await this.uploadAssetToStorage({
-                      productionId: production.id,
-                      brandId: (brand as any).id,
-                      assetType: "video",
-                      storagePath: getStoragePath(`video/shot-${globalSceneNum}.mp4`),
-                      dataUrlOrBlob: generated.url,
-                      mimeType: "video/mp4",
-                      prompt: sceneMotionPrompt,
-                      provider: generated.provider || "ModelRouter",
-                      sceneId: s.sceneId,
-                      shotId: shotIdForScene,
-                      taskId: s.generationTaskId,
-                    });
-                    if (storedClip?.assetId) {
-                      clipAssetId = storedClip.assetId;
+                    if (!finalClip && isPersistableSparkMediaUrl(generated.url)) {
+                      finalClip = generated.url;
                     }
-                    if (
-                      storedClip?.uploadSuccess &&
-                      storedClip.publicUrl &&
-                      isPersistableSparkMediaUrl(storedClip.publicUrl)
-                    ) {
-                      finalClip = storedClip.publicUrl;
+                    if (!finalClip && isPlayableVideoUrl(generated.url)) {
+                      finalClip = generated.url;
                     }
-                    console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Video -> ${finalClip || "(persist failed)"}`);
-                  } catch (storageErr: any) {
-                    console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video upload notice:`, storageErr);
-                  }
-                  if (!finalClip && isPersistableSparkMediaUrl(generated.url)) {
-                    finalClip = generated.url;
-                  }
-                  if (!finalClip && isPlayableVideoUrl(generated.url)) {
-                    finalClip = generated.url;
-                  }
-                  if (!finalClip) {
-                    throw new Error(`Scene ${globalSceneNum} Video: no playable video URL returned`);
-                  }
-
-                  s.videoUrl = finalClip;
-                  (s as any).playablePreviewUrl = finalClip;
-                    if (currentStoryboard[sIdx]) {
-                      currentStoryboard[sIdx].videoUrl = finalClip;
-                      (currentStoryboard[sIdx] as any).playablePreviewUrl = finalClip;
+                    if (!finalClip) {
+                      throw new Error(`Scene ${globalSceneNum}${subclipLabel} Video: no playable video URL returned`);
                     }
 
-                    // Always ingest non-Spark URLs to bucket "Spark" so provider expiry cannot empty Review
+                    chapterSubclips.push(finalClip);
+                    sceneClips.push(finalClip);
+                    if (sIdx === 0 && k === 0 && !realVideoUrl) {
+                      realVideoUrl = finalClip;
+                    }
+
+                    // Always ingest non-Spark URLs to bucket "Spark"
                     if (!isSparkStorageUrl(finalClip)) {
                       void import("./ingestMediaToSpark").then(({ scheduleAutoIngestMedia }) => {
                         scheduleAutoIngestMedia({
@@ -2960,95 +2923,98 @@ export class ProductionAssetService {
                           brandId: (brand as any).id,
                           productionId: production.id,
                           assetType: "video",
-                          storagePath: getStoragePath(`video/shot-${globalSceneNum}-${Date.now()}.mp4`),
+                          storagePath: getStoragePath(`video/shot-${subclipIndexNum}-${Date.now()}.mp4`),
                           shotIndex: globalSceneNum,
                           onSuccess: (sparkUrl) => {
-                            s.videoUrl = sparkUrl;
-                            (s as any).playablePreviewUrl = sparkUrl;
-                            if (currentStoryboard[sIdx]) {
+                            const idxInScene = sceneClips.indexOf(finalClip);
+                            if (idxInScene >= 0) sceneClips[idxInScene] = sparkUrl;
+                            const idxInChap = chapterSubclips.indexOf(finalClip);
+                            if (idxInChap >= 0) chapterSubclips[idxInChap] = sparkUrl;
+                            if (s.videoUrl === finalClip) s.videoUrl = sparkUrl;
+                            if (currentStoryboard[sIdx]?.videoUrl === finalClip) {
                               currentStoryboard[sIdx].videoUrl = sparkUrl;
-                              (currentStoryboard[sIdx] as any).playablePreviewUrl = sparkUrl;
                             }
                           },
                         });
                       });
                     }
 
-                  // Extract last frame of this clip and persist it so clip N+1 can send it as first_frame.
-                  try {
-                    let lastFrameBlob: Blob | string | undefined;
-                    const browserExtract = await extractVideoLastFrame(finalClip);
-                    if (browserExtract?.blob) {
-                      lastFrameBlob = browserExtract.blob;
-                    } else if (generated.lastFrameDataUrl && isValidMediaData(generated.lastFrameDataUrl)) {
-                      lastFrameBlob = generated.lastFrameDataUrl;
-                    }
-                    if (lastFrameBlob) {
-                      const storedLastFrame = await this.uploadAssetToStorage({
-                        productionId: production.id,
-                        brandId: (brand as any).id,
-                        assetType: "image",
-                        storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}-last.jpg`),
-                        dataUrlOrBlob: lastFrameBlob,
-                        mimeType: "image/jpeg",
-                        prompt: `Last frame of Scene ${globalSceneNum}`,
-                        provider: "VideoFrameExtractor",
-                        sceneId: s.sceneId,
-                        shotId: shotIdForScene,
-                      });
-                      if (storedLastFrame?.publicUrl) {
-                        s.lastFrameUrl = storedLastFrame.publicUrl;
-                        const gsf = stampSceneGeneratedStateFrame({
-                          productionId: production.id,
-                          shotId: shotIdForScene,
-                          videoUrl: finalClip,
-                          lastFrameUrl: storedLastFrame.publicUrl,
-                          sceneIndexZeroBased: sIdx,
-                        });
-                        (s as any).generatedStateFrame = gsf;
-                        (s as any).generatedStateFrameId = gsf.id;
-                        if (!brief.generatedAssets) brief.generatedAssets = {};
-                        const registry = ((brief.generatedAssets as any).generatedStateFrames ||
-                          {}) as Record<string, unknown>;
-                        registry[gsf.id] = gsf;
-                        (brief.generatedAssets as any).generatedStateFrames = registry;
-                        console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame -> ${s.lastFrameUrl} (${gsf.id})`);
+                    // Extract last frame for continuity to next subclip or next scene
+                    try {
+                      let lastFrameBlob: Blob | string | undefined;
+                      const browserExtract = await extractVideoLastFrame(finalClip);
+                      if (browserExtract?.blob) {
+                        lastFrameBlob = browserExtract.blob;
+                      } else if (generated.lastFrameDataUrl && isValidMediaData(generated.lastFrameDataUrl)) {
+                        lastFrameBlob = generated.lastFrameDataUrl;
                       }
+                      if (lastFrameBlob) {
+                        const suffix = subclipCount > 1 ? `-part${k + 1}` : "";
+                        const storedLastFrame = await this.uploadAssetToStorage({
+                          productionId: production.id,
+                          brandId: (brand as any).id,
+                          assetType: "image",
+                          storagePath: getStoragePath(`scenes/scene-0${globalSceneNum}${suffix}-last.jpg`),
+                          dataUrlOrBlob: lastFrameBlob,
+                          mimeType: "image/jpeg",
+                          prompt: `Last frame of Scene ${globalSceneNum}${subclipLabel}`,
+                          provider: "VideoFrameExtractor",
+                          sceneId: s.sceneId,
+                          shotId: shotIdForScene,
+                        });
+                        if (storedLastFrame?.publicUrl) {
+                          currentChapterLastFrame = storedLastFrame.publicUrl;
+                          subclipStartFrame = storedLastFrame.publicUrl; // Chains to next subclip!
+                          if (isLastSubclip) {
+                            s.lastFrameUrl = storedLastFrame.publicUrl;
+                            const gsf = stampSceneGeneratedStateFrame({
+                              productionId: production.id,
+                              shotId: shotIdForScene,
+                              videoUrl: finalClip,
+                              lastFrameUrl: storedLastFrame.publicUrl,
+                              sceneIndexZeroBased: sIdx,
+                            });
+                            (s as any).generatedStateFrame = gsf;
+                            (s as any).generatedStateFrameId = gsf.id;
+                            if (!brief.generatedAssets) brief.generatedAssets = {};
+                            const registry = ((brief.generatedAssets as any).generatedStateFrames ||
+                              {}) as Record<string, unknown>;
+                            registry[gsf.id] = gsf;
+                            (brief.generatedAssets as any).generatedStateFrames = registry;
+                            console.log(`[SPARK Pipeline] Storage Upload: Scene ${globalSceneNum} Last Frame -> ${s.lastFrameUrl} (${gsf.id})`);
+                          }
+                        }
+                      }
+                    } catch (extractErr) {
+                      console.warn(`[SPARK Pipeline] Scene ${globalSceneNum}${subclipLabel} last frame extract notice:`, extractErr);
                     }
-                  } catch (extractErr) {
-                    console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} last frame extract notice:`, extractErr);
+                  } else {
+                    console.warn(`[SPARK Pipeline] Scene ${globalSceneNum}${subclipLabel} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));
+                    const errMsg = `Scene ${globalSceneNum}${subclipLabel} Video: Provider returned empty data`;
+                    if (!lastError) lastError = errMsg;
+                    s.lastError = errMsg;
+                    currentStoryboard[sIdx] = { ...s, lastError: errMsg };
+                    break;
                   }
-
-                  s.videoUrl = finalClip;
-                  if (clipAssetId) {
-                    s.videoAssetId = clipAssetId;
-                    s.assetIds = Array.from(new Set([...(s.assetIds || []), clipAssetId]));
-                  }
-                  currentStoryboard[sIdx] = {
-                    ...s,
-                    videoUrl: finalClip,
-                    lastFrameUrl: s.lastFrameUrl,
-                    videoAssetId: s.videoAssetId,
-                    assetIds: s.assetIds,
-                  };
-                  sceneClips.push(finalClip);
-                  if (sIdx === 0 && (brand as any)?.automation_mode === "autonomous" && (brand as any)?.review_required === false && currentStoryboard.length === 1) {
-                    realVideoUrl = finalClip;
-                  }
-                } else {
-                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation returned empty/invalid video:`, String(generated.url || "").slice(0, 100));
-                  const errMsg = `Scene ${globalSceneNum} Video: Provider returned empty data`;
+                } catch (subclipErr: any) {
+                  if (subclipErr?.name === "AbortError" || signal?.aborted) throw subclipErr;
+                  console.warn(`[SPARK Pipeline] Scene ${globalSceneNum}${subclipLabel} video generation notice:`, subclipErr);
+                  const errMsg = `Scene ${globalSceneNum}${subclipLabel} Video: ${subclipErr?.message || String(subclipErr)}`;
                   if (!lastError) lastError = errMsg;
                   s.lastError = errMsg;
                   currentStoryboard[sIdx] = { ...s, lastError: errMsg };
+                  break;
                 }
-              } catch (sceneVidErr: any) {
-                if (sceneVidErr?.name === "AbortError" || signal?.aborted) throw sceneVidErr;
-                console.warn(`[SPARK Pipeline] Scene ${globalSceneNum} video generation notice:`, sceneVidErr);
-                const errMsg = `Scene ${globalSceneNum} Video: ${sceneVidErr?.message || String(sceneVidErr)}`;
-                if (!lastError) lastError = errMsg;
-                s.lastError = errMsg;
-                currentStoryboard[sIdx] = { ...s, lastError: errMsg };
+              }
+
+              if (chapterSubclips.length > 0) {
+                s.videoUrl = chapterSubclips[0];
+                (s as any).playablePreviewUrl = chapterSubclips[0];
+                currentStoryboard[sIdx] = {
+                  ...s,
+                  videoUrl: chapterSubclips[0],
+                  lastFrameUrl: s.lastFrameUrl,
+                };
               }
 
               const currentPct = 60 + Math.round(((sIdx + 1) / currentStoryboard.length) * 20);
@@ -3742,8 +3708,8 @@ export class ProductionAssetService {
           shotId: (sb as any).shotId || (sb as any).id,
           productionId: production.id,
           brandId: (brand as any)?.id,
-          duration: sb.duration || "5s",
-          durationSec: parseInt(sb.duration) || 5,
+          duration: sb.duration || `${sb.durationSec || 0}s`,
+          durationSec: sb.durationSec || parseInt(sb.duration),
           shotList: sb.shotList || `Scene ${idx + 1} framing`,
           cameraDirection: sb.cameraDirection || "Medium shot",
           camera: sb.cameraDirection || "Medium shot",
@@ -3812,76 +3778,24 @@ export class ProductionAssetService {
         console.log(`[SPARK Pipeline] Asset Generation ABORTED for Production "${production.id}"`);
         throw err;
       }
-      console.warn("[ProductionAssetService] AI storyboard fallback:", err);
-
-      // Director-safe fallback — physical actions only; spoken from brief; never "SAVE THIS NOW" / Host presents
-      const hookSpoken = String(brief.hook || "").trim();
-      const midSpoken = String(brief.beats?.[1]?.spokenLines || brief.scriptOutline || "").trim();
-      const endSpoken = String(brief.spokenCta || brief.caption || "").trim();
-      const fallbackStoryboard: ProductionScene[] = [
-        {
-          scene: 1,
-          duration: mode === "deep" ? "0-8s" : "0-5s",
-          shotList: `${identityPack.aspectRatio} opening frame`,
-          cameraDirection: "Push-in zoom",
-          transitions: "Continuous flow",
-          startState: "Subject established addressing camera",
-          primaryChange: "Subject leans in with a clear opening gesture toward camera",
-          physicalAction: "Subject leans in with a clear opening gesture toward camera",
-          endState: "Subject holds focused opening pose",
-          onScreenText: "",
-          pacing: "Fast hook",
-          scriptSnippet: hookSpoken,
-          spokenLines: hookSpoken,
-          visualDescription: brief.visualDirection || identityPack.environmentString || "Locked production set",
-        },
-        {
-          scene: 2,
-          duration: mode === "deep" ? "8-16s" : "5-25s",
-          shotList: "Proof / demonstration frame",
-          cameraDirection: "Smooth tracking pan",
-          transitions: "Seamless flow",
-          startState: "Subject continues from opening pose",
-          primaryChange: "Subject points to a visual proof detail with deliberate hand motion",
-          physicalAction: "Subject points to a visual proof detail with deliberate hand motion",
-          endState: "Subject holds beside the proof element",
-          onScreenText: "",
-          pacing: "Rhythmic",
-          scriptSnippet: midSpoken,
-          spokenLines: midSpoken,
-          visualDescription: "Same locked set — proof beat",
-        },
-        {
-          scene: 3,
-          duration: mode === "deep" ? "16-24s" : "25-30s",
-          shotList: "Closing frame",
-          cameraDirection: "Lock-off",
-          transitions: "Subtle resolution",
-          startState: "Subject completing delivery",
-          primaryChange: "Subject closes with a decisive gesture and holds end pose",
-          physicalAction: "Subject closes with a decisive gesture and holds end pose",
-          endState: "Definitive closing hold",
-          onScreenText: "",
-          pacing: "High impact",
-          scriptSnippet: endSpoken || hookSpoken,
-          spokenLines: endSpoken || hookSpoken,
-          visualDescription: "End frame on locked set",
-        },
-      ];
-
-      const fallbackResult: ProductionAssetGenerationResult = {
+      const errMsg = err?.message || String(err);
+      console.error("[ProductionAssetService] Asset generation failed:", errMsg);
+      return {
         brief: {
           ...brief,
-          storyboard: fallbackStoryboard,
+          lastError: errMsg,
         },
-        scenes: fallbackStoryboard.map((s) => ({
+        scenes: currentStoryboard.map((s) => ({
           scene: s.scene,
-          description: `[${s.duration}] ${s.shotList} — Action: ${s.primaryChange || s.visualDescription}`,
+          description: s.visualDescription || `Scene ${s.scene}`,
           duration: s.duration,
+          image: s.image,
+          videoUrl: s.videoUrl,
         })),
+        productionScenes: currentStoryboard,
+        audioUrl: realVoiceUrl,
+        videoUrl: realVideoUrl,
       };
-
-      return fallbackResult;
     } finally {
       stopHeartbeat();
     }
@@ -4536,8 +4450,8 @@ export class ProductionAssetService {
           index: sb.scene || idx + 1,
           id: `scene-${productionId}-${sb.scene || idx + 1}`,
           productionId,
-          duration: sb.duration || "5s",
-          durationSec: parseInt(sb.duration) || 5,
+          duration: sb.duration || `${sb.durationSec || 0}s`,
+          durationSec: sb.durationSec || parseInt(sb.duration),
           onScreenText: sb.onScreenText,
           audio: sb.audio,
           videoUrl: sb.videoUrl,
