@@ -22,7 +22,12 @@ export function compileNarrativeScriptPrompt(params: CompileNarrativeScriptParam
   let prompt = `YOU ARE THE WRITER. SPARK IS THE STUDIO.
 Return ONLY the typed script object.
 
-Complete valid JSON is mandatory. Never cut off mid-object. chapters[].spoken is authoritative; fullSpokenScript may be omitted if chapters carry all spoken lines.
+Complete valid JSON is mandatory. Never cut off mid-object. chapters[].spoken is authoritative; fullSpokenScript may be omitted if chapters carry all spoken lines. Do NOT emit a duplicate fullSpokenScript field (SPARK will derive it).
+
+JSON SAFETY & DIALOGUE RULES:
+- Inside 'spoken' strings, do NOT use raw unescaped double quotes; use single quotes for dialogue or quotes ('like this') or proper JSON escaping (\\").
+- Never emit literal unescaped newlines inside strings.
+- Complete valid JSON is mandatory. Ensure all brackets, braces, and strings are fully closed.
 
 Write a complete piece the viewer would watch for the FULL ${targetDurationSec} seconds.
 Still write a full duration-sized script with substantive educational or narrative content matching the target duration.
@@ -113,12 +118,11 @@ OUTPUT EXACTLY THIS JSON SHAPE:
       "durationSec": 10,
       "job": "hook | problem | context | proof | example | myth_bust | payoff | cta",
       "audio": "vo | talent (hybrid only: label each chapter vo or talent. cinematic: omit VO. narrator: vo)",
-      "spoken": "REAL lines the audience hears, not camera notes",
+      "spoken": "REAL lines the audience hears, not camera notes (use single quotes for dialogue)",
       "visualIntent": "what we SEE, one sentence",
       "setsUpNextChapterId": "string"
     }
   ],
-  "fullSpokenScript": "string (concatenated spoken)",
   "openLoops": { "plantedAtSec": [0], "resolvedAtSec": [45] },
   "cta": { "spoken": "string", "onScreen": "string" },
   "claims": [
@@ -133,8 +137,69 @@ OUTPUT EXACTLY THIS JSON SHAPE:
 }
 
 /**
+ * Scans a JSON substring to balance unclosed braces and brackets.
+ * Closes unclosed strings if interrupted, removes trailing commas,
+ * and appends matching closing delimiters in LIFO order.
+ */
+export function balanceJsonDelimiters(jsonStr: string): string {
+  if (!jsonStr || typeof jsonStr !== "string") return jsonStr;
+
+  let inString = false;
+  let isEscaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < jsonStr.length; i++) {
+    const char = jsonStr[i];
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+      } else if (char === "\\") {
+        isEscaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      stack.push("}");
+    } else if (char === "[") {
+      stack.push("]");
+    } else if (char === "}" || char === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === char) {
+        stack.pop();
+      }
+    }
+  }
+
+  let repaired = jsonStr;
+  if (inString) {
+    repaired += '"';
+  }
+
+  // Strip trailing commas before closing delimiters
+  repaired = repaired.replace(/,\s*$/, "");
+  repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+
+  while (stack.length > 0) {
+    const closing = stack.pop()!;
+    repaired = repaired.replace(/,\s*$/, "");
+    repaired += closing;
+  }
+
+  return repaired;
+}
+
+/**
  * Isolates and extracts the outer JSON object ({...}) from model output text.
- * Strips markdown fences, slices from first '{' to last '}', and throws if missing.
+ * Strips markdown fences, slices from first '{' to last '}', attempts direct parse,
+ * then attempts delimiter balance repair if needed.
  */
 export function extractJsonObject(text: string): string {
   if (!text || typeof text !== "string") {
@@ -153,15 +218,41 @@ export function extractJsonObject(text: string): string {
     throw new Error("No valid JSON object boundaries found in text (missing '{' or '}')");
   }
 
-  return stripped.slice(firstBrace, lastBrace + 1);
+  const sliced = stripped.slice(firstBrace, lastBrace + 1);
+
+  // 1. Direct parse test
+  try {
+    JSON.parse(sliced);
+    return sliced;
+  } catch (directErr) {
+    // 2. Attempt balance repair: count unmatched { and [, append corresponding } and ]
+    const balanced = balanceJsonDelimiters(sliced);
+    try {
+      JSON.parse(balanced);
+      return balanced;
+    } catch {
+      // 3. Trailing comma light repair
+      const repaired = tryLightJsonRepair(balanced);
+      try {
+        JSON.parse(repaired);
+        return repaired;
+      } catch (finalErr: any) {
+        throw new Error(
+          `Failed to parse extracted JSON (rawLength=${text.length}, extractedLength=${sliced.length}, endsWithBrace=${sliced.endsWith("}")}): ${finalErr?.message || finalErr}`
+        );
+      }
+    }
+  }
 }
 
 /**
- * Optional light repair for minor syntax issues such as trailing commas before } or ].
+ * Optional light repair for minor syntax issues such as trailing commas before } or ]
+ * combined with delimiter balance repair.
  */
 export function tryLightJsonRepair(jsonStr: string): string {
   if (!jsonStr || typeof jsonStr !== "string") return jsonStr;
-  return jsonStr.replace(/,\s*([}\]])/g, "$1");
+  const commaFixed = jsonStr.replace(/,\s*([}\]])/g, "$1");
+  return balanceJsonDelimiters(commaFixed);
 }
 
 export async function compileNarrativeScript(params: CompileNarrativeScriptParams): Promise<NarrativeScript> {
@@ -171,37 +262,49 @@ export async function compileNarrativeScript(params: CompileNarrativeScriptParam
   const prompt = compileNarrativeScriptPrompt(params);
 
   let rawJson = "";
+  let firstCallHitTokenLimit = false;
   try {
     rawJson = await ModelRouter.executeCategoryRequest("production", {
       prompt,
       systemInstruction: "You are the SPARK scriptwriter. Return ONLY valid JSON.",
       maxTokens: 8192,
     });
-  } catch (error) {
-    throw new Error(`Failed to execute narrative script prompt: ${error}`);
+  } catch (error: any) {
+    if (String(error?.message || error).includes("stop_reason: max_tokens") || String(error?.message || error).includes("token limit")) {
+      firstCallHitTokenLimit = true;
+      console.warn(`[compileNarrativeScript] First call truncated by token limit: ${error?.message || error}`);
+    } else {
+      throw new Error(`Failed to execute narrative script prompt: ${error}`);
+    }
   }
 
   let scriptObj: any;
   let firstParseSucceeded = false;
-  try {
-    const cleanJson = extractJsonObject(rawJson);
+  if (!firstCallHitTokenLimit && rawJson) {
     try {
-      scriptObj = JSON.parse(cleanJson);
-      firstParseSucceeded = true;
-    } catch {
-      // Light repair attempt (e.g. trailing comma)
-      const repaired = tryLightJsonRepair(cleanJson);
-      scriptObj = JSON.parse(repaired);
-      firstParseSucceeded = true;
+      const cleanJson = extractJsonObject(rawJson);
+      try {
+        scriptObj = JSON.parse(cleanJson);
+        firstParseSucceeded = true;
+      } catch {
+        // Light repair attempt (e.g. trailing comma)
+        const repaired = tryLightJsonRepair(cleanJson);
+        scriptObj = JSON.parse(repaired);
+        firstParseSucceeded = true;
+      }
+    } catch (parseError: any) {
+      console.warn(
+        `[compileNarrativeScript] parse_fail length=${rawJson.length} tail=${JSON.stringify(rawJson.slice(-120))}`
+      );
     }
-  } catch (parseError: any) {
-    console.warn(
-      `[compileNarrativeScript] parse_fail length=${rawJson.length} tail=${JSON.stringify(rawJson.slice(-120))}`
-    );
   }
 
   if (!firstParseSucceeded) {
-    const retryPrompt = `${prompt}\n\nIMPORTANT RECOVERY INSTRUCTION:\nPrevious output was invalid or incomplete. Return one COMPLETE valid JSON object only. No markdown. Ensure all brackets, braces, and strings are fully closed.`;
+    const recoveryInstruction = firstCallHitTokenLimit
+      ? `CRITICAL RECOVERY INSTRUCTION:\nPrevious attempt exceeded token limit. Keep spoken lines punchy and concise. Use 3-5 chapters maximum. Do not emit duplicate fullSpokenScript. Return one COMPLETE valid JSON object only.`
+      : `IMPORTANT RECOVERY INSTRUCTION:\nPrevious output was invalid or incomplete. Return one COMPLETE valid JSON object only. No markdown. Ensure all brackets, braces, and strings are fully closed.`;
+
+    const retryPrompt = `${prompt}\n\n${recoveryInstruction}`;
     let retryRaw = "";
     try {
       retryRaw = await ModelRouter.executeCategoryRequest("production", {

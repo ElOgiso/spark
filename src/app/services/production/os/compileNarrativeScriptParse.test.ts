@@ -242,4 +242,162 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
       ModelRouter.executeCategoryRequest = originalExecute;
     }
   });
+
+  await t.test("7. extractJsonObject: truncated chapters JSON with open root and inner } is salvaged via balance repair", () => {
+    // Truncated mid-way through chapter 2, inner } of chapter 1 is the last brace
+    const truncated = `\`\`\`json
+{
+  "title": "Ancient Dome Engineering",
+  "logline": "How the Roman Pantheon survived 2000 years.",
+  "premise": "Volcanic pozzolana concrete creates self-healing crystals.",
+  "targetDurationSec": 30,
+  "format": "faceless",
+  "hook": {
+    "spoken": "This 2,000-year-old roof should have collapsed.",
+    "opensOnPayoff": true,
+    "backstoryDeferred": true
+  },
+  "chapters": [
+    {
+      "id": "c1",
+      "order": 1,
+      "title": "The Impossible Dome",
+      "durationSec": 15,
+      "job": "hook",
+      "audio": "vo",
+      "spoken": "This 2,000-year-old roof should have collapsed within a week.",
+      "visualIntent": "Low angle shot of the oculus."
+    },
+    {
+      "id": "c2",
+      "order": 2,
+      "title": "Volcanic Secret",
+      "durationSec": 15,
+      "job": "proof",
+      "audio": "vo",
+      "spoken": "The secret lies deep in pozzolana volcanic ash
+\`\`\``;
+
+    const extracted = extractJsonObject(truncated);
+    assert.ok(extracted.endsWith("}"), "Extracted string must end with closing brace");
+    const parsed = JSON.parse(extracted);
+    assert.equal(parsed.title, "Ancient Dome Engineering");
+    assert.equal(parsed.chapters.length, 1, "Must salvage completed chapter 1 without creating invalid partial chapter 2");
+    assert.equal(parsed.chapters[0].id, "c1");
+  });
+
+  await t.test("8. extractJsonObject: unsalvageable corrupted syntax throws descriptive error with diagnostic lengths and endsWithBrace", () => {
+    const unparseable = '{"title": :::: "broken syntax without valid values"}';
+    assert.throws(
+      () => extractJsonObject(unparseable),
+      (err: any) => {
+        const msg = String(err?.message || err);
+        return (
+          msg.includes("Failed to parse extracted JSON") &&
+          msg.includes("rawLength=") &&
+          msg.includes("extractedLength=") &&
+          msg.includes("endsWithBrace=")
+        );
+      }
+    );
+  });
+
+  await t.test("9. compileNarrativeScriptPrompt: fullSpokenScript is NOT in output schema; dialogue quotes and newline rules are present", () => {
+    const prompt = compileNarrativeScriptPrompt({
+      brand: mockBrand,
+      targetDurationSec: 30,
+      productionModeLabel: "hybrid",
+    });
+
+    // fullSpokenScript must NOT be in the OUTPUT EXACTLY THIS JSON SHAPE block
+    const schemaBlock = prompt.split("OUTPUT EXACTLY THIS JSON SHAPE:")[1] || "";
+    assert.ok(
+      !schemaBlock.includes('"fullSpokenScript"'),
+      "fullSpokenScript must not be present in the required output schema"
+    );
+
+    // Dialogue quotes and newline escaping rules must be explicitly present
+    assert.ok(
+      prompt.includes("Inside 'spoken' strings, do NOT use raw unescaped double quotes"),
+      "Must instruct model to avoid raw unescaped double quotes"
+    );
+    assert.ok(
+      prompt.includes("Never emit literal unescaped newlines inside strings"),
+      "Must instruct model to avoid literal newlines in strings"
+    );
+  });
+
+  await t.test("10. compileNarrativeScript: recovers cleanly when first call throws stop_reason: max_tokens truncation", async () => {
+    const originalExecute = ModelRouter.executeCategoryRequest;
+    const callPrompts: string[] = [];
+    let callCount = 0;
+
+    const validScript = {
+      title: "Concise Recovered Script",
+      logline: "Fast and punchy script delivery.",
+      premise: "Short narratives fit within token boundaries.",
+      targetDurationSec: 30,
+      format: "host",
+      hook: {
+        spoken: "Here is the concise hook.",
+        opensOnPayoff: true,
+        backstoryDeferred: true,
+      },
+      chapters: [
+        {
+          id: "c1",
+          order: 1,
+          title: "Main Point",
+          durationSec: 30,
+          job: "hook",
+          audio: "talent",
+          spoken: "Here is the concise hook with sufficient words to satisfy the target duration requirements for the thirty-second production format cleanly. We ensure that every structural chapter provides clear value, actionable insights, and verifiable engineering principles so the audience stays engaged from the opening frame all the way to the final call to action.",
+          visualIntent: "Host looks directly into lens.",
+        },
+      ],
+      openLoops: { plantedAtSec: [0], resolvedAtSec: [25] },
+      cta: { spoken: "Follow for more concise insights.", onScreen: "Follow" },
+      claims: [{ claim: "Short scripts have higher completion rates.", verified: true, source: "Media Analytics" }],
+      contentSource: "ai",
+      mustNotCopy: [],
+    };
+
+    ModelRouter.executeCategoryRequest = (async (cat: any, opts: any) => {
+      callCount++;
+      callPrompts.push(opts.prompt);
+
+      if (callCount === 1) {
+        // First call hits Anthropic token limit
+        throw new Error(
+          "Anthropic Claude output truncated (stop_reason: max_tokens, output_chars: 1574). Model hit token limit."
+        );
+      }
+
+      // Second call returns complete valid JSON
+      return JSON.stringify(validScript);
+    }) as any;
+
+    try {
+      const script = await compileNarrativeScript({
+        brand: mockBrand,
+        targetDurationSec: 30,
+        productionModeLabel: "hybrid",
+      });
+
+      assert.equal(callCount, 2, "Must retry on token limit truncation");
+      assert.ok(
+        callPrompts[1].includes("CRITICAL RECOVERY INSTRUCTION"),
+        "Retry prompt must include CRITICAL RECOVERY INSTRUCTION for token limit"
+      );
+      assert.ok(
+        callPrompts[1].includes("Previous attempt exceeded token limit"),
+        "Retry prompt must mention token limit"
+      );
+      assert.equal(script.title, "Concise Recovered Script");
+      assert.ok(script.fullSpokenScript, "Must derive fullSpokenScript automatically");
+    } finally {
+      ModelRouter.executeCategoryRequest = originalExecute;
+    }
+  });
 });
+

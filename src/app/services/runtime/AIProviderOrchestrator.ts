@@ -1123,15 +1123,34 @@ export class AIProviderOrchestrator {
 
                 if (res.ok) {
                   const data = await res.json();
-                  const text = data.content?.[0]?.text || "";
+                  const text = Array.isArray(data.content)
+                    ? data.content
+                        .filter((block: any) => block?.type === "text" && typeof block?.text === "string")
+                        .map((block: any) => block.text)
+                        .join("")
+                    : data.content?.[0]?.text || "";
+                  const stopReason = data.stop_reason || "";
+                  const usageStr = data.usage ? ` in=${data.usage.input_tokens || 0} out=${data.usage.output_tokens || 0}` : "";
+                  console.log(`[Claude] stop_reason=${stopReason} output_chars=${text.length}${usageStr}`);
+
+                  if (stopReason === "max_tokens") {
+                    throw new Error(`Anthropic Claude output truncated (stop_reason: max_tokens, output_chars: ${text.length}). Model hit token limit.`);
+                  }
+
                   if (options.onChunk) options.onChunk(text);
                   return text;
                 }
-              } catch (tryErr) {
+              } catch (tryErr: any) {
+                if (String(tryErr?.message || "").includes("stop_reason: max_tokens")) {
+                  throw tryErr;
+                }
                 console.warn(`[Claude Provider] Attempt with model ${modelId} notice:`, tryErr);
               }
             }
-          } catch (err) {
+          } catch (err: any) {
+            if (String(err?.message || "").includes("stop_reason: max_tokens")) {
+              throw err;
+            }
             console.warn("[Claude Provider] Direct client execution notice, falling back to server proxy:", err);
           }
         }
@@ -1157,11 +1176,27 @@ export class AIProviderOrchestrator {
 
             if (proxyRes.ok) {
               const data = await proxyRes.json();
-              const text = data.content?.[0]?.text || "";
+              const text = Array.isArray(data.content)
+                ? data.content
+                    .filter((block: any) => block?.type === "text" && typeof block?.text === "string")
+                    .map((block: any) => block.text)
+                    .join("")
+                : data.content?.[0]?.text || "";
+              const stopReason = data.stop_reason || "";
+              const usageStr = data.usage ? ` in=${data.usage.input_tokens || 0} out=${data.usage.output_tokens || 0}` : "";
+              console.log(`[Claude] stop_reason=${stopReason} output_chars=${text.length}${usageStr}`);
+
+              if (stopReason === "max_tokens") {
+                throw new Error(`Anthropic Claude output truncated (stop_reason: max_tokens, output_chars: ${text.length}). Model hit token limit.`);
+              }
+
               if (options.onChunk) options.onChunk(text);
               return text;
             }
-          } catch (pErr) {
+          } catch (pErr: any) {
+            if (String(pErr?.message || "").includes("stop_reason: max_tokens")) {
+              throw pErr;
+            }
             console.warn(`[Claude Provider] Proxy attempt with model ${modelId} notice:`, pErr);
           }
         }
