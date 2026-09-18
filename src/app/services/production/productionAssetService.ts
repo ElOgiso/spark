@@ -2807,15 +2807,33 @@ export class ProductionAssetService {
 
                     const tryI2v = async (providerId: string) => {
                       const normP = providerId.toLowerCase();
+                      const isHf = normP === "higgsfield" || normP === "higgsfield-seedance";
                       const effectiveRefs =
                         normP === "grok"
                           ? identityRefs.slice(0, 7)
                           : identityRefs;
 
-                      if ((normP === "higgsfield" || normP === "higgsfield-seedance") && identityRefs.length > 0) {
-                        console.info(
-                          `[HF I2V Honesty] Scene ${globalSceneNum}${subclipLabel}: Higgsfield Seedance I2V only conditions on start frame (and optional end frame). ${identityRefs.length} identity reference(s) are baked into the still and not passed in the HF API body.`
-                        );
+                      const prefersPureI2v =
+                        (s as any).videoMode === "i2v" ||
+                        preferredVideoModel?.toLowerCase().includes("image-to-video") ||
+                        preferredVideoModel?.toLowerCase().includes("i2v");
+
+                      // When preferred provider is higgsfield and identityRefs.length > 0,
+                      // set mode toward R2V consistently or document still-baked path (no silent drop).
+                      const hfMode = isHf && identityRefs.length > 0 && !prefersPureI2v
+                        ? "reference-to-video"
+                        : undefined;
+
+                      if (isHf && identityRefs.length > 0) {
+                        if (hfMode === "reference-to-video") {
+                          console.info(
+                            `[HF Contract Routing] Scene ${globalSceneNum}${subclipLabel}: Routing to Higgsfield Seedance R2V (reference-to-video) with ${identityRefs.length} reference image(s) + shot still.`
+                          );
+                        } else {
+                          console.info(
+                            `[HF I2V Honesty] Scene ${globalSceneNum}${subclipLabel}: Higgsfield Seedance I2V selected (still-baked path). Identity is carried by the shot still; ${identityRefs.length} reference image(s) are baked into the still and not sent in the HF I2V API body.`
+                          );
+                        }
                       }
 
                       const apiClip = await requestProductionVideoClip({
@@ -2830,6 +2848,7 @@ export class ProductionAssetService {
                         aspectRatio: identityPack.aspectRatio,
                         durationSec: subclipDur,
                         model: preferredVideoModel,
+                        mode: hfMode || (s as any).videoMode,
                         productionId: production.id,
                         brandId: (brand as any).id,
                         shotIndex: globalSceneNum,

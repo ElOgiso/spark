@@ -11,6 +11,8 @@ import {
   buildSeedanceTaskBody,
   buildKlingImage2VideoBody,
   buildGrokVideoGenerateBody,
+  buildHiggsfieldSeedanceI2vBody,
+  buildHiggsfieldSeedanceR2vBody,
   resolveClipFrames,
   grokMotionPrompt,
   clampGrokVideoPrompt,
@@ -367,4 +369,60 @@ test("buildGrokVideoGenerateBody clamps prompt to <= 4096 and refuses T2V withou
     /numInputImages=0 forbidden/
   );
 });
+
+test("Per-provider contracts: Grok has reference_images, HF I2V has image_url only, HF R2V has image_urls", () => {
+  const still = "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/still.png";
+  const end = "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/end.png";
+  const ref1 = "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/ref1.png";
+  const ref2 = "https://cdn.supabase.co/storage/v1/object/public/Spark/brands/b1/ref2.png";
+
+  // 1. Grok: image + last_frame + reference_images <= 7
+  const grokBody = buildGrokVideoGenerateBody({
+    prompt: "Grok cinematic movement",
+    firstFrameUrl: still,
+    lastFrameUrl: end,
+    referenceImageUrls: [ref1, ref2],
+    durationSec: 10,
+    aspectRatio: "16:9",
+  });
+  assert.equal((grokBody.image as any)?.url, still);
+  assert.equal((grokBody.last_frame as any)?.url, end);
+  assert.ok(Array.isArray(grokBody.reference_images));
+  assert.equal((grokBody.reference_images as any[]).length, 2);
+  assert.deepEqual(grokBody.reference_images, [{ url: ref1 }, { url: ref2 }]);
+
+  // 2. HF Seedance I2V: image_url + optional end_image_url ONLY (never reference_images or image_urls)
+  const hfI2vBody = buildHiggsfieldSeedanceI2vBody({
+    prompt: "HF I2V motion",
+    firstFrameUrl: still,
+    lastFrameUrl: end,
+    referenceImageUrls: [ref1, ref2], // Must be ignored / omitted by pure I2V builder
+    durationSec: 25,
+    resolution: "720p",
+  });
+  assert.equal(hfI2vBody.image_url, still);
+  assert.equal(hfI2vBody.end_image_url, end);
+  assert.equal(hfI2vBody.duration, 25);
+  assert.equal(hfI2vBody.resolution, "720p");
+  assert.equal(hfI2vBody.output_format, "mp4");
+  assert.equal((hfI2vBody as any).reference_images, undefined, "HF I2V must NEVER have reference_images");
+  assert.equal((hfI2vBody as any).image_urls, undefined, "HF I2V must NEVER have image_urls");
+
+  // 3. HF Seedance R2V: image_urls required (refs + still)
+  const hfR2vBody = buildHiggsfieldSeedanceR2vBody({
+    prompt: "HF R2V reference motion",
+    firstFrameUrl: still,
+    referenceImageUrls: [ref1, ref2],
+    aspectRatio: "9:16",
+    durationSec: 15,
+  });
+  assert.ok(Array.isArray(hfR2vBody.image_urls));
+  assert.equal((hfR2vBody.image_urls as string[]).length, 3);
+  assert.deepEqual(hfR2vBody.image_urls, [still, ref1, ref2]);
+  assert.equal(hfR2vBody.aspect_ratio, "9:16");
+  assert.equal(hfR2vBody.duration, 15);
+  assert.equal((hfR2vBody as any).image_url, undefined, "HF R2V uses image_urls, not image_url");
+  assert.equal((hfR2vBody as any).reference_images, undefined, "HF R2V does not use Grok reference_images format");
+});
+
 

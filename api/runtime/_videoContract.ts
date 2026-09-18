@@ -616,3 +616,136 @@ export function resolveClipFrames(body: Record<string, any>): {
       .filter((u: string) => u && u !== first && u !== end && u !== lastRaw),
   };
 }
+
+/**
+ * Official Higgsfield Seedance I2V payload builder (source of truth: official HF docs).
+ * Official endpoint: POST /bytedance/seedance-2.5/image-to-video (or seedance-2.0).
+ * Body fields:
+ * - prompt (string)
+ * - image_url (string, required public HTTPS still)
+ * - end_image_url (string, optional end frame)
+ * - duration (number, 4-30 for 2.5, 4-15 for 2.0)
+ * - resolution ("480p" | "720p" for 2.5, up to "4k" for 2.0)
+ * - generate_audio (boolean)
+ * - output_format ("mp4" for 2.5, omitted for 2.0)
+ * Note: Never accepts reference_images or image_urls.
+ */
+export function buildHiggsfieldSeedanceI2vBody(req: VideoClipRequest): Record<string, unknown> {
+  const is20 = Boolean(req.model?.toLowerCase().includes("2.0"));
+  const stillUrl = (
+    req.firstFrameUrl && (req.firstFrameUrl.startsWith("http://") || req.firstFrameUrl.startsWith("https://"))
+      ? req.firstFrameUrl
+      : req.firstFrameUrl || req.firstFrameDataUri || ""
+  ).trim();
+
+  if (!stillUrl) {
+    throw new Error("Higgsfield Seedance I2V requires a valid firstFrameUrl.");
+  }
+  if (looksLikeStoryboardGridUrl(stillUrl) || looksLikeSheetOrGridUrl(stillUrl)) {
+    throw new Error("Higgsfield Seedance I2V requires this shot's still, not a storyboard grid or sheet.");
+  }
+
+  const maxDur = is20 ? 15 : 30;
+  const dur = typeof req.durationSec === "number" && req.durationSec > 0
+    ? Math.max(4, Math.min(maxDur, Math.round(req.durationSec)))
+    : 5;
+
+  let resolution = (req.resolution || "720p").toLowerCase().trim();
+  if (is20) {
+    if (resolution === "4k" || resolution === "2160p") resolution = "4k";
+    else if (resolution === "1080p" || resolution === "fhd") resolution = "1080p";
+    else if (resolution === "480p" || resolution === "sd") resolution = "480p";
+    else resolution = "720p";
+  } else {
+    resolution = resolution === "480p" || resolution === "sd" ? "480p" : "720p";
+  }
+
+  const body: Record<string, unknown> = {
+    prompt: req.prompt || "",
+    image_url: stillUrl,
+    duration: dur,
+    resolution,
+    generate_audio: req.generateAudio !== false,
+    ...(!is20 ? { output_format: "mp4" } : {}),
+  };
+
+  const rawEnd =
+    req.lastFrameUrl && (req.lastFrameUrl.startsWith("http://") || req.lastFrameUrl.startsWith("https://"))
+      ? req.lastFrameUrl
+      : req.lastFrameUrl || req.lastFrameDataUri || (req as any).endFrameUrl || (req as any).end_image_url || "";
+  const endUrl = typeof rawEnd === "string" ? rawEnd.trim() : "";
+
+  if (endUrl && endUrl !== stillUrl && !looksLikeStoryboardGridUrl(endUrl)) {
+    body.end_image_url = endUrl;
+  }
+
+  return body;
+}
+
+/**
+ * Official Higgsfield Seedance Reference-to-Video (R2V) payload builder.
+ * Official endpoint: POST /bytedance/seedance-2.5/reference-to-video (or seedance-2.0).
+ * Body fields:
+ * - prompt (string)
+ * - image_urls (string[], required array of public HTTPS URLs)
+ * - aspect_ratio (string, required e.g. "9:16")
+ * - duration (number, 4-30 for 2.5, 4-15 for 2.0)
+ * - resolution ("480p" | "720p" for 2.5, up to "4k" for 2.0)
+ * - generate_audio (boolean)
+ * - output_format ("mp4" for 2.5, omitted for 2.0)
+ */
+export function buildHiggsfieldSeedanceR2vBody(req: VideoClipRequest): Record<string, unknown> {
+  const is20 = Boolean(req.model?.toLowerCase().includes("2.0"));
+  const maxDur = is20 ? 15 : 30;
+  const dur = typeof req.durationSec === "number" && req.durationSec > 0
+    ? Math.max(4, Math.min(maxDur, Math.round(req.durationSec)))
+    : 5;
+
+  let resolution = (req.resolution || "720p").toLowerCase().trim();
+  if (is20) {
+    if (resolution === "4k" || resolution === "2160p") resolution = "4k";
+    else if (resolution === "1080p" || resolution === "fhd") resolution = "1080p";
+    else if (resolution === "480p" || resolution === "sd") resolution = "480p";
+    else resolution = "720p";
+  } else {
+    resolution = resolution === "480p" || resolution === "sd" ? "480p" : "720p";
+  }
+
+  const rawRefs: string[] = [
+    ...(req.firstFrameUrl ? [req.firstFrameUrl] : req.firstFrameDataUri ? [req.firstFrameDataUri] : []),
+    ...(req.characterSheetUrl ? [req.characterSheetUrl] : []),
+    ...(req.imageUrls || []),
+    ...(req.referenceImageUrls || []),
+    ...(req.referenceUrls || []),
+  ];
+
+  const seen = new Set<string>();
+  const cleanRefs: string[] = [];
+  for (const ref of rawRefs) {
+    if (typeof ref === "string" && ref.trim()) {
+      const trimmed = ref.trim();
+      if (!seen.has(trimmed) && !looksLikeStoryboardGridUrl(trimmed)) {
+        seen.add(trimmed);
+        cleanRefs.push(trimmed);
+      }
+    }
+  }
+
+  if (cleanRefs.length === 0) {
+    throw new Error("Higgsfield Seedance R2V requires at least 1 reference image (storyboard grids not allowed).");
+  }
+
+  const normRatio = normalizeAspectRatio(req.aspectRatio) || "9:16";
+
+  const body: Record<string, unknown> = {
+    prompt: req.prompt || "",
+    image_urls: cleanRefs,
+    aspect_ratio: normRatio,
+    duration: dur,
+    resolution,
+    generate_audio: req.generateAudio !== false,
+    ...(!is20 ? { output_format: "mp4" } : {}),
+  };
+
+  return body;
+}

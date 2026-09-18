@@ -368,6 +368,12 @@ async function generateSeedance(req: VideoClipRequest): Promise<{ videoUrl: stri
   const taskId = created.id || created.task_id || created.data?.id;
   if (!taskId) throw new Error(`Seedance create task returned no id: ${JSON.stringify(created).slice(0, 300)}`);
 
+  const arkRefsCount = Array.isArray(body.content)
+    ? (body.content as any[]).filter((c) => c.role === "reference_image").length
+    : 0;
+  console.log(
+    `[I2V CONTRACT] provider=seedance mode=i2v refs_sent=${arkRefsCount} fields=model,content,ratio,duration,resolution,generate_audio`
+  );
   console.log(
     `[I2V BILLABLE] provider=seedance model=${req.model || SEEDANCE_MODEL_15_PRO} durationSec=${req.durationSec || 5} scene=${req.shotIndex ?? "unknown"} subclipIndex=${req.subclipIndex ?? 1} request_id=${taskId}`
   );
@@ -431,6 +437,11 @@ async function generateKling(req: VideoClipRequest): Promise<{ videoUrl: string;
   const taskId = extractKlingTaskId(created);
   if (!taskId) throw new Error(`Kling image2video returned no task_id: ${JSON.stringify(created).slice(0, 300)}`);
 
+  const klingRefsCount = Array.isArray(body.image_list) ? body.image_list.length : 0;
+  const klingFields = `model_name,mode,duration,aspect_ratio,sound,prompt${body.image ? ",image" : ""}${body.image_tail ? ",image_tail" : ""}${klingRefsCount > 0 ? ",image_list" : ""}`;
+  console.log(
+    `[I2V CONTRACT] provider=kling mode=i2v refs_sent=${klingRefsCount} fields=${klingFields}`
+  );
   console.log(
     `[I2V BILLABLE] provider=kling model=${req.model || KLING_DEFAULT_MODEL} durationSec=${req.durationSec || 5} scene=${req.shotIndex ?? "unknown"} subclipIndex=${req.subclipIndex ?? 1} request_id=${taskId}`
   );
@@ -523,6 +534,12 @@ async function generateGrok(req: VideoClipRequest): Promise<{ videoUrl: string; 
   const data = await res.json();
   const immediate = extractGrokVideoUrl(data);
   const requestId = data.request_id || data.id || data.requestId || "";
+
+  const grokRefsCount = Array.isArray(body.reference_images) ? body.reference_images.length : 0;
+  const grokFields = `image,prompt,duration,aspect_ratio,resolution${body.last_frame ? ",last_frame" : ""}${grokRefsCount > 0 ? ",reference_images" : ""}`;
+  console.log(
+    `[I2V CONTRACT] provider=grok mode=i2v refs_sent=${grokRefsCount} fields=${grokFields}`
+  );
   console.log(
     `[I2V BILLABLE] provider=grok model=${effectiveReq.model || GROK_VIDEO_MODEL} durationSec=${body.duration || effectiveReq.durationSec || 5} scene=${effectiveReq.shotIndex ?? "unknown"} subclipIndex=${effectiveReq.subclipIndex ?? 1} request_id=${requestId || "immediate"}`
   );
@@ -613,30 +630,50 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
     }
   };
 
-  const isR2v =
+  const candidateRefs = [
+    ...(effectiveReq.characterSheetUrl ? [effectiveReq.characterSheetUrl] : []),
+    ...(effectiveReq.referenceImageUrls || []),
+    ...(effectiveReq.referenceUrls || []),
+    ...(effectiveReq.imageUrls || []),
+  ].filter((u): u is string => typeof u === "string" && u.trim().length > 0);
+
+  const isExplicitR2v =
     effectiveReq.mode === "reference-to-video" ||
     effectiveReq.mode === "r2v" ||
     effectiveReq.model?.toLowerCase().includes("r2v") ||
     effectiveReq.model?.toLowerCase().includes("reference-to-video");
 
-  if (isR2v) {
+  const isIdentityCritical = Boolean(
+    (effectiveReq as any).identityCritical ||
+    effectiveReq.characterSheetUrl ||
+    (effectiveReq.referenceImageUrls && effectiveReq.referenceImageUrls.length > 0)
+  );
+
+  const shouldUseR2v = candidateRefs.length > 0 && (isExplicitR2v || isIdentityCritical);
+
+  if (shouldUseR2v) {
     const { looksLikeStoryboardGridUrl } = await import("./_videoContract.js");
     const rawRefs = [
-      ...(effectiveReq.imageUrls || []),
-      ...(effectiveReq.referenceImageUrls || []),
-      ...(effectiveReq.referenceUrls || []),
       ...(effectiveReq.firstFrameUrl ? [effectiveReq.firstFrameUrl] : []),
+      ...candidateRefs,
     ];
 
+    const seen = new Set<string>();
     const cleanRefs: string[] = [];
     for (const ref of rawRefs) {
       if (!ref || typeof ref !== "string") continue;
       if (looksLikeStoryboardGridUrl(ref)) continue;
       if (ref.startsWith("http")) {
-        cleanRefs.push(ref);
+        if (!seen.has(ref)) {
+          seen.add(ref);
+          cleanRefs.push(ref);
+        }
       } else if (ref.startsWith("data:")) {
         const uploaded = await uploadDataUri(ref, "r2v-ref");
-        if (uploaded) cleanRefs.push(uploaded);
+        if (uploaded && !seen.has(uploaded)) {
+          seen.add(uploaded);
+          cleanRefs.push(uploaded);
+        }
       }
     }
 
@@ -645,6 +682,10 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
         "Higgsfield Seedance R2V requires at least 1 public HTTPS reference image (storyboard grids not allowed)."
       );
     }
+
+    console.log(
+      `[I2V CONTRACT] provider=higgsfield mode=r2v refs_sent=${cleanRefs.length} fields=image_urls,aspect_ratio,duration,resolution,generate_audio`
+    );
 
     const videoUrl = await generateSeedanceReferenceVideo({
       prompt: effectiveReq.prompt,
@@ -694,6 +735,11 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
   if (!effectiveReq.firstFrameUrl || !effectiveReq.firstFrameUrl.startsWith("http")) {
     throw new Error("Higgsfield Seedance I2V requires a public HTTPS firstFrameUrl (data URI upload failed or missing).");
   }
+
+  const i2vFields = `image_url${effectiveReq.lastFrameUrl ? ",end_image_url" : ""},duration,resolution,generate_audio`;
+  console.log(
+    `[I2V CONTRACT] provider=higgsfield mode=i2v refs_sent=0 fields=${i2vFields}`
+  );
 
   const videoUrl = await generateSeedanceVideo({
     prompt: effectiveReq.prompt,
