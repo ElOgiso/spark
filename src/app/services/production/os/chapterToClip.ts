@@ -127,6 +127,7 @@ export function calculateSubclipDurations(
 
   return subclips;
 }
+export const chapterToClip = buildScenesFromNarrativeChapters;
 
 export function formatChapterClipLog(params: {
   chapterIndex: number;
@@ -134,7 +135,9 @@ export function formatChapterClipLog(params: {
   maxNativeSec: number;
   subclipCount: number;
   spokenChars: number;
+  fullScriptLength?: number;
 }): string {
-  const { chapterIndex, chapterDur, maxNativeSec, subclipCount, spokenChars } = params;
-  return `[SPARK Pipeline] Chapter ${chapterIndex}: chapterDur=${chapterDur}s, maxNativeSec=${maxNativeSec}s, subclipCount=${subclipCount}, spokenChars=${spokenChars}`;
+  const { chapterIndex, chapterDur, maxNativeSec, subclipCount, spokenChars, fullScriptLength } = params;
+  const fullPart = typeof fullScriptLength === "number" ? `, fullScriptLength=${fullScriptLength}` : "";
+  return `[SPARK Pipeline] Chapter ${chapterIndex}: chapterDur=${chapterDur}s, maxNativeSec=${maxNativeSec}s, subclipCount=${subclipCount}, spokenChars=${spokenChars}${fullPart}`;
 }

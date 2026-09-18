@@ -2408,6 +2408,7 @@ export class ProductionAssetService {
                   maxNativeSec: nativeMaxClipSec,
                   subclipCount,
                   spokenChars,
+                  fullScriptLength: (scriptToEval?.fullSpokenScript || "").length,
                 })
               );
 
