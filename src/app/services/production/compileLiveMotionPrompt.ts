@@ -195,7 +195,10 @@ export function compileLiveMotionPrompt(params: {
   const cameraSection = shotDirection.cameraCraft
     ? `CAMERA: ${shotDirection.camera} [Craft Execution: ${shotDirection.cameraCraft}]`
     : `CAMERA: ${shotDirection.camera}`;
-  const performanceSection = shotDirection.performance
+  const isVo = scene?.audio === "vo";
+  const performanceSection = isVo
+    ? "PERFORMANCE (VO CHAPTER — NO DIALOGUE LIP-SYNC): silent ambient presence; do not animate speech or lip sync."
+    : shotDirection.performance
     ? `PERFORMANCE (AUDIO ONLY — never draw text): natural lip/body sync for intent «${shotDirection.performance.replace(/"/g, "'")}».`
     : "";
   const physicsSection = shotDirection.physics

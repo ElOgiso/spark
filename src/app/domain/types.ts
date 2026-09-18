@@ -1093,6 +1093,7 @@ export interface NarrativeScript {
     title: string;
     durationSec: number;
     job: "hook" | "problem" | "context" | "proof" | "example" | "myth_bust" | "payoff" | "cta" | string;
+    audio?: "vo" | "talent";
     spoken: string;
     visualIntent: string;
     setsUpNextChapterId?: string;

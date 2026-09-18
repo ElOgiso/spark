@@ -45,9 +45,9 @@ BRAND:
 
 PRODUCTION MODE SPEECH POLICY:
 - Mode: ${productionModeLabel}
-${productionModeLabel === "narrator" ? "- Spoken lines must be Voiceover. Visuals are support." : ""}
-${productionModeLabel === "hybrid" ? "- Mark chapters as audio: 'vo' or 'talent'." : ""}
-${productionModeLabel === "cinematic" ? "- Spoken lines are IN-WORLD / talent. No 'narrator bed' instructions." : ""}
+${productionModeLabel === "narrator" ? "- Spoken lines must be Voiceover. Visuals are support. All chapters audio: 'vo'." : ""}
+${productionModeLabel === "hybrid" ? "- Hybrid mode: label each chapter audio: 'vo' or 'talent'. Hook/payoff/cta with on-camera host -> 'talent'; proof/context explainer -> 'vo'." : ""}
+${productionModeLabel === "cinematic" ? "- Spoken lines are IN-WORLD / talent. No 'narrator bed' instructions. Omit VO (all chapters talent)." : ""}
 
 `;
 
@@ -110,6 +110,7 @@ OUTPUT EXACTLY THIS JSON SHAPE:
       "title": "string",
       "durationSec": 10,
       "job": "hook | problem | context | proof | example | myth_bust | payoff | cta",
+      "audio": "vo | talent (hybrid only: label each chapter vo or talent. cinematic: omit VO. narrator: vo)",
       "spoken": "REAL lines the audience hears, not camera notes",
       "visualIntent": "what we SEE, one sentence",
       "setsUpNextChapterId": "string"

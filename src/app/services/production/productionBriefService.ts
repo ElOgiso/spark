@@ -22,6 +22,7 @@ import { planAssetBibleFromBrief } from "./preproduction/assetBibleFromBrief";
 import { compileNarrativeScript } from "./os/compileNarrativeScript";
 import { applyNarrativeScriptToSparkAndBrief } from "./os/applyNarrativeScript";
 import { collectMustNotCopyTitles } from "./os/topicIntelligence";
+import { resolveChapterAudio } from "./os/chapterAudio";
 
 /**
  * Resolves the shot subject for a beat based on contentFormat and available sheets.
@@ -1276,7 +1277,7 @@ Return a valid JSON object matching this exact structure with NO markdown format
       pacing: effectiveDurationSec <= 30 ? "Fast" : "Balanced",
       scriptSnippet: b.spokenLines,
       spokenLines: b.spokenLines,
-      audio: b.audio || (modeKey === "express" ? "vo" : "talent"),
+      audio: resolveChapterAudio({ mode: modeKey, beat: b }),
       valueJob: b.valueJob,
       subject: b.subject,
       subjectType: b.subjectType,

@@ -1,4 +1,7 @@
 import type { NarrativeScript, ProductionScene } from "../../../domain/types";
+import { resolveChapterAudio } from "./chapterAudio";
+
+export { resolveChapterAudio } from "./chapterAudio";
 
 /**
  * Builds canonical ProductionScene list from writer narrative chapters.
@@ -24,14 +27,7 @@ export function buildScenesFromNarrativeChapters(
       throw new Error(`Chapter ${i + 1} missing required durationSec.`);
     }
 
-    const resolvedAudio: "vo" | "talent" =
-      normMode === "express" || normMode === "narrator"
-        ? "vo"
-        : normMode === "deep" || normMode === "cinematic"
-        ? "talent"
-        : (c.job === "slide" || c.job === "still" || c.job === "b-roll" || c.job === "context" || c.job === "example" || c.job === "problem" || c.job === "myth_bust"
-            ? "vo"
-            : "talent");
+    const resolvedAudio = resolveChapterAudio({ mode, chapter: c });
 
     return {
       scene: i + 1,

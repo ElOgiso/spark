@@ -1399,7 +1399,7 @@ export class ProductionAssetService {
           let voiceScript = promptPack.voiceScript;
           if (mode === "standard") {
             const voScenes = currentStoryboard.filter((s) => s.audio === "vo");
-            if (voScenes.length > 0 && voScenes.length < currentStoryboard.length) {
+            if (voScenes.length > 0) {
               const voLines = voScenes
                 .map((s) => (s as any).spokenLines || (s as any).scriptSnippet || "")
                 .filter(Boolean)
@@ -4482,7 +4482,8 @@ export class ProductionAssetService {
     ];
     const readyClips = collectSparkShotClipUrls(clipCandidates);
 
-    const hasVoScenes = scenes.length > 0 && scenes.some((s) => s.audio === "vo");
+    const isCinematic = mode === "deep" || mode === "cinematic";
+    const hasVoScenes = !isCinematic && scenes.length > 0 && scenes.some((s) => s.audio === "vo");
     const mergeAudioUrl = (isNarrator || hasVoScenes) ? (brief.audioUrl || production.audioUrl) : undefined;
 
     const failMerge = (message: string) => {

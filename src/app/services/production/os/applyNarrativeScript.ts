@@ -1,5 +1,6 @@
 import type { NarrativeScript, ViralSpark, ProductionBrief, ProductionBriefBeat, Brand } from "../../../domain/types";
 import { evaluateScriptForProduction, type ScriptEvaluationResult } from "./scriptQualityGates";
+import { resolveChapterAudio } from "./chapterAudio";
 
 function formatTimecode(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -43,7 +44,7 @@ export function applyNarrativeScriptToSparkAndBrief(
       onScreenText: "",
       startState: c.visualIntent,
       endState: c.visualIntent,
-      audio: briefDraft?.productionMode === "express" ? "vo" : "talent",
+      audio: resolveChapterAudio({ mode: briefDraft?.productionMode, chapter: c }),
       subject: "main",
       subjectType: "main",
       durationSec: c.durationSec,
