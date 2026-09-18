@@ -167,6 +167,7 @@ export function viralSparkRowToDomain(row: ViralSparkRow): ViralSpark {
     firstSeenAt: typeof evidence.firstSeenAt === "string" ? evidence.firstSeenAt : undefined,
     suggestedScript,
     narrativeScriptObj: narrativeScript,
+    narrativeScript: narrativeScript,
     spoken_beats,
     opening_line,
     targetDurationSec,
@@ -182,11 +183,21 @@ export function domainViralSparkToInsert(
   spark: ViralSpark,
   existingEvidence?: Record<string, unknown>
 ): Partial<ViralSparkRow> {
-  const script = spark.narrativeScriptObj || (spark as any).narrativeScript;
-  const suggestedScript = spark.suggestedScript || script?.fullSpokenScript;
-  const spoken_beats = spark.spoken_beats || (script?.chapters ? script.chapters.map((c: any) => c.spoken).filter(Boolean) : undefined);
-  const opening_line = spark.opening_line || script?.hook?.spoken || spark.hook;
-  const targetDurationSec = spark.targetDurationSec || script?.targetDurationSec;
+  const script = spark.narrativeScriptObj || spark.narrativeScript || (existingEvidence as any)?.narrativeScript;
+  const suggestedScript = spark.suggestedScript || script?.fullSpokenScript || (existingEvidence as any)?.suggestedScript;
+  const spoken_beats =
+    spark.spoken_beats ||
+    (script?.chapters ? script.chapters.map((c: any) => c.spoken).filter(Boolean) : undefined) ||
+    (existingEvidence as any)?.spoken_beats;
+  const opening_line =
+    spark.opening_line ||
+    script?.hook?.spoken ||
+    spark.hook ||
+    (existingEvidence as any)?.opening_line;
+  const targetDurationSec =
+    spark.targetDurationSec ||
+    script?.targetDurationSec ||
+    (existingEvidence as any)?.targetDurationSec;
 
   const mergedEvidence: Record<string, unknown> = {
     ...(existingEvidence || {}),
@@ -494,8 +505,15 @@ export function domainProductionToInsert(
       storyboardGridUrl,
       generationProgress: genProg,
       video_storage_path: videoStoragePath,
-      briefObject,
-      ...(production.brief?.narrativeScript ? { narrativeScript: production.brief.narrativeScript } : {}),
+      briefObject: briefObject ? {
+        ...briefObject,
+        ...(production.brief?.narrativeScript || (production as any).narrativeScript ? {
+          narrativeScript: production.brief?.narrativeScript || (production as any).narrativeScript,
+        } : {}),
+      } : undefined,
+      ...(production.brief?.narrativeScript || (production as any).narrativeScript
+        ? { narrativeScript: production.brief?.narrativeScript || (production as any).narrativeScript }
+        : {}),
     } as unknown as Json,
     assets: {
       ...((production.brief?.generatedAssets as any) || {}),

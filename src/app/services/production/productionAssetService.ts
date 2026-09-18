@@ -3823,6 +3823,14 @@ export class ProductionAssetService {
     const rawMode = (production.mode || brief.productionMode || "standard").toLowerCase();
     const mode = rawMode === "deep" || rawMode === "cinematic" ? "deep" : rawMode === "express" || rawMode === "narrator" ? "express" : "standard";
 
+    const script = brief.narrativeScript || (production as any).narrativeScript || (brief as any).narrativeScriptObj;
+    if (script && Array.isArray(script.chapters) && script.chapters.length > 0) {
+      return buildScenesFromNarrativeChapters(script, mode);
+    }
+    if (Array.isArray(brief.storyboard) && brief.storyboard.length > 0) {
+      return brief.storyboard;
+    }
+
     // Dynamic Video Provider Physics: Read real single-shot native peak quality limit and legal durations
     const activeVideo = resolveActiveVideoProvider({
       preferredVideoProvider: formatSettings?.preferredVideoProvider,

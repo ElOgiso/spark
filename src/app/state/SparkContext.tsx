@@ -53,6 +53,7 @@ import {
   persistReviewApprove,
   persistReviewNeedsEdit,
   persistViralSparkCreate,
+  persistViralSparkUpdate,
   persistPublishJobCreate,
   persistAISettings,
   persistCreditSettings,
@@ -2061,7 +2062,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           targetDurationSec: effectiveDuration,
           seriesContext: resolvedSeriesContext,
         })
-        .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief }) => {
+        .then(async ({ production: enrichedProd, reviewItem: enrichedReview, brief: enrichedBrief, spark: enrichedSpark }) => {
           if (isProductionTombstoned(prodId) || isProductionTombstoned(reviewId)) {
             return;
           }
@@ -2095,6 +2096,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           if (isSupabaseConfigured() && brandId && genStillOn) {
             try {
+              // Persist spark evidence in the same flow so refresh keeps script and evidence
+              if (enrichedSpark && isUuid(enrichedSpark.id)) {
+                await persistViralSparkUpdate(brandId, enrichedSpark.id, enrichedSpark).catch((sparkErr) =>
+                  console.warn("[SparkContext] Persist spark update notice:", sparkErr)
+                );
+              }
               // Production MUST exist before review (FK review_items.production_id → productions.id).
               // Parallel Promise.all raced and silently dropped review rows.
               const dbProd = await persistProductionCreate(brandId, stableEnrichedProd);
@@ -2108,6 +2115,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
                 setState((prev: any) => ({
                   ...prev,
+                  viralSparks: enrichedSpark
+                    ? prev.viralSparks.map((s: any) => (s.id === spark.id ? { ...s, ...enrichedSpark } : s))
+                    : prev.viralSparks,
                   productions: prev.productions.map((p: any) =>
                     p.id === oldProdId ? { ...p, ...stableEnrichedProd, id: dbProd.id, sparkId: spark.id } : p
                   ),

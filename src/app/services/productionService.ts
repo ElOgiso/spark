@@ -112,7 +112,7 @@ export class ProductionService implements IProductionService {
     };
     /** Phase 11 — optional prior learnings for Creative Director (soft influence only). */
     creativeLearnings?: CreativeLearning[];
-  }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief }> {
+  }): Promise<{ production: Production; reviewItem: ReviewItem; brief: ProductionBrief; spark?: ViralSpark }> {
     ProductionGenerationGuard.assertEnabled("createProductionFromSpark", params.brand?.id);
     const prodId = params.productionId || generateUuid();
     const reviewId = params.reviewId || generateUuid();
@@ -136,7 +136,7 @@ export class ProductionService implements IProductionService {
       targetDurationSec: initialTargetDurationSec,
     });
 
-    const scriptToPersist = llmBrief.narrativeScript || (params.spark as any).narrativeScriptObj;
+    const scriptToPersist = llmBrief.narrativeScript || (params.spark as any).narrativeScriptObj || (params.spark as any).narrativeScript;
     const isQualityOk = !llmBrief.lastError && (params.spark as any).status !== "draft";
 
     const polishedSpark: ViralSpark = {
@@ -151,6 +151,7 @@ export class ProductionService implements IProductionService {
       status: isQualityOk ? "ready" : "draft",
       lastError: llmBrief.lastError || (params.spark as any).lastError,
       narrativeScriptObj: scriptToPersist,
+      narrativeScript: scriptToPersist,
       suggestedScript: scriptToPersist?.fullSpokenScript || params.spark.suggestedScript,
       spoken_beats: scriptToPersist?.chapters?.map((c: any) => c.spoken).filter(Boolean) || params.spark.spoken_beats,
       opening_line: llmBrief.hook || scriptToPersist?.hook?.spoken || params.spark.opening_line,
@@ -337,7 +338,7 @@ export class ProductionService implements IProductionService {
       reviewItems: [reviewItem, ...currentReviews.filter((r) => r.id !== reviewId)],
     });
 
-    return { production, reviewItem, brief };
+    return { production, reviewItem, brief, spark: polishedSpark };
   }
 
   /**

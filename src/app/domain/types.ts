@@ -171,6 +171,7 @@ export interface ViralSpark {
   whyItWorks?: string;
   suggestedScript?: string;
   narrativeScriptObj?: NarrativeScript;
+  narrativeScript?: NarrativeScript;
   sourceContent?: StructuredSourceContent;
   youtubeUrl?: string;
   sourceUrl?: string;
@@ -994,11 +995,15 @@ export function getEffectiveFormatSettings(source?: any): ProductionFormatSettin
     (typeof localCacheSettings?.targetDurationSec === "number" ? localCacheSettings.targetDurationSec : undefined) ??
     DEFAULT_FORMAT_SETTINGS.targetDurationSec;
 
-  const rawAspect =
+  const explicitAspect =
     direct?.aspectMode ||
     brandSettings?.aspectMode ||
-    localCacheSettings?.aspectMode ||
-    DEFAULT_FORMAT_SETTINGS.aspectMode;
+    localCacheSettings?.aspectMode;
+
+  const defaultAspectForDuration: AspectMode =
+    rawTargetDuration <= 60 ? "portrait" : "landscape";
+
+  const rawAspect: AspectMode = explicitAspect || defaultAspectForDuration;
 
   const rawContentFormat =
     direct?.contentFormat ||

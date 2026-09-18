@@ -44,15 +44,11 @@ export interface ResolvedDurationPolicy {
 function detectMode(params: {
   mode?: string;
   contentFormat?: string;
-  totalTargetDurationSec: number;
+  totalTargetDurationSec?: number;
 }): ProductionDurationMode {
   const raw = String(params.mode || "").toLowerCase();
   if (raw === "deep" || raw === "cinematic") return "cinematic";
   if (raw === "express" || raw === "shorts" || raw === "narrator") return "shorts";
-  const fmt = String(params.contentFormat || "").toLowerCase();
-  if (fmt === "faceless" && params.totalTargetDurationSec <= 60) return "shorts";
-  if (params.totalTargetDurationSec <= 60) return "shorts";
-  if (params.totalTargetDurationSec >= 180) return "cinematic";
   return "standard";
 }
 
@@ -157,6 +153,9 @@ export function resolveDurationPolicy(params: {
 }
 
 /**
+ * @deprecated allocateClipDurations is NOT for generate. Shot list = writer chapters via chapterToClip only.
+ * Kept only for legacy tests.
+ *
  * Allocate clip durations that sum toward the total target without
  * silently truncating cinematic intent when provider limits force splits.
  */
