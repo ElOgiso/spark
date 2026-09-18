@@ -5,6 +5,8 @@ import {
   tryLightJsonRepair,
   compileNarrativeScript,
   compileNarrativeScriptPrompt,
+  normalizeToNarrativeScript,
+  proseFallbackToNarrativeScript,
 } from "./compileNarrativeScript";
 import { ModelRouter } from "../../runtime/modelRouter";
 import type { Brand } from "../../../domain/types";
@@ -395,6 +397,120 @@ test("SPARK — compileNarrativeScript JSON Extraction & Resilience", async (t) 
       );
       assert.equal(script.title, "Concise Recovered Script");
       assert.ok(script.fullSpokenScript, "Must derive fullSpokenScript automatically");
+    } finally {
+      ModelRouter.executeCategoryRequest = originalExecute;
+    }
+  });
+
+  await t.test("11. normalizeToNarrativeScript: converts pure prose multi-paragraph writer output into valid NarrativeScript without throwing", () => {
+    const proseOutput = `
+# The Secret of Roman Concrete
+
+Why are 2,000-year-old Roman harbors still standing while modern concrete crumbles in seawater within decades?
+
+For centuries, civil engineers believed Roman builders just got lucky with their volcanic ash deposits. But modern electron microscopy tells a very different story.
+
+Researchers discovered that millimeter-sized white mineral inclusions, called lime clasts, were not poor mixing as previously assumed. They were quicklime hot-mixed into the concrete.
+
+When seawater cracks the harbor walls, water seeps in and reacts with these lime clasts. The minerals dissolve and recrystallize as calcium carbonate, actively sealing the fractures like scar tissue.
+
+By understanding this ancient self-healing nanotech, coastal cities today can build sea walls that last for centuries instead of decades.
+
+Follow Apex Engineering for more structural breakdowns.
+`;
+
+    const script = normalizeToNarrativeScript(proseOutput, {
+      brand: mockBrand,
+      targetDurationSec: 30,
+      productionModeLabel: "hybrid",
+    });
+
+    assert.equal(script.title, "The Secret of Roman Concrete");
+    assert.ok(script.chapters.length >= 2, "Must extract multiple chapters from paragraphs");
+    const totalDuration = script.chapters.reduce((sum, c) => sum + c.durationSec, 0);
+    assert.equal(totalDuration, 30, "Chapter durations must sum to exactly targetDurationSec");
+    assert.ok(script.fullSpokenScript.includes("Roman harbors still standing"), "fullSpokenScript must contain spoken content");
+    assert.ok(script.cta.spoken.includes("Follow Apex Engineering"), "Must extract CTA");
+    assert.equal(script.chapters[0].audio, "talent", "Hybrid mode hook chapter must be talent");
+    assert.ok((script as any).normalizedFromProse, "Must set normalizedFromProse flag");
+  });
+
+  await t.test("12. normalizeToNarrativeScript: converts partial / malformed JSON with spoken lines into valid NarrativeScript", () => {
+    const brokenJson = `
+{"title": :::: "Deep Sea Geothermal Vents", 
+"chapters": [
+  {"title": "The Abyss", "spoken": "Two miles beneath the Pacific Ocean, water boils at 400 degrees without turning to steam. Extreme hydrostatic pressure keeps the liquid superheated while black smokers spew mineral rich iron sulfides into total darkness."},
+  {"title": "Chemosynthesis", "spoken": "Giant tube worms and blind shrimp thrive here without a single ray of sunlight. Instead of photosynthesis, sulfur-oxidizing bacteria turn poisonous hydrogen sulfide into organic energy."}
+`;
+
+    const script = normalizeToNarrativeScript(brokenJson, {
+      brand: mockBrand,
+      targetDurationSec: 30,
+      productionModeLabel: "narrator",
+    });
+
+    assert.ok(script.chapters.length >= 2, "Must extract spoken lines from broken JSON");
+    const totalDuration = script.chapters.reduce((sum, c) => sum + c.durationSec, 0);
+    assert.equal(totalDuration, 30, "Chapter durations must sum to targetDurationSec");
+    assert.ok(script.fullSpokenScript.includes("Two miles beneath the Pacific Ocean"), "Must contain chapter 1 spoken lines");
+    assert.ok(script.fullSpokenScript.includes("Giant tube worms and blind shrimp"), "Must contain chapter 2 spoken lines");
+    assert.equal(script.chapters[0].audio, "vo", "Narrator mode chapters must be vo");
+  });
+
+  await t.test("13. normalizeToNarrativeScript: empty or refusal string throws clearly", () => {
+    assert.throws(
+      () => normalizeToNarrativeScript("", { brand: mockBrand, targetDurationSec: 30, productionModeLabel: "narrator" }),
+      /Cannot normalize NarrativeScript from empty/
+    );
+
+    assert.throws(
+      () => normalizeToNarrativeScript("   \n\t  ", { brand: mockBrand, targetDurationSec: 30, productionModeLabel: "narrator" }),
+      /Cannot normalize NarrativeScript from empty/
+    );
+
+    assert.throws(
+      () => normalizeToNarrativeScript("I cannot fulfill this request due to safety policies.", { brand: mockBrand, targetDurationSec: 30, productionModeLabel: "narrator" }),
+      /Model refused request/
+    );
+  });
+
+  await t.test("14. compileNarrativeScript: Claude returns long non-JSON prose on call 1 -> succeeds immediately without retry", async () => {
+    const originalExecute = ModelRouter.executeCategoryRequest;
+    let callCount = 0;
+
+    const pureProse = `
+# How Supermassive Black Holes Shape Galaxies
+
+At the center of almost every massive galaxy sits a gravitational colossus containing millions or billions of times the mass of our sun.
+
+When gas swirls toward the event horizon, frictional forces heat the accretion disk to trillions of degrees, blasting high-energy quasar jets thousands of light years into intergalactic space.
+
+These cosmic winds blow cold molecular gas out of the host galaxy, starving it of the raw fuel required to ignite new stars. Without this self-regulating feedback loop, galaxies would burn through their fuel too quickly and collapse.
+
+By studying these gravitational engines, astrophysicists can map how the entire cosmic web evolved from the primordial soup.
+
+Follow Apex Engineering for more astrophysics deep dives.
+`;
+
+    ModelRouter.executeCategoryRequest = (async () => {
+      callCount++;
+      return pureProse;
+    }) as any;
+
+    try {
+      const script = await compileNarrativeScript({
+        brand: mockBrand,
+        targetDurationSec: 45,
+        productionModeLabel: "cinematic",
+      });
+
+      assert.equal(callCount, 1, "Must NOT make a second call when Call 1 returns usable prose");
+      assert.equal(script.title, "How Supermassive Black Holes Shape Galaxies");
+      assert.ok(script.chapters.length >= 3, "Must produce structured chapters");
+      const totalDur = script.chapters.reduce((sum, c) => sum + c.durationSec, 0);
+      assert.equal(totalDur, 45, "Durations must sum to 45s");
+      assert.equal(script.chapters[0].audio, "talent", "Cinematic mode must use talent audio");
+      assert.ok(script.fullSpokenScript.includes("At the center of almost every massive galaxy"));
     } finally {
       ModelRouter.executeCategoryRequest = originalExecute;
     }
