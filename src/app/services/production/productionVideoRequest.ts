@@ -66,6 +66,12 @@ export async function requestProductionVideoClip(
   }
 
   if (isHf) {
+    if (params.firstFrameUrl?.startsWith("asset://")) {
+      throw new Error(
+        "Higgsfield Seedance I2V does not support asset:// URI scheme. A public HTTPS firstFrameUrl is required."
+      );
+    }
+
     if (params.firstFrameUrl?.startsWith("data:")) {
       try {
         const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");

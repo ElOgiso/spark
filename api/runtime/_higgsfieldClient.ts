@@ -355,17 +355,77 @@ export interface GenerateSoulImageOptions {
 }
 
 /**
+ * Upload non-public inputs via official Higgsfield Files API:
+ * POST /files/generate-upload-url -> PUT upload_url -> returns public_url
+ */
+export async function uploadHiggsfieldFile(
+  buffer: Buffer,
+  contentType: string = "image/png",
+  customKey?: string
+): Promise<string> {
+  const auth = resolveHiggsfieldAuth(customKey);
+  if (!auth) {
+    throw new Error(
+      "Higgsfield credentials not configured. Please set HIGGSFIELD_API_KEY in 'key_id:key_secret' form or set HF_API_KEY_ID and HF_API_KEY_SECRET."
+    );
+  }
+
+  const initRes = await fetch(`${HIGGSFIELD_API_BASE}/files/generate-upload-url`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: auth.authorization,
+    },
+    body: JSON.stringify({ content_type: contentType }),
+  });
+
+  if (!initRes.ok) {
+    const errText = await initRes.text().catch(() => "");
+    throw new Error(`Higgsfield generate-upload-url failed (${initRes.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const initData = await initRes.json();
+  const uploadUrl = initData.upload_url || initData.url;
+  const publicUrl = initData.public_url || initData.file_url || initData.url;
+  if (!uploadUrl || !publicUrl) {
+    throw new Error("Higgsfield generate-upload-url did not return upload_url or public_url.");
+  }
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+    },
+    body: buffer,
+  });
+
+  if (!putRes.ok) {
+    const errText = await putRes.text().catch(() => "");
+    throw new Error(`Higgsfield upload failed (${putRes.status}): ${errText.slice(0, 300)}`);
+  }
+
+  return publicUrl;
+}
+
+/**
  * Phase 2: Soul Image Generation
- * default model -> /higgsfield-ai/soul/v2/standard
+ * default model (soul-2) -> /higgsfield-ai/soul/v2/standard
  * soul-cinema / cinema -> /higgsfield-ai/soul/cinema
+ * soul-standard -> /higgsfield-ai/soul/standard
  */
 export async function generateSoulImage(
   options: GenerateSoulImageOptions,
   customKey?: string,
   signal?: AbortSignal
 ): Promise<string> {
-  const isCinema = options.model?.toLowerCase().includes("cinema");
-  const endpoint = isCinema ? "/higgsfield-ai/soul/cinema" : "/higgsfield-ai/soul/v2/standard";
+  const normModel = String(options.model || "").toLowerCase();
+  const isCinema = normModel.includes("cinema");
+  const isStandard = normModel === "soul-standard" || normModel.includes("soul/standard");
+  const endpoint = isCinema
+    ? "/higgsfield-ai/soul/cinema"
+    : isStandard
+    ? "/higgsfield-ai/soul/standard"
+    : "/higgsfield-ai/soul/v2/standard";
 
   const body = {
     prompt: options.prompt,
@@ -446,6 +506,14 @@ export async function generateSeedanceVideo(
 ): Promise<string> {
   if (!options.firstFrameUrl || !options.firstFrameUrl.trim()) {
     throw new Error("Higgsfield Seedance I2V requires a valid firstFrameUrl.");
+  }
+  if (options.firstFrameUrl.startsWith("asset://")) {
+    throw new Error(
+      "Higgsfield Seedance I2V does not support asset:// URI scheme. A public HTTPS image_url is required."
+    );
+  }
+  if (looksLikeStoryboardGridUrl(options.firstFrameUrl)) {
+    throw new Error("Higgsfield Seedance I2V requires this shot's still, not a storyboard grid.");
   }
 
   const is20 = options.model?.toLowerCase().includes("2.0");

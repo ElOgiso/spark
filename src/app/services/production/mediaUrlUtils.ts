@@ -12,7 +12,8 @@ export function isEphemeralMediaUrl(val?: string | null): boolean {
     trimmed.includes("runwayml.com") ||
     trimmed.includes("lumalabs.ai") ||
     trimmed.includes("ark.cn-beijing") ||
-    trimmed.includes("byteimg.com")
+    trimmed.includes("byteimg.com") ||
+    trimmed.includes("higgsfield")
   );
 }
 

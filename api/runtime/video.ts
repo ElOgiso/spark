@@ -553,6 +553,10 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
 
   let effectiveReq = { ...req };
 
+  if (effectiveReq.firstFrameUrl && effectiveReq.firstFrameUrl.startsWith("asset://")) {
+    throw new Error("Higgsfield Seedance I2V does not support asset:// URI scheme. A public HTTPS image_url is required.");
+  }
+
   const { looksLikeSheetOrGridUrl } = await import("./_videoContract.js");
   if (effectiveReq.firstFrameUrl && looksLikeSheetOrGridUrl(effectiveReq.firstFrameUrl)) {
     throw new Error("Higgsfield Seedance I2V requires this shot's still, not a storyboard grid or sheet.");
@@ -560,12 +564,24 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<string> {
 
   const uploadDataUri = async (dataUri: string, prefix: string): Promise<string | null> => {
     try {
-      const { persistBufferToSpark, sparkBrandMediaPath } = await import("./_sparkStorage.js");
       const match = dataUri.match(/^data:([^;]+);base64,(.*)$/s);
       const mime = match ? match[1] : "image/jpeg";
       const b64 = (match ? match[2] : dataUri.split(",")[1] || "").replace(/\s/g, "");
       if (!b64) return null;
       const buf = Buffer.from(b64, "base64");
+
+      // Try official Higgsfield file upload first
+      try {
+        const { uploadHiggsfieldFile } = await import("./_higgsfieldClient.js");
+        const hfPublicUrl = await uploadHiggsfieldFile(buf, mime);
+        if (hfPublicUrl && hfPublicUrl.startsWith("http")) {
+          return hfPublicUrl;
+        }
+      } catch (hfErr) {
+        console.warn(`[Higgsfield Video] Pre-upload via HF files notice:`, hfErr);
+      }
+
+      const { persistBufferToSpark, sparkBrandMediaPath } = await import("./_sparkStorage.js");
       const ext = mime.includes("png") ? "png" : "jpg";
       const storagePath = sparkBrandMediaPath(
         req.brandId || "default-brand",

@@ -15,6 +15,7 @@ import {
   cancel,
   generateSoulImage,
   generateSeedanceVideo,
+  uploadHiggsfieldFile,
 } from "./_higgsfieldClient.js";
 
 describe("Phase 0 — Higgsfield Env Aliases & Credentials", () => {
@@ -714,3 +715,269 @@ describe("Phase 5 — Optional Enhancements (Cancel on abort & R2V)", () => {
     assert.deepEqual(progressStatuses, ["queued", "completed"]);
   });
 });
+
+describe("Phase 6 — Official HF Docs Alignment & Guards", () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  test("uploadHiggsfieldFile performs POST /files/generate-upload-url and PUT to upload_url", async () => {
+    let postBody: any = null;
+    let putCalled = false;
+    let putBody: any = null;
+    let putContentType = "";
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/files/generate-upload-url") && init?.method === "POST") {
+        postBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            upload_url: "https://s3.amazonaws.com/hf-upload-bucket/file-123",
+            public_url: "https://api.higgsfield.ai/files/file-123.png",
+          }),
+        } as any;
+      }
+      if (u === "https://s3.amazonaws.com/hf-upload-bucket/file-123" && init?.method === "PUT") {
+        putCalled = true;
+        putBody = init.body;
+        putContentType = init.headers["Content-Type"];
+        return { ok: true } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const dummyBuf = Buffer.from("fake-png-bytes");
+    const pubUrl = await uploadHiggsfieldFile(dummyBuf, "image/png", "hf_id:hf_secret");
+
+    assert.equal(pubUrl, "https://api.higgsfield.ai/files/file-123.png");
+    assert.deepEqual(postBody, { content_type: "image/png" });
+    assert.equal(putCalled, true);
+    assert.equal(putContentType, "image/png");
+    assert.ok(Buffer.isBuffer(putBody));
+  });
+
+  test("Soul Standard alias routes to /higgsfield-ai/soul/standard", async () => {
+    let calledPath = "";
+
+    globalThis.fetch = async (url: any) => {
+      calledPath = String(url);
+      return {
+        ok: true,
+        json: async () => ({
+          status: "completed",
+          images: [{ url: "https://hf.ai/soul-standard-out.png" }],
+        }),
+      } as any;
+    };
+
+    const url = await generateSoulImage(
+      {
+        prompt: "Standard portrait shot",
+        model: "soul-standard",
+      },
+      "hf_id:hf_secret"
+    );
+
+    assert.equal(url, "https://hf.ai/soul-standard-out.png");
+    assert.ok(calledPath.includes("/higgsfield-ai/soul/standard"));
+    assert.ok(!calledPath.includes("/soul/v2/"));
+  });
+
+  test("generateSeedanceVideo rejects asset:// URI scheme", async () => {
+    await assert.rejects(
+      async () => {
+        await generateSeedanceVideo(
+          {
+            prompt: "Motion test",
+            firstFrameUrl: "asset://characters/hero.png",
+          },
+          "hf_id:hf_secret"
+        );
+      },
+      {
+        message: /Higgsfield Seedance I2V does not support asset:\/\/ URI scheme/,
+      }
+    );
+  });
+
+  test("generateSeedanceVideo rejects storyboard grid", async () => {
+    await assert.rejects(
+      async () => {
+        await generateSeedanceVideo(
+          {
+            prompt: "Motion test",
+            firstFrameUrl: "https://spark.storage/brands/b1/storyboard-grid-9panel.png",
+          },
+          "hf_id:hf_secret"
+        );
+      },
+      {
+        message: /Higgsfield Seedance I2V requires this shot's still, not a storyboard grid/,
+      }
+    );
+  });
+
+  test("requestProductionVideoClip explicitly rejects asset:// for Higgsfield", async () => {
+    const { requestProductionVideoClip } = await import("../../src/app/services/production/productionVideoRequest.js");
+    await assert.rejects(
+      async () => {
+        await requestProductionVideoClip({
+          provider: "higgsfield",
+          prompt: "Dolly forward",
+          firstFrameUrl: "asset://shots/shot-1.png",
+        });
+      },
+      {
+        message: /Higgsfield Seedance I2V does not support asset:\/\/ URI scheme/,
+      }
+    );
+  });
+
+  test("execute.ts differentiates video requests and returns video URL", async () => {
+    process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+    const handler = (await import("./execute.js")).default;
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.5/image-to-video")) {
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_exec_vid",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_exec_vid/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: { url: "https://hf.ai/executed-video.mp4" },
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    let resStatus = 0;
+    let resJson: any = null;
+    const mockReq: any = {
+      method: "POST",
+      body: {
+        provider: "higgsfield",
+        endpoint: "/bytedance/seedance-2.5/image-to-video",
+        payload: {
+          prompt: "Cinematic push in",
+          image_url: "https://spark.storage/shot-1.png",
+          duration: 5,
+        },
+      },
+    };
+    const mockRes: any = {
+      status: (s: number) => {
+        resStatus = s;
+        return {
+          json: (d: any) => {
+            resJson = d;
+            return d;
+          },
+        };
+      },
+    };
+
+    await handler(mockReq, mockRes);
+    assert.equal(resStatus, 200);
+    assert.equal(resJson?.success, true);
+    assert.equal(resJson?.url, "https://hf.ai/executed-video.mp4");
+  });
+
+  test("execute.ts returns HTTP 500 when video poll completes without URL", async () => {
+    process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+    const handler = (await import("./execute.js")).default;
+
+    globalThis.fetch = async (url: any) => {
+      const u = String(url);
+      if (u.includes("/bytedance/seedance-2.5/image-to-video")) {
+        return {
+          ok: true,
+          json: async () => ({
+            request_id: "req_empty_vid",
+            status: "queued",
+          }),
+        } as any;
+      }
+      if (u.includes("/requests/req_empty_vid/status")) {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "completed",
+            video: {}, // missing url
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    let resStatus = 0;
+    let resJson: any = null;
+    const mockReq: any = {
+      method: "POST",
+      body: {
+        provider: "higgsfield",
+        endpoint: "/bytedance/seedance-2.5/image-to-video",
+        payload: {
+          prompt: "Empty test",
+          image_url: "https://spark.storage/shot-empty.png",
+        },
+      },
+    };
+    const mockRes: any = {
+      status: (s: number) => {
+        resStatus = s;
+        return {
+          json: (d: any) => {
+            resJson = d;
+            return d;
+          },
+        };
+      },
+    };
+
+    await handler(mockReq, mockRes);
+    assert.equal(resStatus, 500);
+    assert.equal(resJson?.success, false);
+    assert.ok(resJson?.error?.includes("no media URL"));
+  });
+
+  test("isEphemeralMediaUrl identifies Higgsfield URLs for durable Spark ingest", async () => {
+    const { isEphemeralMediaUrl } = await import("../../src/app/services/production/mediaUrlUtils.js");
+    assert.equal(isEphemeralMediaUrl("https://api.higgsfield.ai/v1/outputs/gen-123.mp4"), true);
+    assert.equal(isEphemeralMediaUrl("https://cdn.higgsfield.ai/images/output.png"), true);
+    assert.equal(isEphemeralMediaUrl("https://higgsfield.ai/files/download.mp4"), true);
+    assert.equal(isEphemeralMediaUrl("https://spark.supabase.co/storage/v1/object/public/Spark/brands/b1/clip.mp4"), false);
+  });
+
+  test("modelCatalog contains soul-standard alias alongside soul-2 and returns correct labels", async () => {
+    const { getModelsForProviderAndCapability, getModelLabel } = await import("../../src/app/services/runtime/modelCatalog.js");
+    const models = getModelsForProviderAndCapability("higgsfield");
+    const soulStandard = models.find((m) => m.id === "soul-standard");
+    const soul2 = models.find((m) => m.id === "soul-2");
+
+    assert.ok(soulStandard, "soul-standard must exist in catalog");
+    assert.ok(soul2, "soul-2 must exist in catalog");
+    assert.equal(getModelLabel("higgsfield", "soul-standard"), "Soul Standard (higgsfield-ai/soul/standard)");
+    assert.equal(getModelLabel("higgsfield", "soul-2"), "Soul 2 Standard (higgsfield-ai/soul/v2/standard)");
+  });
+});
+

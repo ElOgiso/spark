@@ -54,7 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         generateSoulImage,
         submitHiggsfield,
         pollHiggsfieldStatus,
-        firstImageUrl,
+        extractImageUrl,
+        extractVideoUrl,
       } = await import('./_higgsfieldClient.js');
 
       const creds = resolveHiggsfieldCredentials();
@@ -65,15 +66,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      if (String(endpoint || '').includes('/soul/') || payload?.prompt) {
+      const ep = String(endpoint || '').toLowerCase();
+      const modelStr = String(payload?.model || '').toLowerCase();
+      const isSeedanceVideo =
+        ep.includes('seedance') ||
+        ep.includes('/bytedance/') ||
+        modelStr.includes('seedance') ||
+        Boolean(payload?.image_url || payload?.firstFrameUrl || payload?.image_urls || payload?.imageUrls);
+
+      const isSoulImage = ep.includes('/soul/') || (!isSeedanceVideo && Boolean(payload?.prompt));
+
+      if (isSoulImage && !isSeedanceVideo) {
         const imageUrl = await generateSoulImage({
           prompt: payload?.prompt || '',
-          model: payload?.model || (String(endpoint || '').includes('cinema') ? 'soul-cinema' : 'soul-2'),
+          model: payload?.model || (ep.includes('cinema') ? 'soul-cinema' : ep.includes('soul/standard') ? 'soul-standard' : 'soul-2'),
           aspectRatio: payload?.aspect_ratio || payload?.aspectRatio,
           resolution: payload?.resolution,
           seed: payload?.seed,
           enhancePrompt: payload?.enhance_prompt !== false,
         });
+        if (!imageUrl) {
+          return res.status(500).json({
+            success: false,
+            error: 'Higgsfield soul image generation completed without an image URL.',
+          });
+        }
         return res.status(200).json({
           success: true,
           url: imageUrl,
@@ -83,17 +100,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const initial = await submitHiggsfield(endpoint, payload || {});
-      const immediate = firstImageUrl(initial);
+      const immediate = isSeedanceVideo
+        ? extractVideoUrl(initial)
+        : (extractImageUrl(initial) || extractVideoUrl(initial));
       if (immediate) {
         return res.status(200).json({ success: true, url: immediate, ...initial });
       }
+
       const target = initial.status_url || initial.request_id || initial.id;
       if (target) {
         const completed = await pollHiggsfieldStatus(target);
-        const url = firstImageUrl(completed);
+        const url = isSeedanceVideo
+          ? extractVideoUrl(completed)
+          : (extractImageUrl(completed) || extractVideoUrl(completed));
+        if (!url) {
+          return res.status(500).json({
+            success: false,
+            error: `Higgsfield ${isSeedanceVideo ? 'video' : 'job'} completed but returned no media URL.`,
+            ...completed,
+          });
+        }
         return res.status(200).json({ success: true, url, ...completed });
       }
-      return res.status(200).json(initial);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Higgsfield request did not return a valid media URL or poll target.',
+        ...initial,
+      });
     }
 
     const fetchOptions: RequestInit = {

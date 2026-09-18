@@ -354,6 +354,12 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
         status: "stable",
       },
       {
+        id: "soul-standard",
+        label: "Soul Standard (higgsfield-ai/soul/standard)",
+        capabilities: ["Image Generation"],
+        status: "stable",
+      },
+      {
         id: "soul-cinema",
         label: "Soul Cinema (higgsfield-ai/soul/cinema)",
         capabilities: ["Image Generation"],
@@ -496,6 +502,7 @@ export function getModelLabel(provider: AIProviderId, modelId: string): string {
     if (modelId === "seedance-2.5-r2v") return "Seedance 2.5 R2V";
     if (modelId === "seedance-2.0-r2v") return "Seedance 2.0 R2V";
     if (modelId === "soul-2") return "Soul 2 Standard (higgsfield-ai/soul/v2/standard)";
+    if (modelId === "soul-standard") return "Soul Standard (higgsfield-ai/soul/standard)";
     if (modelId === "soul-cinema") return "Soul Cinema (higgsfield-ai/soul/cinema)";
   }
   return modelId;
