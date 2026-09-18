@@ -1129,9 +1129,8 @@ export class ProductionAssetService {
     (production as any).visualGenre = effectiveVisualGenre;
 
       // --- RESOLVE IMAGE PREFERENCE ---
-      const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
-      const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
-      const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
+      const globalImageRouting = ModelRouter.getUserRoutingConfig?.()?.storyboardImages || "auto";
+      const globalImageModel = ModelRouter.getUserModelSelectionConfig?.()?.storyboardImages || "";
       const aiSettings = (production as any)?.settingsSnapshot?.aiSettings || (brief as any)?.aiSettings || (brand as any)?.settings?.aiSettings || (brand as any)?.aiSettings;
       const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
       const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;
@@ -3990,9 +3989,8 @@ export class ProductionAssetService {
     const generationSettings = resolveGenerationSettings({ production, brief, brand });
 
       // --- RESOLVE IMAGE PREFERENCE ---
-      const ModelRouterReq = require("../runtime/modelRouter").ModelRouter;
-      const globalImageRouting = ModelRouterReq.getUserRoutingConfig?.()?.storyboardImages || "auto";
-      const globalImageModel = ModelRouterReq.getUserModelSelectionConfig?.()?.storyboardImages || "";
+      const globalImageRouting = ModelRouter.getUserRoutingConfig?.()?.storyboardImages || "auto";
+      const globalImageModel = ModelRouter.getUserModelSelectionConfig?.()?.storyboardImages || "";
       const aiSettings = (production as any)?.settingsSnapshot?.aiSettings || (brief as any)?.aiSettings || (brand as any)?.settings?.aiSettings || (brand as any)?.aiSettings;
       const preferredImageProviderRaw = aiSettings?.routing?.storyboardImages || globalImageRouting;
       const resolvedImageProvider = preferredImageProviderRaw === "auto" ? undefined : preferredImageProviderRaw;

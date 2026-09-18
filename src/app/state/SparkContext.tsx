@@ -104,6 +104,7 @@ import {
   socialConnectorFramework,
 } from "../services/socialIntegrationService";
 import { deriveVideoProductionPlanMetrics } from "../services/runtime/providerCapabilities";
+import { ModelRouter } from "../services/runtime/modelRouter";
 import { useAuth } from "./AuthContext";
 
 export interface ChatMessage {
@@ -465,7 +466,6 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Canonical dual-write: keep ModelRouter localStorage aligned with Spark aiSettings
     // so production + Super Spark + mobile/desktop share one routing truth.
     try {
-      const { ModelRouter } = require("../services/runtime/modelRouter") as typeof import("../services/runtime/modelRouter");
       if (newSettings?.routing) {
         ModelRouter.setUserRoutingConfig(newSettings.routing as any);
       }
