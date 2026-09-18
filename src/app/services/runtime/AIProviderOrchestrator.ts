@@ -9,6 +9,7 @@ export interface AIExecutionOptions {
   preferredProvider?: AIProviderId;
   capability?: AICapabilityType;
   model?: string;
+  maxTokens?: number;
   onThinking?: (thinking: ThinkingState) => void;
   onChunk?: (chunkText: string) => void;
   customApiKeys?: Record<string, string>;
@@ -1114,7 +1115,7 @@ export class AIProviderOrchestrator {
                   },
                   body: JSON.stringify({
                     model: modelId,
-                    max_tokens: 4096,
+                    max_tokens: options.maxTokens || 4096,
                     system: options.systemInstruction,
                     messages,
                   }),
@@ -1147,7 +1148,7 @@ export class AIProviderOrchestrator {
                 endpoint: "https://api.anthropic.com/v1/messages",
                 payload: {
                   model: modelId,
-                  max_tokens: 4096,
+                  max_tokens: options.maxTokens || 4096,
                   system: options.systemInstruction,
                   messages,
                 },

@@ -22,6 +22,8 @@ export function compileNarrativeScriptPrompt(params: CompileNarrativeScriptParam
   let prompt = `YOU ARE THE WRITER. SPARK IS THE STUDIO.
 Return ONLY the typed script object.
 
+Complete valid JSON is mandatory. Never cut off mid-object. chapters[].spoken is authoritative; fullSpokenScript may be omitted if chapters carry all spoken lines.
+
 Write a complete piece the viewer would watch for the FULL ${targetDurationSec} seconds.
 Still write a full duration-sized script with substantive educational or narrative content matching the target duration.
 Educational / story value required. Specific names, dates, mechanisms, stakes.
@@ -130,6 +132,38 @@ OUTPUT EXACTLY THIS JSON SHAPE:
   return prompt;
 }
 
+/**
+ * Isolates and extracts the outer JSON object ({...}) from model output text.
+ * Strips markdown fences, slices from first '{' to last '}', and throws if missing.
+ */
+export function extractJsonObject(text: string): string {
+  if (!text || typeof text !== "string") {
+    throw new Error("Cannot extract JSON from empty or non-string input");
+  }
+  const stripped = text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  const firstBrace = stripped.indexOf("{");
+  const lastBrace = stripped.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+    throw new Error("No valid JSON object boundaries found in text (missing '{' or '}')");
+  }
+
+  return stripped.slice(firstBrace, lastBrace + 1);
+}
+
+/**
+ * Optional light repair for minor syntax issues such as trailing commas before } or ].
+ */
+export function tryLightJsonRepair(jsonStr: string): string {
+  if (!jsonStr || typeof jsonStr !== "string") return jsonStr;
+  return jsonStr.replace(/,\s*([}\]])/g, "$1");
+}
+
 export async function compileNarrativeScript(params: CompileNarrativeScriptParams): Promise<NarrativeScript> {
   if (!params.targetDurationSec || params.targetDurationSec <= 0 || isNaN(params.targetDurationSec)) {
     throw new Error("No target duration. SPARK will not assume 60 seconds.");
@@ -141,28 +175,68 @@ export async function compileNarrativeScript(params: CompileNarrativeScriptParam
     rawJson = await ModelRouter.executeCategoryRequest("production", {
       prompt,
       systemInstruction: "You are the SPARK scriptwriter. Return ONLY valid JSON.",
-      
+      maxTokens: 8192,
     });
   } catch (error) {
     throw new Error(`Failed to execute narrative script prompt: ${error}`);
   }
 
   let scriptObj: any;
+  let firstParseSucceeded = false;
   try {
-    const cleanJson = rawJson.replace(/^```json/i, "").replace(/```$/, "").trim();
-    scriptObj = JSON.parse(cleanJson);
-  } catch (parseError) {
-    console.warn("[compileNarrativeScript] First JSON parse failed, retrying...");
+    const cleanJson = extractJsonObject(rawJson);
     try {
-      const retryRaw = await ModelRouter.executeCategoryRequest("production", {
-        prompt: `FIX THIS JSON:\n\n${rawJson}\n\nERROR:\n${parseError}\n\nRETURN ONLY VALID JSON matching the narrative script schema.`,
-        systemInstruction: "You are a JSON repair bot. Return ONLY valid JSON.",
-        
+      scriptObj = JSON.parse(cleanJson);
+      firstParseSucceeded = true;
+    } catch {
+      // Light repair attempt (e.g. trailing comma)
+      const repaired = tryLightJsonRepair(cleanJson);
+      scriptObj = JSON.parse(repaired);
+      firstParseSucceeded = true;
+    }
+  } catch (parseError: any) {
+    console.warn(
+      `[compileNarrativeScript] parse_fail length=${rawJson.length} tail=${JSON.stringify(rawJson.slice(-120))}`
+    );
+  }
+
+  if (!firstParseSucceeded) {
+    const retryPrompt = `${prompt}\n\nIMPORTANT RECOVERY INSTRUCTION:\nPrevious output was invalid or incomplete. Return one COMPLETE valid JSON object only. No markdown. Ensure all brackets, braces, and strings are fully closed.`;
+    let retryRaw = "";
+    try {
+      retryRaw = await ModelRouter.executeCategoryRequest("production", {
+        prompt: retryPrompt,
+        systemInstruction: "You are the SPARK scriptwriter. Return ONLY one complete valid JSON object matching the narrative script schema.",
+        maxTokens: 8192,
       });
-      const cleanRetry = retryRaw.replace(/^```json/i, "").replace(/```$/, "").trim();
-      scriptObj = JSON.parse(cleanRetry);
-    } catch (retryError) {
-      throw new Error(`Failed to parse NarrativeScript JSON after retry: ${retryError}`);
+
+      const cleanRetry = extractJsonObject(retryRaw);
+      try {
+        scriptObj = JSON.parse(cleanRetry);
+      } catch {
+        const repairedRetry = tryLightJsonRepair(cleanRetry);
+        scriptObj = JSON.parse(repairedRetry);
+      }
+    } catch (retryError: any) {
+      console.error(
+        `[compileNarrativeScript] parse_fail_retry length=${retryRaw.length} tail=${JSON.stringify(retryRaw.slice(-120))}`
+      );
+      throw new Error(
+        `Failed to parse NarrativeScript JSON after retry: ${retryError?.message || retryError}`
+      );
+    }
+  }
+
+  // fullSpokenScript safety: derive from chapters[].spoken if missing or empty
+  if (!scriptObj.fullSpokenScript || typeof scriptObj.fullSpokenScript !== "string" || !scriptObj.fullSpokenScript.trim()) {
+    if (Array.isArray(scriptObj.chapters) && scriptObj.chapters.length > 0) {
+      const derived = scriptObj.chapters
+        .map((c: any) => (typeof c.spoken === "string" ? c.spoken.trim() : ""))
+        .filter(Boolean)
+        .join("\n\n");
+      if (derived) {
+        scriptObj.fullSpokenScript = derived;
+      }
     }
   }
 
