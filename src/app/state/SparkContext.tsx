@@ -2734,6 +2734,29 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           }
         }
+      } else if (prod.assemblyStatus === "assembly_pending") {
+        setState((prev: any) => ({
+          ...prev,
+          productions: prev.productions.map((p: any) =>
+            p.id === productionId
+              ? {
+                  ...p,
+                  assemblyStatus: "assembly_pending",
+                  assemblyError: (prod as any).assemblyError,
+                  generationProgress: prod.generationProgress,
+                }
+              : p
+          ),
+        }));
+        const bId = getBrandWorkspaceId();
+        if (isSupabaseConfigured() && bId) {
+          void persistProductionUpdate(productionId, {
+            assemblyStatus: "assembly_pending",
+            assemblyError: (prod as any).assemblyError,
+            generationProgress: prod.generationProgress,
+          } as any);
+        }
+        return null;
       } else if (prod.lastError) {
         throw new Error(String(prod.lastError));
       }

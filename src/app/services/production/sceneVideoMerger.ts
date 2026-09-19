@@ -24,6 +24,8 @@ export interface SceneMergeResult {
   durationSec: number;
   provider?: string;
   error?: string;
+  assemblyStatus?: "assembled" | "assembly_pending" | "failed";
+  ffmpegAvailable?: boolean;
 }
 
 export async function mergeSceneVideos(
@@ -91,6 +93,22 @@ export async function mergeSceneVideos(
       mimeType: "video/mp4",
       extension: "mp4",
       durationSec: serverData.durationSec || 15,
+      provider: "ServerlessFFmpeg",
+      assemblyStatus: "assembled",
+      ffmpegAvailable: true,
+    };
+  }
+
+  if (serverData.error === "FFMPEG_UNAVAILABLE" || serverData.ffmpegAvailable === false) {
+    return {
+      assemblyStatus: "assembly_pending",
+      ffmpegAvailable: false,
+      error:
+        serverData.message ||
+        "ffmpeg is not available on this serverless image. Cannot write brands/{brandId}/{productionId}/video/master.mp4.",
+      mimeType: "video/mp4",
+      extension: "mp4",
+      durationSec: 0,
       provider: "ServerlessFFmpeg",
     };
   }

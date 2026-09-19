@@ -2983,7 +2983,7 @@ export class ProductionAssetService {
                           brandId: (brand as any).id,
                           productionId: production.id,
                           assetType: "video",
-                          storagePath: getStoragePath(`video/shot-${subclipIndexNum}-${Date.now()}.mp4`),
+                          storagePath: getStoragePath(`video/shot-${subclipIndexNum}.mp4`),
                           shotIndex: globalSceneNum,
                           onSuccess: (sparkUrl) => {
                             const idxInScene = sceneClips.indexOf(finalClip);
@@ -4535,6 +4535,37 @@ export class ProductionAssetService {
     }
 
     const orderedScenes = [...scenes].sort((a, b) => (a.index || a.scene) - (b.index || b.scene));
+    // Ingest any ephemeral / provider CDN scene clips to durable Spark storage before collecting shot clips
+    for (let i = 0; i < orderedScenes.length; i++) {
+      const s = orderedScenes[i];
+      const sceneIdx = s.index || s.scene || (i + 1);
+      if (s.videoUrl && (isEphemeralMediaUrl(s.videoUrl) || !isSparkShotClipUrl(s.videoUrl))) {
+        console.log(
+          `[ProductionAssetService] Pre-ingesting ephemeral scene ${sceneIdx} clip to durable Spark storage before merge: ${s.videoUrl}`
+        );
+        try {
+          const { ingestRemoteMediaToSpark } = await import("./ingestMediaToSpark");
+          const targetPath = brandProductionStoragePath((brand as any)?.id, productionId, `video/shot-${sceneIdx}.mp4`);
+          const ingested = await ingestRemoteMediaToSpark({
+            url: s.videoUrl,
+            brandId: (brand as any)?.id,
+            productionId,
+            assetType: "video",
+            storagePath: targetPath,
+          });
+          if (ingested?.publicUrl) {
+            s.videoUrl = ingested.publicUrl;
+            if (brief.storyboard) {
+              const sbScene = brief.storyboard.find((item: any) => (item.scene || item.index) === sceneIdx);
+              if (sbScene) sbScene.videoUrl = ingested.publicUrl;
+            }
+          }
+        } catch (ingestErr) {
+          console.warn(`[ProductionAssetService] Pre-merge ingest for scene ${sceneIdx} notice:`, ingestErr);
+        }
+      }
+    }
+
     const clipCandidates = [
       ...orderedScenes.map((s) => s.videoUrl),
       ...((brief.generatedAssets?.generatedVideos || []) as Array<string | undefined>),
@@ -4558,9 +4589,11 @@ export class ProductionAssetService {
     };
 
     if (readyClips.length < 1) {
-      return failMerge(
-        "Approve & merge needs at least one durable Spark clip at brands/{brandId}/{productionId}/video/shot-N.mp4. Missing shots were skipped; none remained."
-      );
+      const hasAnyClips = orderedScenes.some((s) => s.videoUrl);
+      const msg = hasAnyClips
+        ? "Approve & merge needs at least one durable Spark clip at brands/{brandId}/{productionId}/video/shot-N.mp4. Scene clips are provider CDN URLs and could not be ingested to Spark storage. Please retry ingest or regenerate shots."
+        : "Approve & merge needs at least one durable Spark clip at brands/{brandId}/{productionId}/video/shot-N.mp4. Missing shots were skipped; none remained.";
+      return failMerge(msg);
     }
 
     try {
@@ -4574,15 +4607,25 @@ export class ProductionAssetService {
 
       if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
         const masterUrl = mergeResult.publicUrl;
-        production.videoUrl = masterUrl;
-        production.videoStoragePath =
+        const storagePath =
           mergeResult.storagePath || extractSparkStoragePath(masterUrl) || production.videoStoragePath;
+        production.videoUrl = masterUrl;
+        production.videoStoragePath = storagePath;
+        production.canonicalMasterUrl = masterUrl;
+        (production as any).masterVideoUrl = masterUrl;
+        (production as any).assemblyStatus = "assembled";
+
         brief.videoUrl = masterUrl;
-        brief.video_storage_path = production.videoStoragePath;
-        (production as any).canonicalMasterUrl = masterUrl;
+        brief.playablePreviewUrl = masterUrl;
+        brief.video_storage_path = storagePath;
         (brief as any).canonicalMasterUrl = masterUrl;
+        (brief as any).masterVideoUrl = masterUrl;
+        (brief as any).assemblyStatus = "assembled";
+
         if (!brief.generatedAssets) brief.generatedAssets = {};
+        (brief.generatedAssets as any).canonicalMasterUrl = masterUrl;
         brief.generatedAssets.generatedVideos = [masterUrl];
+
         production.status = "Ready for Review";
         production.generationProgress = {
           stage: "Complete",
@@ -4593,12 +4636,55 @@ export class ProductionAssetService {
         return masterUrl;
       }
 
+      if (
+        mergeResult?.assemblyStatus === "assembly_pending" ||
+        mergeResult?.ffmpegAvailable === false ||
+        String(mergeResult?.error || "").includes("FFMPEG_UNAVAILABLE")
+      ) {
+        const pendingMsg =
+          mergeResult?.error ||
+          "Master video assembly pending: FFmpeg is not available on this serverless image. Scene clips remain playable.";
+        production.assemblyStatus = "assembly_pending";
+        (production as any).assemblyError = pendingMsg;
+        (brief as any).assemblyStatus = "assembly_pending";
+        (brief as any).assemblyError = pendingMsg;
+        production.generationProgress = {
+          stage: "Ready for Review",
+          percent: 100,
+          message: pendingMsg,
+          stages: production.generationProgress?.stages || [],
+        };
+        if (production.status !== "Approved") {
+          production.status = "Ready for Review";
+        }
+        return null;
+      }
+
       return failMerge(
         mergeResult?.error ||
           "Server ffmpeg merge did not write video/master.mp4. Canvas/MediaRecorder is not a master."
       );
     } catch (err: any) {
       console.error("[ProductionAssetService] Merge execution notice:", err);
+      const errStr = String(err?.message || err);
+      if (errStr.includes("FFMPEG_UNAVAILABLE") || /ffmpeg is not available/i.test(errStr)) {
+        const pendingMsg =
+          "Master video assembly pending: FFmpeg is not available on this serverless image. Scene clips remain playable.";
+        production.assemblyStatus = "assembly_pending";
+        (production as any).assemblyError = pendingMsg;
+        (brief as any).assemblyStatus = "assembly_pending";
+        (brief as any).assemblyError = pendingMsg;
+        production.generationProgress = {
+          stage: "Ready for Review",
+          percent: 100,
+          message: pendingMsg,
+          stages: production.generationProgress?.stages || [],
+        };
+        if (production.status !== "Approved") {
+          production.status = "Ready for Review";
+        }
+        return null;
+      }
       return failMerge(
         err?.message || "Server ffmpeg merge failed. Canvas/MediaRecorder is not a master."
       );

@@ -3,7 +3,7 @@
  * Approve & merge concatenates these only — never a Canvas/MediaRecorder stand-in.
  */
 
-const SPARK_SHOT_RE = /\/video\/shot-(\d+)\.mp4/i;
+const SPARK_SHOT_RE = /\/video\/shot-(\d+)(?:-\d+)?\.mp4/i;
 const SPARK_OBJECT_RE = /\/storage\/v1\/object\/(?:sign|public)\/Spark\//i;
 
 export function sparkShotIndexFromUrl(url?: string | null): number | null {
@@ -18,7 +18,7 @@ export function isSparkShotClipUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
   if (trimmed.length < 8) return false;
-  if (!SPARK_OBJECT_RE.test(trimmed) && !/\/brands\/[^/]+\/[^/]+\/video\/shot-\d+\.mp4/i.test(trimmed)) {
+  if (!SPARK_OBJECT_RE.test(trimmed) && !/\/brands\/[^/]+\/[^/]+\/video\/shot-\d+(?:-\d+)?\.mp4/i.test(trimmed)) {
     return false;
   }
   return sparkShotIndexFromUrl(trimmed) != null;

@@ -62,6 +62,7 @@ import {
   reviewMediaFrameClass,
   reviewMediaImgClass,
 } from "../services/production/reviewHonesty";
+import { resolveReviewScript } from "../services/production/reviewScriptResolver";
 
 interface CreativeReviewProps {
   onNavigate?: (path: string) => void;
@@ -143,7 +144,7 @@ function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any
 }
 
 export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeReviewProps) {
-  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode } = useSpark() as any;
+  const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode, mergeProductionScenes } = useSpark() as any;
 
   // 1. Resolve focus target ID from sessionStorage, then SPA currentPage / location query
   const [focusId, setFocusId] = useState<string | null>(() => readSparkReviewFocusId(currentPage));
@@ -184,8 +185,15 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
 
   const reviewId = activeReview?.id || (activeProd ? `r-${activeProd.id}` : "r1");
 
+  // Re-hydrate narrativeScript if reviewItem omitted it
+  useEffect(() => {
+    if (activeProd?.brief?.narrativeScript && activeReview?.brief && !activeReview.brief.narrativeScript) {
+      activeReview.brief.narrativeScript = activeProd.brief.narrativeScript;
+    }
+  }, [activeProd?.brief?.narrativeScript, activeReview?.brief]);
+
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["why-this-works", "storyboard"])
+    new Set(["why-this-works", "script", "storyboard"])
   );
 
   const toggleSection = (section: string) => {
@@ -204,13 +212,17 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
   const [selectedReviewShotId, setSelectedReviewShotId] = useState<string | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-
   useEffect(() => {
     const st = String(activeReview?.status || activeProd?.status || "");
     if (st === "Needs Edit") setShowAssetsGallery(true);
   }, [activeReview?.status, activeProd?.status]);
 
   const brief = activeProd?.brief || activeReview?.brief;
+
+  const reviewScript = useMemo(
+    () => resolveReviewScript({ production: activeProd, brief, review: activeReview }),
+    [activeProd, brief, activeReview]
+  );
 
   // Derive locked production references (character sheet, location plate(s), prop sheets, wardrobe sheets)
   const lockedRefs = useMemo(
@@ -300,7 +312,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
     }
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     approveReviewItem(reviewId);
     setActionSuccess("Approved");
     NotificationService.addNotification({
@@ -311,6 +323,15 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
       actionLabel: "View Calendar",
       relatedRoute: "/calendar"
     });
+
+    if (activeProd?.id && !canonicalMedia.canonicalMasterUrl && mediaView.scenes.some((s) => s.videoUrl) && mergeProductionScenes) {
+      try {
+        await mergeProductionScenes(activeProd.id);
+      } catch (err: any) {
+        console.warn("[CreativeReview] Post-approve merge notice:", err?.message || err);
+      }
+    }
+
     setTimeout(() => {
       onBack?.();
     }, 1500);
@@ -761,6 +782,17 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
           {/* Interactive Media Preview Section */}
           <div className="space-y-6">
             <div className="p-1 rounded-2xl bg-gradient-to-r from-accent/30 via-success/20 to-warning/20 border border-border">
+              {activeProd?.assemblyStatus === "assembly_pending" && (
+                <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3.5 py-2.5 text-xs text-sky-100 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Scene clips ready &middot; Master video assembly pending</p>
+                    <p className="opacity-90 mt-0.5">
+                      Individual scene clips are generated and playable. Serverless master video assembly is pending external FFmpeg stitching.
+                    </p>
+                  </div>
+                </div>
+              )}
               {!reviewHeroVideoUrl && canonicalMedia.masterUnavailableReason && (
                 <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
                   {canonicalMedia.modeMismatchMessage || canonicalMedia.masterUnavailableReason}
@@ -1130,6 +1162,70 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Spoken Script / Directing Script */}
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <SectionToggle id="script" title="Spoken Script" />
+            {expandedSections.has("script") && (
+              <div className="px-6 pb-6 space-y-4">
+                {reviewScript.chapters.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="p-4 rounded-lg bg-background border border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Full Spoken Script</p>
+                        {reviewScript.source !== "empty" && (
+                          <span className="text-[11px] font-mono text-muted-foreground">
+                            Source: {reviewScript.source}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto pr-1">
+                        {reviewScript.fullSpokenScript}
+                      </p>
+                    </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+                      Chapters & Beats ({reviewScript.chapters.length})
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {reviewScript.chapters.map((ch) => (
+                        <div key={ch.index} className="p-3.5 rounded-lg bg-background border border-border space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 rounded bg-accent/20 text-accent text-xs font-semibold">
+                              Chapter {ch.index}
+                            </span>
+                            {ch.timecode && (
+                              <span className="text-xs font-mono text-muted-foreground">{ch.timecode}</span>
+                            )}
+                          </div>
+                          {ch.title && <p className="text-xs font-medium text-foreground">{ch.title}</p>}
+                          {ch.spoken && (
+                            <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">{ch.spoken}</p>
+                          )}
+                          {ch.visual && (
+                            <p className="text-[11px] text-muted-foreground italic">{ch.visual}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-lg bg-background border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Spoken Script</p>
+                      {reviewScript.source !== "empty" && (
+                        <span className="text-[11px] font-mono text-muted-foreground">
+                          Source: {reviewScript.source}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto pr-1">
+                      {reviewScript.fullSpokenScript}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

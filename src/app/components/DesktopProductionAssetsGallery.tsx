@@ -277,8 +277,11 @@ export function DesktopProductionAssetsGallery({
         if (masterUrl) {
           setApprovedMaster(true);
           showToast(isOneTake ? "Master video approved and verified!" : "Scenes concatenated into single master video!");
+        } else if (activeProd?.assemblyStatus === "assembly_pending") {
+          showToast("Scene clips verified! Master assembly pending: FFmpeg is not available on serverless.");
         } else {
-          showToast("Merge failed: could not create durable Spark master.");
+          const errMsg = activeProd?.lastError || (activeProd as any)?.assemblyError || "Could not create durable Spark master.";
+          showToast(`Merge notice: ${errMsg}`);
         }
       } catch (err: any) {
         showToast(`Merge error: ${err?.message || "Storage upload failed"}`);
