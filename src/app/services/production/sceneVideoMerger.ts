@@ -121,8 +121,8 @@ export async function mergeSceneVideos(
 }
 
 /**
- * Unused. Kept so Canvas/MediaRecorder cannot silently become the social master.
- * Do not call from assembleMasterFromClips / Approve & merge.
+ * @deprecated Superseded legacy client merge path. Kept so Canvas/MediaRecorder cannot silently become the social master.
+ * Always returns null. Do not call from assembleMasterFromClips / Approve & merge.
  */
 export async function mergeSceneVideosClientUnused(_options: MergeSceneVideosOptions): Promise<null> {
   return null;

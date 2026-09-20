@@ -72,6 +72,10 @@ function mapPlatforms(platformRecommendation?: string, formats?: string[]): Plat
   return out;
 }
 
+/**
+ * @compatibility
+ * Translates existing ProductionScene compatibility object to canonical SceneSpec.
+ */
 export function productionSceneToSceneSpec(
   scene: ProductionScene,
   productionId: string,
@@ -244,7 +248,9 @@ function beatToScene(beat: ProductionBriefBeat, index: number, productionId: str
 }
 
 /**
- * Upgrade a legacy Production + Brief into ProductionSpec.
+ * @compatibility
+ * Upgrade a legacy Production + Brief into canonical ProductionSpec.
+ * Retained so existing persisted productions and review surfaces seamlessly map to the canonical spine.
  */
 export function legacyProductionToSpec(params: {
   production: Production;
@@ -502,7 +508,8 @@ export function legacyProductionToSpec(params: {
 }
 
 /**
- * Project ProductionSpec back onto a ProductionBrief for existing UI/persistence.
+ * @compatibility
+ * Project canonical ProductionSpec back onto a ProductionBrief for existing UI/persistence.
  */
 export function productionSpecToBrief(spec: ProductionSpec, existing?: ProductionBrief): ProductionBrief {
   const storyboard = spec.scenes.map(sceneSpecToProductionScene);

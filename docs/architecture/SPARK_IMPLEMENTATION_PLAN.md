@@ -1,56 +1,59 @@
 # SPARK Implementation Plan
 
-Canonical phase register for `ElOgiso/spark`.
+Repository: ElOgiso/spark
+Branch: main
+Status: Phase register only
 
-**Only Phase 0 is executed by the commit that introduced this file.**
+Only Phase 0 is being executed now.
 
-Existing docs (`docs/IMPLEMENTATION_SEQUENCE.md`, `docs/IMPLEMENTATION_SPRINTS.md`, per-phase `docs/PHASE_*.md`) remain historical. This register is the forward plan. Do not create a third roadmap.
+This plan defines the ordered implementation register for future work. It does not authorize bundling phases together, redesigning SPARK, or bypassing the implementation contract.
+
+## Phase Register
 
 | Phase | Name | Status |
-|---|---|---|
-| 0 | Safe Implementation Baseline | THIS COMMIT — docs + inventory only |
-| 1 | Architecture Consolidation | NEXT — not started |
-| 2 | Canonical Semantic Contracts | later |
-| 3 | ReferenceGraph + StyleBible | later |
-| 4 | Craft / Creative Operations | later |
-| 5 | Capability + Model Registry | later |
-| 6 | Intelligent Model Routing | later |
-| 7 | Cost Engine | later |
-| 8 | Spark Credit Reservation & Settlement | later |
-| 9 | Reliable Generation Execution | later |
-| 10 | Provider Payload Compiler | later |
-| 11 | Higgsfield Adapter Expansion | later |
-| 12 | QC → Repair → Reroute | later |
-| 13 | Format Directors / Production Modes | later |
-| 14 | Long-Form Visual Planning | later |
-| 15 | Audio Director | later |
-| 16 | Video Understanding | later |
-| 17 | Observability + Production Memory | later |
-| 18 | Supabase Security & Data Hardening | later |
-| 19 | Admin Economics & Operations | later |
-| 20 | UI Integration | later |
-| 21 | Full Production Validation | later |
-| 22 | Production Readiness | later |
+| --- | --- | --- |
+| PHASE 0 | Safe Implementation Baseline | Complete (see SPARK_PHASE_0_COMPLETION_RECORD.md) |
+| PHASE 1 | Architecture Consolidation | Complete (see SPARK_PHASE_1_CONSOLIDATION_RECORD.md) |
+| PHASE 2 | Canonical Semantic Contracts | Next phase |
+| PHASE 3 | ReferenceGraph + StyleBible | Not started |
+| PHASE 4 | Craft / Creative Operations | Not started |
+| PHASE 5 | Capability + Model Registry | Not started |
+| PHASE 6 | Intelligent Model Routing | Not started |
+| PHASE 7 | Cost Engine | Not started |
+| PHASE 8 | Spark Credit Reservation & Settlement | Not started |
+| PHASE 9 | Reliable Generation Execution | Not started |
+| PHASE 10 | Provider Payload Compiler | Not started |
+| PHASE 11 | Higgsfield Adapter Expansion | Not started |
+| PHASE 12 | QC -> Repair -> Reroute | Not started |
+| PHASE 13 | Format Directors / Production Modes | Not started |
+| PHASE 14 | Long-Form Visual Planning | Not started |
+| PHASE 15 | Audio Director | Not started |
+| PHASE 16 | Video Understanding | Not started |
+| PHASE 17 | Observability + Production Memory | Not started |
+| PHASE 18 | Supabase Security & Data Hardening | Not started |
+| PHASE 19 | Admin Economics & Operations | Not started |
+| PHASE 20 | UI Integration | Not started |
+| PHASE 21 | Full Production Validation | Not started |
+| PHASE 22 | Production Readiness | Not started |
 
-## Phase 0 scope
+## Execution Rules
 
-- Inspect live `main`
-- Document both production paths
-- Record invariants
-- Record verification baseline
-- Do **not** consolidate paths
-- Do **not** redesign UI
-- Do **not** mutate Supabase
-- Do **not** spend provider money
-- Do **not** implement ReferenceGraph, StyleBible, new ModelRouter, cost engine, credit reservation, new QC, FormatDirector, etc.
+- Execute one phase at a time.
+- Phase 1 starts from the Phase 0 contract and completion record.
+- Do not perform provider spend just to validate architecture.
+- Do not apply database architecture changes outside the phase that owns them.
+- Do not weaken tests to create a green baseline.
+- Do not replace existing working systems when extension or careful migration is possible.
+- Do not expose provider/model complexity in user-facing SPARK flows unless the phase explicitly owns that UX work.
 
-## Phase 1 prerequisite (handoff)
+## Phase 2 Starting Point
 
-Phase 1 may begin only from this contract:
+Phase 2 can begin from:
 
-- Keep one ModelRouter
-- Keep one credit ledger
-- Choose a single generate authority and **migrate** live ProductionAssetService onto the spec/DAG spine (do not delete the live path until adapters carry behavior)
-- Treat `src - Copy/` as non-authoritative clutter (do not extend it)
-- Extend OS compilers; keep AssetService as executor
-- No UI/nav redesign
+- `docs/architecture/SPARK_IMPLEMENTATION_CONTRACT.md`
+- `docs/architecture/SPARK_PHASE_1_CONSOLIDATION_RECORD.md`
+- Canonical specification spine: `src/app/services/production/specification/*`
+- Verified compatibility adapters: `src/app/services/production/specification/adapters.ts`
+- Regression test suite: `src/app/services/production/architectureConsolidation.test.ts`
+
+
