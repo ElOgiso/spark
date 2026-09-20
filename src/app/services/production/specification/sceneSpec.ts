@@ -4,6 +4,8 @@
  */
 
 import type { ShotSpec } from "./shotSpec";
+import type { StyleBible } from "./styleBible";
+import type { ReferenceNode } from "./referenceGraph";
 
 export type NarrativeFunction =
   | "hook"
@@ -68,6 +70,10 @@ export interface SceneSpec {
   vfx?: string[];
   continuity: SceneContinuityBridge;
   shots: ShotSpec[];
+  /** Phase 3 scene-level style override */
+  styleOverride?: Partial<StyleBible>;
+  /** Phase 3 scene-level reference overrides/additions */
+  referenceOverrides?: ReferenceNode[];
   transitionIn?: string;
   transitionOut?: string;
   /** Legacy beat/scene compatibility fields mirrored for adapters */

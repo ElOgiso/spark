@@ -12,6 +12,8 @@ import type { RoutingSpec } from "./routingSpec";
 import type { QualitySpec } from "./qualitySpec";
 import type { AssetMasterRef, CharacterMaster, MasterAssetRef } from "./assetSpec";
 import type { ResearchRequirementSpec } from "./researchRequirement";
+import type { ReferenceGraph } from "./referenceGraph";
+import type { StyleBible } from "./styleBible";
 
 export type CreativeControlMode = "auto" | "director" | "studio";
 
@@ -175,6 +177,10 @@ export interface ProductionSpec {
   scenes: SceneSpec[];
   audio: AudioSpec;
   visualStyle: VisualStyleSpec;
+  /** Phase 3 canonical visual language */
+  styleBible?: StyleBible;
+  /** Phase 3 canonical reference graph */
+  referenceGraph?: ReferenceGraph;
   /** Phase 5 project-level look development (inherits to scenes/shots unless overridden) */
   visualTreatment?: VisualTreatment;
   continuity: ContinuitySpec;

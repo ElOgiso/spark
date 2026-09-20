@@ -21,6 +21,8 @@ import { createDefaultRoutingSpec } from "./routingSpec";
 import { createDefaultQualitySpec } from "./qualitySpec";
 import { emptyContinuityState } from "./continuitySpec";
 import { buildResearchRequirement } from "./researchRequirement";
+import { createEmptyReferenceGraph } from "./referenceGraph";
+import { createDefaultStyleBible } from "./styleBible";
 
 const SPEC_VERSION = "1.0.0";
 const COMPILER_VERSION = "1.0.0";
@@ -458,6 +460,8 @@ export function legacyProductionToSpec(params: {
         "No burned-in text on stills",
       ],
     },
+    styleBible: createDefaultStyleBible(production.id, production.brandId || brand?.id),
+    referenceGraph: createEmptyReferenceGraph(production.id),
     continuity: {
       globalLocks: ["host_identity", "wardrobe", "set"],
       identityPackSummary: character?.style || character?.traits?.join(", ") || "locked primary subject",

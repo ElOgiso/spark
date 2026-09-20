@@ -7,6 +7,8 @@ import type { ShotFilmmakingGuidance } from "../knowledge/types";
 import type { GenerationStrategySpec } from "./generationStrategy";
 import type { GenerationTask } from "./generationTask";
 import type { SemanticReference, ShotOutputRequirement } from "./semanticMedia";
+import type { StyleBible } from "./styleBible";
+import type { ReferenceNode } from "./referenceGraph";
 
 export type ShotType =
   | "establishing"
@@ -138,8 +140,12 @@ export interface ShotSpec {
   references: ShotReferencePack;
   /** Normalized semantic references (Phase 2 canonical reference model) */
   semanticReferences?: SemanticReference[];
+  /** Phase 3 shot-level reference overrides */
+  referenceOverrides?: ReferenceNode[];
   /** Structured provider-neutral output requirements */
   outputRequirements?: ShotOutputRequirement;
+  /** Phase 3 shot-level style override */
+  styleOverride?: Partial<StyleBible>;
   transitionIn?: string;
   transitionOut?: string;
   continuityRequirements: string[];

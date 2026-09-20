@@ -413,3 +413,77 @@ ProviderExecutionRequest
 - `SemanticGenerationRequest` defines the handoff boundary between `GenerationTask` and downstream routing:
   - Carries `mediaType`, `intent`, `capabilities`, `references`, `output`, and `constraints`.
   - Constructed via `buildSemanticGenerationRequest(task, shot, spec)` without selecting providers or models.
+
+## Phase 3 Canonical ReferenceGraph & StyleBible
+
+Phase 3 establishes the two canonical creative-state systems for SPARK:
+
+```text
+PRODUCTION
+    ↓
+REFERENCE GRAPH (Identity, Assets, Continuity Links)
+    ↓
+SCENE
+    ↓
+SHOT
+    ↓
+RESOLVED REFERENCE REQUIREMENTS (Precedence + Conflict Reporting)
+
+and:
+
+PRODUCTION
+    ↓
+STYLE BIBLE (Visual Language, Cinematography, Lighting, Color, Environment, etc.)
+    ↓
+SCENE (Style Overrides)
+    ↓
+SHOT (Style Overrides)
+    ↓
+RESOLVED STYLE BIBLE (Provenance Map for Every Dimension)
+```
+
+### 1. Canonical ReferenceGraph (`src/app/services/production/specification/referenceGraph.ts`)
+- **Core Entities**:
+  - `ReferenceNode`: Represents a visual identity or asset node (`id`, `type`, `role`, `label`, `uri`, `masterRef`, `assetId`, `metadata`, `scope`, `characterId`, `sceneId`, `shotId`, `priority`).
+  - `ReferenceNodeType`: `CHARACTER`, `ENVIRONMENT`, `PROP`, `STYLE_REFERENCE`, `START_FRAME`, `END_FRAME`, `KEYFRAME`, `MOTION_GUIDE`, `COMPOSITION_GUIDE`, `USER_UPLOAD`, `BRAND_ASSET`, `GENERATED_OUTPUT`.
+  - `ReferenceRole`: `IDENTITY`, `SUBJECT`, `WARDROBE`, `HAIR_MAKEUP`, `LIGHTING_REFERENCE`, `COLOR_PALETTE`, `CAMERA_ANGLE`, `MOTION_TRAJECTORY`, `DEPTH_GUIDE`, `POSE_GUIDE`, `BACKGROUND`, `FOREGROUND`, `CANONICAL_LOOK`.
+  - `ReferenceEdge`: Represents relationships between nodes (`id`, `sourceNodeId`, `targetNodeId`, `relationType`, `scope`, `weight`, `metadata`).
+  - `ReferenceRelationType`: `APPEARS_IN`, `SET_IN`, `USES_PROP`, `CONTINUITY_FROM`, `MATCHES_STYLE`, `DERIVED_FROM`, `CONSTRAINED_BY`, `OVERRIDES`, `EXCLUDES`.
+- **Precedence Hierarchy**:
+  Deterministic precedence for resolving shot references:
+  `EXCLUSIONS` (highest veto) → `SHOT_OVERRIDES` → `SHOT_LOCAL_REFERENCES` → `SCENE_REFERENCES` → `CHARACTER_IDENTITY_REFERENCES` → `PRODUCTION_BRAND_REFERENCES`.
+- **Deterministic Conflict Detection**:
+  - Multiple contradictory `REQUIRED` references for the same entity are not arbitrarily discarded or guessed.
+  - Surfaced deterministically as `ReferenceConflict` records detailing conflicting `nodeIds`, `role`, candidate nodes, and human-readable evidence.
+- **Stable Asset Identity**:
+  - Reference nodes reference stable `assetId` or `MasterAssetRef` values from `ProductionAssetRepository`, rather than transient ephemeral URLs alone.
+
+### 2. Canonical StyleBible (`src/app/services/production/specification/styleBible.ts`)
+- **Structured Visual Language Dimensions**:
+  - `VisualLanguageStyle`: artDirection, visualTone, realismDegree, aestheticEra, textureQuality, renderingEngineFeel.
+  - `CinematographyStyle`: cameraLensFamily, sensorFormatFeel, depthOfField, defaultShotFraming, cameraMotionLanguage, shutterFeel.
+  - `LightingStyle`: primaryKeyRatio, contrastStyle, colorTemperaturePreference, practicalLightMotifs, atmosphericHaze.
+  - `ColorStyle`: dominantPalette, accentPalette, colorGradingApproach, saturationProfile, shadowsTone, highlightsTone.
+  - `EnvironmentStyle`: architecturalLanguage, materialsAndTextures, worldCondition, weatherDefaults, environmentalScale.
+  - `CharacterStyle`: visualTreatment, wardrobeTone, hairMakeupLanguage, lightingResponse.
+  - `MotionStyle`: paceFeel, subjectMotionDynamics, cameraMotionDynamics, temporalRhythm.
+  - `GraphicsStyle`: overlaysAllowed, typographyStyle, frameBorders, graphicalMotifs.
+  - `StyleConstraints`: negativePrompts, forbiddenArtifacts, forbiddenColors, lightingConstraints.
+- **Hierarchical Resolution & Provenance**:
+  - Deterministic resolution cascade:
+    `Global Defaults` → `Brand Style` → `Production StyleBible` → `Scene Override` → `Shot Override`.
+  - Dimension-level isolation: a shot override for `LightingStyle` updates lighting without destroying `Cinematography` or `ColorStyle`.
+  - Every resolved dimension retains a `StyleProvenance` record (`sourceScope`, `sourceId`, `timestamp`, `explicit`) identifying the origin of every creative directive.
+
+### 3. Separation of Concerns & Boundary Guarantees
+- **References vs. Style**:
+  - `ReferenceGraph` answers *Which assets, identities, and continuity links exist?*
+  - `StyleBible` answers *What visual grammar and rendering rules govern the production?*
+  - Neither system bleeds into or substitutes for the other.
+- **Continuity Engine Separation**:
+  - `ContinuityState`, `ShotContinuityBridge`, and `visualContinuityGate.ts` remain the sole authority for temporal state handoffs.
+  - `ReferenceGraph` models inter-shot visual continuity links via `CONTINUITY_FROM` edges and `START_FRAME` reference nodes, without duplicating temporal tracking logic.
+- **Asset Persistence Separation**:
+  - `ProductionAssetRepository` and `ProductionAssetService` remain the sole authority for asset storage, uploads, and database persistence.
+- **Legacy Compatibility**:
+  - `visualTreatmentToStyleBible` and `styleBibleToVisualTreatment` provide lossless bi-directional conversion with existing `VisualTreatment` objects.
