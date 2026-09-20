@@ -14,8 +14,8 @@ This plan defines the ordered implementation register for future work. It does n
 | --- | --- | --- |
 | PHASE 0 | Safe Implementation Baseline | Complete (see SPARK_PHASE_0_COMPLETION_RECORD.md) |
 | PHASE 1 | Architecture Consolidation | Complete (see SPARK_PHASE_1_CONSOLIDATION_RECORD.md) |
-| PHASE 2 | Canonical Semantic Contracts | Next phase |
-| PHASE 3 | ReferenceGraph + StyleBible | Not started |
+| PHASE 2 | Canonical Semantic Contracts | Complete (see SPARK_PHASE_2_CONTRACT_RECORD.md) |
+| PHASE 3 | ReferenceGraph + StyleBible | Next phase |
 | PHASE 4 | Craft / Creative Operations | Not started |
 | PHASE 5 | Capability + Model Registry | Not started |
 | PHASE 6 | Intelligent Model Routing | Not started |
@@ -46,14 +46,15 @@ This plan defines the ordered implementation register for future work. It does n
 - Do not replace existing working systems when extension or careful migration is possible.
 - Do not expose provider/model complexity in user-facing SPARK flows unless the phase explicitly owns that UX work.
 
-## Phase 2 Starting Point
+## Phase 3 Starting Point
 
-Phase 2 can begin from:
+Phase 3 can begin from:
 
 - `docs/architecture/SPARK_IMPLEMENTATION_CONTRACT.md`
-- `docs/architecture/SPARK_PHASE_1_CONSOLIDATION_RECORD.md`
+- `docs/architecture/SPARK_PHASE_2_CONTRACT_RECORD.md`
+- Semantic media vocabulary: `src/app/services/production/specification/semanticMedia.ts`
+- Semantic execution contract: `src/app/services/production/specification/semanticExecution.ts`
 - Canonical specification spine: `src/app/services/production/specification/*`
-- Verified compatibility adapters: `src/app/services/production/specification/adapters.ts`
-- Regression test suite: `src/app/services/production/architectureConsolidation.test.ts`
+- Semantic regression test suite: `src/app/services/production/semanticContracts.test.ts`
 
 

@@ -1,12 +1,12 @@
 # SPARK Implementation Contract
 
-Phase: 1 (Phase 0 Complete; Phase 1 Architecture Consolidation)
+Phase: 2 (Phase 0 & 1 Complete; Phase 2 Canonical Models & Semantic Contracts)
 Repository: ElOgiso/spark
 Branch inspected: main
 Baseline HEAD: d3d960d56ba577f5f7d5eef49d7906a7b9d99d59
-Phase 1 Consolidation Date: 2026-09-20
+Phase 2 Completion Date: 2026-09-20
 
-This contract defines the architectural invariants and authority mappings established in Phase 0 and consolidated in Phase 1.
+This contract defines the architectural invariants, authority mappings, and canonical semantic contracts established in Phases 0-2.
 
 ## Product Principles
 
@@ -367,4 +367,49 @@ Editorial
 | `src/app/services/production/qc/*` | QC Services | CANONICAL | Quality Control Authority |
 | `src/app/services/production/sceneVideoMerger.ts` | `mergeSceneVideosClientUnused` | DEPRECATED | Browser Canvas Merging |
 
+## Phase 2 Canonical Models & Semantic Contracts
 
+Phase 2 establishes provider-neutral canonical semantic contracts across the production spine:
+
+```text
+ProductionSpec
+  ↓
+SceneSpec
+  ↓
+ShotSpec (provider-independent semantic intent)
+  ↓
+GenerationTask (executable intent)
+  ↓
+SemanticGenerationRequest (contract boundary)
+  ↓
+[Routing & Provider Payload Compilers (Phases 6 & 10)]
+  ↓
+ProviderExecutionRequest
+```
+
+### 1. Semantic Production Ownership
+- **Spark owns Meaning & Intent**:
+  - `ShotSpec` models narrative purpose, production reasoning, visual framing, camera motion, performance, lighting, atmosphere, continuity locks, and reference roles without choosing a provider or model.
+  - Legacy fields `provider`, `model`, and `resolution` on `ShotSpec` are marked `@deprecated @compatibility`. Canonical shot planning (`shotPlanner.ts`) never assigns them.
+- **Providers own Execution**:
+  - Provider model names, parameters, payload schemas, and pricing remain strictly outside canonical semantic contracts.
+
+### 2. Semantic Media Vocabulary (`src/app/services/production/specification/semanticMedia.ts`)
+- **Normalized Media Types (`SemanticMediaType`)**:
+  `IMAGE`, `VIDEO`, `AUDIO`, `VOICE`, `MUSIC`, `SFX`, `AMBIENCE`, `USER_ASSET`, `STOCK`, `SCREENSHOT`, `MAP`, `CHART`, `TEXT`, `MOTION_GRAPHIC`.
+- **Quality Tiers (`QualityTier`)**:
+  `DRAFT`, `STANDARD`, `HIGH`, `CINEMATIC`, `MAXIMUM`.
+- **Resolution Classes (`ResolutionClass`)**:
+  `SD`, `HD`, `FULL_HD`, `UHD`.
+- **Audio Requirements (`ShotAudioRequirement`)**:
+  Coherent requirements for dialogue, narration, music, SFX, ambience, and native audio.
+
+### 3. Semantic References (`SemanticReference`)
+- References are modeled by semantic roles rather than provider payload fields:
+  - `CHARACTER`, `IDENTITY`, `START_FRAME`, `END_FRAME`, `STYLE`, `ENVIRONMENT`, `SOURCE_VIDEO`, `REPLACEMENT_OBJECT`, `PROP`, `COMPOSITION`.
+- Bi-directional adapters `referencePackToSemanticReferences` and `semanticReferencesToReferencePack` bridge existing `ShotReferencePack` objects losslessly while providing forward compatibility with Phase 3 ReferenceGraph.
+
+### 4. Semantic Execution Boundary (`src/app/services/production/specification/semanticExecution.ts`)
+- `SemanticGenerationRequest` defines the handoff boundary between `GenerationTask` and downstream routing:
+  - Carries `mediaType`, `intent`, `capabilities`, `references`, `output`, and `constraints`.
+  - Constructed via `buildSemanticGenerationRequest(task, shot, spec)` without selecting providers or models.

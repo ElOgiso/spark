@@ -6,6 +6,7 @@ import type { ShotCinematicIntelligence } from "../cinematography/cinematicIntel
 import type { ShotFilmmakingGuidance } from "../knowledge/types";
 import type { GenerationStrategySpec } from "./generationStrategy";
 import type { GenerationTask } from "./generationTask";
+import type { SemanticReference, ShotOutputRequirement } from "./semanticMedia";
 
 export type ShotType =
   | "establishing"
@@ -118,6 +119,7 @@ export interface ShotSpec {
   purpose: string;
   /** Why this shot exists — empty purpose shots should not be generated */
   productionReason: string;
+  narrativeBeat?: string;
   timingStartSec: number;
   startTime?: number;
   durationSec: number;
@@ -134,6 +136,10 @@ export interface ShotSpec {
   atmosphere?: string;
   motion: ShotMotionDirection;
   references: ShotReferencePack;
+  /** Normalized semantic references (Phase 2 canonical reference model) */
+  semanticReferences?: SemanticReference[];
+  /** Structured provider-neutral output requirements */
+  outputRequirements?: ShotOutputRequirement;
   transitionIn?: string;
   transitionOut?: string;
   continuityRequirements: string[];
@@ -146,8 +152,21 @@ export interface ShotSpec {
   /** Structured provider-independent strategy (Phase 1+) */
   generationStrategySpec?: GenerationStrategySpec;
   generationTasks?: GenerationTask[];
+  /**
+   * @deprecated @compatibility
+   * Legacy provider override. Canonical planning must not specify this.
+   * Provider selection is owned downstream by the routing authority.
+   */
   provider?: string;
+  /**
+   * @deprecated @compatibility
+   * Legacy model override. Canonical planning must not specify this.
+   */
   model?: string;
+  /**
+   * @deprecated @compatibility
+   * Legacy resolution string (e.g. "1080p"). Use `outputRequirements.resolutionClass` for semantic requirement.
+   */
   resolution?: string;
   aspectRatio?: string;
   generationStatus: GenerationStatus;

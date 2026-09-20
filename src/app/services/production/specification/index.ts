@@ -15,6 +15,8 @@ export * from "./creatorProfile";
 export * from "./generationStrategy";
 export * from "./generationTask";
 export * from "./researchRequirement";
+export * from "./semanticMedia";
+export * from "./semanticExecution";
 
 import type { ProductionSpec } from "./productionSpec";
 import type { SceneSpec } from "./sceneSpec";

@@ -4,6 +4,7 @@
  */
 
 import type { GenerationStrategySpec } from "./generationStrategy";
+import type { SemanticReference, ShotOutputRequirement } from "./semanticMedia";
 
 export type GenerationTaskKind =
   | "keyframe"
@@ -75,6 +76,10 @@ export interface GenerationTask {
   qualityTarget?: string;
   speedPriority?: boolean;
   costPriority?: boolean;
+  /** Provider-neutral semantic references for this task (Phase 2) */
+  semanticReferences?: SemanticReference[];
+  /** Provider-neutral output requirements for this task (Phase 2) */
+  outputRequirements?: ShotOutputRequirement;
   /** Filled by later routing phase — optional now */
   selectedProvider?: string;
   selectedModel?: string;
@@ -138,7 +143,6 @@ export function softDependencyIds(task: GenerationTask): string[] {
   return Array.from(
     new Set((task.dependencies || []).filter((d) => d.strength === "soft").map((d) => d.taskId))
   ).sort();
-
 }
 
 export function validateGenerationTask(task: GenerationTask): string[] {
