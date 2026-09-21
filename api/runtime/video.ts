@@ -640,17 +640,13 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
 
   const isExplicitR2v =
     effectiveReq.mode === "reference-to-video" ||
+    effectiveReq.mode === "reference_to_video" ||
     effectiveReq.mode === "r2v" ||
+    (effectiveReq as any).generationMode === "reference_to_video" ||
     effectiveReq.model?.toLowerCase().includes("r2v") ||
     effectiveReq.model?.toLowerCase().includes("reference-to-video");
 
-  const isIdentityCritical = Boolean(
-    (effectiveReq as any).identityCritical ||
-    effectiveReq.characterSheetUrl ||
-    (effectiveReq.referenceImageUrls && effectiveReq.referenceImageUrls.length > 0)
-  );
-
-  const shouldUseR2v = candidateRefs.length > 0 && (isExplicitR2v || isIdentityCritical);
+  const shouldUseR2v = candidateRefs.length > 0 && isExplicitR2v;
 
   if (shouldUseR2v) {
     const { looksLikeStoryboardGridUrl } = await import("./_videoContract.js");

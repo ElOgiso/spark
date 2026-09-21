@@ -104,7 +104,6 @@ MODEL CATALOG ALIGNMENT (modelCatalog.ts ↔ profiles.ts)
   - Removed `if (profile)` fail-open bypass in `productionVideoRequest.ts`.
 - **R2V Detection & Higgsfield R2V Profile**:
   - Detects R2V from `mode: "reference-to-video" | "r2v"` or `model` containing `r2v`.
-  - Automatically matches the canonical `seedance-2.5-r2v` capability profile with multi-reference support.
 - **Strict I2V Still & Grid Guard**:
   - Enforces presence of shot still / firstFrameUrl for all I2V providers.
   - Rejects storyboard grids, contact sheets, and character sheets as motion sources.
@@ -115,3 +114,34 @@ MODEL CATALOG ALIGNMENT (modelCatalog.ts ↔ profiles.ts)
   - Audited all occurrences of `fetch("/api/runtime/video")` across codebase.
   - Only `requestProductionVideoClip` initiates billable video generation; FFmpeg merges use `mux` bypass.
   - Regression tests in `src/app/services/production/failClosedVideoSubmit.test.ts`.
+
+---
+
+## 5. Phase 5.2 — Capability Boundary Hardening
+
+- **Separation of Fact Validation from Model Routing**:
+  - `assertVideoRequestExecutable` validates the caller's requested model without silent substitution. If a caller requests R2V mode with an I2V model (e.g. `seedance-2.5-i2v`), the request fails closed with an explainable capability rejection rather than secretly swapping the model to `seedance-2.5-r2v`.
+  - Upstream orchestrators (`AIProviderOrchestrator`, `productionAssetService`) resolve model IDs before calling `requestProductionVideoClip`.
+  - Legacy model defaulting is isolated to `resolveLegacyCompatibilityModel` with `@deprecated To be removed by Phase 6`.
+- **Explicit R2V / I2V Semantics**:
+  - Removed heuristic R2V inference from `candidateRefs.length > 0 && isIdentityCritical`.
+  - R2V is only active when explicitly requested via `mode: "reference-to-video" | "reference_to_video" | "r2v"` or an explicit R2V model name.
+  - Standard I2V requests with character/style reference images remain strictly I2V: the shot still is required as frame 1, storyboard grids/sheets as frame 1 are rejected, and identity is carried by the shot still.
+  - Updated `generateHiggsfield` in `api/runtime/video.ts` to require `isExplicitR2v` before dispatching to `generateSeedanceReferenceVideo`.
+- **Lexical Provider Identifier Aliases vs Routing Decisions**:
+  - Formalized `PROVIDER_IDENTIFIER_ALIASES` (`ark` -> `seedance`, `xai` -> `grok`, `higgsfield-seedance` -> `higgsfield`, `google` -> `gemini`) via `normalizeProviderIdentifier`.
+  - Documented architectural distinction: aliases normalize known integration/vendor naming variants to canonical capability keys; they do not perform provider selection or load balancing.
+- **Verification Matrix (Tests A–L)**:
+  - Added full test suite in `src/app/services/production/failClosedVideoSubmit.test.ts` covering:
+    - Test A: Explicit `providerId + modelId` validated without substitution.
+    - Test B: Known provider + unknown model rejects (`fail-closed`).
+    - Test C: Disabled model (`adapterSupported: false`) rejects.
+    - Test D: Explicit I2V passes when model supports it.
+    - Test E: Explicit R2V passes when model supports it.
+    - Test F: References + `identityCritical` do NOT imply R2V; stays I2V.
+    - Test G: Missing first frame fails on I2V.
+    - Test H: Storyboard / contact sheet / character sheet fails on I2V first frame.
+    - Test I: Unsupported output constraints fail (duration, aspect ratio).
+    - Test J: Non-generative `mux`/`merge` bypass remains functional.
+    - Test K: Direct generative video path bypass check (validates before fetch).
+    - Test L: Provider lexical aliases normalize correctly without routing.

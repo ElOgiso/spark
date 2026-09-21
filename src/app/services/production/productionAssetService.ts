@@ -4376,6 +4376,19 @@ export class ProductionAssetService {
 
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
 
+      const fixPreferredModel =
+        (generationSettings as any)?.preferredVideoModel ||
+        (sceneToFix as any)?.videoModel ||
+        (activeVideo.providerId === "higgsfield"
+          ? "seedance-2.5-i2v"
+          : activeVideo.providerId === "kling"
+          ? "kling-v2-6"
+          : activeVideo.providerId === "seedance"
+          ? "doubao-seedance-1-5-pro-251215"
+          : activeVideo.providerId === "grok"
+          ? "grok-imagine-video-1.5"
+          : undefined);
+
       let generatedClip = "";
       let generatedLastFrameDataUrl: string | undefined;
       if (isI2vApiProvider(activeVideo.providerId) && fixFirstFrame) {
@@ -4388,6 +4401,7 @@ export class ProductionAssetService {
             referenceImageUrls: [],
             aspectRatio: identityPack.aspectRatio,
             durationSec: fixI2vDuration,
+            model: fixPreferredModel,
             productionId,
             brandId: (brand as any).id,
             shotIndex: sceneIndex,

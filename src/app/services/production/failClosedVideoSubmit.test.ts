@@ -4,6 +4,9 @@ import {
   assertVideoRequestExecutable,
   looksLikeSheetOrGridUrl,
   looksLikeStoryboardGridUrl,
+  normalizeProviderIdentifier,
+  resolveLegacyCompatibilityModel,
+  PROVIDER_IDENTIFIER_ALIASES,
 } from "./capability/assertVideoRequest";
 import { requestProductionVideoClip } from "./productionVideoRequest";
 import handler from "../../../../api/runtime/video";
@@ -326,5 +329,261 @@ test("Phase 5.1: Fail-Closed Video Submit Path", async (t) => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+test("Phase 5.2: Capability Boundary Hardening (Tests A-L)", async (t) => {
+  await t.test("Test A: Explicit providerId + modelId validated without substitution", () => {
+    // Exact model validated directly
+    const klingRes = assertVideoRequestExecutable({
+      provider: "kling",
+      model: "kling-v2-6",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      durationSec: 5,
+    });
+    assert.equal(klingRes.ok, true);
+    assert.equal(klingRes.profile?.providerId, "kling");
+    assert.equal(klingRes.profile?.modelId, "kling-v2-6");
+
+    const hfRes = assertVideoRequestExecutable({
+      provider: "higgsfield",
+      model: "seedance-2.5-i2v",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      durationSec: 5,
+    });
+    assert.equal(hfRes.ok, true);
+    assert.equal(hfRes.profile?.providerId, "higgsfield");
+    assert.equal(hfRes.profile?.modelId, "seedance-2.5-i2v");
+
+    // No silent substitution: passing I2V model with R2V mode must reject, NOT silently swap to seedance-2.5-r2v
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "higgsfield",
+          model: "seedance-2.5-i2v",
+          mode: "reference-to-video",
+          firstFrameUrl: "https://example.com/shot-1.png",
+          referenceImageUrls: ["https://example.com/ref.png"],
+        }),
+      /does not support reference-to-video \(R2V\) mode/i
+    );
+  });
+
+  await t.test("Test B: Known provider + unknown model rejects (fail-closed)", () => {
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "kling",
+          model: "kling-v999-invalid",
+          firstFrameUrl: "https://example.com/shot-1.png",
+        }),
+      /is not supported or has no registered capability profile/i
+    );
+
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "higgsfield",
+          model: "unknown-seedance-xyz",
+          firstFrameUrl: "https://example.com/shot-1.png",
+        }),
+      /is not supported or has no registered capability profile/i
+    );
+  });
+
+  await t.test("Test C: Disabled model (adapterSupported: false) rejects", () => {
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "runway",
+          model: "gen3",
+          firstFrameUrl: "https://example.com/shot-1.png",
+        }),
+      /has adapterSupported: false\. Direct execution is disabled/i
+    );
+
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "kling",
+          model: "kling-v3-omni",
+          firstFrameUrl: "https://example.com/shot-1.png",
+        }),
+      /has adapterSupported: false\. Direct execution is disabled/i
+    );
+  });
+
+  await t.test("Test D: Explicit I2V passes when model supports it", () => {
+    const res = assertVideoRequestExecutable({
+      provider: "kling",
+      model: "kling-v2-6",
+      mode: "image_to_video",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      durationSec: 5,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.profile?.modelId, "kling-v2-6");
+  });
+
+  await t.test("Test E: Explicit R2V passes when model supports it", () => {
+    const res = assertVideoRequestExecutable({
+      provider: "higgsfield",
+      model: "seedance-2.5-r2v",
+      mode: "reference-to-video",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      referenceImageUrls: ["https://example.com/ref1.png"],
+      durationSec: 5,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.profile?.modelId, "seedance-2.5-r2v");
+  });
+
+  await t.test("Test F: References + identityCritical do NOT imply R2V; stays I2V", () => {
+    // 1. Without firstFrameUrl, must reject because I2V requires first frame (does not infer R2V)
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "higgsfield",
+          referenceImageUrls: ["https://example.com/ref1.png"],
+          identityCritical: true,
+        }),
+      /Still required before motion.*requires a valid firstFrameUrl/i
+    );
+
+    // 2. With firstFrameUrl, resolves to I2V model (seedance-2.5-i2v), NOT R2V
+    const res = assertVideoRequestExecutable({
+      provider: "higgsfield",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      referenceImageUrls: ["https://example.com/ref1.png"],
+      identityCritical: true,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.profile?.modelId, "seedance-2.5-i2v");
+  });
+
+  await t.test("Test G: Missing first frame fails on I2V", () => {
+    for (const provider of ["kling", "seedance", "grok", "higgsfield"]) {
+      assert.throws(
+        () =>
+          assertVideoRequestExecutable({
+            provider,
+          }),
+        /Still required before motion.*requires a valid firstFrameUrl/i
+      );
+    }
+  });
+
+  await t.test("Test H: Storyboard / contact sheet fails on I2V first frame", () => {
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "seedance",
+          firstFrameUrl: "https://storage.spark.io/storyboard-grid.png",
+        }),
+      /requires this shot's still as firstFrameUrl, not a sheet or storyboard grid/i
+    );
+
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "kling",
+          firstFrameUrl: "https://storage.spark.io/character-sheet.jpg",
+        }),
+      /requires this shot's still as firstFrameUrl, not a sheet or storyboard grid/i
+    );
+  });
+
+  await t.test("Test I: Unsupported output constraints fail", () => {
+    // Kling only supports 5s or 10s duration
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "kling",
+          firstFrameUrl: "https://example.com/shot-1.png",
+          durationSec: 99,
+        }),
+      /REJECTED_UNSUPPORTED_DURATION/i
+    );
+
+    // Kling only supports 16:9, 9:16, 1:1
+    assert.throws(
+      () =>
+        assertVideoRequestExecutable({
+          provider: "kling",
+          firstFrameUrl: "https://example.com/shot-1.png",
+          aspectRatio: "3:1",
+        }),
+      /REJECTED_UNSUPPORTED_ASPECT_RATIO/i
+    );
+  });
+
+  await t.test("Test J: Non-generative mux/merge bypass remains functional", () => {
+    const muxRes = assertVideoRequestExecutable({
+      provider: "mux",
+      action: "mux",
+      videoUrls: ["https://storage.spark.io/shot-1.mp4", "https://storage.spark.io/shot-2.mp4"],
+    });
+    assert.equal(muxRes.ok, true);
+    assert.equal(muxRes.profile, null);
+
+    const mergeRes = assertVideoRequestExecutable({
+      action: "merge",
+      videoUrls: ["https://storage.spark.io/shot-1.mp4"],
+    });
+    assert.equal(mergeRes.ok, true);
+    assert.equal(mergeRes.profile, null);
+  });
+
+  await t.test("Test K: Direct generative video path bypass check", async () => {
+    let fetchCalled = false;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({ success: true, videoUrl: "https://example.com/clip.mp4" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      // Must reject before fetch if unknown model
+      await assert.rejects(
+        () =>
+          requestProductionVideoClip({
+            provider: "kling",
+            model: "nonexistent-model",
+            prompt: "test",
+            firstFrameUrl: "https://example.com/shot-1.png",
+          }),
+        /Capability validation failed/i
+      );
+      assert.equal(fetchCalled, false, "fetch must not be called when capability validation fails");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  await t.test("Test L: Provider lexical aliases normalize correctly", () => {
+    assert.equal(normalizeProviderIdentifier("ark"), "seedance");
+    assert.equal(normalizeProviderIdentifier("xai"), "grok");
+    assert.equal(normalizeProviderIdentifier("higgsfield-seedance"), "higgsfield");
+    assert.equal(normalizeProviderIdentifier("google"), "gemini");
+
+    // Validates properly through assertVideoRequestExecutable
+    const arkRes = assertVideoRequestExecutable({
+      provider: "ark",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      durationSec: 5,
+    });
+    assert.equal(arkRes.ok, true);
+    assert.equal(arkRes.profile?.providerId, "seedance");
+
+    const xaiRes = assertVideoRequestExecutable({
+      provider: "xai",
+      firstFrameUrl: "https://example.com/shot-1.png",
+      durationSec: 6,
+    });
+    assert.equal(xaiRes.ok, true);
+    assert.equal(xaiRes.profile?.providerId, "grok");
   });
 });
