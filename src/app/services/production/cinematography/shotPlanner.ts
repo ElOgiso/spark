@@ -17,6 +17,7 @@ import {
   buildShotCinematicIntelligence,
   validateCinematicShot,
 } from "./cinematicIntelligence";
+import { deriveCraftPlanFromShot } from "../craft/craftPlanner";
 
 export interface ShotPlanContext {
   scene: Omit<SceneSpec, "shots"> & { shots?: ShotSpec[] };
@@ -274,6 +275,7 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
       qcStatus: "pending",
       cinematic,
     };
+    shot.craftPlan = deriveCraftPlanFromShot(shot);
     t += durationSec;
     return shot;
   });

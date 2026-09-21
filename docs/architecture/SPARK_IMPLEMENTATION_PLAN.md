@@ -16,8 +16,8 @@ This plan defines the ordered implementation register for future work. It does n
 | PHASE 1 | Architecture Consolidation | Complete (see SPARK_PHASE_1_CONSOLIDATION_RECORD.md) |
 | PHASE 2 | Canonical Semantic Contracts | Complete (see SPARK_PHASE_2_CONTRACT_RECORD.md) |
 | PHASE 3 | ReferenceGraph + StyleBible | Complete (see SPARK_PHASE_3_REFERENCE_STYLE_RECORD.md) |
-| PHASE 4 | Craft / Creative Operations | Next phase |
-| PHASE 5 | Capability + Model Registry | Not started |
+| PHASE 4 | Craft / Creative Operations | Complete (see SPARK_PHASE_4_CRAFT_RECORD.md) |
+| PHASE 5 | Capability + Model Registry | Next phase |
 | PHASE 6 | Intelligent Model Routing | Not started |
 | PHASE 7 | Cost Engine | Not started |
 | PHASE 8 | Spark Credit Reservation & Settlement | Not started |
@@ -46,15 +46,17 @@ This plan defines the ordered implementation register for future work. It does n
 - Do not replace existing working systems when extension or careful migration is possible.
 - Do not expose provider/model complexity in user-facing SPARK flows unless the phase explicitly owns that UX work.
 
-## Phase 4 Starting Point
+## Phase 5 Starting Point
 
-Phase 4 can begin from:
+Phase 5 can begin from:
 
 - `docs/architecture/SPARK_IMPLEMENTATION_CONTRACT.md`
-- `docs/architecture/SPARK_PHASE_3_REFERENCE_STYLE_RECORD.md`
+- `docs/architecture/SPARK_PHASE_4_CRAFT_RECORD.md`
+- Canonical Craft Engine: `src/app/services/production/craft/*`
+- Canonical CreativeOperationRegistry: `src/app/services/production/craft/operationRegistry.ts`
 - Canonical ReferenceGraph: `src/app/services/production/specification/referenceGraph.ts`
 - Canonical StyleBible: `src/app/services/production/specification/styleBible.ts`
 - Canonical specification spine: `src/app/services/production/specification/*`
-- Phase 3 test suite: `src/app/services/production/referenceAndStyle.test.ts`
+- Phase 4 test suite: `src/app/services/production/craftEngine.test.ts`
 
 

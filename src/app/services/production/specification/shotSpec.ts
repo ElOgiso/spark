@@ -9,6 +9,7 @@ import type { GenerationTask } from "./generationTask";
 import type { SemanticReference, ShotOutputRequirement } from "./semanticMedia";
 import type { StyleBible } from "./styleBible";
 import type { ReferenceNode } from "./referenceGraph";
+import type { CraftPlan } from "../craft/types";
 
 export type ShotType =
   | "establishing"
@@ -188,6 +189,8 @@ export interface ShotSpec {
   filmmakingGuidance?: ShotFilmmakingGuidance;
   /** Phase 5 cinematic direction intelligence (provider-neutral) */
   cinematic?: ShotCinematicIntelligence;
+  /** Phase 4 canonical craft plan (provider-neutral creative operations) */
+  craftPlan?: CraftPlan;
   observability?: {
     productionId?: string;
     promptCompilerVersion?: string;

@@ -19,6 +19,7 @@ export * from "./semanticMedia";
 export * from "./semanticExecution";
 export * from "./referenceGraph";
 export * from "./styleBible";
+export * from "../craft";
 
 import type { ProductionSpec } from "./productionSpec";
 import type { SceneSpec } from "./sceneSpec";

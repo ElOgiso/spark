@@ -487,3 +487,74 @@ RESOLVED STYLE BIBLE (Provenance Map for Every Dimension)
   - `ProductionAssetRepository` and `ProductionAssetService` remain the sole authority for asset storage, uploads, and database persistence.
 - **Legacy Compatibility**:
   - `visualTreatmentToStyleBible` and `styleBibleToVisualTreatment` provide lossless bi-directional conversion with existing `VisualTreatment` objects.
+
+## Phase 4 Canonical Craft Engine & Creative Operations
+
+Phase 4 establishes the canonical semantic layer turning WHAT Spark wants into HOW a shot should be crafted, without deciding which provider or model will execute it:
+
+```text
+ProductionSpec
+    ↓
+SceneSpec
+    ↓
+ShotSpec
+    ↓
+StyleBible + ReferenceGraph
+    ↓
+CraftPlan (CraftOperations[])
+    ↓
+ResolvedSemanticShot
+    ↓
+[Phase 5 Capability Registry]
+    ↓
+[Phase 6 Model Router]
+    ↓
+[Phase 10 Provider Compiler]
+```
+
+### 1. Canonical CraftOperation Contract (`src/app/services/production/craft/types.ts`)
+- **Core Entities**:
+  - `CraftOperation<TParams>`: Encapsulates creative direction applied to a shot (`id`, `type`, `category`, `purpose`, `target`, `parameters`, `timing`, `intensity`, `constraints`, `referenceNodeIds`, `capabilityRequirements`, `metadata`).
+  - Provider-Neutral: Contains NO provider-specific tokens, model IDs, API parameters, or cost fields.
+- **Taxonomy Categories (`CraftOperationCategory`)**:
+  `CAMERA`, `COMPOSITION`, `PRODUCT`, `MOTION`, `TRANSFORMATION`, `EDIT`, `LIGHTING`, `SUBJECT`, `ENVIRONMENT`.
+- **Operation Targets (`CraftOperationTarget`)**:
+  Targets semantic entities (`CAMERA`, `SUBJECT`, `CHARACTER`, `PRODUCT`, `OBJECT`, `ENVIRONMENT`, `BACKGROUND`, `FOREGROUND`, `LIGHTING`, `SHOT`, `FRAME`) via stable IDs or semantic labels.
+- **Temporal Intent (`OperationTiming`)**:
+  Expresses intra-shot creative timing (`startSec`, `durationSec`, `endSec`, `easing`). Timeline and final frame placement remain strictly owned by the Editorial authority.
+
+### 2. Creative Operation Registry (`src/app/services/production/craft/operationRegistry.ts`)
+- **Authority for Spark's Semantic Operation Vocabulary**:
+  - Exposes metadata, accepted targets, parameter validation, capability requirements, and mutual exclusivity for all canonical operations.
+  - Extensible: New operations can be registered at runtime without modifying provider adapters.
+- **Implemented Operation Vocabulary**:
+  - *Camera*: `PUSH_IN`, `PULL_BACK`, `PAN`, `TILT`, `DOLLY`, `CRANE`, `PEDESTAL`, `ORBIT`, `TRACK`, `WHIP_PAN`, `TOPDOWN`, `DUTCH_ANGLE`, `RACK_FOCUS`, `ZOOM`.
+  - *Composition*: `HERO_SHOT`, `FLATLAY`, `SYMMETRICAL_COMPOSITION`, `MACRO_DETAIL`, `CLOSE_UP`, `WIDE_ESTABLISHING`.
+  - *Product / Object*: `PRODUCT_SPIN`, `DETAIL_SCAN`, `LABEL_TRACE`, `LIGHT_SWEEP`, `PRODUCT_REVEAL`, `OBJECT_HIGHLIGHT`.
+  - *Motion*: `MOTION_TRANSFER`, `SUBJECT_TRACKING`, `CAMERA_FOLLOW`, `SLOW_MOTION`, `SPEED_RAMP`, `FREEZE_MOTION`.
+  - *Transformation*: `OBJECT_REPLACEMENT`, `BACKGROUND_REPLACEMENT`, `STYLE_TRANSFORMATION`, `ENVIRONMENT_TRANSFORMATION`.
+  - *Edit / Transition*: `MATCH_CUT`, `WHIP_TRANSITION`, `SMASH_CUT`, `DISSOLVE`, `MORPH`, `CUTAWAY`.
+- **Semantic Support for Advanced Operations**:
+  - `MOTION_TRANSFER`: Specifies driving video, driving action, target subject, and fidelity mode without premature binding to Higgsfield or any provider.
+  - `OBJECT_REPLACEMENT`: Specifies base shot/video, target object, replacement reference, and environmental preservation flags.
+
+### 3. Capability Requirements Mapping
+- Deterministic mapping from `CraftOperation` to Phase 2 capability requirements:
+  - `PUSH_IN`, `ORBIT`, `PAN`, etc. → `["camera_motion", "camera_control"]`
+  - `RACK_FOCUS` → `["focus_control", "depth_of_field"]`
+  - `MOTION_TRANSFER` → `["motion_transfer", "video_input", "image_reference"]`
+  - `OBJECT_REPLACEMENT` → `["object_replacement", "video_input", "replacement_reference"]`
+  - `LIGHT_SWEEP` → `["lighting_control", "dynamic_specular"]`
+  - `SLOW_MOTION` → `["temporal_control", "frame_rate_expansion"]`
+- Feeds downstream Phase 5 Capability Registry without invoking routing or model selection.
+
+### 4. Integration with Existing Authorities
+- **Cinematography Intelligence Retained**:
+  `cinematicIntelligence.ts`, `cameraPlanner.ts`, `shotPlanner.ts` remain the sole authority for dramatic purpose and coverage planning. `deriveCraftPlanFromShot` translates cinematography plans into canonical `CraftPlan` structures attached to `ShotSpec.craftPlan`.
+- **ReferenceGraph Retained**:
+  Operations link to `ReferenceNode` IDs in `ReferenceGraph` for character, product, and object identities.
+- **StyleBible Retained**:
+  Operations express relative `intensity` within the StyleBible envelope without mutating global style rules.
+- **Deterministic Validation (`validation.ts`)**:
+  `validateCraftPlan` detects opposing camera motions occurring in overlapping temporal intervals (e.g. `PUSH_IN` and `PULL_BACK`) and missing required semantic targets.
+
