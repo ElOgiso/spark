@@ -3,6 +3,10 @@
  *
  * Machine-readable declaration of SPARK's internal media production capabilities,
  * what inputs they require, what outputs they produce, and which AI providers they orchestrate.
+ *
+ * NOTE: This file represents higher-level system/platform capabilities (captioning,
+ * distribution profiles, publishing, script planning). It is FROZEN for Phase 5.
+ * Concrete AI model capabilities are defined in profiles.ts (MediaCapabilityProfile).
  */
 
 import type { CaptioningCapability, DistributionProfile, VoiceMode } from "./types";

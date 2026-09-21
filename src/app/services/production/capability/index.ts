@@ -56,6 +56,7 @@ export { resolveEffectiveCapability, type EffectiveCapabilityResult } from "./ef
 export { validateCapabilityRequirements } from "./validate";
 export {
   capabilityRequirementsFromShot,
+  capabilityRequirementsFromTask,
   buildCapabilityRequirements,
   type RequirementsFromShotOptions,
 } from "./requirements";
@@ -63,6 +64,7 @@ export {
   ensureCapabilityRegistry,
   registerCapabilityProfile,
   getCapabilityProfile,
+  findProfileForCatalogModel,
   listCapabilityProfiles,
   listProviderModelCandidates,
   resetCapabilityRegistryForTests,

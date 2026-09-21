@@ -4,6 +4,9 @@
  */
 
 import { looksLikeSheetOrGridUrl, looksLikeStoryboardGridUrl } from "./officialI2vFrames";
+import { getCapabilityProfile } from "./capability/registry";
+import { assertExecutableCapability } from "./capability/router";
+import type { CapabilityRequirements } from "./capability/types";
 
 export const I2V_API_PROVIDERS = new Set(["grok", "kling", "seedance", "ark", "xai", "higgsfield", "higgsfield-seedance"]);
 
@@ -134,6 +137,42 @@ export async function requestProductionVideoClip(
       );
     }
   }
+
+  // Pre-execution capability check
+  const profile = getCapabilityProfile(params.provider, params.model);
+  if (profile) {
+    const endFrame = params.endFrameUrl || params.lastFrameUrl;
+    const requirements: CapabilityRequirements = {
+      modality: "video",
+      generationMode: "image_to_video",
+      temporal: {
+        requiresStartFrame: Boolean(params.firstFrameUrl),
+        requiresEndFrame: Boolean(endFrame),
+        requiresStartAndEnd: Boolean(params.firstFrameUrl && endFrame),
+        requiresContinuation: false,
+        requiresExtension: false,
+      },
+      output: {
+        durationSeconds: params.durationSec != null && Number.isFinite(params.durationSec) ? Math.round(params.durationSec) : undefined,
+        aspectRatio: params.aspectRatio,
+        resolution: params.resolution,
+      },
+      references: params.referenceImageUrls?.length
+        ? {
+            types: ["image"],
+            minimumCount: params.referenceImageUrls.length,
+          }
+        : undefined,
+    };
+    const capCheck = assertExecutableCapability(requirements, params.provider, params.model);
+    if (!capCheck.ok) {
+      const reasons = capCheck.decision.reasonCodes.filter((r) => r.startsWith("REJECTED"));
+      throw new Error(
+        `Capability validation failed for provider "${params.provider}": ${reasons.join(", ") || "unsupported_capability"}`
+      );
+    }
+  }
+
 
   const res = await fetch("/api/runtime/video", {
     method: "POST",

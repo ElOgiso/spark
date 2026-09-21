@@ -392,6 +392,30 @@ export const MODEL_CATALOG: ProviderCatalog[] = [
       },
     ],
   },
+  {
+    provider: "runway",
+    displayName: "Runway",
+    models: [
+      {
+        id: "gen3",
+        label: "Runway Gen-3 (Documented / Adapter Pending)",
+        capabilities: ["Video Generation"],
+        status: "preview",
+      },
+    ],
+  },
+  {
+    provider: "luma",
+    displayName: "Luma Dream Machine",
+    models: [
+      {
+        id: "ray-2",
+        label: "Luma Ray 2 (Documented / Adapter Pending)",
+        capabilities: ["Video Generation"],
+        status: "preview",
+      },
+    ],
+  },
 ];
 
 const LIVE_MODELS_STORAGE_KEY = "spark_live_models_cache_v1";

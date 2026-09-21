@@ -234,6 +234,8 @@ export interface MediaCapabilityProfile {
     tags?: string[];
     deprecated?: boolean;
     notes?: string;
+    aliases?: string[];
+    status?: "active" | "disabled" | "deprecated" | "unknown";
   };
 }
 

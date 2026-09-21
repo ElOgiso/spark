@@ -4,6 +4,7 @@
  */
 
 import type { ShotSpec, GenerationStrategy } from "../specification/shotSpec";
+import type { GenerationTask } from "../specification/generationTask";
 import type { CapabilityRequirements, GenerationMode, ReferenceType, RoutingObjective } from "./types";
 
 function strategyToMode(strategy: GenerationStrategy | string | undefined): GenerationMode | undefined {
@@ -135,3 +136,93 @@ export function buildCapabilityRequirements(
     },
   };
 }
+
+/**
+ * Derives CapabilityRequirements directly from an executable GenerationTask and prepared inputs.
+ * Used by execution engine and validation guards to verify feasibility before remote submission.
+ */
+export function capabilityRequirementsFromTask(
+  task: GenerationTask,
+  inputs: { role?: string; url?: string }[] = [],
+  extra: { aspectRatio?: string; durationSec?: number; resolution?: string } = {}
+): CapabilityRequirements {
+  const isImageKind =
+    task.kind === "keyframe" ||
+    task.strategy.modality === "text_to_image" ||
+    task.strategy.modality === "image_to_image" ||
+    task.strategy.modality === "slideshow_still";
+
+  const isAudioKind =
+    task.kind === "voice" ||
+    task.kind === "sfx" ||
+    task.kind === "music" ||
+    task.strategy.modality === "voice" ||
+    task.strategy.modality === "audio";
+
+  const modality: "image" | "video" | "audio" = isImageKind
+    ? "image"
+    : isAudioKind
+      ? "audio"
+      : "video";
+
+  const isVideo = modality === "video";
+
+  const generationMode: GenerationMode =
+    modality === "image"
+      ? (task.strategy.modality === "image_to_image" || task.strategy.modality === "edit")
+        ? "image_to_image"
+        : "text_to_image"
+      : modality === "audio"
+        ? "text_to_speech"
+        : (task.strategy.modality === "text_to_video")
+          ? "text_to_video"
+          : (task.strategy.modality === "extend" || task.kind === "extend")
+            ? "video_extension"
+            : "image_to_video";
+
+  const hasStart = inputs.some((i) => (i.role === "first_frame" || i.role === "start_frame") && i.url);
+  const hasEnd = inputs.some((i) => (i.role === "last_frame" || i.role === "end_frame" || i.role === "tail_frame") && i.url);
+
+  const refTypes: ReferenceType[] = [];
+  for (const input of inputs) {
+    if (!input.url) continue;
+    if (input.role === "character") refTypes.push("character");
+    else if (input.role === "style") refTypes.push("style");
+    else if (input.role === "location" || input.role === "environment") refTypes.push("location");
+    else if (input.role === "reference_image" || input.role === "reference") refTypes.push("image");
+  }
+
+  const durationSeconds = isVideo || modality === "audio"
+    ? (extra.durationSec ?? (task.durationSec != null && Number.isFinite(task.durationSec) ? Math.round(task.durationSec) : undefined))
+    : undefined;
+
+  return {
+    modality,
+    generationMode,
+    references: refTypes.length
+      ? {
+          types: Array.from(new Set(refTypes)),
+          minimumCount: refTypes.length,
+        }
+      : undefined,
+    temporal: {
+      requiresStartFrame: isVideo && hasStart,
+      requiresEndFrame: isVideo && hasEnd,
+      requiresStartAndEnd: isVideo && hasStart && hasEnd,
+      requiresContinuation: false,
+      requiresExtension: task.strategy.modality === "extend" || task.kind === "extend",
+    },
+    output: {
+      durationSeconds,
+      aspectRatio: extra.aspectRatio ?? task.aspectRatio,
+      resolution: extra.resolution ?? task.resolution,
+    },
+    preferences: {
+      objective: "balanced",
+      preferredProviderId: task.selectedProvider || task.preferredProvider,
+      preferredModelId: task.selectedModel,
+    },
+  };
+}
+
+

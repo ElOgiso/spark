@@ -6,6 +6,7 @@
 import type { ConcreteAIProviderId } from "../../runtime/providerCapabilities";
 import { PROVIDER_VIDEO_CAPABILITIES, PROVIDER_CAPABILITY_MAP } from "../../runtime/providerCapabilities";
 import type { ShotSpec, GenerationStrategy } from "../specification/shotSpec";
+import { getCapabilityProfile } from "../capability/registry";
 
 export type GenerationCapability =
   | "text_to_image"
@@ -39,20 +40,33 @@ export interface ProviderCapabilityScorecard {
   capabilities: Partial<Record<GenerationCapability, number>>; // 0-1
   allowedDurationsSec: number[];
   maxNativeSec: number;
-  /** Mirrors PROVIDER_VIDEO_CAPABILITIES — never hard-code in cinematography/storyboard */
+  /** Mirrors canonical capability profile limits / reference budgets */
   maxMultimodalReferences: number;
   notes: string;
 }
 
-/** Capability priors — refined over time; not a claim of perfection */
+/** Helper to derive limits from canonical MediaCapabilityProfile fact layer, with fallback */
+export function resolveScorecardLimits(providerId: ConcreteAIProviderId) {
+  const profile = getCapabilityProfile(providerId);
+  const fallback = PROVIDER_VIDEO_CAPABILITIES[providerId];
+  const allowedDurationsSec = profile?.output.duration?.supportedValues?.length
+    ? [...profile.output.duration.supportedValues]
+    : fallback?.allowedDurationsSec || [];
+  const maxNativeSec = profile?.output.duration?.maxSeconds ?? fallback?.maxNativeSec ?? 0;
+  const maxMultimodalReferences = profile?.references.maxReferences ?? fallback?.maxMultimodalReferences ?? 4;
+  const notes = profile?.metadata?.notes || fallback?.notes || "";
+  return { allowedDurationsSec, maxNativeSec, maxMultimodalReferences, notes };
+}
+
+/**
+ * Capability priors — soft scorecards subordinate to canonical MediaCapabilityProfile facts.
+ * Hard capability validation (Phase 3/5) gates candidates before these soft priors are evaluated.
+ */
 export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "gemini",
     displayName: "Google Gemini / Veo",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.gemini.allowedDurationsSec,
-    maxNativeSec: 8,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.gemini.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.gemini.notes,
+    ...resolveScorecardLimits("gemini"),
     capabilities: {
       text_to_video: 0.85,
       image_to_video: 0.88,
@@ -69,10 +83,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "grok",
     displayName: "xAI Grok",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.grok.allowedDurationsSec,
-    maxNativeSec: 15,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.grok.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.grok.notes,
+    ...resolveScorecardLimits("grok"),
     capabilities: {
       image_to_video: 0.86,
       first_frame_conditioning: 0.9,
@@ -89,10 +100,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "kling",
     displayName: "Kling AI",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.kling.allowedDurationsSec,
-    maxNativeSec: 10,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.kling.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.kling.notes,
+    ...resolveScorecardLimits("kling"),
     capabilities: {
       image_to_video: 0.9,
       first_frame_conditioning: 0.92,
@@ -108,10 +116,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "seedance",
     displayName: "Seedance",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.seedance.allowedDurationsSec,
-    maxNativeSec: 15,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.seedance.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.seedance.notes,
+    ...resolveScorecardLimits("seedance"),
     capabilities: {
       image_to_video: 0.88,
       first_frame_conditioning: 0.9,
@@ -127,10 +132,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "runway",
     displayName: "Runway Gen-3",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.runway.allowedDurationsSec,
-    maxNativeSec: 10,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.runway.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.runway.notes,
+    ...resolveScorecardLimits("runway"),
     capabilities: {
       image_to_video: 0.84,
       text_to_video: 0.8,
@@ -144,10 +146,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "luma",
     displayName: "Luma Dream Machine",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.luma.allowedDurationsSec,
-    maxNativeSec: 9,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.luma.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.luma.notes,
+    ...resolveScorecardLimits("luma"),
     capabilities: {
       image_to_video: 0.8,
       first_frame_conditioning: 0.85,
@@ -161,10 +160,7 @@ export const PROVIDER_GENERATION_SCORECARDS: ProviderCapabilityScorecard[] = [
   {
     providerId: "higgsfield",
     displayName: "Higgsfield AI",
-    allowedDurationsSec: PROVIDER_VIDEO_CAPABILITIES.higgsfield.allowedDurationsSec,
-    maxNativeSec: 8,
-    maxMultimodalReferences: PROVIDER_VIDEO_CAPABILITIES.higgsfield.maxMultimodalReferences,
-    notes: PROVIDER_VIDEO_CAPABILITIES.higgsfield.notes,
+    ...resolveScorecardLimits("higgsfield"),
     capabilities: {
       image_to_video: 0.78,
       motion_quality: 0.8,

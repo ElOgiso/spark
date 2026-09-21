@@ -1,3 +1,12 @@
+/**
+ * ARCHITECTURAL ISOLATION NOTICE:
+ * This CapabilityRegistry is strictly scoped to Research / Video Understanding and internal services.
+ * It is NOT the production media capability fact layer.
+ * Production media generation capabilities (video/image/audio model profiles, limits, durations,
+ * references, and constraints) are canonically authored and queried in:
+ * src/app/services/production/capability/ (MediaCapabilityProfile / registry.ts)
+ */
+
 import { VideoUnderstandingProvider } from "./research/providers/VideoUnderstandingProvider";
 import { YouTubeResearchProvider } from "./research/providers/YouTubeResearchProvider";
 import { ResearchSourceService } from "./research/researchSourceService";

@@ -39,11 +39,33 @@ export function getCapabilityProfile(
   modelId?: string
 ): MediaCapabilityProfile | undefined {
   ensureCapabilityRegistry();
-  if (modelId) return registry.get(keyOf(providerId, modelId));
+  if (modelId) {
+    const direct = registry.get(keyOf(providerId, modelId));
+    if (direct) return direct;
+
+    const pLower = providerId.toLowerCase();
+    const mLower = modelId.toLowerCase();
+    for (const profile of registry.values()) {
+      if (profile.providerId.toLowerCase() === pLower) {
+        if (profile.modelId.toLowerCase() === mLower) return profile;
+        if (profile.metadata?.aliases?.some((a) => a.toLowerCase() === mLower)) {
+          return profile;
+        }
+      }
+    }
+    return undefined;
+  }
   const matches = listCapabilityProfiles().filter(
     (p) => p.providerId.toLowerCase() === providerId.toLowerCase()
   );
   return matches[0];
+}
+
+export function findProfileForCatalogModel(
+  providerId: string,
+  modelId: string
+): MediaCapabilityProfile | undefined {
+  return getCapabilityProfile(providerId, modelId);
 }
 
 export function listCapabilityProfiles(): MediaCapabilityProfile[] {

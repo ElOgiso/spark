@@ -73,11 +73,21 @@ export function scoreProvidersForShot(
     providerIds: availableProviderIds,
     requireAdapter: false,
   });
-  const candidateByProvider = new Map(candidates.map((c) => [c.providerId, c]));
+
+  const findCandidate = (providerId: string) => {
+    const providerCandidates = candidates.filter((c) => c.providerId === providerId);
+    if (shot.model) {
+      const exact = providerCandidates.find((c) => c.modelId === shot.model);
+      if (exact) return exact;
+    }
+    const matchingModality = providerCandidates.filter((c) => c.effective.modalities.includes(capabilityReq.modality));
+    const active = matchingModality.find((c) => c.adapterSupported) || matchingModality[0];
+    return active || providerCandidates[0];
+  };
 
   return cards
     .map((card) => {
-      const candidate = candidateByProvider.get(card.providerId);
+      const candidate = findCandidate(card.providerId);
       if (applyRegistryHardFilter && candidate) {
         const match = validateCapabilityRequirements(capabilityReq, candidate.effective);
         if (!match.hardRequirementsSatisfied) {

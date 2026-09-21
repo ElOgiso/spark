@@ -10,6 +10,7 @@ import type { ProductionDag } from "../dag/productionDag";
 import { markNode } from "../dag/productionDag";
 import { planShotRetry } from "../generation/retryPlanner";
 import type { ShotRoutingDecision } from "../specification/routingSpec";
+import { assertExecutableCapability, capabilityRequirementsFromTask } from "../capability";
 import {
   createDefaultAdapterRegistry,
   resolveAdapter,
@@ -427,6 +428,40 @@ export class GenerationExecutionEngine {
         logExecutionTransition(this.logger, execution);
         return { execution };
       }
+
+      // Phase 5 Pre-Execution Capability Guard (only for generative AI tasks)
+      if (task.kind !== "merge" && task.kind !== "short_cut") {
+        const capRequirements = capabilityRequirementsFromTask(task, prepared.inputs, {
+          aspectRatio: prepared.aspectRatio,
+          durationSec: prepared.durationSec,
+          resolution: prepared.resolution,
+        });
+        const capCheck = assertExecutableCapability(capRequirements, provider, prepared.model);
+        if (!capCheck.ok) {
+          const rejectCodes = capCheck.decision.reasonCodes.filter((r) => r.startsWith("REJECTED"));
+          const err = makeExecutionError(
+            "unsupported_capability",
+            `Capability validation failed for provider "${provider}": ${rejectCodes.join(", ") || "unsupported_capability"}`,
+            { retryable: false, reasons: rejectCodes }
+          );
+          execution = applyTransition(execution, "running");
+          execution = applyTransition(execution, "failed");
+          execution.error = err;
+          execution.completedAt = new Date().toISOString();
+          lastExecution = execution;
+          // try fallback
+          if (fallbackIndex < fallbacks.length) {
+            provider = fallbacks[fallbackIndex++];
+            attempt++;
+            execution = applyTransition(execution, "retrying");
+            logExecutionTransition(this.logger, execution, { fallbackUsed: provider });
+            continue;
+          }
+          execution = applyTransition(execution, "exhausted");
+          return { execution };
+        }
+      }
+
 
       const adapter = resolveAdapterForTask(this.adapters, provider, task.kind);
       if (!adapter) {
