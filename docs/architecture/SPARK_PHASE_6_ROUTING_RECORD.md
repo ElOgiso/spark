@@ -225,3 +225,41 @@ The router cleanly supports Phase 7 (Cost Engine & Economic Optimization):
 - Models default to `economics: { known: false }` to avoid inventing prices.
 - `budget.maxProviderCost` filtering and `costScore` are fully implemented and activate automatically once authoritative pricing tables are attached in Phase 7.
 - Zero breaking changes required for Phase 7 integration.
+
+---
+
+## 10. Phase 6.1 — Authority Audit & Hardening Record
+
+**Audit Commit:** `612a56c`  
+**Date:** 2026-09-21  
+**Status:** COMPLETE & VERIFIED  
+
+### 1. Canonical Authority Map
+- **Capability Facts:** `src/app/services/production/capability/profiles.ts` (`MediaCapabilityProfile`, `MEDIA_CAPABILITY_PROFILES`, `getCapabilityProfile`)
+- **Model Catalog:** `src/app/services/runtime/modelCatalog.ts` (`MODEL_CATALOG`, UI/API model metadata aligned with profiles)
+- **Canonical Router:** `src/app/services/production/capability/router.ts` (`resolveCanonicalModel`, `routeMediaCapability`, `normalizeRoutingIntentToRequirements`)
+- **Legacy Routing Facade:** `src/app/services/runtime/modelRouter.ts` (`ModelRouter.resolveProvider`, `ModelRouter.resolveModel`)
+- **Scoring:** `src/app/services/production/capability/router.ts` (`computeWeights`, `scoreCandidate`, `capabilityFitScore`, `qualityScore`, `reliabilityScore`, `latencyScore`, `costScore`, `preferenceScore`, `healthScore`)
+- **Health:** `src/app/services/runtime/serviceHealthMonitor.ts` (consumed via `resolveHealthSnapshot` in `registry.ts` as a routing signal)
+- **Economics:** Deferred to Phase 7 Cost Engine; currently consumed strictly as an unauthoritative signal via `candidate.economics` in `costScore` (with neutral `0.5` when unknown, never assuming $0 or free)
+- **Provider Execution:** `src/app/services/production/execution/adapters/` (`videoI2vAdapter.ts`, `mediaAdapters.ts`, `registry.ts`)
+- **Payload Compilation:** `SemanticShotSpec` / `productionVideoRequest.ts` (Phase 10 Provider Payload Compilers)
+- **Generation Lifecycle:** `src/app/services/production/execution/executionEngine.ts`, `lifecycleStateMachine.ts`, `jobStateMachine.ts`
+
+### 2. Audit Findings & Hardening Applied
+1. **ModelRouter Media Delegation Complete**:
+   - `ModelRouter.resolveProvider` and `ModelRouter.resolveModel` previously delegated `videoGeneration` and `storyboardImages`.
+   - Hardened to also delegate `voice` category to `routeMediaCapability({ modality: "audio", generationMode: "text_to_speech" })`.
+2. **Economic Safety & Cost Score Neutrality**:
+   - Verified `costScore` returns strictly `0.5` (neutral) when `economics.known` is false. Unknown economics are never interpreted as free or low-cost.
+   - Verified `budget.maxProviderCost` only evaluates when `economics.known === true`, preventing artificial rejection of unpriced models before Phase 7.
+3. **Fail-Closed Boundary Preservation**:
+   - Verified `assertVideoRequestExecutable` validates caller-supplied models without silent substitutions.
+   - Confirmed `resolveLegacyCompatibilityModel` has **0 production callers**.
+4. **Deterministic Tie-Breaking**:
+   - Verified zero randomness (`Math.random()` = 0). Total tie-breaker `a.canonicalIndex - b.canonicalIndex` guarantees strictly identical results across repeated calls.
+5. **Phase 6.1 Test Coverage**:
+   - Added Suite 10 to `canonicalRouter.test.ts` (26 / 26 passed, 100%).
+   - Full test suite: 838 passed / 2 baseline failures (unrelated pre-existing).
+   - Zero remote provider spend ($0.00).
+

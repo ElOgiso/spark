@@ -336,6 +336,9 @@ describe("SPARK Phase 6 — Canonical Router Consolidation", () => {
 
       const imgProvider = ModelRouter.resolveProvider("storyboardImages");
       assert.ok(["openai", "gemini", "grok", "kling"].includes(imgProvider));
+
+      const voiceProvider = ModelRouter.resolveProvider("voice");
+      assert.equal(voiceProvider, "elevenlabs");
     });
 
     it("ModelRouter.resolveModel delegates to canonical router for media categories", () => {
@@ -344,6 +347,9 @@ describe("SPARK Phase 6 — Canonical Router Consolidation", () => {
 
       const seedanceModel = ModelRouter.resolveModel("videoGeneration", "seedance");
       assert.ok(seedanceModel.length > 0);
+
+      const voiceModel = ModelRouter.resolveModel("voice", "elevenlabs");
+      assert.equal(voiceModel, "eleven_multilingual_v2");
     });
   });
 
@@ -371,6 +377,124 @@ describe("SPARK Phase 6 — Canonical Router Consolidation", () => {
       assert.equal(validation.ok, true);
       assert.equal(validation.profile?.providerId, "kling");
       assert.equal(validation.profile?.modelId, "kling-v2-6");
+    });
+  });
+
+  describe("10. Phase 6.1 Authority Boundary & Economic Safety", () => {
+    it("unknown economics are scored as strictly neutral (0.5), not zero or free", () => {
+      const decision = routeMediaCapability({
+        modality: "video",
+        generationMode: "image_to_video",
+        temporal: { requiresStartFrame: true },
+        output: { durationSeconds: 5, aspectRatio: "16:9" },
+      });
+      assert.ok(decision.selected);
+      assert.equal(decision.selected!.economics?.known, false);
+      assert.equal(
+        decision.scoreBreakdown?.cost,
+        0.5,
+        "Unknown economics must remain strictly 0.5 neutral, never interpreted as free/zero cost"
+      );
+    });
+
+    it("health status directly influences ranking (healthy beats degraded/error)", () => {
+      const healthyCandidate = {
+        ...MEDIA_CAPABILITY_PROFILES[0],
+        effective: MEDIA_CAPABILITY_PROFILES[0],
+        health: { providerId: "cand_a", status: "healthy" as const, latencyMs: 50 },
+      };
+      const degradedCandidate = {
+        ...MEDIA_CAPABILITY_PROFILES[0],
+        providerId: "cand_b",
+        modelId: "cand_b_model",
+        effective: { ...MEDIA_CAPABILITY_PROFILES[0], providerId: "cand_b", modelId: "cand_b_model" },
+        health: { providerId: "cand_b", status: "degraded" as const, latencyMs: 500 },
+      };
+
+      const decision = routeMediaCapability(
+        {
+          modality: "video",
+          generationMode: "image_to_video",
+          temporal: { requiresStartFrame: true },
+          output: { durationSeconds: 5, aspectRatio: "16:9" },
+        },
+        { candidates: [degradedCandidate, healthyCandidate] }
+      );
+
+      assert.ok(decision.selected);
+      assert.equal(decision.selected!.providerId, healthyCandidate.providerId);
+    });
+
+    it("validator does not route: unknown provider or model fails closed without substitution", () => {
+      assert.throws(
+        () =>
+          assertVideoRequestExecutable({
+            provider: "unsupported_fantasy_provider",
+            model: "nonexistent_model",
+            firstFrameUrl: "https://example.com/frame.jpg",
+            durationSec: 5,
+          }),
+        /Capability validation failed/
+      );
+    });
+
+    it("disabled adapter model fails closed at validation boundary", () => {
+      assert.throws(
+        () =>
+          assertVideoRequestExecutable({
+            provider: "runway",
+            model: "gen3",
+            firstFrameUrl: "https://example.com/frame.jpg",
+            durationSec: 5,
+          }),
+        /adapterSupported: false/
+      );
+    });
+
+    it("explicit R2V remains R2V while ordinary I2V with reference images remains I2V", () => {
+      // Normal I2V with character reference images remains I2V
+      const i2vResolved = resolveCanonicalModel({
+        modality: "video",
+        generationMode: "image_to_video",
+        references: { types: ["character"], minimumCount: 1 },
+        temporal: { requiresStartFrame: true },
+        output: { durationSeconds: 5, aspectRatio: "16:9" },
+        preferences: { preferredProviderId: "kling" },
+      });
+      assert.equal(i2vResolved.providerId, "kling");
+      assert.equal(i2vResolved.modelId, "kling-v2-6");
+
+      // Validation confirms I2V succeeds without requiring R2V
+      const valI2v = assertVideoRequestExecutable({
+        provider: i2vResolved.providerId,
+        model: i2vResolved.modelId,
+        firstFrameUrl: "https://example.com/shot_still.jpg",
+        referenceImageUrls: ["https://example.com/char_ref.jpg"],
+        durationSec: 5,
+        aspectRatio: "16:9",
+      });
+      assert.equal(valI2v.ok, true);
+
+      // Explicit R2V validates as R2V
+      const valR2v = assertVideoRequestExecutable({
+        provider: "higgsfield",
+        model: "seedance-2.5-r2v",
+        mode: "reference-to-video",
+        firstFrameUrl: "https://example.com/shot_still.jpg",
+        referenceImageUrls: ["https://example.com/char_ref.jpg"],
+        durationSec: 5,
+        aspectRatio: "16:9",
+      });
+      assert.equal(valR2v.ok, true);
+    });
+
+    it("non-generative mux/merge bypasses generative capability assertions", () => {
+      const muxRes = assertVideoRequestExecutable({
+        provider: "mux",
+        action: "merge_video_audio",
+        videoUrls: ["https://example.com/clip1.mp4", "https://example.com/clip2.mp4"],
+      });
+      assert.equal(muxRes.ok, true);
     });
   });
 });

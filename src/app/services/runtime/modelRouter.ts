@@ -110,6 +110,19 @@ export class ModelRouter {
       }
     }
 
+    if (category === "voice") {
+      const decision = routeMediaCapability({
+        modality: "audio",
+        generationMode: "text_to_speech",
+        preferences: {
+          preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
+        },
+      });
+      if (decision.selected) {
+        return decision.selected.providerId as AIProviderId;
+      }
+    }
+
     // Category Best Available Default Table
     switch (category) {
       case "storyboardImages":
@@ -176,6 +189,19 @@ export class ModelRouter {
       const decision = routeMediaCapability({
         modality: "image",
         generationMode: "text_to_image",
+        preferences: {
+          preferredProviderId: provider,
+        },
+      });
+      if (decision.selected?.modelId) {
+        return decision.selected.modelId;
+      }
+    }
+
+    if (category === "voice") {
+      const decision = routeMediaCapability({
+        modality: "audio",
+        generationMode: "text_to_speech",
         preferences: {
           preferredProviderId: provider,
         },
