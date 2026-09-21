@@ -1305,15 +1305,19 @@ export class AIProviderOrchestrator {
           throw new Error("Grok image generation failed and no fallback available.");
         }
 
-        // 4B. Grok Video Generation — official i2v (image + optional last/end). Never refs on the same body.
+        // 4B. Video Generation — official i2v (image + optional last/end). Resolves target provider, never hardcoded 'grok'.
         if (options.capability === "Video Generation") {
           const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
           const firstFrame = options.firstFrameUrl || options.referenceImageUrl;
+          const resolvedProvider =
+            options.preferredProvider && options.preferredProvider !== "auto"
+              ? options.preferredProvider
+              : ((options as any).provider || "grok");
           if (!firstFrame) {
-            throw new Error("Grok i2v requires this shot's still as frame 1.");
+            throw new Error(`${resolvedProvider} i2v requires this shot's still as frame 1.`);
           }
           const clip = await requestProductionVideoClip({
-            provider: "grok",
+            provider: resolvedProvider,
             prompt: options.prompt,
             firstFrameUrl: firstFrame,
             lastFrameUrl: options.lastFrameUrl || options.endFrameUrl,
@@ -1322,13 +1326,13 @@ export class AIProviderOrchestrator {
             referenceImageUrls: options.referenceImageUrls || (options.characterSheetUrl ? [options.characterSheetUrl] : []),
             aspectRatio: options.aspectRatio,
             durationSec: options.durationSec,
-            model: options.model || "grok-imagine-video-1.5",
+            model: options.model || (resolvedProvider === "grok" ? "grok-imagine-video-1.5" : undefined),
             productionId: options.productionId,
             brandId: options.brandId,
             shotIndex: options.shotIndex,
           });
           if (!clip.videoUrl) {
-            throw new Error("Grok Video Generation returned no video URL.");
+            throw new Error(`${resolvedProvider} Video Generation returned no video URL.`);
           }
           if (options.productionId && clip.videoUrl) {
             const { scheduleAutoIngestMedia } = await import("../production/ingestMediaToSpark");

@@ -84,3 +84,9 @@ export {
   listSparkCapabilities,
   type SparkSystemCapability,
 } from "./sparkCapabilities";
+export {
+  assertVideoRequestExecutable,
+  looksLikeSheetOrGridUrl,
+  looksLikeStoryboardGridUrl,
+  type VideoExecutableRequestInput,
+} from "./assertVideoRequest";

@@ -33,6 +33,7 @@ import {
   resolveClipFrames,
   type VideoClipRequest,
 } from "./_videoContract.js";
+import { assertVideoRequestExecutable } from "../../src/app/services/production/capability/assertVideoRequest.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -985,6 +986,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fs.rmSync(tmpDir, { recursive: true, force: true });
         } catch {}
       }
+    }
+
+    // Fail-closed video capability assertion: ensure provider & model are executable
+    try {
+      assertVideoRequestExecutable(body);
+    } catch (valErr: any) {
+      return res.status(400).json({
+        error: valErr?.message || String(valErr),
+        videoUrl: null,
+      });
     }
 
     const keys = {

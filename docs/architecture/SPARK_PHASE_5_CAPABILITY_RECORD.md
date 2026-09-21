@@ -2,8 +2,8 @@
 
 Repository: ElOgiso/spark  
 Branch: main  
-Phase: 5 (Capability Fact Layer + Model Catalog Alignment)  
-Status: COMPLETE  
+Phase: 5.1 (Fail-Closed Video Submit Path)  
+Status: PHASE 5.1 — FAIL-CLOSED SUBMIT PATH  
 Date: 2026-09-21  
 
 ---
@@ -93,3 +93,25 @@ MODEL CATALOG ALIGNMENT (modelCatalog.ts ↔ profiles.ts)
 3. **Zero Remote Provider Spend**: All validation and tests execute entirely offline in-memory or via mocks with \$0.00 provider API cost.
 4. **Zero Database Migrations**: No schema alterations were made.
 5. **No Premature Routing**: Scorecards are purely informative priors; intelligent routing remains for Phase 6.
+
+---
+
+## 4. Phase 5.1 — Fail-Closed Video Submit Path
+
+- **Shared `assertVideoRequestExecutable` Helper** (`src/app/services/production/capability/assertVideoRequest.ts`):
+  - Extracted shared pre-flight validation used by both `productionVideoRequest.ts` (client before `fetch`) and `api/runtime/video.ts` (server after parsing body).
+  - Enforces fail-closed validation: unmapped models, unknown providers, or disabled adapters (`adapterSupported: false`) throw explainable errors and never hit the network.
+  - Removed `if (profile)` fail-open bypass in `productionVideoRequest.ts`.
+- **R2V Detection & Higgsfield R2V Profile**:
+  - Detects R2V from `mode: "reference-to-video" | "r2v"` or `model` containing `r2v`.
+  - Automatically matches the canonical `seedance-2.5-r2v` capability profile with multi-reference support.
+- **Strict I2V Still & Grid Guard**:
+  - Enforces presence of shot still / firstFrameUrl for all I2V providers.
+  - Rejects storyboard grids, contact sheets, and character sheets as motion sources.
+  - Rejects `asset://` URI schemes for Higgsfield.
+- **Orchestrator Provider Fidelity**:
+  - `AIProviderOrchestrator` video generation resolves the target provider (`preferredProvider` / candidate `provider.id`), never hardcoding `"grok"`.
+- **Single Billable Video Path Verified**:
+  - Audited all occurrences of `fetch("/api/runtime/video")` across codebase.
+  - Only `requestProductionVideoClip` initiates billable video generation; FFmpeg merges use `mux` bypass.
+  - Regression tests in `src/app/services/production/failClosedVideoSubmit.test.ts`.
