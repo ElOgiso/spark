@@ -10,6 +10,8 @@ import type {
   ProviderJobStatus,
 } from "../types";
 
+import type { CostEstimate, ActualProviderCost } from "../../economics/types";
+
 export interface MediaProviderAdapter {
   providerId: string;
   capabilities(): ProviderCapabilitySnapshot;
@@ -17,6 +19,10 @@ export interface MediaProviderAdapter {
   getStatus(jobId: string): Promise<ProviderJobStatus>;
   cancel?(jobId: string): Promise<{ cancelled: boolean; reason?: string }>;
   normalizeOutput(job: ProviderJobStatus): Promise<NormalizedMediaOutput>;
+  /** Optional provider-specific pre-flight cost estimation */
+  estimateCost?(request: ProviderGenerationRequest): Promise<CostEstimate> | CostEstimate;
+  /** Optional provider-specific post-execution actual cost resolution */
+  resolveActualCost?(job: ProviderJobStatus): Promise<ActualProviderCost> | ActualProviderCost;
 }
 
 export interface AdapterPorts {

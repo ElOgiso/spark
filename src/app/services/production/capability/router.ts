@@ -26,6 +26,7 @@ import type {
 } from "./types";
 import { listProviderModelCandidates } from "./registry";
 import { validateCapabilityRequirements } from "./validate";
+import { CostEngine } from "../economics/costEngine";
 
 export interface RouteMediaOptions {
   candidates?: ProviderModelCandidate[];
@@ -153,13 +154,30 @@ function healthScore(c: ProviderModelCandidate): number {
   return 0; // error / disabled
 }
 
-function costScore(c: ProviderModelCandidate): number {
+function costScore(c: ProviderModelCandidate, req?: CapabilityRequirements): number {
   const e = c.economics;
-  if (!e?.known) return 0.5; // neutral — do not invent prices
-  // Lower cost → higher score; only when known
-  const usd = e.estimatedUsdPerGeneration ?? e.costPerSecond ?? e.estimatedCreditsPerGeneration;
-  if (usd == null) return 0.5;
-  return 1 / (1 + usd);
+  if (e?.known) {
+    const usd = e.estimatedUsdPerGeneration ?? e.costPerSecond ?? e.estimatedCreditsPerGeneration;
+    if (usd != null) return 1 / (1 + usd);
+  }
+  if (e && e.known === false) {
+    return 0.5; // neutral — unpriced candidate profiles remain strictly 0.5
+  }
+  if (req) {
+    const est = CostEngine.estimateCost({
+      providerId: c.providerId,
+      modelId: c.modelId,
+      modality: req.modality,
+      durationSeconds: req.output?.durationSeconds,
+      resolution: req.output?.resolution,
+      aspectRatio: req.output?.aspectRatio,
+      includeAudio: req.output?.requiresNativeAudio || req.audio?.required,
+    });
+    if ((est.status === "EXACT" || est.status === "ESTIMATED") && est.amount != null) {
+      return 1 / (1 + est.amount);
+    }
+  }
+  return 0.5; // neutral — unpriced candidate remains 0.5
 }
 
 function latencyScore(c: ProviderModelCandidate): number {
@@ -265,34 +283,74 @@ function scoreCandidate(
 
   // Hard reject budget exceedance
   const maxBudget = req.preferences?.budget?.maxProviderCost;
-  if (maxBudget != null && c.economics?.known) {
-    const est = c.economics.estimatedUsdPerGeneration ?? c.economics.costPerSecond;
-    if (est != null && est > maxBudget) {
-      return {
-        breakdown: {
-          capabilityFit: 0,
-          quality: 0,
-          reliability: 0,
-          latency: 0,
-          cost: 0,
-          preference: 0,
-          health: 0,
-          finalScore: 0,
-        },
-        match: validateCapabilityRequirements(req, c.effective),
-        rejected: {
-          candidate: { providerId: c.providerId, modelId: c.modelId },
-          reasonCodes: ["REJECTED_BUDGET_EXCEEDED"],
-          mismatches: [
-            {
-              code: "REJECTED_BUDGET_EXCEEDED",
-              requirement: "budget",
-              detail: `Estimated cost ${est} exceeds maxProviderCost ${maxBudget}`,
-              hard: true,
-            },
-          ],
-        },
-      };
+  if (maxBudget != null) {
+    if (c.economics?.known) {
+      const est = c.economics.estimatedUsdPerGeneration ?? c.economics.costPerSecond;
+      if (est != null && est > maxBudget) {
+        return {
+          breakdown: {
+            capabilityFit: 0,
+            quality: 0,
+            reliability: 0,
+            latency: 0,
+            cost: 0,
+            preference: 0,
+            health: 0,
+            finalScore: 0,
+          },
+          match: validateCapabilityRequirements(req, c.effective),
+          rejected: {
+            candidate: { providerId: c.providerId, modelId: c.modelId },
+            reasonCodes: ["REJECTED_BUDGET_EXCEEDED"],
+            mismatches: [
+              {
+                code: "REJECTED_BUDGET_EXCEEDED",
+                requirement: "budget",
+                detail: `Estimated cost ${est} exceeds maxProviderCost ${maxBudget}`,
+                hard: true,
+              },
+            ],
+          },
+        };
+      }
+    } else {
+      const costEstimate = CostEngine.estimateCost({
+        providerId: c.providerId,
+        modelId: c.modelId,
+        modality: req.modality,
+        durationSeconds: req.output?.durationSeconds,
+        resolution: req.output?.resolution,
+        aspectRatio: req.output?.aspectRatio,
+        includeAudio: req.output?.requiresNativeAudio || req.audio?.required,
+      });
+      const budgetEval = CostEngine.evaluateBudget(costEstimate, maxBudget);
+      if (!budgetEval.approved && budgetEval.reason === "EXCEEDS_BUDGET") {
+        return {
+          breakdown: {
+            capabilityFit: 0,
+            quality: 0,
+            reliability: 0,
+            latency: 0,
+            cost: 0,
+            preference: 0,
+            health: 0,
+            finalScore: 0,
+          },
+          match: validateCapabilityRequirements(req, c.effective),
+          rejected: {
+            candidate: { providerId: c.providerId, modelId: c.modelId },
+            reasonCodes: ["REJECTED_BUDGET_EXCEEDED"],
+            mismatches: [
+              {
+                code: "REJECTED_BUDGET_EXCEEDED",
+                requirement: "budget",
+                detail: budgetEval.detail,
+                hard: true,
+              },
+            ],
+          },
+        };
+      }
     }
   }
 
@@ -353,7 +411,7 @@ function scoreCandidate(
   const quality = qualityScore(c);
   const reliability = reliabilityScore(c);
   const latency = latencyScore(c);
-  const cost = costScore(c);
+  const cost = costScore(c, req);
   const preference = preferenceScore(c, req);
 
   const finalScore =
@@ -463,7 +521,18 @@ export function routeMediaCapability(
         strengths: Array.from(new Set(reasonCodes)).filter((r) => !r.startsWith("REJECTED")),
         tradeoffs: match.warnings.map((w) => w.message),
       },
-      estimatedCost: manual.economics?.estimatedUsdPerGeneration,
+      estimatedCost:
+        manual.economics?.estimatedUsdPerGeneration ??
+        CostEngine.estimateCost({
+          providerId: manual.providerId,
+          modelId: manual.modelId,
+          modality: req.modality,
+          durationSeconds: req.output?.durationSeconds,
+          resolution: req.output?.resolution,
+          aspectRatio: req.output?.aspectRatio,
+          includeAudio: req.output?.requiresNativeAudio || req.audio?.required,
+        }).amount ??
+        undefined,
     };
     return {
       selected: manual,
@@ -570,7 +639,18 @@ export function routeMediaCapability(
       strengths: Array.from(new Set(reasonCodes)).filter((r) => !r.startsWith("REJECTED")),
       tradeoffs: best.match.warnings.map((w) => w.message),
     },
-    estimatedCost: best.candidate.economics?.estimatedUsdPerGeneration,
+    estimatedCost:
+      best.candidate.economics?.estimatedUsdPerGeneration ??
+      CostEngine.estimateCost({
+        providerId: best.candidate.providerId,
+        modelId: best.candidate.modelId,
+        modality: req.modality,
+        durationSeconds: req.output?.durationSeconds,
+        resolution: req.output?.resolution,
+        aspectRatio: req.output?.aspectRatio,
+        includeAudio: req.output?.requiresNativeAudio || req.audio?.required,
+      }).amount ??
+      undefined,
   };
 
   return {
