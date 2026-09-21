@@ -50,6 +50,23 @@ export type CapabilityConfidence =
   | "unknown"
   | "deprecated";
 
+export type RoutingPriority = "supporting" | "important" | "hero";
+
+export type RoutingProductionMode =
+  | "Economy"
+  | "Balanced"
+  | "Cinematic"
+  | "Maximum"
+  | "express"
+  | "standard"
+  | "deep"
+  | "narrator"
+  | "hybrid"
+  | "cinematic"
+  | "Narrator"
+  | "Hybrid"
+  | "Cinematic";
+
 export type RoutingObjective =
   | "quality_first"
   | "balanced"
@@ -83,6 +100,15 @@ export type RoutingReasonCode =
   | "REJECTED_MANUAL_MISMATCH"
   | "REJECTED_CONTINUATION_UNSUPPORTED"
   | "REJECTED_EXTENSION_UNSUPPORTED"
+  | "REJECTED_EXCLUDED_PROVIDER"
+  | "REJECTED_EXCLUDED_MODEL"
+  | "REJECTED_BUDGET_EXCEEDED"
+  | "PRODUCTION_MODE_CINEMATIC"
+  | "PRODUCTION_MODE_ECONOMY"
+  | "PRODUCTION_MODE_BALANCED"
+  | "PRODUCTION_MODE_MAXIMUM"
+  | "PRIORITY_HERO"
+  | "PRIORITY_SUPPORTING"
   | "CAPABILITY_CONFLICT"
   | "FALLBACK_SELECTED"
   | "NO_COMPATIBLE_CANDIDATE";
@@ -276,12 +302,17 @@ export interface CapabilityRequirements {
     requiresCancellation?: boolean;
     requiresBatch?: boolean;
   };
-  /** Soft preferences — never cause hard rejection alone. */
+  /** Soft preferences & routing policy — hard filters like exclusions/budget also evaluate here */
   preferences?: {
     objective?: RoutingObjective;
     preferredProviderId?: string;
     preferredModelId?: string;
     manualOverride?: boolean;
+    productionMode?: RoutingProductionMode;
+    priority?: RoutingPriority;
+    budget?: { maxProviderCost?: number };
+    excludedProviderIds?: string[];
+    excludedModelIds?: string[];
   };
 }
 
@@ -367,6 +398,18 @@ export interface FallbackPlanEntry {
   score: number;
 }
 
+export interface ResolvedModelSummary {
+  providerId: string;
+  modelId: string;
+  score?: number;
+  reasons?: {
+    capabilityFit?: string[];
+    strengths?: string[];
+    tradeoffs?: string[];
+  };
+  estimatedCost?: number;
+}
+
 export interface MediaRoutingDecision {
   selected?: ProviderModelCandidate;
   rejected: CandidateRejection[];
@@ -375,6 +418,86 @@ export interface MediaRoutingDecision {
   fallbackPlan: FallbackPlanEntry[];
   reasonCodes: string[];
   objective: RoutingObjective;
+  resolvedModel?: ResolvedModelSummary;
+}
+
+export interface ResolvedModelRouting {
+  providerId: string;
+  modelId: string;
+  score?: number;
+  reasons?: {
+    capabilityFit?: string[];
+    strengths?: string[];
+    tradeoffs?: string[];
+  };
+  reasonCodes: string[];
+  estimatedCost?: number;
+  decision: MediaRoutingDecision;
+}
+
+/**
+ * Semantic intent passed to Canonical Router.
+ * Wraps or extends CapabilityRequirements with production mode, priority, and exclusions.
+ */
+export interface RoutingIntent {
+  modality: MediaModality;
+  productionMode?: RoutingProductionMode;
+  capabilityRequirements?: CapabilityRequirements;
+  generationMode?: GenerationMode;
+  references?: {
+    types: ReferenceType[];
+    minimumCount?: number;
+  };
+  temporal?: {
+    requiresStartFrame?: boolean;
+    requiresEndFrame?: boolean;
+    requiresStartAndEnd?: boolean;
+    requiresContinuation?: boolean;
+    requiresExtension?: boolean;
+  };
+  camera?: {
+    requiresCameraControl?: boolean;
+    preferredMovements?: string[];
+    minimumControlLevel?: CameraControlLevel;
+  };
+  motion?: {
+    minimumControlLevel?: MotionControlLevel;
+  };
+  output?: {
+    durationSeconds?: number;
+    aspectRatio?: string;
+    resolution?: string;
+    frameRate?: number;
+    requiresNativeAudio?: boolean;
+  };
+  audio?: {
+    required?: boolean;
+  };
+  execution?: {
+    requiresAsync?: boolean;
+    requiresCancellation?: boolean;
+    requiresBatch?: boolean;
+  };
+  objective?: {
+    quality?: number;
+    speed?: number;
+    cost?: number;
+    reliability?: number;
+  } | RoutingObjective;
+  priority?: RoutingPriority;
+  budget?: {
+    maxProviderCost?: number;
+  };
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  excludedProviderIds?: string[];
+  excludedModelIds?: string[];
+  context?: {
+    identityCritical?: boolean;
+    audioRequired?: boolean;
+    temporalConsistency?: boolean;
+  };
+  manualOverride?: boolean;
 }
 
 export type VoiceMode = "stock" | "cloned";

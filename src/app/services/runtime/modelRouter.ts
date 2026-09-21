@@ -10,6 +10,7 @@ import { getRecommendedModel } from "./modelCatalog";
 
 import { PROVIDER_CAPABILITY_MAP } from "./providerCapabilities";
 import { ProductionGenerationGuard } from "../production/ProductionGenerationGuard";
+import { routeMediaCapability } from "../production/capability";
 
 export class ModelRouter {
   /**
@@ -82,6 +83,33 @@ export class ModelRouter {
       console.warn(`[ModelRouter] Preferred provider "${preferred}" does not support capability "${capability}" for category "${category}". Falling back to Best Available.`);
     }
 
+    // Delegate media categories to canonical routeMediaCapability
+    if (category === "videoGeneration") {
+      const decision = routeMediaCapability({
+        modality: "video",
+        generationMode: "image_to_video",
+        preferences: {
+          preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
+        },
+      });
+      if (decision.selected) {
+        return decision.selected.providerId as AIProviderId;
+      }
+    }
+
+    if (category === "storyboardImages") {
+      const decision = routeMediaCapability({
+        modality: "image",
+        generationMode: "text_to_image",
+        preferences: {
+          preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
+        },
+      });
+      if (decision.selected) {
+        return decision.selected.providerId as AIProviderId;
+      }
+    }
+
     // Category Best Available Default Table
     switch (category) {
       case "storyboardImages":
@@ -114,8 +142,9 @@ export class ModelRouter {
    * Resolves target model ID for a given category and provider.
    * Priority:
    * 1. Exact user model selection if configured
-   * 2. Recommended model from catalog for this provider & capability
-   * 3. Empty string (falls back to provider plugin default)
+   * 2. Canonical capability router resolution for media categories
+   * 3. Recommended model from catalog for this provider & capability
+   * 4. Empty string (falls back to provider plugin default)
    */
   static resolveModel(
     category: AIRoutingCategory,
@@ -127,6 +156,33 @@ export class ModelRouter {
     const explicitModel = activeSelections[category];
     if (explicitModel && explicitModel.trim().length > 0) {
       return explicitModel.trim();
+    }
+
+    // Delegate media categories to canonical routeMediaCapability
+    if (category === "videoGeneration") {
+      const decision = routeMediaCapability({
+        modality: "video",
+        generationMode: "image_to_video",
+        preferences: {
+          preferredProviderId: provider,
+        },
+      });
+      if (decision.selected?.modelId) {
+        return decision.selected.modelId;
+      }
+    }
+
+    if (category === "storyboardImages") {
+      const decision = routeMediaCapability({
+        modality: "image",
+        generationMode: "text_to_image",
+        preferences: {
+          preferredProviderId: provider,
+        },
+      });
+      if (decision.selected?.modelId) {
+        return decision.selected.modelId;
+      }
     }
 
     const cap = capability || this.mapCategoryToCapability(category);

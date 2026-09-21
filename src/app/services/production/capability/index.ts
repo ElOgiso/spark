@@ -38,6 +38,11 @@ export type {
   CandidateRejection,
   FallbackPlanEntry,
   MediaRoutingDecision,
+  ResolvedModelSummary,
+  ResolvedModelRouting,
+  RoutingIntent,
+  RoutingProductionMode,
+  RoutingPriority,
   VoiceMode,
   CaptioningCapability,
   DistributionProfile,
@@ -72,6 +77,8 @@ export {
 } from "./registry";
 export {
   routeMediaCapability,
+  resolveCanonicalModel,
+  normalizeRoutingIntentToRequirements,
   assertExecutableCapability,
   type RouteMediaOptions,
 } from "./router";

@@ -11,9 +11,11 @@ export type { RoutingWeightConfig, RoutingFailureReason } from "./routingWeights
 export type { ModelScore } from "./modelScorer";
 export type { FallbackPlan } from "./fallbackPlanner";
 
-/** Phase 3 media capability intelligence (hard filter + router) */
+/** Phase 6 canonical model router */
 export {
   routeMediaCapability,
+  resolveCanonicalModel,
+  normalizeRoutingIntentToRequirements,
   assertExecutableCapability,
   capabilityRequirementsFromShot,
   buildCapabilityRequirements,
@@ -22,4 +24,9 @@ export {
   listCapabilityProfiles,
   resolveEffectiveCapability,
   MEDIA_CAPABILITY_PROFILES,
+  type RoutingIntent,
+  type ResolvedModelRouting,
+  type ResolvedModelSummary,
+  type RoutingProductionMode,
+  type RoutingPriority,
 } from "../capability";

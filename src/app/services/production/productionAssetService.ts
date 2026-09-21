@@ -34,6 +34,7 @@ import {
 } from "./resolveLiveDirectorRefs";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
 import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
+import { routeMediaCapability } from "./capability";
 import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
 import {
   buildProductionElementPack,
@@ -2836,6 +2837,29 @@ export class ProductionAssetService {
                         }
                       }
 
+                      let effectiveVideoModel = preferredVideoModel;
+                      if (!effectiveVideoModel) {
+                        const routed = routeMediaCapability({
+                          modality: "video",
+                          generationMode: (hfMode === "reference-to-video" || (s as any).videoMode === "reference-to-video") ? "video_to_video" : "image_to_video",
+                          references: effectiveRefs.length ? { types: ["image"], minimumCount: effectiveRefs.length } : undefined,
+                          temporal: {
+                            requiresStartFrame: true,
+                            requiresEndFrame: Boolean(subclipPlannedEnd),
+                          },
+                          output: {
+                            durationSeconds: subclipDur,
+                            aspectRatio: identityPack.aspectRatio,
+                          },
+                          preferences: {
+                            preferredProviderId: providerId,
+                            productionMode: generationSettings.productionMode as any,
+                            priority: (s as any).isHero ? "hero" : "supporting",
+                          },
+                        });
+                        effectiveVideoModel = routed.selected?.modelId;
+                      }
+
                       const apiClip = await requestProductionVideoClip({
                         provider: providerId,
                         prompt: sceneMotionPrompt,
@@ -2847,7 +2871,7 @@ export class ProductionAssetService {
                         referenceImageUrls: effectiveRefs,
                         aspectRatio: identityPack.aspectRatio,
                         durationSec: subclipDur,
-                        model: preferredVideoModel,
+                        model: effectiveVideoModel,
                         mode: hfMode || (s as any).videoMode,
                         productionId: production.id,
                         brandId: (brand as any).id,
@@ -2857,7 +2881,7 @@ export class ProductionAssetService {
 
                       const billableReqId = apiClip.requestId || "req_completed";
                       console.log(
-                        `[I2V BILLABLE] provider=${providerId} model=${preferredVideoModel || "default"} durationSec=${subclipDur} scene=${globalSceneNum} subclipIndex=${k + 1} request_id=${billableReqId}`
+                        `[I2V BILLABLE] provider=${providerId} model=${effectiveVideoModel || "default"} durationSec=${subclipDur} scene=${globalSceneNum} subclipIndex=${k + 1} request_id=${billableReqId}`
                       );
 
                       return {
@@ -4376,18 +4400,28 @@ export class ProductionAssetService {
 
       const fixTimeoutMs = isI2vApiProvider(activeVideo.providerId) ? 20 * 60 * 1000 : 360000;
 
-      const fixPreferredModel =
+      let fixPreferredModel =
         (generationSettings as any)?.preferredVideoModel ||
-        (sceneToFix as any)?.videoModel ||
-        (activeVideo.providerId === "higgsfield"
-          ? "seedance-2.5-i2v"
-          : activeVideo.providerId === "kling"
-          ? "kling-v2-6"
-          : activeVideo.providerId === "seedance"
-          ? "doubao-seedance-1-5-pro-251215"
-          : activeVideo.providerId === "grok"
-          ? "grok-imagine-video-1.5"
-          : undefined);
+        (sceneToFix as any)?.videoModel;
+
+      if (!fixPreferredModel) {
+        const repairDecision = routeMediaCapability({
+          modality: "video",
+          generationMode: "image_to_video",
+          temporal: {
+            requiresStartFrame: true,
+            requiresEndFrame: Boolean(fixEndFrame),
+          },
+          output: {
+            durationSeconds: fixI2vDuration,
+            aspectRatio: identityPack.aspectRatio,
+          },
+          preferences: {
+            preferredProviderId: activeVideo.providerId,
+          },
+        });
+        fixPreferredModel = repairDecision.selected?.modelId;
+      }
 
       let generatedClip = "";
       let generatedLastFrameDataUrl: string | undefined;

@@ -18,6 +18,11 @@ import type {
   FallbackPlanEntry,
   FallbackQuality,
   RoutingReasonCode,
+  RoutingIntent,
+  ResolvedModelRouting,
+  ResolvedModelSummary,
+  RoutingProductionMode,
+  RoutingPriority,
 } from "./types";
 import { listProviderModelCandidates } from "./registry";
 import { validateCapabilityRequirements } from "./validate";
@@ -40,6 +45,105 @@ const OBJECTIVES: Record<
   speed_first: { quality: 0.4, reliability: 0.7, latency: 1.3, cost: 0.3, preference: 0.4, health: 0.9 },
   reliability_first: { quality: 0.5, reliability: 1.3, latency: 0.4, cost: 0.3, preference: 0.4, health: 1.2 },
 };
+
+export function normalizeRoutingIntentToRequirements(
+  input: CapabilityRequirements | RoutingIntent
+): CapabilityRequirements {
+  if ("capabilityRequirements" in input && input.capabilityRequirements) {
+    const base = input.capabilityRequirements;
+    const obj =
+      typeof input.objective === "string"
+        ? (input.objective as RoutingObjective)
+        : base.preferences?.objective || "balanced";
+    return {
+      ...base,
+      preferences: {
+        ...base.preferences,
+        objective: obj,
+        preferredProviderId: input.preferredProviderId || base.preferences?.preferredProviderId,
+        preferredModelId: input.preferredModelId || base.preferences?.preferredModelId,
+        productionMode: input.productionMode || base.preferences?.productionMode,
+        priority: input.priority || base.preferences?.priority,
+        budget: input.budget || base.preferences?.budget,
+        excludedProviderIds: input.excludedProviderIds || base.preferences?.excludedProviderIds,
+        excludedModelIds: input.excludedModelIds || base.preferences?.excludedModelIds,
+        manualOverride: input.manualOverride ?? base.preferences?.manualOverride,
+      },
+    };
+  }
+
+  const req = input as CapabilityRequirements;
+  const intent = input as RoutingIntent;
+  const obj =
+    typeof intent.objective === "string"
+      ? (intent.objective as RoutingObjective)
+      : req.preferences?.objective || "balanced";
+
+  return {
+    modality: intent.modality,
+    generationMode: intent.generationMode || req.generationMode,
+    references: intent.references || req.references,
+    temporal: intent.temporal || req.temporal,
+    camera: intent.camera || req.camera,
+    motion: intent.motion || req.motion,
+    output: intent.output || req.output,
+    audio: intent.audio || req.audio,
+    execution: intent.execution || req.execution,
+    preferences: {
+      ...req.preferences,
+      objective: obj,
+      preferredProviderId: intent.preferredProviderId || req.preferences?.preferredProviderId,
+      preferredModelId: intent.preferredModelId || req.preferences?.preferredModelId,
+      productionMode: intent.productionMode || req.preferences?.productionMode,
+      priority: intent.priority || req.preferences?.priority,
+      budget: intent.budget || req.preferences?.budget,
+      excludedProviderIds: intent.excludedProviderIds || req.preferences?.excludedProviderIds,
+      excludedModelIds: intent.excludedModelIds || req.preferences?.excludedModelIds,
+      manualOverride: intent.manualOverride ?? req.preferences?.manualOverride,
+    },
+  };
+}
+
+function computeWeights(
+  objective: RoutingObjective,
+  preferences?: CapabilityRequirements["preferences"]
+): { quality: number; reliability: number; latency: number; cost: number; preference: number; health: number } {
+  const base = { ...(OBJECTIVES[objective] || OBJECTIVES.balanced) };
+
+  // Production Mode bias
+  const mode = preferences?.productionMode;
+  if (mode === "Economy" || mode === "express") {
+    base.cost += 0.5;
+    base.reliability += 0.1;
+    base.quality = Math.max(0.2, base.quality - 0.2);
+  } else if (mode === "Cinematic" || mode === "deep") {
+    base.quality += 0.4;
+    base.reliability += 0.2;
+    base.cost = Math.max(0.1, base.cost - 0.3);
+    base.latency = Math.max(0.1, base.latency - 0.2);
+  } else if (mode === "Maximum") {
+    base.quality += 0.6;
+    base.reliability += 0.3;
+    base.cost = Math.max(0.05, base.cost - 0.4);
+    base.latency = Math.max(0.05, base.latency - 0.3);
+  }
+
+  // Priority adjustment
+  const prio = preferences?.priority;
+  if (prio === "hero") {
+    base.quality += 0.3;
+    base.cost = Math.max(0.1, base.cost - 0.2);
+    base.reliability += 0.1;
+  } else if (prio === "supporting") {
+    base.cost += 0.3;
+    base.latency += 0.2;
+    base.quality = Math.max(0.2, base.quality - 0.2);
+  } else if (prio === "important") {
+    base.quality += 0.15;
+  }
+
+  return base;
+}
 
 function healthScore(c: ProviderModelCandidate): number {
   const s = c.health?.status;
@@ -101,7 +205,98 @@ function scoreCandidate(
   req: CapabilityRequirements,
   objective: RoutingObjective
 ): { breakdown: RoutingScoreBreakdown; match: ReturnType<typeof validateCapabilityRequirements>; rejected?: CandidateRejection } {
-  const weights = OBJECTIVES[objective];
+  // Hard reject excluded providers
+  if (req.preferences?.excludedProviderIds?.includes(c.providerId)) {
+    return {
+      breakdown: {
+        capabilityFit: 0,
+        quality: 0,
+        reliability: 0,
+        latency: 0,
+        cost: 0,
+        preference: 0,
+        health: 0,
+        finalScore: 0,
+      },
+      match: validateCapabilityRequirements(req, c.effective),
+      rejected: {
+        candidate: { providerId: c.providerId, modelId: c.modelId },
+        reasonCodes: ["REJECTED_EXCLUDED_PROVIDER"],
+        mismatches: [
+          {
+            code: "REJECTED_EXCLUDED_PROVIDER",
+            requirement: "excludedProvider",
+            detail: `Provider "${c.providerId}" is excluded by routing intent`,
+            hard: true,
+          },
+        ],
+      },
+    };
+  }
+
+  // Hard reject excluded models
+  if (req.preferences?.excludedModelIds?.includes(c.modelId)) {
+    return {
+      breakdown: {
+        capabilityFit: 0,
+        quality: 0,
+        reliability: 0,
+        latency: 0,
+        cost: 0,
+        preference: 0,
+        health: 0,
+        finalScore: 0,
+      },
+      match: validateCapabilityRequirements(req, c.effective),
+      rejected: {
+        candidate: { providerId: c.providerId, modelId: c.modelId },
+        reasonCodes: ["REJECTED_EXCLUDED_MODEL"],
+        mismatches: [
+          {
+            code: "REJECTED_EXCLUDED_MODEL",
+            requirement: "excludedModel",
+            detail: `Model "${c.modelId}" is excluded by routing intent`,
+            hard: true,
+          },
+        ],
+      },
+    };
+  }
+
+  // Hard reject budget exceedance
+  const maxBudget = req.preferences?.budget?.maxProviderCost;
+  if (maxBudget != null && c.economics?.known) {
+    const est = c.economics.estimatedUsdPerGeneration ?? c.economics.costPerSecond;
+    if (est != null && est > maxBudget) {
+      return {
+        breakdown: {
+          capabilityFit: 0,
+          quality: 0,
+          reliability: 0,
+          latency: 0,
+          cost: 0,
+          preference: 0,
+          health: 0,
+          finalScore: 0,
+        },
+        match: validateCapabilityRequirements(req, c.effective),
+        rejected: {
+          candidate: { providerId: c.providerId, modelId: c.modelId },
+          reasonCodes: ["REJECTED_BUDGET_EXCEEDED"],
+          mismatches: [
+            {
+              code: "REJECTED_BUDGET_EXCEEDED",
+              requirement: "budget",
+              detail: `Estimated cost ${est} exceeds maxProviderCost ${maxBudget}`,
+              hard: true,
+            },
+          ],
+        },
+      };
+    }
+  }
+
+  const weights = computeWeights(objective, req.preferences);
   const { fit, match } = capabilityFitScore(c, req);
 
   if (!match.hardRequirementsSatisfied) {
@@ -200,10 +395,11 @@ function fallbackQuality(
  * Route a media generation requirement to an executable provider/model.
  */
 export function routeMediaCapability(
-  requirements: CapabilityRequirements,
+  requirements: CapabilityRequirements | RoutingIntent,
   options: RouteMediaOptions = {}
 ): MediaRoutingDecision {
-  const objective = requirements.preferences?.objective || "balanced";
+  const req = normalizeRoutingIntentToRequirements(requirements);
+  const objective = req.preferences?.objective || "balanced";
   const candidates =
     options.candidates ||
     listProviderModelCandidates({
@@ -215,12 +411,13 @@ export function routeMediaCapability(
     candidate: ProviderModelCandidate;
     breakdown: RoutingScoreBreakdown;
     match: ReturnType<typeof validateCapabilityRequirements>;
+    canonicalIndex: number;
   }> = [];
 
   // Manual override path
-  const manualId = options.manualProviderId || requirements.preferences?.preferredProviderId;
-  const manualModel = options.manualModelId || requirements.preferences?.preferredModelId;
-  if (requirements.preferences?.manualOverride && manualId) {
+  const manualId = options.manualProviderId || req.preferences?.preferredProviderId;
+  const manualModel = options.manualModelId || req.preferences?.preferredModelId;
+  if (req.preferences?.manualOverride && manualId) {
     const manual = candidates.find(
       (c) =>
         c.providerId === manualId && (!manualModel || c.modelId === manualModel)
@@ -246,7 +443,7 @@ export function routeMediaCapability(
         objective,
       };
     }
-    const { breakdown, match, rejected: rej } = scoreCandidate(manual, requirements, objective);
+    const { breakdown, match, rejected: rej } = scoreCandidate(manual, req, objective);
     if (rej) {
       return {
         rejected: [rej],
@@ -256,31 +453,58 @@ export function routeMediaCapability(
         capabilityMatch: match,
       };
     }
+    const reasonCodes = ["MANUAL_OVERRIDE", "CAPABILITY_MATCH", ...match.reasonCodes];
+    const resolvedModel: ResolvedModelSummary = {
+      providerId: manual.providerId,
+      modelId: manual.modelId,
+      score: breakdown.finalScore,
+      reasons: {
+        capabilityFit: match.matched.map((m) => m.requirement),
+        strengths: Array.from(new Set(reasonCodes)).filter((r) => !r.startsWith("REJECTED")),
+        tradeoffs: match.warnings.map((w) => w.message),
+      },
+      estimatedCost: manual.economics?.estimatedUsdPerGeneration,
+    };
     return {
       selected: manual,
       rejected: [],
       scoreBreakdown: breakdown,
       capabilityMatch: match,
       fallbackPlan: [],
-      reasonCodes: ["MANUAL_OVERRIDE", "CAPABILITY_MATCH", ...match.reasonCodes],
+      reasonCodes,
       objective,
+      resolvedModel,
     };
   }
 
-  for (const c of candidates) {
-    const { breakdown, match, rejected: rej } = scoreCandidate(c, requirements, objective);
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const { breakdown, match, rejected: rej } = scoreCandidate(c, req, objective);
     if (rej) {
       rejected.push(rej);
       continue;
     }
-    scored.push({ candidate: c, breakdown, match });
+    scored.push({ candidate: c, breakdown, match, canonicalIndex: i });
   }
 
-  scored.sort((a, b) => b.breakdown.finalScore - a.breakdown.finalScore);
+  // Deterministic tie-breaking:
+  // 1. finalScore desc
+  // 2. reliability desc
+  // 3. quality desc
+  // 4. canonical priority index asc (stable catalog order)
+  scored.sort((a, b) => {
+    const diff = b.breakdown.finalScore - a.breakdown.finalScore;
+    if (Math.abs(diff) > 0.0001) return diff;
+    const relDiff = b.breakdown.reliability - a.breakdown.reliability;
+    if (Math.abs(relDiff) > 0.0001) return relDiff;
+    const qualDiff = b.breakdown.quality - a.breakdown.quality;
+    if (Math.abs(qualDiff) > 0.0001) return qualDiff;
+    return a.canonicalIndex - b.canonicalIndex;
+  });
 
   // Soft preference boost already in score; if preferred exists in scored, optionally pin when not manual
-  if (requirements.preferences?.preferredProviderId) {
-    const pref = scored.find((s) => s.candidate.providerId === requirements.preferences?.preferredProviderId);
+  if (req.preferences?.preferredProviderId) {
+    const pref = scored.find((s) => s.candidate.providerId === req.preferences?.preferredProviderId);
     if (pref) {
       // move to front only if within 15% of best — preference must not override large capability/health gaps
       const best = scored[0];
@@ -303,7 +527,7 @@ export function routeMediaCapability(
 
   const fallbackPlan: FallbackPlanEntry[] = scored.slice(1, 4).map((s) => ({
     candidate: { providerId: s.candidate.providerId, modelId: s.candidate.modelId },
-    quality: fallbackQuality(requirements, s.candidate),
+    quality: fallbackQuality(req, s.candidate),
     reasonCodes: ["FALLBACK_SELECTED", "CAPABILITY_MATCH"] as RoutingReasonCode[],
     score: s.breakdown.finalScore,
   }));
@@ -311,14 +535,43 @@ export function routeMediaCapability(
   const reasonCodes = [
     "CAPABILITY_MATCH",
     ...best.match.reasonCodes,
-    ...(requirements.preferences?.preferredProviderId === best.candidate.providerId
+    ...(req.preferences?.preferredProviderId === best.candidate.providerId
       ? (["PREFERRED_PROVIDER"] as const)
+      : []),
+    ...(req.preferences?.preferredModelId === best.candidate.modelId
+      ? (["PREFERRED_MODEL"] as const)
       : []),
     ...(objective === "cost_first" ? (["LOWER_COST"] as const) : []),
     ...(objective === "speed_first" ? (["LOWER_LATENCY"] as const) : []),
     ...(objective === "quality_first" ? (["HIGHER_QUALITY"] as const) : []),
     ...(best.candidate.health?.status === "healthy" ? (["HEALTHY_PROVIDER"] as const) : []),
+    ...(req.preferences?.productionMode === "Cinematic" || req.preferences?.productionMode === "deep"
+      ? (["PRODUCTION_MODE_CINEMATIC"] as const)
+      : []),
+    ...(req.preferences?.productionMode === "Economy" || req.preferences?.productionMode === "express"
+      ? (["PRODUCTION_MODE_ECONOMY"] as const)
+      : []),
+    ...(req.preferences?.productionMode === "Maximum"
+      ? (["PRODUCTION_MODE_MAXIMUM"] as const)
+      : []),
+    ...(req.preferences?.productionMode === "Balanced" || req.preferences?.productionMode === "standard"
+      ? (["PRODUCTION_MODE_BALANCED"] as const)
+      : []),
+    ...(req.preferences?.priority === "hero" ? (["PRIORITY_HERO"] as const) : []),
+    ...(req.preferences?.priority === "supporting" ? (["PRIORITY_SUPPORTING"] as const) : []),
   ];
+
+  const resolvedModel: ResolvedModelSummary = {
+    providerId: best.candidate.providerId,
+    modelId: best.candidate.modelId,
+    score: best.breakdown.finalScore,
+    reasons: {
+      capabilityFit: best.match.matched.map((m) => m.requirement),
+      strengths: Array.from(new Set(reasonCodes)).filter((r) => !r.startsWith("REJECTED")),
+      tradeoffs: best.match.warnings.map((w) => w.message),
+    },
+    estimatedCost: best.candidate.economics?.estimatedUsdPerGeneration,
+  };
 
   return {
     selected: best.candidate,
@@ -328,6 +581,34 @@ export function routeMediaCapability(
     fallbackPlan,
     reasonCodes: Array.from(new Set(reasonCodes)),
     objective,
+    resolvedModel,
+  };
+}
+
+/**
+ * Canonical routing authority entry point.
+ * Given a RoutingIntent or CapabilityRequirements, resolves the authoritative
+ * providerId + modelId with explanations.
+ */
+export function resolveCanonicalModel(
+  intentOrReq: RoutingIntent | CapabilityRequirements,
+  options: RouteMediaOptions = {}
+): ResolvedModelRouting {
+  const req = normalizeRoutingIntentToRequirements(intentOrReq);
+  const decision = routeMediaCapability(req, options);
+  if (!decision.selected || !decision.resolvedModel) {
+    const rejectReasons = decision.rejected.flatMap((r) => r.reasonCodes);
+    const failReason = decision.reasonCodes.join("; ") || rejectReasons.join("; ") || "NO_COMPATIBLE_CANDIDATE";
+    throw new Error(`Canonical Model Routing failed: ${failReason}`);
+  }
+  return {
+    providerId: decision.resolvedModel.providerId,
+    modelId: decision.resolvedModel.modelId,
+    score: decision.resolvedModel.score,
+    reasons: decision.resolvedModel.reasons,
+    reasonCodes: decision.reasonCodes,
+    estimatedCost: decision.resolvedModel.estimatedCost,
+    decision,
   };
 }
 
