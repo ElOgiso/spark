@@ -4,6 +4,11 @@
  */
 
 export type ExecutionStatus =
+  | "ready"
+  | "preparing"
+  | "credit_reserved"
+  | "submitting"
+  | "submitted"
   | "pending"
   | "queued"
   | "running"
@@ -11,8 +16,36 @@ export type ExecutionStatus =
   | "succeeded"
   | "failed"
   | "cancelled"
+  | "unknown_submission"
+  | "reconciling"
   | "retrying"
   | "exhausted";
+
+export type NormalizedProviderStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | "UNKNOWN";
+
+export type RetryClassification =
+  | "SAFE_TO_RETRY"
+  | "DO_NOT_RETRY"
+  | "RECONCILE_FIRST";
+
+export type ProviderExecutionCategory =
+  | "VALIDATION"
+  | "AUTH"
+  | "RATE_LIMIT"
+  | "CAPABILITY"
+  | "NETWORK"
+  | "TIMEOUT"
+  | "PROVIDER"
+  | "POLLING"
+  | "UNKNOWN_SUBMISSION"
+  | "UNKNOWN";
 
 export type ExecutionErrorCode =
   | "provider_unavailable"
@@ -29,15 +62,59 @@ export type ExecutionErrorCode =
   | "cancelled"
   | "dependency_failed"
   | "idempotent_reuse"
+  | "unknown_submission"
+  | "reconciliation_failed"
+  | "insufficient_credits"
   | "unknown";
 
 export interface ExecutionError {
   code: ExecutionErrorCode;
   message: string;
   retryable: boolean;
+  category?: ProviderExecutionCategory;
+  retryability?: RetryClassification;
   reasons?: string[];
+  providerCode?: string;
   /** Sanitized provider diagnostics — never secrets */
   providerDiagnostics?: Record<string, unknown>;
+  raw?: unknown;
+}
+
+export type ProviderSubmissionResult =
+  | {
+      outcome: "SUBMITTED";
+      providerJobId: string;
+      providerRequestId?: string;
+      submittedAt: string;
+      metadata?: Record<string, unknown>;
+    }
+  | {
+      outcome: "NOT_SUBMITTED";
+      error: ExecutionError;
+    }
+  | {
+      outcome: "UNKNOWN_SUBMISSION";
+      error: ExecutionError;
+      reconciliationRequired: true;
+    };
+
+export interface ExecutionRecord {
+  executionId: string;
+  generationTaskId: string;
+  providerId: string;
+  modelId?: string;
+  providerJobId?: string;
+  providerRequestId?: string;
+  submissionAttempt: number;
+  idempotencyKey: string;
+  status: ExecutionStatus;
+  submittedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  lastPolledAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ExecutionInputAsset {

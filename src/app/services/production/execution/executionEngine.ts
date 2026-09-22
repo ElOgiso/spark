@@ -53,6 +53,13 @@ import type {
 } from "./types";
 import type { ProductionAsset } from "../../../domain/types";
 
+import { CostEngine } from "../economics/costEngine";
+import { submitWithReliability, buildSubmissionIdempotencyKey } from "./providerSubmission";
+import { ReconciliationEngine } from "./reconciliationEngine";
+import { normalizeProviderStatus } from "./adapters/types";
+import { classifyRetryability } from "./errors";
+import type { CreditService } from "../credits";
+
 export interface ExecutionEngineOptions {
   ports?: AdapterPorts;
   adapters?: Map<string, MediaProviderAdapter>;
@@ -62,6 +69,9 @@ export interface ExecutionEngineOptions {
   scheduler?: SchedulerConfig;
   backoff?: BackoffPolicy;
   brandId?: string;
+  creditService?: CreditService;
+  userId?: string;
+  lookupFn?: (idempotencyKey: string, requestId?: string) => Promise<import("./types").ProviderJobStatus | null>;
   /** Injected delay (tests can set 0) */
   sleep?: (ms: number) => Promise<void>;
   /** Dry-run: validate + schedule without calling adapters */
@@ -369,8 +379,11 @@ export class GenerationExecutionEngine {
 
     let lastExecution: GenerationExecution | undefined;
     let guard = 0;
+    let reservedCredits: { reservationId: string; amount: number } | undefined;
+    let accumulatedCostUsd = 0;
 
-    while (attempt <= maxAttempts && guard++ < maxAttempts + 2) {
+    const totalMaxGuard = (fallbacks.length + 1) * (maxAttempts + 2);
+    while (guard++ < totalMaxGuard) {
       if (this.cancelled.has(task.id)) {
         const cancelled: GenerationExecution = {
           id: newExecutionId(),
@@ -488,7 +501,7 @@ export class GenerationExecutionEngine {
       }
 
       try {
-        execution = applyTransition(execution, "running");
+        execution = applyTransition(execution, "preparing");
         logExecutionTransition(this.logger, execution);
 
         // Video I2V requires first frame
@@ -498,6 +511,53 @@ export class GenerationExecutionEngine {
             "Video task missing first_frame input",
             { retryable: false, reasons: ["missing_first_frame"] }
           );
+        }
+
+        const costModality: "video" | "image" | "audio" =
+          task.kind === "keyframe"
+            ? "image"
+            : task.kind === "voice" || task.kind === "sfx" || task.kind === "music"
+            ? "audio"
+            : "video";
+
+        // Cost estimation (Phase 7 CostEngine)
+        const est = CostEngine.estimateCost({
+          providerId: provider,
+          modelId: prepared.model || "",
+          modality: costModality,
+          durationSeconds: prepared.durationSec,
+          resolution: prepared.resolution,
+        });
+        const estCostUsd = est.amount ?? 0;
+
+        // Credit reservation (Phase 8 CreditService)
+        if (this.opts.creditService && this.opts.userId && est.status !== "UNKNOWN" && estCostUsd > 0 && !reservedCredits) {
+          try {
+            const quote = this.opts.creditService.quote({
+              estimatedCostUsd: estCostUsd,
+              generationId: task.id,
+            });
+            const res = await this.opts.creditService.reserve({
+              quote,
+              userId: this.opts.userId,
+              idempotencyKey: `res_${task.productionId}_${task.id}`,
+              metadata: { provider, model: prepared.model, taskId: task.id },
+            });
+            reservedCredits = {
+              reservationId: res.reservation.id,
+              amount: res.reservation.amount,
+            };
+            execution = applyTransition(execution, "credit_reserved");
+            logExecutionTransition(this.logger, execution);
+          } catch (creditErr: any) {
+            const err = makeExecutionError("insufficient_credits", creditErr?.message || "Insufficient credits", {
+              retryable: false,
+            });
+            execution = applyTransition(execution, "failed");
+            execution.error = err;
+            execution.completedAt = new Date().toISOString();
+            return { execution };
+          }
         }
 
         const request: ProviderGenerationRequest = {
@@ -516,35 +576,200 @@ export class GenerationExecutionEngine {
           inputs: prepared.inputs,
         };
 
-        const job = await adapter.submit(request);
-        execution.providerJobId = job.providerJobId;
+        execution = applyTransition(execution, "submitting");
+        logExecutionTransition(this.logger, execution);
 
-        let status = await adapter.getStatus(job.providerJobId);
-        if (status.status === "running" || status.status === "queued") {
+        const subResult = await submitWithReliability(adapter, request, {
+          attempt,
+          inputHash,
+        });
+
+        if (subResult.outcome === "NOT_SUBMITTED") {
+          if (reservedCredits && this.opts.creditService && this.opts.userId) {
+            await this.opts.creditService.release({
+              reservationId: reservedCredits.reservationId,
+              userId: this.opts.userId,
+              reason: subResult.error.message,
+            });
+            reservedCredits = undefined;
+          }
+
+          const retryability = subResult.error.retryability || classifyRetryability(subResult.error);
+          execution = applyTransition(execution, "failed");
+          execution.error = subResult.error;
+          execution.completedAt = new Date().toISOString();
+          lastExecution = execution;
+
+          if (retryability === "DO_NOT_RETRY") {
+            execution = applyTransition(execution, "exhausted");
+            return { execution };
+          }
+
+          if (retryability === "SAFE_TO_RETRY" && attempt < maxAttempts) {
+            attempt++;
+            execution = applyTransition(execution, "retrying");
+            logExecutionTransition(this.logger, execution);
+            await (this.opts.sleep || sleepMs)(computeBackoffDelayMs(attempt, this.opts.backoff));
+            continue;
+          }
+
+          if (fallbackIndex < fallbacks.length) {
+            provider = fallbacks[fallbackIndex++];
+            attempt = 1;
+            execution = applyTransition(execution, "retrying");
+            logExecutionTransition(this.logger, execution, { fallbackUsed: provider });
+            continue;
+          }
+
+          execution = applyTransition(execution, "exhausted");
+          return { execution };
+        }
+
+        if (subResult.outcome === "UNKNOWN_SUBMISSION") {
+          if (reservedCredits && this.opts.creditService && this.opts.userId) {
+            await this.opts.creditService.markPendingUnknown({
+              reservationId: reservedCredits.reservationId,
+              userId: this.opts.userId,
+              reason: subResult.error.message,
+            });
+          }
+
+          execution = applyTransition(execution, "unknown_submission");
+          execution.error = subResult.error;
+          logExecutionTransition(this.logger, execution);
+
+          // Reconcile
+          execution = applyTransition(execution, "reconciling");
+          const rec = await ReconciliationEngine.reconcile({
+            adapter,
+            executionId: execution.id,
+            generationTaskId: task.id,
+            attempt,
+            idempotencyKey: buildSubmissionIdempotencyKey(task.productionId, task.id, attempt, inputHash),
+            providerRequestId: (subResult.error.providerDiagnostics as any)?.providerRequestId,
+            lookupFn: this.opts.lookupFn,
+          });
+
+          if (rec.status === "FOUND") {
+            execution.providerJobId = rec.providerJobId;
+            execution = applyTransition(execution, "submitted");
+            logExecutionTransition(this.logger, execution);
+          } else if (rec.status === "CONFIRMED_NOT_SUBMITTED") {
+            if (reservedCredits && this.opts.creditService && this.opts.userId) {
+              await this.opts.creditService.release({
+                reservationId: reservedCredits.reservationId,
+                userId: this.opts.userId,
+                reason: "reconciled_confirmed_not_submitted",
+              });
+              reservedCredits = undefined;
+            }
+            execution = applyTransition(execution, "failed");
+            if (fallbackIndex < fallbacks.length) {
+              provider = fallbacks[fallbackIndex++];
+              attempt++;
+              execution = applyTransition(execution, "retrying");
+              continue;
+            }
+            execution = applyTransition(execution, "exhausted");
+            return { execution };
+          } else {
+            // STILL_UNKNOWN: preserve hold, do not retry
+            execution = applyTransition(execution, "failed");
+            execution.error = makeExecutionError(
+              "unknown_submission",
+              `Submission remains unknown after reconciliation: ${rec.reason}`,
+              { retryable: false, retryability: "RECONCILE_FIRST" }
+            );
+            execution.completedAt = new Date().toISOString();
+            return { execution };
+          }
+        }
+
+        if (subResult.outcome === "SUBMITTED") {
+          execution.providerJobId = subResult.providerJobId;
+          execution = applyTransition(execution, "submitted");
+          logExecutionTransition(this.logger, execution);
+        }
+
+        execution = applyTransition(execution, "running");
+        let status = await adapter.getStatus(execution.providerJobId!);
+        let normStatus = adapter.normalizeStatus
+          ? adapter.normalizeStatus(status.status)
+          : normalizeProviderStatus(provider, status.status);
+
+        if (normStatus === "RUNNING" || normStatus === "QUEUED") {
           execution = applyTransition(execution, "polling");
           logExecutionTransition(this.logger, execution);
-          // Bounded poll loop
           let polls = 0;
-          while ((status.status === "running" || status.status === "queued") && polls++ < 30) {
+          while ((normStatus === "RUNNING" || normStatus === "QUEUED") && polls++ < 30) {
             if (this.cancelled.has(task.id)) {
-              await adapter.cancel?.(job.providerJobId);
+              await adapter.cancel?.(execution.providerJobId!);
               execution = applyTransition(execution, "cancelled");
               execution.completedAt = new Date().toISOString();
               execution.error = makeExecutionError("cancelled", "Cancelled during polling", {
                 retryable: false,
               });
+              if (reservedCredits && this.opts.creditService && this.opts.userId) {
+                await this.opts.creditService.release({
+                  reservationId: reservedCredits.reservationId,
+                  userId: this.opts.userId,
+                  reason: "cancelled_during_polling",
+                });
+              }
               return { execution };
             }
             await (this.opts.sleep || sleepMs)(computeBackoffDelayMs(polls, this.opts.backoff));
-            status = await adapter.getStatus(job.providerJobId);
+            try {
+              status = await adapter.getStatus(execution.providerJobId!);
+              normStatus = adapter.normalizeStatus
+                ? adapter.normalizeStatus(status.status)
+                : normalizeProviderStatus(provider, status.status);
+            } catch (pollErr: any) {
+              logExecutionTransition(this.logger, execution);
+            }
           }
         }
 
-        if (status.status !== "succeeded") {
+        if (normStatus !== "SUCCEEDED") {
+          const attemptCost = CostEngine.calculateActualCost({
+            providerId: provider,
+            modelId: prepared.model || "",
+            modality: costModality,
+            requestConfig: {
+              providerId: provider,
+              modelId: prepared.model || "",
+              modality: costModality,
+              durationSeconds: prepared.durationSec,
+              resolution: prepared.resolution,
+            },
+          });
+          const attemptCostUsd = attemptCost.amount ?? 0;
+          if (attemptCost.status !== "UNKNOWN" && attemptCostUsd > 0) {
+            accumulatedCostUsd += attemptCostUsd;
+          }
+
+          if (reservedCredits && this.opts.creditService && this.opts.userId) {
+            if (attempt >= maxAttempts && fallbackIndex >= fallbacks.length) {
+              if (accumulatedCostUsd > 0) {
+                await this.opts.creditService.settle({
+                  reservationId: reservedCredits.reservationId,
+                  userId: this.opts.userId,
+                  actualProviderCostUsd: accumulatedCostUsd,
+                });
+              } else {
+                await this.opts.creditService.release({
+                  reservationId: reservedCredits.reservationId,
+                  userId: this.opts.userId,
+                  reason: "provider_job_failed_unbilled",
+                });
+              }
+            }
+          }
+
           throw makeExecutionError(
             classifyProviderFailure(status.errorMessage || "generation_failed"),
             status.errorMessage || "Provider job failed",
-            { diagnostics: { providerJobId: job.providerJobId } }
+            { diagnostics: { providerJobId: execution.providerJobId } }
           );
         }
 
@@ -554,8 +779,6 @@ export class GenerationExecutionEngine {
           output = enrichOutputMetadata(output, measured);
         } else {
           output = enrichOutputMetadata(output, {
-            // Default optimistic sizes for sync adapters that already returned media;
-            // real finalize paths supply measured metadata.
             fileSizeBytes: output.fileSizeBytes ?? 2048,
             durationSec: output.durationSec ?? prepared.durationSec,
             width: output.width,
@@ -582,6 +805,34 @@ export class GenerationExecutionEngine {
           persistPort: this.persistPort,
         });
 
+        // Compute actual cost and settle credits
+        const actual = CostEngine.calculateActualCost({
+          providerId: provider,
+          modelId: prepared.model || "",
+          modality: costModality,
+          usage: {
+            durationSeconds: output.durationSec ?? prepared.durationSec,
+            resolution: prepared.resolution,
+          },
+          requestConfig: {
+            providerId: provider,
+            modelId: prepared.model || "",
+            modality: costModality,
+            durationSeconds: output.durationSec ?? prepared.durationSec,
+            resolution: prepared.resolution,
+          },
+        });
+        const actualCostUsd = actual.amount ?? 0;
+        accumulatedCostUsd += actualCostUsd;
+
+        if (reservedCredits && this.opts.creditService && this.opts.userId) {
+          await this.opts.creditService.settle({
+            reservationId: reservedCredits.reservationId,
+            userId: this.opts.userId,
+            actualProviderCostUsd: accumulatedCostUsd,
+          });
+        }
+
         execution = applyTransition(execution, "succeeded");
         execution.completedAt = new Date().toISOString();
         execution.outputAssets = [
@@ -596,7 +847,11 @@ export class GenerationExecutionEngine {
             durationSec: output.durationSec,
           },
         ];
-        execution.usage = output.usage;
+        execution.usage = {
+          estimatedCost: estCostUsd,
+          actualCost: accumulatedCostUsd,
+          currency: "USD",
+        };
         execution.metadata = {
           ...execution.metadata,
           lastFrameDataUrl: output.metadata?.lastFrameDataUrl,
@@ -605,6 +860,22 @@ export class GenerationExecutionEngine {
         logExecutionTransition(this.logger, execution, { assetProduced: asset.id });
         return { execution, asset };
       } catch (err: any) {
+        if (reservedCredits && this.opts.creditService && this.opts.userId && attempt >= maxAttempts && fallbackIndex >= fallbacks.length) {
+          if (accumulatedCostUsd > 0) {
+            await this.opts.creditService.settle({
+              reservationId: reservedCredits.reservationId,
+              userId: this.opts.userId,
+              actualProviderCostUsd: accumulatedCostUsd,
+            }).catch(() => {});
+          } else {
+            await this.opts.creditService.release({
+              reservationId: reservedCredits.reservationId,
+              userId: this.opts.userId,
+              reason: "execution_error_unbilled",
+            }).catch(() => {});
+          }
+        }
+
         const error: ExecutionError =
           err?.code && err?.message
             ? {
@@ -616,7 +887,6 @@ export class GenerationExecutionEngine {
               }
             : makeExecutionError(classifyProviderFailure(String(err?.message || err)), String(err?.message || err));
 
-        // Force failed without nested transition puzzles
         execution = {
           ...execution,
           status: "failed",
@@ -626,8 +896,8 @@ export class GenerationExecutionEngine {
         lastExecution = execution;
         logExecutionTransition(this.logger, execution);
 
-        // Auth failures: do not loop
-        if (error.code === "authentication_failed" || error.code === "unsupported_capability") {
+        // Auth or capability failures: do not loop
+        if (error.code === "authentication_failed" || error.code === "unsupported_capability" || error.code === "insufficient_credits") {
           execution = { ...execution, status: "exhausted" };
           return { execution };
         }

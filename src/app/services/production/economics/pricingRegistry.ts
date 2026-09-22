@@ -29,6 +29,25 @@ export const DEFAULT_PRICING_RULES: PricingRule[] = [
     effectiveFrom: "2026-01-01T00:00:00.000Z",
     pricingVersion: "kling-2026.1",
   },
+  {
+    providerId: "kling",
+    modelId: "kling-v2-6",
+    modality: "video",
+    currency: "USD",
+    billingScheme: "per_second",
+    ratePerSecondUsd: 0.07,
+    resolutionMultipliers: { "720p": 1.0, "1080p": 1.5 },
+    audioAddOnUsd: 0.05,
+    provenance: {
+      source: "Kling AI Official API Pricing 2026",
+      sourceType: "OFFICIAL_PROVIDER",
+      confidence: 0.95,
+      verifiedAt: "2026-09-01T00:00:00.000Z",
+      notes: "Standard Kling 2.6 video tier: $0.07/sec, 1.5x for 1080p",
+    },
+    effectiveFrom: "2026-01-01T00:00:00.000Z",
+    pricingVersion: "kling-2026.1",
+  },
 
   // ByteDance / Seedance
   {

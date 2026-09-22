@@ -6,12 +6,19 @@
 import type { ExecutionStatus } from "./types";
 
 const ALLOWED: Record<ExecutionStatus, ExecutionStatus[]> = {
-  pending: ["queued", "cancelled", "exhausted"],
-  queued: ["running", "cancelled", "exhausted"],
-  running: ["polling", "succeeded", "failed", "cancelled"],
-  polling: ["succeeded", "failed", "cancelled", "running"],
+  ready: ["preparing", "queued", "cancelled", "exhausted"],
+  preparing: ["credit_reserved", "submitting", "failed", "cancelled", "exhausted"],
+  credit_reserved: ["submitting", "failed", "cancelled", "exhausted"],
+  submitting: ["submitted", "running", "polling", "succeeded", "failed", "unknown_submission", "cancelled", "exhausted"],
+  submitted: ["running", "polling", "succeeded", "failed", "cancelled", "unknown_submission", "exhausted"],
+  pending: ["queued", "preparing", "running", "cancelled", "exhausted"],
+  queued: ["preparing", "submitting", "running", "cancelled", "exhausted"],
+  running: ["polling", "succeeded", "failed", "unknown_submission", "cancelled"],
+  polling: ["succeeded", "failed", "cancelled", "running", "unknown_submission"],
+  unknown_submission: ["reconciling", "failed", "cancelled"],
+  reconciling: ["submitted", "running", "polling", "succeeded", "failed", "retrying", "cancelled"],
   failed: ["retrying", "exhausted", "cancelled"],
-  retrying: ["queued", "exhausted", "cancelled"],
+  retrying: ["queued", "preparing", "submitting", "running", "exhausted", "cancelled"],
   succeeded: [],
   cancelled: [],
   exhausted: [],
@@ -37,5 +44,17 @@ export function isTerminalStatus(status: ExecutionStatus): boolean {
 }
 
 export function isActiveStatus(status: ExecutionStatus): boolean {
-  return status === "queued" || status === "running" || status === "polling" || status === "retrying";
+  return (
+    status === "ready" ||
+    status === "preparing" ||
+    status === "credit_reserved" ||
+    status === "submitting" ||
+    status === "submitted" ||
+    status === "queued" ||
+    status === "running" ||
+    status === "polling" ||
+    status === "retrying" ||
+    status === "unknown_submission" ||
+    status === "reconciling"
+  );
 }

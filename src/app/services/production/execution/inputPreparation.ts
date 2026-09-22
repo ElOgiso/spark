@@ -89,7 +89,7 @@ export function prepareTaskInputs(params: {
     const keyframeDep = task.dependsOn.find((d) => d.endsWith("_keyframe"));
     if (keyframeDep && prior[keyframeDep]) {
       inputs.push({ role: "first_frame", url: prior[keyframeDep], mimeType: "image/png" });
-    } else if (shot?.references.firstFrameUrl) {
+    } else if (shot?.references?.firstFrameUrl) {
       inputs.push({ role: "first_frame", url: shot.references.firstFrameUrl, mimeType: "image/png" });
     } else if (shot?.keyframeUrl) {
       inputs.push({ role: "first_frame", url: shot.keyframeUrl, mimeType: "image/png" });
@@ -104,7 +104,7 @@ export function prepareTaskInputs(params: {
         mimeType: "image/jpeg",
       });
     }
-    if (shot?.references.lastFrameUrl) {
+    if (shot?.references?.lastFrameUrl) {
       inputs.push({ role: "last_frame", url: shot.references.lastFrameUrl, mimeType: "image/jpeg" });
     }
   }
@@ -118,7 +118,7 @@ export function prepareTaskInputs(params: {
 
   return {
     inputs,
-    prompt: shot?.compiledPrompt || spec.creative.intent,
+    prompt: shot?.compiledPrompt || spec.creative?.intent || "",
     negativePrompt: shot?.compiledNegativePrompt,
     aspectRatio: task.aspectRatio || shot?.aspectRatio || String(spec.project.aspectRatio),
     durationSec: task.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : 5),
