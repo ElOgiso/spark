@@ -226,6 +226,8 @@ export interface ProviderGenerationRequest {
   executionId: string;
   inputs: ExecutionInputAsset[];
   metadata?: Record<string, unknown>;
+  /** Phase 10 — compiled provider payload request */
+  compiledRequest?: import("../compiler/types").CompiledProviderRequest;
 }
 
 export interface ProviderCapabilitySnapshot {

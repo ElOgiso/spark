@@ -59,6 +59,8 @@ import { ReconciliationEngine } from "./reconciliationEngine";
 import { normalizeProviderStatus } from "./adapters/types";
 import { classifyRetryability } from "./errors";
 import type { CreditService } from "../credits";
+import { ProviderPayloadCompiler } from "../compiler/payloadCompiler";
+import { getCapabilityProfile } from "../capability/registry";
 
 export interface ExecutionEngineOptions {
   ports?: AdapterPorts;
@@ -560,20 +562,74 @@ export class GenerationExecutionEngine {
           }
         }
 
+        // Phase 10 — Provider Payload Compilation
+        let compiledRequest: import("../compiler/types").CompiledProviderRequest | undefined;
+        let shotForTask: import("../specification/shotSpec").ShotSpec | undefined;
+        for (const scene of spec.scenes || []) {
+          const s = scene.shots?.find((sh) => sh.id === task.shotId);
+          if (s) {
+            shotForTask = s;
+            break;
+          }
+        }
+
+        const profile = getCapabilityProfile(provider, prepared.model);
+        if (shotForTask && profile) {
+          compiledRequest = ProviderPayloadCompiler.compile({
+            shot: shotForTask,
+            craftPlan: shotForTask.craftPlan,
+            referenceGraph: spec.referenceGraph,
+            styleBible: spec.styleBible,
+            capabilityProfile: profile,
+            providerId: provider,
+            modelId: prepared.model || profile.modelId,
+            productionId: task.productionId,
+            sceneId: task.sceneId,
+          });
+
+          if (!compiledRequest.validation.valid) {
+            const err = makeExecutionError(
+              "invalid_request",
+              `Provider payload compilation failed: ${compiledRequest.validation.errors.join("; ")}`,
+              {
+                retryable: false,
+                reasons: compiledRequest.validation.errors,
+              }
+            );
+
+            // Release credit reservation safely on compilation failure (NOT_SUBMITTED)
+            if (reservedCredits && this.opts.creditService && this.opts.userId) {
+              await this.opts.creditService.release({
+                reservationId: reservedCredits.reservationId,
+                userId: this.opts.userId,
+                reason: err.message,
+              });
+              reservedCredits = undefined;
+            }
+
+            execution = applyTransition(execution, "failed");
+            execution.error = err;
+            execution.completedAt = new Date().toISOString();
+            execution = applyTransition(execution, "exhausted");
+            return { execution };
+          }
+        }
+
         const request: ProviderGenerationRequest = {
           providerId: provider,
           model: prepared.model,
           modality: task.strategy.modality,
-          prompt: prepared.prompt,
-          negativePrompt: prepared.negativePrompt,
-          aspectRatio: prepared.aspectRatio,
-          durationSec: prepared.durationSec,
-          resolution: prepared.resolution,
+          prompt: compiledRequest ? compiledRequest.prompt : prepared.prompt,
+          negativePrompt: compiledRequest ? compiledRequest.negativePrompt : prepared.negativePrompt,
+          aspectRatio: (compiledRequest?.parameters?.aspectRatio as string) || prepared.aspectRatio,
+          durationSec: (compiledRequest?.parameters?.durationSec as number) || prepared.durationSec,
+          resolution: (compiledRequest?.parameters?.resolution as string) || prepared.resolution,
           productionId: task.productionId,
           brandId: this.opts.brandId,
           taskId: task.id,
           executionId: execution.id,
           inputs: prepared.inputs,
+          compiledRequest,
         };
 
         execution = applyTransition(execution, "submitting");
