@@ -665,6 +665,8 @@ export function routeMediaCapability(
   };
 }
 
+export const routeMediaRequest = routeMediaCapability;
+
 /**
  * Canonical routing authority entry point.
  * Given a RoutingIntent or CapabilityRequirements, resolves the authoritative

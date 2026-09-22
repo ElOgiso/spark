@@ -13,6 +13,7 @@ import type {
   QcBudgetState,
   QcRecommendedAction,
   QCFailure,
+  QcFailureCode,
 } from "./types";
 import { canChangeProvider, canRetryQc } from "./budgets";
 import {
@@ -21,9 +22,17 @@ import {
   inferRootCause,
   suggestedRepairStrategy,
   failureSeverity,
+  failureToCraftOperations,
+  isCapabilityDeficiency,
 } from "./failureTaxonomy";
 import { planDownstreamRevalidation } from "./dagFeedback";
 import type { QcRepairScope, QcRepairStrategy, QcRootCause } from "./types";
+import type { CraftOperation } from "../craft/types";
+import type { MediaRoutingDecision, ProviderModelCandidate } from "../capability/types";
+import { capabilityRequirementsFromShot } from "../capability/requirements";
+import { routeMediaRequest } from "../capability/router";
+import { getCapabilityProfile } from "../capability/registry";
+import { CostEngine } from "../economics/costEngine";
 
 function mapActionToRemediation(action: QcRecommendedAction): QcRemediation | "continue" | "manual_review" {
   switch (action) {
@@ -60,10 +69,15 @@ export function planRepairFromQc(params: {
   forceManualReview?: boolean;
   attempt?: number;
   maxAttempts?: number;
+  failureHistory?: QcFailureCode[];
+  candidates?: ProviderModelCandidate[];
 }): RepairDecision {
   const { qc, spec, shot, budget, forceManualReview } = params;
   const attempt = params.attempt ?? budget.qcRetries + 1;
   const maxAttempts = params.maxAttempts ?? budget.maxQcRetries;
+  const failureHistory = params.failureHistory || [];
+  const failures = qc.failures;
+  const primaryFailure = failures[0]?.code;
 
   if (qc.recommendedAction === "accept" || qc.status === "pass") {
     return {
@@ -87,10 +101,19 @@ export function planRepairFromQc(params: {
       }),
       escalate: false,
       scope: "candidate",
+      operations: [],
+      failureHistory,
     };
   }
 
-  if (forceManualReview || !canRetryQc(budget)) {
+  // 1. Check repeated identical failures (anti-oscillation)
+  const isRepeatedFailure = Boolean(
+    primaryFailure &&
+    failureHistory.length > 0 &&
+    failureHistory[failureHistory.length - 1] === primaryFailure
+  );
+
+  if (isRepeatedFailure) {
     return {
       action: "manual_review",
       remediation: "manual_review",
@@ -100,8 +123,12 @@ export function planRepairFromQc(params: {
       regenerateShotIds: [],
       regenerateTaskIds: [],
       preserveShotIds: spec.scenes.flatMap((s) => s.shots.map((sh) => sh.id)),
-      reason: forceManualReview ? "automation requires manual review" : "QC regeneration budget exhausted",
-      withinBudget: false,
+      reason: `Repeated identical failure "${primaryFailure}" detected — stopping automated repair loop for human review`,
+      withinBudget: true,
+      escalate: true,
+      strategy: "escalate_human_review",
+      failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
+      operations: [],
       ...buildPhase9RepairMeta({
         qc,
         spec,
@@ -110,19 +137,97 @@ export function planRepairFromQc(params: {
         maxAttempts,
         escalate: true,
       }),
-      escalate: true,
-      strategy: "escalate_human_review",
     };
   }
 
-  const failures = qc.failures;
-  let action: QcRecommendedAction = qc.recommendedAction;
+  // 2. Check budget or forced review
+  if (forceManualReview || !canRetryQc(budget) || attempt > maxAttempts) {
+    return {
+      action: "manual_review",
+      remediation: "manual_review",
+      providerChange: false,
+      changedInputs: [],
+      strengthenReferences: false,
+      regenerateShotIds: [],
+      regenerateTaskIds: [],
+      preserveShotIds: spec.scenes.flatMap((s) => s.shots.map((sh) => sh.id)),
+      reason: forceManualReview
+        ? "automation requires manual review"
+        : attempt > maxAttempts
+        ? `Max repair attempts (${maxAttempts}) exhausted`
+        : "QC regeneration budget exhausted",
+      withinBudget: false,
+      escalate: true,
+      strategy: "escalate_human_review",
+      failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
+      operations: [],
+      ...buildPhase9RepairMeta({
+        qc,
+        spec,
+        shotId: shot?.id,
+        attempt,
+        maxAttempts,
+        escalate: true,
+      }),
+    };
+  }
 
-  if (failures.some((f) => prefersReferenceStrengthening(f.code))) {
+  // 3. Determine failure action & check capability deficiency
+  let action: QcRecommendedAction = qc.recommendedAction;
+  const profile = getCapabilityProfile(shot?.provider || "", shot?.model);
+  const deficiency = isCapabilityDeficiency(primaryFailure || "unknown_failure", shot, profile);
+
+  let providerChange = false;
+  let rerouteDecision: MediaRoutingDecision | undefined;
+  let nextProvider: string | undefined;
+  let nextModel: string | undefined;
+  let routingReason: string | undefined;
+
+  if (deficiency.deficient && canChangeProvider(budget)) {
+    // Genuine capability deficiency -> canonical reroute
+    action = "reroute_provider";
+    providerChange = true;
+    if (shot) {
+      const baseReqs = capabilityRequirementsFromShot(shot);
+      rerouteDecision = routeMediaRequest(baseReqs, {
+        candidates: params.candidates,
+        requireAdapter: true,
+      });
+      if (rerouteDecision.selected) {
+        nextProvider = rerouteDecision.selected.providerId;
+        nextModel = rerouteDecision.selected.modelId;
+        routingReason = `Rerouted to ${nextProvider}/${nextModel}: ${deficiency.reason}`;
+      }
+    }
+  } else if (failures.some((f) => prefersReferenceStrengthening(f.code))) {
     action = "change_reference";
   } else if (failures.some((f) => prefersProviderChange(f.code))) {
     action = canChangeProvider(budget) ? "reroute_provider" : "regenerate_shot";
-  } else if (failures.some((f) => f.code === "camera_mismatch" || f.code === "composition_mismatch" || f.code === "prompt_mismatch")) {
+    if (action === "reroute_provider") {
+      providerChange = true;
+      if (shot) {
+        const baseReqs = capabilityRequirementsFromShot(shot);
+        rerouteDecision = routeMediaRequest(baseReqs, {
+          candidates: params.candidates,
+          requireAdapter: true,
+        });
+        if (rerouteDecision.selected) {
+          nextProvider = rerouteDecision.selected.providerId;
+          nextModel = rerouteDecision.selected.modelId;
+          routingReason = `Provider change requested by failure code and routed via canonical router to ${nextProvider}/${nextModel}`;
+        }
+      }
+    }
+  } else if (
+    failures.some(
+      (f) =>
+        f.code === "camera_mismatch" ||
+        f.code === "camera_failure" ||
+        f.code === "composition_mismatch" ||
+        f.code === "composition_failure" ||
+        f.code === "prompt_mismatch"
+    )
+  ) {
     action = "repair_prompt";
   } else if (failures.some((f) => /continuity|location|prop|spatial|screen|lighting|time/.test(f.code))) {
     action = "strengthen_continuity";
@@ -132,67 +237,57 @@ export function planRepairFromQc(params: {
     action = "repair_prompt";
   }
 
-  const providerChange = action === "reroute_provider";
-  if (providerChange && !canChangeProvider(budget)) {
-    action = "regenerate_shot";
-  }
+  // 4. Targeted CraftOperations
+  const operations: CraftOperation[] = primaryFailure
+    ? failureToCraftOperations(primaryFailure, failures[0]?.evidence, shot)
+    : [];
+
+  // 5. Cost estimation (delegated to CostEngine single authority)
+  const targetProvider = nextProvider || shot?.provider || "kling";
+  const targetModel = nextModel || shot?.model || "";
+  const costModality = shot?.keyframeUrl && !shot?.mediaUrl ? "image" : "video";
+  const costEst = CostEngine.estimateCost({
+    providerId: targetProvider,
+    modelId: targetModel,
+    modality: costModality,
+    durationSeconds: shot?.durationSec,
+    resolution: shot?.resolution,
+  });
+  const estimatedCostUsd = costEst.amount;
 
   const failureStrings = failures.map((f) => f.code);
-  const routingDecision = shot
-    ? spec.routing.shotDecisions.find((d) => d.shotId === shot.id)
-    : undefined;
-
-  const retry = shot
-    ? planShotRetry({
-        shot,
-        failures: failureStrings.length ? failureStrings : [action],
-        routingDecision,
-        maxAttempts: budget.maxQcRetries,
-      })
-    : null;
-
-  const wantsDependents = failures.some((f) => f.code === "continuity_break");
-
-  const partial = shot
-    ? planPartialRegeneration({
-        spec,
-        scope: "shot",
-        targetId: shot.id,
-        failure: failureStrings[0],
-      })
-    : null;
-
-  // Expand to dependent continuity chain when continuity breaks
+  const wantsDependents = failures.some(
+    (f) => f.code === "continuity_break" || f.code === "continuity_failure"
+  );
   if (wantsDependents) {
     action = "regenerate_dependent_shots";
   }
 
-  const finalProviderChange = Boolean(
-    action === "reroute_provider" || retry?.providerChange || partial?.providerChange
-  );
-
   const strengthenReferences = action === "change_reference" || action === "strengthen_continuity";
   const modifyPromptHint =
-    retry?.modifyPromptHint ||
     hintForFailures(failures) ||
     "Clarify planned subject, action, camera, and continuity locks";
 
   return {
     action,
     remediation: mapActionToRemediation(action),
-    providerChange: finalProviderChange,
-    nextProvider: retry?.nextProvider || partial?.nextProvider,
-    strategyChange: retry?.strategyChange || partial?.strategyChange,
+    providerChange,
+    nextProvider,
+    nextModel,
+    routingReason,
+    rerouteDecision,
+    operations,
+    estimatedCostUsd,
+    failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
+    strategyChange: undefined,
     modifyPromptHint,
-    changedInputs:
-      retry?.changedInputs ||
-      partial?.changedInputs ||
-      (strengthenReferences ? ["characterRefs", "referenceStrength"] : ["compiledPrompt"]),
+    changedInputs: strengthenReferences ? ["characterRefs", "referenceStrength"] : ["craftPlan", "compiledPrompt"],
     strengthenReferences,
-    regenerateShotIds: partial?.regenerateShotIds || (shot ? [shot.id] : []),
-    regenerateTaskIds: partial?.regenerateTaskIds || [],
-    preserveShotIds: partial?.preserveShotIds || [],
-    reason: `QC ${qc.status}: ${failureStrings.join(", ") || action}`,
+    regenerateShotIds: shot ? [shot.id] : [],
+    regenerateTaskIds: [],
+    preserveShotIds: spec.scenes.flatMap((s) => s.shots.filter((sh) => sh.id !== shot?.id).map((sh) => sh.id)),
+    reason: routingReason || `QC ${qc.status}: ${failureStrings.join(", ") || action}`,
+    withinBudget: true,
     ...buildPhase9RepairMeta({
       qc,
       spec,
@@ -201,7 +296,6 @@ export function planRepairFromQc(params: {
       maxAttempts,
       escalate: undefined,
     }),
-    withinBudget: true,
   };
 }
 

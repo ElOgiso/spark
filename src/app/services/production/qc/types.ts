@@ -5,6 +5,9 @@
 
 import type { QcRemediation } from "../specification/qualitySpec";
 import type { ContinuityState } from "../specification/continuitySpec";
+import type { CraftOperation } from "../craft/types";
+import type { CapabilityRequirements, MediaRoutingDecision } from "../capability/types";
+import type { ShotSpec } from "../specification/shotSpec";
 
 export type QcResultStatus = "pass" | "warn" | "retry" | "fail";
 
@@ -88,10 +91,29 @@ export type QcFailureCode =
   | "framing_mismatch"
   | "coverage_role_mismatch"
   | "cinematic_purpose_mismatch"
-  | "visual_treatment_mismatch"
   | "sync_failure"
   | "repair_exhausted"
-  | "not_evaluated";
+  | "not_evaluated"
+  // Phase 12 taxonomy additions
+  | "output_invalid"
+  | "format_mismatch"
+  | "dimension_mismatch"
+  | "reference_failure"
+  | "continuity_failure"
+  | "composition_failure"
+  | "camera_failure"
+  | "motion_failure"
+  | "style_failure"
+  | "lighting_failure"
+  | "environment_failure"
+  | "subject_failure"
+  | "object_failure"
+  | "temporal_failure"
+  | "audio_failure"
+  | "provider_artifact"
+  | "corrupted_output"
+  | "semantic_mismatch"
+  | "unknown_failure";
 
 export interface QcEvidence {
   failureCode?: QcFailureCode;
@@ -331,4 +353,13 @@ export interface RepairDecision {
   attempt?: number;
   maxAttempts?: number;
   escalate?: boolean;
+  /** Phase 12 — Craft-driven repair & canonical rerouting */
+  operations?: CraftOperation[];
+  changedRequirements?: Partial<CapabilityRequirements>;
+  rerouteDecision?: MediaRoutingDecision;
+  nextModel?: string;
+  estimatedCostUsd?: number;
+  failureHistory?: QcFailureCode[];
+  repairedShotSpec?: ShotSpec;
+  routingReason?: string;
 }

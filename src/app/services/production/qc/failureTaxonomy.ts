@@ -8,7 +8,11 @@ import type {
   QcSeverity,
   QcRepairStrategy,
   QcRootCause,
+  QcEvidence,
 } from "./types";
+import type { CraftOperation } from "../craft/types";
+import type { ShotSpec } from "../specification/shotSpec";
+import type { MediaCapabilityProfile } from "../capability/types";
 
 export const QC_FAILURE_CODES: readonly QcFailureCode[] = [
   "identity_drift",
@@ -57,10 +61,29 @@ export const QC_FAILURE_CODES: readonly QcFailureCode[] = [
   "framing_mismatch",
   "coverage_role_mismatch",
   "cinematic_purpose_mismatch",
-  "visual_treatment_mismatch",
   "sync_failure",
   "repair_exhausted",
   "not_evaluated",
+  // Phase 12 taxonomy additions
+  "output_invalid",
+  "format_mismatch",
+  "dimension_mismatch",
+  "reference_failure",
+  "continuity_failure",
+  "composition_failure",
+  "camera_failure",
+  "motion_failure",
+  "style_failure",
+  "lighting_failure",
+  "environment_failure",
+  "subject_failure",
+  "object_failure",
+  "temporal_failure",
+  "audio_failure",
+  "provider_artifact",
+  "corrupted_output",
+  "semantic_mismatch",
+  "unknown_failure",
 ] as const;
 
 /** Failures that are generally retryable via regeneration / repair */
@@ -257,3 +280,225 @@ export function suggestedRepairStrategy(code: QcFailureCode): QcRepairStrategy {
   }
   return "regenerate_same_intent";
 }
+
+/**
+  * Phase 12 — Maps concrete QC failure + evidence + shot intent into targeted CraftOperations.
+  * Does NOT use static naive mapping; respects concrete observed vs expected differences.
+  */
+export function failureToCraftOperations(
+  code: QcFailureCode,
+  evidence?: QcEvidence,
+  shot?: ShotSpec
+): CraftOperation[] {
+  const text = `${evidence?.expected || ""} ${evidence?.observed || ""} ${evidence?.note || ""} ${shot?.cameraMovement || ""} ${shot?.framing || ""}`.toLowerCase();
+  const ops: CraftOperation[] = [];
+
+  // Camera / Framing failures -> targeted CAMERA CraftOperations
+  if (
+    code === "camera_mismatch" ||
+    code === "camera_failure" ||
+    code === "framing_mismatch" ||
+    code === "camera_intent_mismatch"
+  ) {
+    if (text.includes("push") || text.includes("zoom in")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_push`,
+        type: "PUSH_IN",
+        category: "CAMERA",
+        name: "Push In",
+        target: { type: "CAMERA", id: "camera_main" },
+        parameters: { speed: 1.2, intensity: 0.8 },
+      } as any);
+    } else if (text.includes("pull") || text.includes("zoom out")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_pull`,
+        type: "PULL_BACK",
+        category: "CAMERA",
+        name: "Pull Back",
+        target: { type: "CAMERA", id: "camera_main" },
+        parameters: { speed: 1.2, intensity: 0.8 },
+      } as any);
+    } else if (text.includes("orbit") || text.includes("arc")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_orbit`,
+        type: "ORBIT",
+        category: "CAMERA",
+        name: "Orbit",
+        target: { type: "CAMERA", id: "camera_main" },
+        parameters: { degrees: 45, direction: "clockwise" },
+      } as any);
+    } else if (text.includes("low_angle") || text.includes("low angle") || text.includes("tilt")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_tilt`,
+        type: "TILT",
+        category: "CAMERA",
+        name: "Tilt Up / Low Angle",
+        target: { type: "CAMERA", id: "camera_main" },
+        parameters: { angleDegrees: 25, direction: "up" },
+      } as any);
+    } else {
+      if (shot?.cameraMovement === "push_in") {
+        ops.push({
+          id: `craft_repair_${Date.now()}_push`,
+          type: "PUSH_IN",
+          category: "CAMERA",
+          name: "Push In",
+          target: { type: "CAMERA", id: "camera_main" },
+          parameters: { speed: 1.0 },
+        } as any);
+      } else if (shot?.cameraMovement === "tracking") {
+        ops.push({
+          id: `craft_repair_${Date.now()}_track`,
+          type: "TRACKING",
+          category: "MOTION",
+          name: "Tracking",
+          target: { type: "SUBJECT", id: "subject_main" },
+          parameters: { smoothTracking: true },
+        } as any);
+      } else {
+        ops.push({
+          id: `craft_repair_${Date.now()}_pan`,
+          type: "PAN",
+          category: "CAMERA",
+          name: "Pan",
+          target: { type: "CAMERA", id: "camera_main" },
+          parameters: { degrees: 15 },
+        } as any);
+      }
+    }
+  }
+
+  // Motion / Action failures -> targeted MOTION CraftOperations
+  if (
+    code === "motion_mismatch" ||
+    code === "motion_failure" ||
+    code === "action_mismatch" ||
+    code === "action_missing"
+  ) {
+    if (text.includes("spin") || text.includes("rotate") || text.includes("product")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_spin`,
+        type: "PRODUCT_SPIN",
+        category: "MOTION",
+        name: "Product Spin",
+        target: { type: "PRODUCT", id: "product_main" },
+        parameters: { revolutions: 1, smooth: true },
+      } as any);
+    } else if (text.includes("tracking") || text.includes("track")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_track`,
+        type: "TRACKING",
+        category: "MOTION",
+        name: "Tracking",
+        target: { type: "SUBJECT", id: "subject_main" },
+        parameters: { smoothTracking: true },
+      } as any);
+    } else {
+      ops.push({
+        id: `craft_repair_${Date.now()}_mot`,
+        type: "TRACKING",
+        category: "MOTION",
+        name: "Tracking Motion",
+        target: { type: "SUBJECT", id: "subject_main" },
+        parameters: { intensity: 0.8 },
+      } as any);
+    }
+  }
+
+  // Lighting failures -> targeted LIGHTING CraftOperations
+  if (code === "lighting_drift" || code === "lighting_failure") {
+    if (text.includes("sweep") || text.includes("beam")) {
+      ops.push({
+        id: `craft_repair_${Date.now()}_sweep`,
+        type: "LIGHT_SWEEP",
+        category: "LIGHTING",
+        name: "Light Sweep",
+        target: { type: "SUBJECT", id: "subject_main" },
+        parameters: { angle: 45, intensity: 0.8 },
+      } as any);
+    } else {
+      ops.push({
+        id: `craft_repair_${Date.now()}_volumetric`,
+        type: "LIGHTING_VOLUMETRIC",
+        category: "LIGHTING",
+        name: "Volumetric Lighting",
+        target: { type: "CAMERA", id: "camera_main" },
+        parameters: { hazeDensity: 0.4 },
+      } as any);
+    }
+  }
+
+  return ops;
+}
+
+/**
+ * Phase 12 — Determines whether a failure stems from a true provider capability deficiency.
+ * Uses MediaCapabilityProfile truth — never assumes failure equals deficiency.
+ */
+export function isCapabilityDeficiency(
+  code: QcFailureCode,
+  shot?: ShotSpec,
+  profile?: MediaCapabilityProfile
+): { deficient: boolean; requiredCapability?: string; reason?: string } {
+  if (!profile) return { deficient: false };
+
+  // 1. Duration mismatch: does shot duration exceed provider limit?
+  if (code === "duration_mismatch" && shot?.durationSec) {
+    const maxDur = profile.limits?.maxDurationSec ?? profile.output?.duration?.maxSeconds ?? 10;
+    if (shot.durationSec > maxDur) {
+      return {
+        deficient: true,
+        requiredCapability: `duration_${shot.durationSec}s`,
+        reason: `Shot duration ${shot.durationSec}s exceeds provider limit of ${maxDur}s`,
+      };
+    }
+  }
+
+  // 2. Reference / identity failure: does shot require multiple character refs and provider lacks multi-reference?
+  if ((code === "reference_failure" || code === "identity_drift") && shot) {
+    const refCount = (shot.references?.characterRefs?.length || 0) + (shot.characterIds?.length || 0);
+    if (refCount > 1 && !profile.references?.supportsMultipleReferences) {
+      return {
+        deficient: true,
+        requiredCapability: "multi_reference",
+        reason: `Shot requires ${refCount} references but provider does not support multiple references`,
+      };
+    }
+  }
+
+  // 3. Start/End frame / temporal continuity: does shot require start and end frames?
+  if ((code === "start_state_mismatch" || code === "end_state_mismatch" || code === "handoff_failure") && shot) {
+    if (shot.firstFrameUrl && shot.lastFrameUrl && !profile.temporal?.supportsStartAndEndFrame) {
+      return {
+        deficient: true,
+        requiredCapability: "start_and_end_frame",
+        reason: "Shot requires start and end frames but provider does not support start+end frame conditioning",
+      };
+    }
+  }
+
+  // 4. Camera control: does shot demand camera motion when provider has none?
+  if ((code === "camera_mismatch" || code === "camera_failure") && shot?.cameraMovement) {
+    if (profile.camera?.controlLevel === "none") {
+      return {
+        deficient: true,
+        requiredCapability: "camera_control",
+        reason: `Shot requires camera movement ${shot.cameraMovement} but provider has no camera control`,
+      };
+    }
+  }
+
+  // 5. Audio generation missing
+  if ((code === "audio_missing" || code === "audio_failure") && (shot as any)?.requiresAudio) {
+    if (!profile.audio?.nativeAudioGeneration) {
+      return {
+        deficient: true,
+        requiredCapability: "native_audio",
+        reason: "Shot requires native audio generation but provider does not support audio",
+      };
+    }
+  }
+
+  return { deficient: false };
+}
+

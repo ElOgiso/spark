@@ -150,6 +150,7 @@ export async function runQcWithRepairLoop(
   const repairsApplied: RepairDecision[] = [];
   const automationLog: ReturnType<typeof applyAutomationPolicy>[] = [];
   const hardMax = options.hardMaxLoops ?? budget.maxQcRetries + 1;
+  const failureHistoryByShot = new Map<string, import("./types").QcFailureCode[]>();
 
   let report = await runProductionQcHierarchy(currentSpec, {
     ...options,
@@ -188,18 +189,31 @@ export async function runQcWithRepairLoop(
       .flatMap((s) => s.shots)
       .find((s) => s.id === failing.shotId);
 
+    const history = failureHistoryByShot.get(failing.shotId) || [];
+
     const repair = planRepairFromQc({
       qc: failing,
       spec: currentSpec,
       shot,
       budget,
       forceManualReview: !canRetryQc(budget),
+      failureHistory: history,
     });
+
+    if (failing.failures[0]?.code) {
+      failureHistoryByShot.set(failing.shotId, [...history, failing.failures[0].code]);
+    }
 
     const policy = applyAutomationPolicy({ mode, qc: failing, repair });
     automationLog.push(policy);
 
-    if (!policy.autoRepair || policy.effectiveAction === "manual_review" || !repair.withinBudget) {
+    if (
+      !policy.autoRepair ||
+      policy.effectiveAction === "manual_review" ||
+      !repair.withinBudget ||
+      repair.escalate ||
+      repair.action === "manual_review"
+    ) {
       budget = markBudgetExhausted(budget);
       return {
         report: {
@@ -207,14 +221,16 @@ export async function runQcWithRepairLoop(
           productionResult: {
             ...report.productionResult,
             recommendedAction: "manual_review",
-            userMessage: policy.userMessage,
+            userMessage: repair.reason || policy.userMessage,
           },
           verdict: "production_needs_review",
         },
         budget,
         repairsApplied,
         automation: automationLog,
-        stoppedReason: repair.withinBudget ? "no_auto_repair" : "budget_exhausted",
+        stoppedReason: repair.withinBudget
+          ? (repair.escalate ? "manual_review" : "no_auto_repair")
+          : "budget_exhausted",
         finalSpec: applyQcStatusesToSpec(currentSpec, report),
       };
     }
@@ -222,13 +238,38 @@ export async function runQcWithRepairLoop(
     repairsApplied.push(repair);
     budget = recordQcRetry(budget, repair.providerChange);
 
-    // Apply prompt / reference strengthening hints onto shot before re-exec
+    // Apply craft-driven repair onto shot before re-exec
     currentSpec = applyRepairToSpec(currentSpec, repair, shot);
 
     if (options.reexecute) {
-      const next = await options.reexecute(currentSpec, repair);
-      currentSpec = next.spec;
-      if (next.observations) observations = next.observations;
+      try {
+        const next = await options.reexecute(currentSpec, repair);
+        currentSpec = next.spec;
+        if (next.observations) observations = next.observations;
+      } catch (execErr: any) {
+        // Unknown submission or execution failure during repair — do NOT blindly retry
+        const isUnknown =
+          execErr?.code === "unknown_submission" ||
+          /unknown_submission|ambiguous|connection reset/i.test(execErr?.message || "");
+        return {
+          report: {
+            ...report,
+            productionResult: {
+              ...report.productionResult,
+              recommendedAction: "manual_review",
+              userMessage: isUnknown
+                ? "Submission status uncertain — reconciliation required before repair"
+                : `Repair execution failed: ${execErr?.message || "error"}`,
+            },
+            verdict: "production_needs_review",
+          },
+          budget,
+          repairsApplied,
+          automation: automationLog,
+          stoppedReason: "manual_review",
+          finalSpec: applyQcStatusesToSpec(currentSpec, report),
+        };
+      }
     }
 
     report = await runProductionQcHierarchy(currentSpec, {
@@ -253,20 +294,58 @@ export function applyRepairToSpec(
   shot?: ShotSpec
 ): ProductionSpec {
   if (!shot) return spec;
+  const newProvider = repair.rerouteDecision?.selected?.providerId || repair.nextProvider || shot.provider;
+  const newModel = repair.rerouteDecision?.selected?.modelId || repair.nextModel || shot.model;
+
   return {
     ...spec,
     scenes: spec.scenes.map((scene) => ({
       ...scene,
       shots: scene.shots.map((s) => {
         if (!repair.regenerateShotIds.includes(s.id) && s.id !== shot.id) return s;
-        const prompt = s.compiledPrompt || "";
-        const reinforced = repair.modifyPromptHint
-          ? `${prompt}\nQC_REPAIR: ${repair.modifyPromptHint}`
-          : prompt;
+
+        // 1. Craft-driven repair: attach targeted CraftOperations to shot.craftPlan
+        const existingOps = s.craftPlan?.operations || [];
+        const additionalOps = repair.operations || [];
+        const mergedOps = [...existingOps, ...additionalOps];
+
+        const updatedCraftPlan = {
+          ...(s.craftPlan || {
+            operations: [],
+            sequenceTiming: { startSec: 0, durationSec: s.durationSec || 5 },
+          }),
+          operations: mergedOps,
+        };
+
+        // 2. Format / duration corrections if diagnosed
+        let updatedDurationSec = s.durationSec;
+        let updatedAspectRatio = s.aspectRatio;
+        if (repair.changedRequirements?.output?.durationSeconds) {
+          updatedDurationSec = repair.changedRequirements.output.durationSeconds;
+        }
+        if (repair.changedRequirements?.output?.aspectRatio) {
+          updatedAspectRatio = repair.changedRequirements.output.aspectRatio;
+        }
+
+        // 3. Routing audit trail
+        const routingAudit = repair.providerChange
+          ? {
+              previousProvider: s.provider,
+              previousModel: s.model,
+              newProvider,
+              newModel,
+              routingReason: repair.routingReason || repair.reason,
+              timestamp: new Date().toISOString(),
+            }
+          : undefined;
+
         return {
           ...s,
-          compiledPrompt: reinforced,
-          provider: repair.nextProvider || s.provider,
+          craftPlan: updatedCraftPlan,
+          durationSec: updatedDurationSec,
+          aspectRatio: updatedAspectRatio,
+          provider: newProvider,
+          model: newModel,
           generationStrategy: (repair.strategyChange as ShotSpec["generationStrategy"]) || s.generationStrategy,
           generationStatus: "queued" as const,
           qcStatus: "retry" as const,
@@ -283,6 +362,11 @@ export function applyRepairToSpec(
                 characterRefs: [...s.references.characterRefs, ...s.characterIds],
               }
             : s.references,
+          metadata: {
+            ...(s.metadata || {}),
+            ...(routingAudit ? { routingAudit } : {}),
+            repairedAt: new Date().toISOString(),
+          },
         };
       }),
     })),

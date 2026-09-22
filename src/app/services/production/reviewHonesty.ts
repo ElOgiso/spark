@@ -295,3 +295,24 @@ export function buildHonestThumbnails(brief?: any): Array<{
     })
     .filter(Boolean) as any[];
 }
+
+/**
+ * Phase 12 — Bridges authoritative ProductionQcReport to reviewView.qcSummary for honest human review.
+ */
+export function qcReportToQcSummary(
+  report: import("./qc/qcOrchestrator").ProductionQcReport
+): Array<{ label: string; status: string; detail?: string }> {
+  const summary: Array<{ label: string; status: string; detail?: string }> = [];
+  for (const shot of report.shotResults) {
+    const label = `Shot ${shot.shotId || shot.id} QC`;
+    const status = shot.status === "pass" ? "pass" : shot.status === "warn" ? "info" : "fail";
+    const detail = shot.failures.map((f) => f.message).join("; ") || shot.recommendedAction;
+    summary.push({ label, status, detail });
+  }
+  summary.push({
+    label: "Overall Production QC",
+    status: report.verdict === "production_ready" ? "pass" : "fail",
+    detail: `Verdict: ${report.verdict} (score: ${report.productionResult.score.toFixed(2)})`,
+  });
+  return summary;
+}
