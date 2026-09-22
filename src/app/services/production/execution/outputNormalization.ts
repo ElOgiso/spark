@@ -105,3 +105,44 @@ export function enrichOutputMetadata(
     fileSizeBytes: extras?.fileSizeBytes ?? output.fileSizeBytes ?? 1024,
   };
 }
+
+import { sanitizeDiagnostics } from "./errors";
+
+/**
+ * Bridges Phase 11 NormalizedProviderResult to NormalizedMediaOutput for canonical ProductionAsset persistence.
+ */
+export function normalizedResultToMediaOutput(
+  result: import("./adapters/types").NormalizedProviderResult
+): NormalizedMediaOutput {
+  const primary = result.outputs[0];
+  return {
+    mediaType: primary?.type || "video",
+    sourceUrl: primary?.url,
+    mimeType:
+      primary?.mimeType ||
+      (primary?.type === "audio"
+        ? "audio/mpeg"
+        : primary?.type === "image"
+        ? "image/png"
+        : "video/mp4"),
+    width: primary?.width,
+    height: primary?.height,
+    durationSec: primary?.durationSec,
+    providerJobId: result.providerJobId,
+    metadata:
+      sanitizeDiagnostics({
+        provider: result.provider,
+        model: result.model,
+        rawStatus: result.rawStatus,
+        ...(result.metadata || {}),
+      }) || {},
+    usage: result.usage
+      ? {
+          estimatedCost: undefined,
+          actualCost: undefined,
+          inputUnits: result.usage.characterCount || result.usage.inputTokens,
+          outputUnits: result.usage.durationSeconds || result.usage.imageCount || result.usage.outputTokens,
+        }
+      : undefined,
+  };
+}

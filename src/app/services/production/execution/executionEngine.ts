@@ -26,6 +26,7 @@ import {
 import {
   createMemoryAssetPersistPort,
   enrichOutputMetadata,
+  normalizedResultToMediaOutput,
   persistNormalizedOutput,
   type AssetPersistPort,
 } from "./outputNormalization";
@@ -829,7 +830,14 @@ export class GenerationExecutionEngine {
           );
         }
 
-        let output = await adapter.normalizeOutput(status);
+        let output: NormalizedMediaOutput;
+        if (adapter.normalizeResult) {
+          const normResult = await adapter.normalizeResult(status);
+          output = normalizedResultToMediaOutput(normResult);
+        } else {
+          output = await adapter.normalizeOutput(status);
+        }
+
         if (this.opts.measureOutput && output.sourceUrl) {
           const measured = await this.opts.measureOutput(output.sourceUrl, output.mediaType);
           output = enrichOutputMetadata(output, measured);
@@ -861,12 +869,13 @@ export class GenerationExecutionEngine {
           persistPort: this.persistPort,
         });
 
-        // Compute actual cost and settle credits
+        // Compute actual cost and settle credits (reporting usage facts from adapter to CostEngine)
+        const usageFacts = adapter.extractUsage ? adapter.extractUsage(status) : undefined;
         const actual = CostEngine.calculateActualCost({
           providerId: provider,
           modelId: prepared.model || "",
           modality: costModality,
-          usage: {
+          usage: usageFacts || {
             durationSeconds: output.durationSec ?? prepared.durationSec,
             resolution: prepared.resolution,
           },

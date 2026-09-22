@@ -5,7 +5,8 @@
  */
 
 import { isI2vApiProvider, requestProductionVideoClip } from "../../productionVideoRequest";
-import type { MediaProviderAdapter, AdapterPorts } from "./types";
+import type { MediaProviderAdapter, AdapterPorts, NormalizedProviderResult } from "./types";
+import { normalizeProviderStatus } from "./types";
 import type {
   NormalizedMediaOutput,
   ProviderCapabilitySnapshot,
@@ -13,7 +14,7 @@ import type {
   ProviderJob,
   ProviderJobStatus,
 } from "../types";
-import { classifyProviderFailure, makeExecutionError } from "../errors";
+import { classifyProviderFailure, makeExecutionError, normalizeProviderError, sanitizeDiagnostics } from "../errors";
 
 const I2V_PROVIDERS = ["kling", "seedance", "grok", "higgsfield"] as const;
 
@@ -88,7 +89,13 @@ function createI2vAdapter(providerId: string, ports: AdapterPorts = {}): MediaPr
           providerJobId: result.providerJobId,
           status: "succeeded",
           outputUrl: result.videoUrl,
-          raw: { lastFrameDataUrl: result.lastFrameDataUrl, provider: result.provider },
+          raw: {
+            lastFrameDataUrl: result.lastFrameDataUrl,
+            provider: result.provider,
+            model: request.model,
+            durationSec: request.durationSec,
+            resolution: request.resolution,
+          },
         };
         jobs.set(result.providerJobId, status);
         return { providerJobId: result.providerJobId, status: "succeeded", raw: status.raw };
@@ -130,6 +137,65 @@ function createI2vAdapter(providerId: string, ports: AdapterPorts = {}): MediaPr
           lastFrameDataUrl: job.raw?.lastFrameDataUrl,
         },
       };
+    },
+
+    normalizeStatus(rawStatus: unknown) {
+      return normalizeProviderStatus(providerId, rawStatus);
+    },
+
+    normalizeResult(job: ProviderJobStatus): NormalizedProviderResult {
+      const url = job.outputUrl || (job.raw?.videoUrl as string) || (job.raw?.url as string) || "";
+      const normStatus = normalizeProviderStatus(providerId, job.status);
+      const usage = this.extractUsage ? this.extractUsage(job) : undefined;
+      return {
+        provider: providerId,
+        model: (job.raw?.model as string) || undefined,
+        providerJobId: job.providerJobId,
+        status: normStatus,
+        outputs: url
+          ? [
+              {
+                type: "video",
+                url,
+                mimeType: "video/mp4",
+                durationSec: typeof job.raw?.durationSec === "number" ? job.raw.durationSec : undefined,
+                width: typeof job.raw?.width === "number" ? job.raw.width : undefined,
+                height: typeof job.raw?.height === "number" ? job.raw.height : undefined,
+              },
+            ]
+          : [],
+        usage,
+        metadata:
+          sanitizeDiagnostics({
+            provider: providerId,
+            ...(job.raw?.lastFrameDataUrl ? { lastFrameDataUrl: job.raw.lastFrameDataUrl } : {}),
+            ...job.raw,
+          }) || { provider: providerId },
+        rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
+      };
+    },
+
+    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+      const raw = job.raw || {};
+      const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : typeof raw.duration === "number" ? raw.duration : undefined;
+      const resolution = typeof raw.resolution === "string" ? raw.resolution : undefined;
+      const billedDuration = typeof raw.billedDurationSeconds === "number" ? raw.billedDurationSeconds : durationSec;
+
+      if (durationSec === undefined && resolution === undefined && billedDuration === undefined && raw.computeUnits === undefined) {
+        return undefined;
+      }
+
+      return {
+        durationSeconds: durationSec,
+        resolution,
+        billedDurationSeconds: billedDuration,
+        computeUnits: typeof raw.computeUnits === "number" ? raw.computeUnits : undefined,
+        raw,
+      };
+    },
+
+    normalizeError(err: unknown): import("./types").ProviderError {
+      return normalizeProviderError(err, providerId);
     },
   };
 }

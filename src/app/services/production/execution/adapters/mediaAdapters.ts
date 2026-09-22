@@ -1,9 +1,5 @@
-/**
- * Image / voice / merge adapters — wrap injectable ports (ModelRouter / existing services).
- * Real calls only when ports or default runtimes are provided; tests inject mocks.
- */
-
-import type { MediaProviderAdapter, AdapterPorts } from "./types";
+import type { MediaProviderAdapter, AdapterPorts, NormalizedProviderResult } from "./types";
+import { normalizeProviderStatus } from "./types";
 import type {
   NormalizedMediaOutput,
   ProviderCapabilitySnapshot,
@@ -11,7 +7,7 @@ import type {
   ProviderJob,
   ProviderJobStatus,
 } from "../types";
-import { classifyProviderFailure, makeExecutionError } from "../errors";
+import { classifyProviderFailure, makeExecutionError, normalizeProviderError, sanitizeDiagnostics } from "../errors";
 
 function storeJob(
   map: Map<string, ProviderJobStatus>,
@@ -53,7 +49,13 @@ export function createImageAdapter(
           providerJobId: result.providerJobId,
           status: "succeeded",
           outputUrl: result.imageUrl,
-          raw: { provider: result.provider },
+          raw: {
+            provider: result.provider,
+            model: request.model,
+            aspectRatio: request.aspectRatio,
+            resolution: request.resolution,
+            imageCount: 1,
+          },
         });
       } catch (err: any) {
         if (err?.code) throw err;
@@ -81,6 +83,47 @@ export function createImageAdapter(
         providerJobId: job.providerJobId,
         metadata: { provider: providerId },
       };
+    },
+    normalizeStatus(rawStatus: unknown) {
+      return normalizeProviderStatus(providerId, rawStatus);
+    },
+    normalizeResult(job: ProviderJobStatus): NormalizedProviderResult {
+      const url = job.outputUrl || (job.raw?.imageUrl as string) || (job.raw?.url as string) || "";
+      const normStatus = normalizeProviderStatus(providerId, job.status);
+      const usage = this.extractUsage ? this.extractUsage(job) : undefined;
+      return {
+        provider: providerId,
+        model: (job.raw?.model as string) || undefined,
+        providerJobId: job.providerJobId,
+        status: normStatus,
+        outputs: url
+          ? [
+              {
+                type: "image",
+                url,
+                mimeType: (job.raw?.mimeType as string) || "image/png",
+                width: typeof job.raw?.width === "number" ? job.raw.width : undefined,
+                height: typeof job.raw?.height === "number" ? job.raw.height : undefined,
+              },
+            ]
+          : [],
+        usage,
+        metadata: sanitizeDiagnostics({ provider: providerId, ...job.raw }) || { provider: providerId },
+        rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
+      };
+    },
+    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+      const raw = job.raw || {};
+      const imageCount = typeof raw.imageCount === "number" ? raw.imageCount : 1;
+      const resolution = typeof raw.resolution === "string" ? raw.resolution : undefined;
+      return {
+        imageCount,
+        resolution,
+        raw,
+      };
+    },
+    normalizeError(err: unknown) {
+      return normalizeProviderError(err, providerId);
     },
   };
 }
@@ -113,11 +156,17 @@ export function createVoiceAdapter(
           );
         }
         const result = await ports.submitVoice(request);
+        const charCount = typeof request.prompt === "string" ? request.prompt.length : undefined;
         return storeJob(jobs, {
           providerJobId: result.providerJobId,
           status: "succeeded",
           outputUrl: result.audioUrl,
-          raw: { provider: result.provider, durationSec: result.durationSec },
+          raw: {
+            provider: result.provider,
+            model: request.model,
+            durationSec: result.durationSec || request.durationSec,
+            characterCount: charCount,
+          },
         });
       } catch (err: any) {
         if (err?.code) throw err;
@@ -141,6 +190,47 @@ export function createVoiceAdapter(
         providerJobId: job.providerJobId,
         metadata: { provider: providerId },
       };
+    },
+    normalizeStatus(rawStatus: unknown) {
+      return normalizeProviderStatus(providerId, rawStatus);
+    },
+    normalizeResult(job: ProviderJobStatus): NormalizedProviderResult {
+      const url = job.outputUrl || (job.raw?.audioUrl as string) || (job.raw?.url as string) || "";
+      const normStatus = normalizeProviderStatus(providerId, job.status);
+      const usage = this.extractUsage ? this.extractUsage(job) : undefined;
+      return {
+        provider: providerId,
+        model: (job.raw?.model as string) || undefined,
+        providerJobId: job.providerJobId,
+        status: normStatus,
+        outputs: url
+          ? [
+              {
+                type: "audio",
+                url,
+                mimeType: "audio/mpeg",
+                durationSec: typeof job.raw?.durationSec === "number" ? job.raw.durationSec : undefined,
+              },
+            ]
+          : [],
+        usage,
+        metadata: sanitizeDiagnostics({ provider: providerId, ...job.raw }) || { provider: providerId },
+        rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
+      };
+    },
+    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+      const raw = job.raw || {};
+      const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : undefined;
+      const characterCount = typeof raw.characterCount === "number" ? raw.characterCount : typeof raw.characters === "number" ? raw.characters : undefined;
+      if (durationSec === undefined && characterCount === undefined) return undefined;
+      return {
+        durationSeconds: durationSec,
+        characterCount,
+        raw,
+      };
+    },
+    normalizeError(err: unknown) {
+      return normalizeProviderError(err, providerId);
     },
   };
 }
@@ -175,7 +265,11 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
           providerJobId: result.providerJobId,
           status: "succeeded",
           outputUrl: result.videoUrl,
-          raw: { provider: result.provider },
+          raw: {
+            provider: result.provider,
+            durationSec: request.durationSec,
+            resolution: request.resolution,
+          },
         });
       } catch (err: any) {
         if (err?.code) throw err;
@@ -198,6 +292,44 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
         providerJobId: job.providerJobId,
         metadata: { provider: providerId, role: "master_merge" },
       };
+    },
+    normalizeStatus(rawStatus: unknown) {
+      return normalizeProviderStatus(providerId, rawStatus);
+    },
+    normalizeResult(job: ProviderJobStatus): NormalizedProviderResult {
+      const url = job.outputUrl || (job.raw?.videoUrl as string) || (job.raw?.url as string) || "";
+      const normStatus = normalizeProviderStatus(providerId, job.status);
+      const usage = this.extractUsage ? this.extractUsage(job) : undefined;
+      return {
+        provider: providerId,
+        providerJobId: job.providerJobId,
+        status: normStatus,
+        outputs: url
+          ? [
+              {
+                type: "video",
+                url,
+                mimeType: "video/mp4",
+                durationSec: typeof job.raw?.durationSec === "number" ? job.raw.durationSec : undefined,
+              },
+            ]
+          : [],
+        usage,
+        metadata: sanitizeDiagnostics({ provider: providerId, role: "master_merge", ...job.raw }) || { provider: providerId, role: "master_merge" },
+        rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
+      };
+    },
+    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+      const raw = job.raw || {};
+      const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : undefined;
+      if (durationSec === undefined) return undefined;
+      return {
+        durationSeconds: durationSec,
+        raw,
+      };
+    },
+    normalizeError(err: unknown) {
+      return normalizeProviderError(err, providerId);
     },
   };
 }
