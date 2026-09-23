@@ -35,6 +35,18 @@ import {
   type VideoClipRequest,
 } from "./_videoContract.js";
 import { assertVideoRequestExecutable } from "../../src/app/services/production/capability/assertVideoRequest.js";
+import { CreditService } from "../../src/app/services/production/credits/creditService.js";
+
+export function estimateVideoCostUsd(provider: string): number {
+  const p = String(provider || "").toLowerCase();
+  if (p === "runway") return 0.25;
+  if (p === "luma") return 0.22;
+  if (p === "kling") return 0.20;
+  if (p === "seedance" || p === "ark" || p === "higgsfield" || p === "higgsfield-seedance") return 0.18;
+  if (p === "wan") return 0.12;
+  if (p === "grok" || p === "xai") return 0.15;
+  return 0.20;
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -757,7 +769,8 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!(await requireRuntimeUser(req, res))) return;
+  const userId = await requireRuntimeUser(req, res);
+  if (!userId) return;
   if (isIngestMediaRequest(req)) {
     return handleIngestMedia(req, res);
   }
@@ -1007,48 +1020,241 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       grok: process.env.XAI_API_KEY || process.env.GROK_API_KEY,
     };
 
+    if (provider === "veo" || provider === "gemini") {
+      return res.status(422).json({
+        error: "Veo/Gemini video runs through the production orchestrator, not this adapter.",
+        videoUrl: null,
+      });
+    }
+
     const i2vProviders = ["seedance", "ark", "kling", "grok", "xai", "higgsfield", "higgsfield-seedance"];
+    let clipReq: any = null;
+
     if (i2vProviders.includes(String(provider || "").toLowerCase())) {
-      const clipReq = await buildClipRequest(body);
+      clipReq = await buildClipRequest(body);
       if (!clipReq.firstFrameDataUri) {
         return res.status(400).json({
           error: "I2V requires a first-frame still (imageUrl / firstFrameUrl / previous last frame).",
           videoUrl: null,
         });
       }
+    } else if (provider === "runway") {
+      if (!keys.runway) {
+        return res.status(422).json({
+          error: 'No API key configured for provider "runway". Add the required key in Vercel environment variables.',
+          videoUrl: null,
+        });
+      }
+    } else if (provider === "luma") {
+      if (!keys.luma) {
+        return res.status(422).json({
+          error: 'No API key configured for provider "luma". Add the required key in Vercel environment variables.',
+          videoUrl: null,
+        });
+      }
+    } else if (provider === "wan") {
+      if (!keys.wan) {
+        return res.status(422).json({
+          error: 'No API key configured for provider "wan". Add the required key in Vercel environment variables.',
+          videoUrl: null,
+        });
+      }
+    } else {
+      return res.status(422).json({
+        error: `No API key configured for provider "${provider || "unknown"}". Add the required key in Vercel environment variables.`,
+        videoUrl: null,
+      });
+    }
 
+    // 1. Estimate cost and required credits (100 credits = $1 USD, ceil policy)
+    const estimatedCostUsd = estimateVideoCostUsd(provider);
+    const creditService = CreditService.getInstance();
+    const prodId = productionId || "prod";
+    const numShot = Number(body.shotIndex || body.sceneIndex || body.shot || 0);
+    const attempt = Number(body.attempt || 1);
+    const idempotencyKey = `video_${prodId}_${numShot}_${attempt}`;
+    const generationId = `${prodId}_shot_${numShot}_att_${attempt}`;
+
+    const quote = creditService.quote({
+      estimatedCostUsd,
+      generationId,
+    });
+
+    // 2. Check balance before any provider HTTP fetch (balance too low -> 402, zero provider fetch)
+    const currentBalance = await creditService.getBalance(userId);
+    if (currentBalance < quote.sparkCredits) {
+      return res.status(402).json({
+        error: `Insufficient credits: required ${quote.sparkCredits}, available ${currentBalance}`,
+        requiredCredits: quote.sparkCredits,
+        availableBalance: currentBalance,
+        videoUrl: null,
+      });
+    }
+
+    // 3. Call existing reservation RPCs
+    let reservationId: string | undefined;
+    try {
+      const { reservation } = await creditService.reserve({
+        quote,
+        userId,
+        idempotencyKey,
+        metadata: {
+          provider,
+          model,
+          productionId: prodId,
+          shotIndex: numShot,
+          attempt,
+        },
+      });
+      reservationId = reservation.id;
+    } catch (resErr: any) {
+      const errMsg = resErr?.message || String(resErr);
+      if (errMsg.includes("Insufficient credits")) {
+        return res.status(402).json({
+          error: errMsg,
+          requiredCredits: quote.sparkCredits,
+          availableBalance: currentBalance,
+          videoUrl: null,
+        });
+      }
+      return res.status(500).json({
+        error: `Credit reservation failed: ${errMsg}`,
+        videoUrl: null,
+      });
+    }
+
+    // 4. Provider execution with strict settlement/release lifecycle
+    try {
       let providerVideoUrl = "";
       let providerRequestId: string | undefined;
-      const p = String(provider).toLowerCase();
-      if (p === "seedance" || p === "ark") {
-        const genRes = await generateSeedance(clipReq);
-        providerVideoUrl = genRes.videoUrl;
-        providerRequestId = genRes.requestId;
-      } else if (p === "kling") {
-        const genRes = await generateKling(clipReq);
-        providerVideoUrl = genRes.videoUrl;
-        providerRequestId = genRes.requestId;
-      } else if (p === "higgsfield" || p === "higgsfield-seedance") {
-        const genRes = await generateHiggsfield(clipReq);
-        providerVideoUrl = genRes.videoUrl;
-        providerRequestId = genRes.requestId;
-      } else {
-        const genRes = await generateGrok(clipReq);
-        providerVideoUrl = genRes.videoUrl;
-        providerRequestId = genRes.requestId;
+      let actualCostUsd = estimatedCostUsd;
+
+      if (i2vProviders.includes(String(provider || "").toLowerCase())) {
+        const p = String(provider).toLowerCase();
+        if (p === "seedance" || p === "ark") {
+          const genRes = await generateSeedance(clipReq);
+          providerVideoUrl = genRes.videoUrl;
+          providerRequestId = genRes.requestId;
+          actualCostUsd = 0.18;
+        } else if (p === "kling") {
+          const genRes = await generateKling(clipReq);
+          providerVideoUrl = genRes.videoUrl;
+          providerRequestId = genRes.requestId;
+          actualCostUsd = 0.20;
+        } else if (p === "higgsfield" || p === "higgsfield-seedance") {
+          const genRes = await generateHiggsfield(clipReq);
+          providerVideoUrl = genRes.videoUrl;
+          providerRequestId = genRes.requestId;
+          actualCostUsd = 0.18;
+        } else {
+          const genRes = await generateGrok(clipReq);
+          providerVideoUrl = genRes.videoUrl;
+          providerRequestId = genRes.requestId;
+          actualCostUsd = 0.15;
+        }
+      } else if (provider === "runway") {
+        const response = await fetch("https://api.runwayml.com/v1/tasks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${keys.runway}`,
+          },
+          body: JSON.stringify({
+            taskType: "image_to_video",
+            prompt,
+            image: imageUrl,
+          }),
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Runway error: ${errText}`);
+        }
+        const data = await response.json();
+        const taskId = data.id;
+        providerVideoUrl = await pollGenericUrl(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+          Authorization: `Bearer ${keys.runway}`,
+        });
+        actualCostUsd = 0.25;
+      } else if (provider === "luma") {
+        const response = await fetch("https://api.lumalabs.ai/v1/generations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${keys.luma}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            aspect_ratio: aspectRatio || "9:16",
+            image_url: imageUrl,
+          }),
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Luma error: ${errText}`);
+        }
+        const data = await response.json();
+        const taskId = data.id;
+        providerVideoUrl = await pollGenericUrl(`https://api.lumalabs.ai/v1/generations/${taskId}`, {
+          Authorization: `Bearer ${keys.luma}`,
+        });
+        actualCostUsd = 0.22;
+      } else if (provider === "wan") {
+        const response = await fetch("https://queue.fal.run/fal-ai/wan/vid", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Key ${keys.wan}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            image_url: imageUrl,
+          }),
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Wan Fal.ai error: ${errText}`);
+        }
+        const data = await response.json();
+        const requestId = data.request_id;
+        providerVideoUrl = await pollGenericUrl(`https://queue.fal.run/fal-ai/wan/vid/requests/${requestId}`, {
+          Authorization: `Key ${keys.wan}`,
+        });
+        actualCostUsd = 0.12;
       }
 
-      const shotIndex = Number(body.shotIndex || body.sceneIndex || body.shot);
+      if (!providerVideoUrl) {
+        throw new Error(`Provider "${provider}" returned no video URL.`);
+      }
+
+      const shotIndex = Number.isFinite(numShot) && numShot > 0 ? numShot : 0;
       const clipFilename =
-        Number.isFinite(shotIndex) && shotIndex > 0
+        shotIndex > 0
           ? `shot-${Math.round(shotIndex)}.mp4`
           : `shot-${Date.now()}.mp4`;
       const finalized = await finalizeClip({
         videoUrl: providerVideoUrl,
         brandId,
-        productionId: productionId || "default-prod",
+        productionId: prodId,
         filename: clipFilename,
       });
+
+      // Capture only after durable success
+      if (reservationId) {
+        try {
+          await creditService.settle({
+            reservationId,
+            userId,
+            actualProviderCostUsd: actualCostUsd,
+            idempotencyKey,
+            metadata: {
+              storagePath: finalized.storagePath,
+              publicUrl: finalized.publicUrl,
+            },
+          });
+        } catch (settleErr) {
+          console.error("[Credits] Settlement error:", settleErr);
+        }
+      }
 
       return res.status(200).json({
         success: true,
@@ -1058,134 +1264,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         lastFrameDataUrl: finalized.lastFrameDataUrl,
         provider,
         requestId: providerRequestId || undefined,
-        costUsd: p === "kling" ? 0.2 : p === "seedance" || p === "ark" ? 0.18 : 0.15,
+        costUsd: actualCostUsd,
       });
-    }
+    } catch (provErr: any) {
+      const errMsg = provErr?.message || String(provErr);
+      const isTimeout =
+        errMsg.toLowerCase().includes("timeout") ||
+        errMsg.toLowerCase().includes("timed out") ||
+        errMsg.toLowerCase().includes("time out");
 
-    // Runway Gen-3 Alpha
-    if (provider === "runway" && keys.runway) {
-      const response = await fetch("https://api.runwayml.com/v1/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keys.runway}`,
-        },
-        body: JSON.stringify({
-          taskType: "image_to_video",
-          prompt,
-          image: imageUrl,
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const taskId = data.id;
-        const videoUrl = await pollGenericUrl(`https://api.runwayml.com/v1/tasks/${taskId}`, {
-          Authorization: `Bearer ${keys.runway}`,
-        });
-        const finalized = await finalizeClip({
-          videoUrl,
-          brandId,
-          productionId: productionId || "default-prod",
-        });
-        return res.status(200).json({
-          success: true,
-          storagePath: finalized.storagePath,
-          publicUrl: finalized.publicUrl,
-          videoUrl: finalized.publicUrl || finalized.videoUrl,
-          lastFrameDataUrl: finalized.lastFrameDataUrl,
-          costUsd: 0.25,
+      if (isTimeout) {
+        // Timeout = unknown, no capture, no auto-retry
+        if (reservationId) {
+          try {
+            await creditService.markPendingUnknown({
+              reservationId,
+              userId,
+              reason: errMsg || "Provider generation poll timed out",
+            });
+          } catch (mErr) {
+            console.error("[Credits] Mark pending unknown error:", mErr);
+          }
+        }
+        return res.status(504).json({
+          error: `Video generation timed out: ${errMsg}`,
+          status: "PENDING_UNKNOWN",
+          reservationId,
+          videoUrl: null,
         });
       }
-      const errText = await response.text();
-      throw new Error(`Runway error: ${errText}`);
-    }
 
-    // Luma Dream Machine
-    if (provider === "luma" && keys.luma) {
-      const response = await fetch("https://api.lumalabs.ai/v1/generations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keys.luma}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          aspect_ratio: aspectRatio || "9:16",
-          image_url: imageUrl,
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const taskId = data.id;
-        const videoUrl = await pollGenericUrl(`https://api.lumalabs.ai/v1/generations/${taskId}`, {
-          Authorization: `Bearer ${keys.luma}`,
-        });
-        const finalized = await finalizeClip({
-          videoUrl,
-          brandId,
-          productionId: productionId || "default-prod",
-        });
-        return res.status(200).json({
-          success: true,
-          storagePath: finalized.storagePath,
-          publicUrl: finalized.publicUrl,
-          videoUrl: finalized.publicUrl || finalized.videoUrl,
-          lastFrameDataUrl: finalized.lastFrameDataUrl,
-          costUsd: 0.22,
-        });
+      // Pre-acceptance failure -> Release reservation
+      if (reservationId) {
+        try {
+          await creditService.release({
+            reservationId,
+            userId,
+            idempotencyKey,
+            reason: errMsg || "Video generation failed before completion",
+          });
+        } catch (relErr) {
+          console.error("[Credits] Release error:", relErr);
+        }
       }
-      const errText = await response.text();
-      throw new Error(`Luma error: ${errText}`);
+      return res.status(500).json({ error: errMsg, videoUrl: null });
     }
-
-    // Wan2.1 (via Fal.ai or direct)
-    if (provider === "wan" && keys.wan) {
-      const response = await fetch("https://queue.fal.run/fal-ai/wan/vid", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Key ${keys.wan}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          image_url: imageUrl,
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const requestId = data.request_id;
-        const videoUrl = await pollGenericUrl(`https://queue.fal.run/fal-ai/wan/vid/requests/${requestId}`, {
-          Authorization: `Key ${keys.wan}`,
-        });
-        const finalized = await finalizeClip({
-          videoUrl,
-          brandId,
-          productionId: productionId || "default-prod",
-        });
-        return res.status(200).json({
-          success: true,
-          storagePath: finalized.storagePath,
-          publicUrl: finalized.publicUrl,
-          videoUrl: finalized.publicUrl || finalized.videoUrl,
-          lastFrameDataUrl: finalized.lastFrameDataUrl,
-          costUsd: 0.12,
-        });
-      }
-      const errText = await response.text();
-      throw new Error(`Wan Fal.ai error: ${errText}`);
-    }
-
-    if (provider === "veo" || provider === "gemini") {
-      return res.status(422).json({
-        error: "Veo/Gemini video runs through the production orchestrator, not this adapter.",
-        videoUrl: null,
-      });
-    }
-
-    return res.status(422).json({
-      error: `No API key configured for provider "${provider || "unknown"}". Add the required key in Vercel environment variables.`,
-      videoUrl: null,
-    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || String(err) });
   }

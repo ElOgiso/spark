@@ -1060,23 +1060,25 @@ export async function persistAccountToken(brandId: string, account: any) {
     const pKey = normalizePlatformKey(account.platform || "youtube");
     const rawHandle = account.handle || account.username;
     const cleanHandle = rawHandle ? normalizeHandle(rawHandle) : null;
-    // Preserve OAuth tokens on the persisted row. The client connect path passes tokens as
-    // top-level fields (accessToken/refreshToken/expiresAt) with NO permissions object, so the old
-    // code stored the account WITHOUT tokens — on relogin it showed "connected" but was dead.
+    // Preserve existing server-persisted tokens; never accept client tokens
+    const { data: existingRows } = await (supabase.from("accounts") as any)
+      .select("permissions")
+      .eq("brand_id", brandId)
+      .eq("platform", pKey)
+      .limit(1);
+    const existingPermissions = (existingRows?.[0]?.permissions as Record<string, any>) || {};
+
     const basePermissions =
       account.permissions && typeof account.permissions === "object" ? { ...account.permissions } : {};
-    const accessToken = account.accessToken || account.access_token || basePermissions.access_token;
-    const refreshToken = account.refreshToken || account.refresh_token || basePermissions.refresh_token;
-    const expiresAt = account.expiresAt || account.expires_at || basePermissions.expires_at;
+    delete basePermissions.access_token;
+    delete basePermissions.refresh_token;
+
     const permissions: Record<string, any> = {
-      scopes: basePermissions.scopes || account.permissionsGranted || account.scopes || [],
-      platform_user_id: basePermissions.platform_user_id || account.channelId || account.platform_user_id || null,
-      avatar: basePermissions.avatar || account.avatar || null,
-      ...basePermissions,
+      ...existingPermissions,
+      scopes: basePermissions.scopes || account.permissionsGranted || account.scopes || existingPermissions.scopes || [],
+      platform_user_id: basePermissions.platform_user_id || account.channelId || account.platform_user_id || existingPermissions.platform_user_id || null,
+      avatar: basePermissions.avatar || account.avatar || existingPermissions.avatar || null,
     };
-    if (accessToken) permissions.access_token = accessToken;
-    if (refreshToken) permissions.refresh_token = refreshToken;
-    if (expiresAt) permissions.expires_at = expiresAt;
     await (supabase.from("accounts") as any).upsert(
       {
         brand_id: brandId,

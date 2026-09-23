@@ -7,6 +7,7 @@ import {
   saveConnectedAccountToken,
   parseOAuthState,
 } from "../../services/socialIntegrationService";
+import { runtimeFetch } from "../../backend/runtimeFetch";
 
 export function XCallbackPage() {
   const [status, setStatus] = useState<"verifying" | "exchanging" | "saving" | "redirecting" | "error">("verifying");
@@ -66,7 +67,7 @@ export function XCallbackPage() {
       return;
     }
 
-    fetch("/api/auth/x/callback", {
+    runtimeFetch("/api/auth/x/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -90,6 +91,8 @@ export function XCallbackPage() {
         setStatus("saving");
         const profile = data.profile;
         const now = new Date().toISOString();
+
+        // OAuth tokens are kept server-side only in accounts row; client preserves metadata only
         const token = {
           platform: "Twitter/X",
           handle: profile.username || "Unknown",
@@ -98,11 +101,6 @@ export function XCallbackPage() {
           channelId: profile.userId || "",
           verified: true,
           status: "Connected" as any,
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || "",
-          expiresAt: Date.now() + (data.expires_in || 7200) * 1000,
-          scopes: (data.scope || "").split(" ").filter(Boolean),
-          permissionsGranted: (data.scope || "").split(" ").filter(Boolean),
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,

@@ -1030,6 +1030,11 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
         brand_id: brandId || undefined,
         user_id: userId || undefined,
       };
+      // Never store OAuth access or refresh tokens in browser localStorage
+      delete (cleanToken as any).accessToken;
+      delete (cleanToken as any).refreshToken;
+      delete (cleanToken as any).access_token;
+      delete (cleanToken as any).refresh_token;
 
       storeObj[storageKey] = cleanToken;
       localStorage.setItem("spark_social_account_tokens_v2", JSON.stringify(storeObj));
@@ -1089,13 +1094,20 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
             if (!tokBrand) return;
           }
 
-          normalized[pKey] = {
+          const cleanTok: ConnectedAccountToken = {
             ...tok,
             platform: pKey,
             handle: normalizeHandle(tok.handle),
             brand_id: tokBrand || undefined,
             user_id: tokUser || undefined,
           };
+          // Never expose tokens from browser storage
+          delete (cleanTok as any).accessToken;
+          delete (cleanTok as any).refreshToken;
+          delete (cleanTok as any).access_token;
+          delete (cleanTok as any).refresh_token;
+
+          normalized[pKey] = cleanTok;
         }
       });
       return normalized;

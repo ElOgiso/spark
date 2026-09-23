@@ -17,14 +17,22 @@ import {
 import {
   ICreditRepository,
   InMemoryCreditRepository,
+  SupabaseCreditRepository,
 } from "./creditRepository";
+import { isSupabaseConfigured } from "../../../backend/supabaseClient";
 
 export class CreditService {
   private static instance: CreditService | null = null;
   private repo: ICreditRepository;
 
   constructor(repo?: ICreditRepository) {
-    this.repo = repo || new InMemoryCreditRepository();
+    if (repo) {
+      this.repo = repo;
+    } else if (isSupabaseConfigured()) {
+      this.repo = new SupabaseCreditRepository();
+    } else {
+      this.repo = new InMemoryCreditRepository();
+    }
   }
 
   static getInstance(): CreditService {

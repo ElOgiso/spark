@@ -38,6 +38,7 @@ async function upsertConnectedAccount(input: {
   const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     "";
   if (!supabaseUrl || !supabaseKey) {
@@ -189,7 +190,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ error: "Could not retrieve X profile information." });
     }
 
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      "";
+
+    let sessionUserId: string | null = null;
+    const authHeader = req.headers?.authorization;
+    const bearer = typeof authHeader === "string" ? /^Bearer\s+(\S+)$/i.exec(authHeader)?.[1] : undefined;
+    if (bearer && supabaseUrl && supabaseKey) {
+      try {
+        const authVerifier = createClient(supabaseUrl, supabaseKey);
+        const { data: authData } = await authVerifier.auth.getUser(bearer);
+        if (authData?.user?.id) {
+          sessionUserId = authData.user.id;
+        }
+      } catch (authErr) {
+        console.warn("[x/callback] session bearer verification notice:", authErr);
+      }
+    }
+
     const parsedState = parseStatePayload(state);
+    if (sessionUserId && parsedState?.userId && sessionUserId !== parsedState.userId) {
+      return res.status(403).json({
+        error: "Forbidden: State user does not match authenticated session.",
+      });
+    }
+
+    const effectiveUserId = sessionUserId || parsedState?.userId || "";
     const effectiveBrandId =
       parsedState?.brandId && UUID_RE.test(parsedState.brandId)
         ? parsedState.brandId
@@ -199,30 +230,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (effectiveBrandId) {
       try {
-        if (parsedState?.userId && UUID_RE.test(parsedState.userId)) {
-          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-          const supabaseKey =
-            process.env.SUPABASE_SERVICE_ROLE_KEY ||
-            process.env.SUPABASE_ANON_KEY ||
-            process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-            "";
-          if (supabaseUrl && supabaseKey) {
-            const sb = createClient(supabaseUrl, supabaseKey);
-            const { data: brandRow } = await (sb.from("brands") as any)
-              .select("id, owner_id")
-              .eq("id", effectiveBrandId)
-              .maybeSingle();
+        if (effectiveUserId && UUID_RE.test(effectiveUserId) && supabaseUrl && supabaseKey) {
+          const sb = createClient(supabaseUrl, supabaseKey);
+          const { data: brandRow } = await (sb.from("brands") as any)
+            .select("id, owner_id")
+            .eq("id", effectiveBrandId)
+            .maybeSingle();
 
-            if (brandRow && brandRow.owner_id && brandRow.owner_id !== parsedState.userId) {
-              console.warn("[x/callback] Unauthorized brand attach attempt:", {
-                brandId: effectiveBrandId,
-                brandOwner: brandRow.owner_id,
-                stateUserId: parsedState.userId,
-              });
-              return res.status(403).json({
-                error: "Unauthorized: Brand workspace does not belong to the authenticating user.",
-              });
-            }
+          if (brandRow && brandRow.owner_id && brandRow.owner_id !== effectiveUserId) {
+            console.warn("[x/callback] Unauthorized brand attach attempt:", {
+              brandId: effectiveBrandId,
+              brandOwner: brandRow.owner_id,
+              effectiveUserId,
+            });
+            return res.status(403).json({
+              error: "Unauthorized: Brand workspace does not belong to the authenticating user.",
+            });
           }
         }
 
@@ -243,12 +266,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Never return access_token or refresh_token to the browser
     return res.status(200).json({
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token || null,
-      expires_in: tokenData.expires_in || 7200,
-      token_type: tokenData.token_type || "Bearer",
-      scope: tokenData.scope || "",
+      success: true,
       profile,
     });
   } catch (err: any) {

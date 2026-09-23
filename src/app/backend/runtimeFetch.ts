@@ -3,7 +3,7 @@ import { getSupabaseClient } from './supabaseClient';
 /** Attach Spark's session only to our own runtime, never to a provider URL. */
 export async function runtimeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const path = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  if (!path.startsWith('/api/runtime/')) return fetch(input, init);
+  if (!path.startsWith('/api/runtime/') && !path.startsWith('/api/auth/')) return fetch(input, init);
   const client = getSupabaseClient();
   const session = client ? await client.auth.getSession() : null;
   const headers = new Headers(input instanceof Request ? input.headers : undefined);

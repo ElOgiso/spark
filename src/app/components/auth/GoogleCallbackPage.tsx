@@ -5,9 +5,9 @@ import {
   getActiveSessionUserId,
   getGoogleRedirectUri,
   saveConnectedAccountToken,
-  getStoredAccountTokens,
   parseOAuthState,
 } from "../../services/socialIntegrationService";
+import { runtimeFetch } from "../../backend/runtimeFetch";
 
 export function GoogleCallbackPage() {
   const [status, setStatus] = useState<"verifying" | "exchanging" | "saving" | "redirecting" | "error">("verifying");
@@ -69,7 +69,7 @@ export function GoogleCallbackPage() {
       brandId
     });
 
-    fetch("/api/auth/google/callback", {
+    runtimeFetch("/api/auth/google/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -94,10 +94,8 @@ export function GoogleCallbackPage() {
         setStatus("saving");
         const profile = data.profile || {};
         const now = new Date().toISOString();
-        const storedTokens = getStoredAccountTokens();
-        const existingToken = storedTokens["YouTube Shorts"] || storedTokens["YouTube"] || storedTokens["youtube"];
-        const effectiveRefreshToken = data.refresh_token || existingToken?.refreshToken || "";
 
+        // OAuth tokens are kept server-side only in accounts row; client preserves metadata only
         const token = {
           platform: "YouTube Shorts",
           handle: profile.username || "Unknown",
@@ -106,11 +104,6 @@ export function GoogleCallbackPage() {
           channelId: profile.channelId || "",
           verified: true,
           status: "Connected" as any,
-          accessToken: data.access_token,
-          refreshToken: effectiveRefreshToken,
-          expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-          scopes: (data.scope || "").split(" ").filter(Boolean),
-          permissionsGranted: (data.scope || "").split(" ").filter(Boolean),
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,

@@ -355,3 +355,245 @@ export class InMemoryCreditRepository implements ICreditRepository {
     return this.reservations.get(reservationId) || null;
   }
 }
+
+/**
+ * Authoritative Supabase Credit Repository calling PostgreSQL RPCs:
+ * - spark_reserve_credits
+ * - spark_settle_credits
+ * - spark_release_credits
+ * - spark_mark_pending_unknown
+ */
+export class SupabaseCreditRepository implements ICreditRepository {
+  private client: any;
+
+  constructor(client?: any) {
+    this.client = client;
+  }
+
+  private async getClient(): Promise<any> {
+    if (this.client) return this.client;
+    try {
+      const { getSupabaseClient } = await import("../../../backend/supabaseClient");
+      const c = getSupabaseClient();
+      if (c) return c;
+    } catch {}
+    const url = (typeof process !== "undefined" && (process.env?.SUPABASE_URL || process.env?.VITE_SUPABASE_URL)) || "";
+    const key =
+      (typeof process !== "undefined" &&
+        (process.env?.SUPABASE_SERVICE_ROLE_KEY ||
+          process.env?.SUPABASE_ANON_KEY ||
+          process.env?.SUPABASE_PUBLISHABLE_KEY ||
+          process.env?.VITE_SUPABASE_PUBLISHABLE_KEY)) ||
+      "";
+    if (url && key) {
+      const { createClient } = await import("@supabase/supabase-js");
+      this.client = createClient(url, key);
+      return this.client;
+    }
+    throw new Error("Supabase client is not configured for CreditRepository");
+  }
+
+  async getBalance(userId: string): Promise<number> {
+    const sb = await this.getClient();
+    const { data, error } = await sb
+      .from("profiles")
+      .select("credit_balance")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data) return 0;
+    return typeof data.credit_balance === "number" ? data.credit_balance : 0;
+  }
+
+  async reserve(params: ReserveParams): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
+    const sb = await this.getClient();
+    const { data, error } = await sb.rpc("spark_reserve_credits", {
+      p_user_id: params.userId,
+      p_generation_id: params.generationId,
+      p_amount: params.amount,
+      p_idempotency_key: params.idempotencyKey,
+      p_pricing_policy_version: params.pricingPolicyVersion,
+      p_estimated_provider_cost_usd: params.estimatedProviderCostUsd,
+      p_metadata: params.metadata || {},
+    });
+    if (error) {
+      throw new Error(`Credit reservation failed: ${error.message || String(error)}`);
+    }
+    const res: CreditReservation = {
+      id: data.id,
+      userId: data.user_id,
+      generationId: data.generation_id,
+      amount: data.amount,
+      status: data.status,
+      consumedAmount: data.consumed_amount || 0,
+      releasedAmount: data.released_amount || 0,
+      idempotencyKey: params.idempotencyKey,
+      pricingPolicyVersion: params.pricingPolicyVersion,
+      estimatedProviderCostUsd: params.estimatedProviderCostUsd,
+      metadata: params.metadata || {},
+      createdAt: data.created_at || new Date().toISOString(),
+      updatedAt: data.updated_at || new Date().toISOString(),
+    };
+    return { reservation: res, idempotentReplay: Boolean(data.idempotent_replay) };
+  }
+
+  async settle(params: SettleParams): Promise<{ settlement: CreditSettlement; idempotentReplay: boolean }> {
+    const sb = await this.getClient();
+    const { data, error } = await sb.rpc("spark_settle_credits", {
+      p_user_id: params.userId,
+      p_reservation_id: params.reservationId,
+      p_actual_amount: params.actualAmount,
+      p_idempotency_key: params.idempotencyKey,
+      p_actual_provider_cost_usd: params.actualProviderCostUsd,
+      p_metadata: params.metadata || {},
+    });
+    if (error) {
+      throw new Error(`Credit settlement failed: ${error.message || String(error)}`);
+    }
+    const settlement: CreditSettlement = {
+      id: data.id,
+      reservationId: data.id,
+      userId: data.user_id,
+      generationId: data.generation_id,
+      actualAmount: data.consumed_amount || params.actualAmount,
+      status: "COMPLETED",
+      idempotencyKey: params.idempotencyKey,
+      actualProviderCostUsd: params.actualProviderCostUsd,
+      metadata: params.metadata || {},
+      createdAt: data.created_at || new Date().toISOString(),
+    };
+    return { settlement, idempotentReplay: Boolean(data.idempotent_replay) };
+  }
+
+  async release(params: ReleaseParams): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
+    const sb = await this.getClient();
+    const { data, error } = await sb.rpc("spark_release_credits", {
+      p_user_id: params.userId,
+      p_reservation_id: params.reservationId,
+      p_idempotency_key: params.idempotencyKey,
+      p_reason: params.reason || "cancelled_or_pre_acceptance_failure",
+    });
+    if (error) {
+      throw new Error(`Credit release failed: ${error.message || String(error)}`);
+    }
+    const res: CreditReservation = {
+      id: data.id,
+      userId: params.userId,
+      generationId: data.generation_id,
+      amount: data.amount || 0,
+      status: data.status,
+      consumedAmount: 0,
+      releasedAmount: data.released_amount || 0,
+      idempotencyKey: params.idempotencyKey,
+      pricingPolicyVersion: "spark-credit-v1.0",
+      estimatedProviderCostUsd: 0,
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { reservation: res, idempotentReplay: Boolean(data.idempotent_replay) };
+  }
+
+  async markPendingUnknown(params: PendingUnknownParams): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
+    const sb = await this.getClient();
+    const { data, error } = await sb.rpc("spark_mark_pending_unknown", {
+      p_user_id: params.userId,
+      p_reservation_id: params.reservationId,
+      p_reason: params.reason || "unknown_provider_outcome",
+    });
+    if (error) {
+      throw new Error(`Mark pending unknown failed: ${error.message || String(error)}`);
+    }
+    const res: CreditReservation = {
+      id: data.id,
+      userId: params.userId,
+      generationId: data.generation_id,
+      amount: data.amount || 0,
+      status: "PENDING_UNKNOWN",
+      consumedAmount: 0,
+      releasedAmount: 0,
+      idempotencyKey: `unknown_${params.reservationId}`,
+      pricingPolicyVersion: "spark-credit-v1.0",
+      estimatedProviderCostUsd: 0,
+      metadata: { reason: params.reason },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { reservation: res, idempotentReplay: Boolean(data.idempotent_replay) };
+  }
+
+  async refund(params: RefundParams): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
+    const sb = await this.getClient();
+    const { error } = await sb.rpc("admin_adjust_credits", {
+      target_user_id: params.userId,
+      credit_delta: params.amount,
+      adjustment_reason: `REFUND: ${params.reason || "reconciliation_refund"}`,
+    });
+    if (error) {
+      throw new Error(`Credit refund failed: ${error.message || String(error)}`);
+    }
+    const res: CreditReservation = {
+      id: params.reservationId,
+      userId: params.userId,
+      generationId: `refund_${params.reservationId}`,
+      amount: params.amount,
+      status: "REFUNDED",
+      consumedAmount: 0,
+      releasedAmount: 0,
+      idempotencyKey: params.idempotencyKey,
+      pricingPolicyVersion: "spark-credit-v1.0",
+      estimatedProviderCostUsd: 0,
+      metadata: { reason: params.reason },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return { reservation: res, idempotentReplay: false };
+  }
+
+  async getLedger(userId: string): Promise<CreditTransaction[]> {
+    const sb = await this.getClient();
+    const { data, error } = await sb
+      .from("credit_ledger")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    if (error || !data) return [];
+    return data.map((d: any) => ({
+      id: d.id,
+      userId: d.user_id,
+      generationId: d.generation_id,
+      reservationId: d.reservation_id,
+      type: d.transaction_type || (d.delta > 0 ? "REFUND" : "CONSUMPTION"),
+      delta: d.delta,
+      reason: d.reason,
+      createdAt: d.created_at,
+      metadata: d.metadata,
+    }));
+  }
+
+  async getReservation(reservationId: string): Promise<CreditReservation | null> {
+    const sb = await this.getClient();
+    const { data, error } = await sb
+      .from("credit_reservations")
+      .select("*")
+      .eq("id", reservationId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      userId: data.user_id,
+      generationId: data.generation_id,
+      amount: data.amount,
+      status: data.status,
+      consumedAmount: data.consumed_amount || 0,
+      releasedAmount: data.released_amount || 0,
+      idempotencyKey: data.idempotency_key,
+      pricingPolicyVersion: data.pricing_policy_version,
+      estimatedProviderCostUsd: data.estimated_provider_cost_usd,
+      actualProviderCostUsd: data.actual_provider_cost_usd,
+      metadata: data.metadata,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
+}
+
