@@ -335,6 +335,7 @@ export function applyRepairToSpec(
               newProvider,
               newModel,
               routingReason: repair.routingReason || repair.reason,
+              reason: repair.routingReason || repair.reason,
               timestamp: new Date().toISOString(),
             }
           : undefined;

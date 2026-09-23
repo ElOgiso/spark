@@ -10,7 +10,14 @@ import type {
   QcRootCause,
   QcEvidence,
 } from "./types";
-import type { CraftOperation } from "../craft/types";
+import type {
+  CraftOperation,
+  CraftOperationType,
+  CraftTargetType,
+  CraftOperationParameters,
+  CraftPlan,
+} from "../craft/types";
+import { CreativeOperationRegistry } from "../craft/operationRegistry";
 import type { ShotSpec } from "../specification/shotSpec";
 import type { MediaCapabilityProfile } from "../capability/types";
 
@@ -281,150 +288,214 @@ export function suggestedRepairStrategy(code: QcFailureCode): QcRepairStrategy {
   return "regenerate_same_intent";
 }
 
+function createCanonicalCraftOperation(
+  type: CraftOperationType,
+  target: { type: CraftTargetType; id?: string; label?: string },
+  parameters: CraftOperationParameters,
+  purpose: string
+): CraftOperation | undefined {
+  const reg = CreativeOperationRegistry.getInstance();
+  const def = reg.getDefinition(type);
+  if (!def) return undefined;
+
+  return {
+    id: `craft_repair_${type.toLowerCase()}_${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    category: def.category,
+    name: def.name,
+    purpose,
+    target,
+    parameters,
+    capabilityRequirements: [...def.capabilityRequirements],
+  } as any;
+}
+
 /**
-  * Phase 12 — Maps concrete QC failure + evidence + shot intent into targeted CraftOperations.
-  * Does NOT use static naive mapping; respects concrete observed vs expected differences.
-  */
+ * Phase 12 — Maps concrete QC failure + evidence + shot intent into targeted CraftOperations.
+ * Does NOT use static naive mapping; respects concrete observed vs expected differences.
+ * If evidence does not identify a concrete repair, returns [] rather than inventing an operation.
+ */
 export function failureToCraftOperations(
   code: QcFailureCode,
   evidence?: QcEvidence,
-  shot?: ShotSpec
+  shot?: ShotSpec,
+  craftPlan?: CraftPlan,
+  operationHistory?: CraftOperation[]
 ): CraftOperation[] {
-  const text = `${evidence?.expected || ""} ${evidence?.observed || ""} ${evidence?.note || ""} ${shot?.cameraMovement || ""} ${shot?.framing || ""}`.toLowerCase();
-  const ops: CraftOperation[] = [];
+  // If confidence is too low or visual evidence was insufficient, no operation is justified
+  if (
+    code === "insufficient_visual_evidence" ||
+    code === "not_evaluated" ||
+    (evidence?.confidence !== undefined && evidence.confidence < 0.5)
+  ) {
+    return [];
+  }
 
-  // Camera / Framing failures -> targeted CAMERA CraftOperations
+  // Combine expected and observed evidence text to detect concrete creative directives
+  const expectedText = `${evidence?.expected || ""} ${evidence?.note || ""}`.toLowerCase();
+  const observedText = `${evidence?.observed || ""}`.toLowerCase();
+  const combined = `${expectedText} ${observedText}`.toLowerCase();
+
+  const ops: CraftOperation[] = [];
+  const existingOps = [
+    ...(craftPlan?.operations || []),
+    ...(operationHistory || []),
+  ];
+
+  const canAdd = (type: CraftOperationType): boolean => {
+    const reg = CreativeOperationRegistry.getInstance();
+    if (existingOps.some((op) => op.type === type)) return false;
+    if (existingOps.some((op) => reg.areMutuallyExclusive(type, op.type))) return false;
+    return true;
+  };
+
+  // 1. Camera / Framing Failures
   if (
     code === "camera_mismatch" ||
     code === "camera_failure" ||
     code === "framing_mismatch" ||
-    code === "camera_intent_mismatch"
+    code === "camera_intent_mismatch" ||
+    code === "composition_mismatch"
   ) {
-    if (text.includes("push") || text.includes("zoom in")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_push`,
-        type: "PUSH_IN",
-        category: "CAMERA",
-        name: "Push In",
-        target: { type: "CAMERA", id: "camera_main" },
-        parameters: { speed: 1.2, intensity: 0.8 },
-      } as any);
-    } else if (text.includes("pull") || text.includes("zoom out")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_pull`,
-        type: "PULL_BACK",
-        category: "CAMERA",
-        name: "Pull Back",
-        target: { type: "CAMERA", id: "camera_main" },
-        parameters: { speed: 1.2, intensity: 0.8 },
-      } as any);
-    } else if (text.includes("orbit") || text.includes("arc")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_orbit`,
-        type: "ORBIT",
-        category: "CAMERA",
-        name: "Orbit",
-        target: { type: "CAMERA", id: "camera_main" },
-        parameters: { degrees: 45, direction: "clockwise" },
-      } as any);
-    } else if (text.includes("low_angle") || text.includes("low angle") || text.includes("tilt")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_tilt`,
-        type: "TILT",
-        category: "CAMERA",
-        name: "Tilt Up / Low Angle",
-        target: { type: "CAMERA", id: "camera_main" },
-        parameters: { angleDegrees: 25, direction: "up" },
-      } as any);
-    } else {
-      if (shot?.cameraMovement === "push_in") {
-        ops.push({
-          id: `craft_repair_${Date.now()}_push`,
-          type: "PUSH_IN",
-          category: "CAMERA",
-          name: "Push In",
-          target: { type: "CAMERA", id: "camera_main" },
-          parameters: { speed: 1.0 },
-        } as any);
-      } else if (shot?.cameraMovement === "tracking") {
-        ops.push({
-          id: `craft_repair_${Date.now()}_track`,
-          type: "TRACKING",
-          category: "MOTION",
-          name: "Tracking",
-          target: { type: "SUBJECT", id: "subject_main" },
-          parameters: { smoothTracking: true },
-        } as any);
-      } else {
-        ops.push({
-          id: `craft_repair_${Date.now()}_pan`,
-          type: "PAN",
-          category: "CAMERA",
-          name: "Pan",
-          target: { type: "CAMERA", id: "camera_main" },
-          parameters: { degrees: 15 },
-        } as any);
+    if (expectedText.includes("push") || expectedText.includes("zoom in")) {
+      if (canAdd("PUSH_IN")) {
+        const op = createCanonicalCraftOperation(
+          "PUSH_IN",
+          { type: "CAMERA", id: "camera_main" },
+          { direction: "forward", speed: "normal", distance: "moderate" },
+          "Repair camera: apply push-in to satisfy expected forward camera movement"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (expectedText.includes("pull") || expectedText.includes("zoom out")) {
+      if (canAdd("PULL_BACK")) {
+        const op = createCanonicalCraftOperation(
+          "PULL_BACK",
+          { type: "CAMERA", id: "camera_main" },
+          { direction: "backward", speed: "normal", distance: "moderate" },
+          "Repair camera: apply pull-back to satisfy expected backward camera movement"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (expectedText.includes("orbit") || expectedText.includes("arc")) {
+      if (canAdd("ORBIT")) {
+        const op = createCanonicalCraftOperation(
+          "ORBIT",
+          { type: "CAMERA", id: "camera_main" },
+          { direction: "clockwise", degrees: 45, speed: "normal" },
+          "Repair camera: apply orbit to satisfy expected rotational movement"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (expectedText.includes("tilt")) {
+      if (canAdd("TILT")) {
+        const dir = expectedText.includes("down") ? "down" : "up";
+        const op = createCanonicalCraftOperation(
+          "TILT",
+          { type: "CAMERA", id: "camera_main" },
+          { direction: dir, angleDegrees: 20, speed: "normal" },
+          `Repair camera: apply tilt ${dir} to satisfy expected vertical movement`
+        );
+        if (op) ops.push(op);
+      }
+    } else if (expectedText.includes("pan")) {
+      if (canAdd("PAN")) {
+        const dir = expectedText.includes("right") ? "right" : "left";
+        const op = createCanonicalCraftOperation(
+          "PAN",
+          { type: "CAMERA", id: "camera_main" },
+          { direction: dir, angleDegrees: 20, speed: "normal" },
+          `Repair camera: apply pan ${dir} to satisfy expected horizontal movement`
+        );
+        if (op) ops.push(op);
+      }
+    } else if (expectedText.includes("track") || expectedText.includes("dolly")) {
+      if (canAdd("TRACK")) {
+        const op = createCanonicalCraftOperation(
+          "TRACK",
+          { type: "CAMERA", id: "camera_main" },
+          { axis: "forward" },
+          "Repair camera: apply tracking movement to follow action"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (code === "composition_mismatch" || code === "framing_mismatch") {
+      if (expectedText.includes("close") && canAdd("CLOSE_UP")) {
+        const op = createCanonicalCraftOperation(
+          "CLOSE_UP",
+          { type: "SUBJECT", id: shot?.subject || "subject_main" },
+          {},
+          "Repair framing: apply close-up composition to satisfy expected shot scale"
+        );
+        if (op) ops.push(op);
+      } else if (expectedText.includes("wide") && canAdd("WIDE_ESTABLISHING")) {
+        const op = createCanonicalCraftOperation(
+          "WIDE_ESTABLISHING",
+          { type: "ENVIRONMENT", id: "environment_main" },
+          {},
+          "Repair framing: apply wide establishing composition to satisfy expected spatial context"
+        );
+        if (op) ops.push(op);
       }
     }
+    // If evidence lacks a concrete camera or framing directive, we intentionally return []
+    // rather than guessing or defaulting to PAN/TRACK.
   }
 
-  // Motion / Action failures -> targeted MOTION CraftOperations
+  // 2. Motion / Action Failures
   if (
     code === "motion_mismatch" ||
     code === "motion_failure" ||
     code === "action_mismatch" ||
     code === "action_missing"
   ) {
-    if (text.includes("spin") || text.includes("rotate") || text.includes("product")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_spin`,
-        type: "PRODUCT_SPIN",
-        category: "MOTION",
-        name: "Product Spin",
-        target: { type: "PRODUCT", id: "product_main" },
-        parameters: { revolutions: 1, smooth: true },
-      } as any);
-    } else if (text.includes("tracking") || text.includes("track")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_track`,
-        type: "TRACKING",
-        category: "MOTION",
-        name: "Tracking",
-        target: { type: "SUBJECT", id: "subject_main" },
-        parameters: { smoothTracking: true },
-      } as any);
-    } else {
-      ops.push({
-        id: `craft_repair_${Date.now()}_mot`,
-        type: "TRACKING",
-        category: "MOTION",
-        name: "Tracking Motion",
-        target: { type: "SUBJECT", id: "subject_main" },
-        parameters: { intensity: 0.8 },
-      } as any);
+    if (combined.includes("product_spin") || combined.includes("spin") || combined.includes("rotate")) {
+      if (canAdd("PRODUCT_SPIN")) {
+        const op = createCanonicalCraftOperation(
+          "PRODUCT_SPIN",
+          { type: "PRODUCT", id: "product_main" },
+          { axis: "y_vertical", rotationDegrees: 360, rotationSpeed: "medium" },
+          "Repair motion: apply product spin to satisfy expected rotational showcase"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (combined.includes("tracking") || combined.includes("follow") || combined.includes("subject_tracking")) {
+      if (canAdd("SUBJECT_TRACKING")) {
+        const op = createCanonicalCraftOperation(
+          "SUBJECT_TRACKING",
+          { type: "SUBJECT", id: shot?.subject || "subject_main" },
+          { targetSubject: shot?.subject || "subject_main", trackingSmoothness: "smooth" },
+          "Repair motion: apply subject tracking to follow subject movement"
+        );
+        if (op) ops.push(op);
+      }
+    } else if (combined.includes("slow_motion") || combined.includes("slow motion")) {
+      if (canAdd("SLOW_MOTION")) {
+        const op = createCanonicalCraftOperation(
+          "SLOW_MOTION",
+          { type: "SHOT", id: shot?.id || "shot_main" },
+          { speedFactor: 0.5 },
+          "Repair motion: apply slow motion to satisfy timing intent"
+        );
+        if (op) ops.push(op);
+      }
     }
+    // If evidence lacks a concrete motion directive, we intentionally return []
+    // rather than defaulting to TRACKING.
   }
 
-  // Lighting failures -> targeted LIGHTING CraftOperations
+  // 3. Lighting Failures
   if (code === "lighting_drift" || code === "lighting_failure") {
-    if (text.includes("sweep") || text.includes("beam")) {
-      ops.push({
-        id: `craft_repair_${Date.now()}_sweep`,
-        type: "LIGHT_SWEEP",
-        category: "LIGHTING",
-        name: "Light Sweep",
-        target: { type: "SUBJECT", id: "subject_main" },
-        parameters: { angle: 45, intensity: 0.8 },
-      } as any);
-    } else {
-      ops.push({
-        id: `craft_repair_${Date.now()}_volumetric`,
-        type: "LIGHTING_VOLUMETRIC",
-        category: "LIGHTING",
-        name: "Volumetric Lighting",
-        target: { type: "CAMERA", id: "camera_main" },
-        parameters: { hazeDensity: 0.4 },
-      } as any);
+    if (combined.includes("sweep") || combined.includes("light_sweep") || combined.includes("beam")) {
+      if (canAdd("LIGHT_SWEEP")) {
+        const op = createCanonicalCraftOperation(
+          "LIGHT_SWEEP",
+          { type: "LIGHTING", id: "lighting_main" },
+          { lightSource: "spot", direction: "left_to_right", intensity: "soft" },
+          "Repair lighting: apply light sweep to accentuate subject contours"
+        );
+        if (op) ops.push(op);
+      }
     }
   }
 

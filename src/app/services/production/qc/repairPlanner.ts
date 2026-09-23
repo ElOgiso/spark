@@ -185,8 +185,6 @@ export function planRepairFromQc(params: {
 
   if (deficiency.deficient && canChangeProvider(budget)) {
     // Genuine capability deficiency -> canonical reroute
-    action = "reroute_provider";
-    providerChange = true;
     if (shot) {
       const baseReqs = capabilityRequirementsFromShot(shot);
       rerouteDecision = routeMediaRequest(baseReqs, {
@@ -194,29 +192,57 @@ export function planRepairFromQc(params: {
         requireAdapter: true,
       });
       if (rerouteDecision.selected) {
-        nextProvider = rerouteDecision.selected.providerId;
-        nextModel = rerouteDecision.selected.modelId;
-        routingReason = `Rerouted to ${nextProvider}/${nextModel}: ${deficiency.reason}`;
+        const newProv = rerouteDecision.selected.providerId;
+        const newMod = rerouteDecision.selected.modelId;
+        if (newProv !== shot.provider || newMod !== shot.model) {
+          action = "reroute_provider";
+          providerChange = true;
+          nextProvider = newProv;
+          nextModel = newMod;
+          routingReason = `Rerouted to ${nextProvider}/${nextModel}: ${deficiency.reason}`;
+        } else {
+          action = "regenerate_shot";
+          providerChange = false;
+          routingReason = `Canonical router retained current provider ${shot.provider}/${shot.model}`;
+        }
+      } else {
+        // Router found no candidate meeting requirements
+        action = "manual_review";
+        providerChange = false;
+        routingReason = `No compatible provider/model found for deficiency: ${deficiency.reason}`;
       }
     }
   } else if (failures.some((f) => prefersReferenceStrengthening(f.code))) {
     action = "change_reference";
   } else if (failures.some((f) => prefersProviderChange(f.code))) {
-    action = canChangeProvider(budget) ? "reroute_provider" : "regenerate_shot";
-    if (action === "reroute_provider") {
-      providerChange = true;
-      if (shot) {
-        const baseReqs = capabilityRequirementsFromShot(shot);
-        rerouteDecision = routeMediaRequest(baseReqs, {
-          candidates: params.candidates,
-          requireAdapter: true,
-        });
-        if (rerouteDecision.selected) {
-          nextProvider = rerouteDecision.selected.providerId;
-          nextModel = rerouteDecision.selected.modelId;
+    if (canChangeProvider(budget) && shot) {
+      const baseReqs = capabilityRequirementsFromShot(shot);
+      rerouteDecision = routeMediaRequest(baseReqs, {
+        candidates: params.candidates,
+        requireAdapter: true,
+      });
+      if (rerouteDecision.selected) {
+        const newProv = rerouteDecision.selected.providerId;
+        const newMod = rerouteDecision.selected.modelId;
+        if (newProv !== shot.provider || newMod !== shot.model) {
+          action = "reroute_provider";
+          providerChange = true;
+          nextProvider = newProv;
+          nextModel = newMod;
           routingReason = `Provider change requested by failure code and routed via canonical router to ${nextProvider}/${nextModel}`;
+        } else {
+          action = "regenerate_shot";
+          providerChange = false;
+          routingReason = `Canonical router retained current provider ${shot.provider}/${shot.model}`;
         }
+      } else {
+        action = "manual_review";
+        providerChange = false;
+        routingReason = "Canonical router found no alternative provider";
       }
+    } else {
+      action = "regenerate_shot";
+      providerChange = false;
     }
   } else if (
     failures.some(
@@ -228,19 +254,30 @@ export function planRepairFromQc(params: {
         f.code === "prompt_mismatch"
     )
   ) {
-    action = "repair_prompt";
+    action = "repair";
   } else if (failures.some((f) => /continuity|location|prop|spatial|screen|lighting|time/.test(f.code))) {
     action = "strengthen_continuity";
   } else if (qc.status === "fail") {
     action = "regenerate_shot";
   } else {
-    action = "repair_prompt";
+    action = "repair";
   }
 
   // 4. Targeted CraftOperations
   const operations: CraftOperation[] = primaryFailure
-    ? failureToCraftOperations(primaryFailure, failures[0]?.evidence, shot)
+    ? failureToCraftOperations(
+        primaryFailure,
+        failures[0]?.evidence,
+        shot,
+        shot?.craftPlan,
+        shot?.craftPlan?.operations
+      )
     : [];
+
+  // If action was generic repair but no concrete craft operations were justified, regenerate shot
+  if (action === "repair" && operations.length === 0) {
+    action = "regenerate_shot";
+  }
 
   // 5. Cost estimation (delegated to CostEngine single authority)
   const targetProvider = nextProvider || shot?.provider || "kling";
@@ -264,9 +301,7 @@ export function planRepairFromQc(params: {
   }
 
   const strengthenReferences = action === "change_reference" || action === "strengthen_continuity";
-  const modifyPromptHint =
-    hintForFailures(failures) ||
-    "Clarify planned subject, action, camera, and continuity locks";
+  const modifyPromptHint = hintForFailures(failures);
 
   return {
     action,
@@ -280,8 +315,13 @@ export function planRepairFromQc(params: {
     estimatedCostUsd,
     failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
     strategyChange: undefined,
+    /** Legacy compatibility hint only — canonical repair is strictly CraftPlan / CraftOperations */
     modifyPromptHint,
-    changedInputs: strengthenReferences ? ["characterRefs", "referenceStrength"] : ["craftPlan", "compiledPrompt"],
+    changedInputs: strengthenReferences
+      ? ["characterRefs", "referenceStrength"]
+      : operations.length > 0
+        ? ["craftPlan"]
+        : ["generationStrategy"],
     strengthenReferences,
     regenerateShotIds: shot ? [shot.id] : [],
     regenerateTaskIds: [],
@@ -294,7 +334,7 @@ export function planRepairFromQc(params: {
       shotId: shot?.id,
       attempt,
       maxAttempts,
-      escalate: undefined,
+      escalate: action === "manual_review" ? true : undefined,
     }),
   };
 }

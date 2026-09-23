@@ -38,6 +38,9 @@ import { ProviderPayloadCompiler } from "../compiler/payloadCompiler";
 import { getCapabilityProfile } from "../capability/registry";
 import { routeMediaRequest } from "../capability/router";
 import type { MediaCapabilityProfile } from "../capability/types";
+import { GenerationExecutionEngine } from "../execution/executionEngine";
+import type { MediaProviderAdapter } from "../execution/adapters/types";
+import type { GenerationTask } from "../specification/generationTask";
 
 function createTestSpec(): { spec: ProductionSpec; shot: ShotSpec } {
   const plan = createProductionPlan({
@@ -74,6 +77,13 @@ function createTestSpec(): { spec: ProductionSpec; shot: ShotSpec } {
     interaction: "",
   };
   shot.mediaUrl = "https://cdn.example.com/video/shot_01.mp4";
+  shot.keyframeUrl = "https://cdn.example.com/images/still_01.png";
+  shot.references = {
+    firstFrameUrl: "https://cdn.example.com/images/still_01.png",
+    characterRefs: [],
+    locationRefs: [],
+    styleRefs: [],
+  };
   spec.scenes = [{ ...spec.scenes[0], shots: [shot] }];
   return { spec, shot };
 }
@@ -474,10 +484,15 @@ test("Phase 12: QC → Repair → Reroute Suite", async (t) => {
     assert.strictEqual(cameraOps[0].type, "PUSH_IN");
     assert.strictEqual(cameraOps[0].category, "CAMERA");
 
-    const motionOps = failureToCraftOperations("motion_mismatch", { expected: "product_spin 360", observed: "still", confidence: 0.9 }, shot);
-    assert.ok(motionOps.length > 0);
-    assert.strictEqual(motionOps[0].type, "PRODUCT_SPIN");
-    assert.strictEqual(motionOps[0].category, "MOTION");
+    const productOps = failureToCraftOperations("motion_mismatch", { expected: "product_spin 360", observed: "still", confidence: 0.9 }, shot);
+    assert.ok(productOps.length > 0);
+    assert.strictEqual(productOps[0].type, "PRODUCT_SPIN");
+    assert.strictEqual(productOps[0].category, "PRODUCT");
+
+    const trackingOps = failureToCraftOperations("motion_mismatch", { expected: "subject_tracking subject", observed: "still", confidence: 0.9 }, shot);
+    assert.ok(trackingOps.length > 0);
+    assert.strictEqual(trackingOps[0].type, "SUBJECT_TRACKING");
+    assert.strictEqual(trackingOps[0].category, "MOTION");
   });
 
   await t.test("21. Repair does not create parallel Craft system (uses canonical CraftOperation types)", async () => {
@@ -1007,5 +1022,379 @@ test("Phase 12: QC → Repair → Reroute Suite", async (t) => {
   await t.test("41. Zero remote provider spend confirmed ($0.00)", async () => {
     // All tests run through deterministic mocked visual analyzers and local ports
     assert.strictEqual(0, 0);
+  });
+
+  // ==================== PART 6: PHASE 12.1 ARCHITECTURE HARDENING ====================
+
+  await t.test("42. [Test A] Insufficient evidence on camera failure produces operations = [] (no heuristic fallbacks)", async () => {
+    const { shot } = createTestSpec();
+    // Empty expected and observed evidence
+    const emptyOps = failureToCraftOperations("camera_mismatch", { expected: "", observed: "", confidence: 0.8 }, shot);
+    assert.deepStrictEqual(emptyOps, []);
+
+    // Vague text with no concrete motion/angle direction
+    const vagueOps = failureToCraftOperations("camera_mismatch", { message: "Camera did not look cinematic" }, shot);
+    assert.deepStrictEqual(vagueOps, []);
+
+    // Generic motion mismatch with vague message
+    const vagueMotionOps = failureToCraftOperations("motion_mismatch", { message: "Movement felt slightly stiff" }, shot);
+    assert.deepStrictEqual(vagueMotionOps, []);
+  });
+
+  await t.test("43. [Test B] Concrete camera mismatch produces exact registered CraftOperation", async () => {
+    const { shot } = createTestSpec();
+    const pushInOps = failureToCraftOperations("camera_mismatch", { expected: "push_in forward", observed: "static", confidence: 0.9 }, shot);
+    assert.strictEqual(pushInOps.length, 1);
+    assert.strictEqual(pushInOps[0].type, "PUSH_IN");
+    assert.strictEqual(pushInOps[0].category, "CAMERA");
+    assert.strictEqual(pushInOps[0].name, "Push In");
+    assert.strictEqual(pushInOps[0].target.type, "CAMERA");
+
+    const tiltOps = failureToCraftOperations("camera_mismatch", { expected: "tilt upward", observed: "pan", confidence: 0.9 }, shot);
+    assert.strictEqual(tiltOps.length, 1);
+    assert.strictEqual(tiltOps[0].type, "TILT");
+    assert.strictEqual(tiltOps[0].category, "CAMERA");
+    assert.strictEqual(tiltOps[0].name, "Tilt");
+  });
+
+  await t.test("44. [Test C] Router returning no viable candidate sets providerChange = false and action = manual_review", async () => {
+    const { spec, shot } = createTestSpec();
+    shot.provider = "kling";
+    shot.model = "kling-v2-6";
+    // Set duration to an impossible number that no video provider can handle
+    shot.durationSec = 99999;
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+
+    const qcResult = {
+      id: "qc_test_unroutable",
+      productionId: spec.project.id,
+      shotId: shot.id,
+      level: "shot" as const,
+      status: "fail" as const,
+      score: 0.2,
+      scores: { overall: 0.2, dimensions: {} },
+      dimensions: [],
+      failures: [{
+        code: "duration_mismatch" as const,
+        dimension: "technical" as const,
+        message: "Duration exceeds all provider capabilities",
+        confidence: 0.95,
+        evidence: { expected: "99999s", observed: "5s", confidence: 0.95 },
+        retryable: true,
+      }],
+      warnings: [],
+      recommendedAction: "repair" as const,
+      providerChange: false,
+      evaluatedAt: new Date().toISOString(),
+      userMessage: "duration mismatch",
+    };
+
+    const repair = planRepairFromQc({
+      qc: qcResult,
+      spec,
+      shot,
+      budget,
+    });
+
+    // When canonical router has no viable candidate, must NOT invent or change provider
+    assert.strictEqual(repair.providerChange, false);
+    assert.strictEqual(repair.nextProvider, undefined);
+    assert.strictEqual(repair.action, "manual_review");
+    assert.strictEqual(repair.escalate, true);
+
+    // Applying repair does not mutate shot provider or model
+    const repairedSpec = applyRepairToSpec(spec, repair, shot);
+    const repairedShot = repairedSpec.scenes[0].shots.find((s) => s.id === shot.id);
+    assert.strictEqual(repairedShot?.provider, "kling");
+    assert.strictEqual(repairedShot?.model, "kling-v2-6");
+  });
+
+  await t.test("45. [Test D] Router selecting different provider sets providerChange = true and records routingAudit", async () => {
+    const { spec, shot } = createTestSpec();
+    shot.provider = "gemini";
+    shot.model = "veo-2.0-generate-001";
+    shot.durationSec = 10; // Gemini max is 8s; Kling supports 10s
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+
+    const qcResult = {
+      id: "qc_test_reroute_audit",
+      productionId: spec.project.id,
+      shotId: shot.id,
+      level: "shot" as const,
+      status: "fail" as const,
+      score: 0.25,
+      scores: { overall: 0.25, dimensions: {} },
+      dimensions: [],
+      failures: [{
+        code: "duration_mismatch" as const,
+        dimension: "technical" as const,
+        message: "Duration of 10s exceeds Gemini veo limit of 8s",
+        confidence: 0.95,
+        evidence: { expected: "10s", observed: "8s", confidence: 0.95 },
+        retryable: true,
+      }],
+      warnings: [],
+      recommendedAction: "repair" as const,
+      providerChange: false,
+      evaluatedAt: new Date().toISOString(),
+      userMessage: "duration mismatch",
+    };
+
+    const repair = planRepairFromQc({
+      qc: qcResult,
+      spec,
+      shot,
+      budget,
+    });
+
+    assert.strictEqual(repair.providerChange, true);
+    assert.ok(repair.nextProvider);
+    assert.notStrictEqual(repair.nextProvider, "gemini");
+
+    const repairedSpec = applyRepairToSpec(spec, repair, shot);
+    const repairedShot = repairedSpec.scenes[0].shots.find((s) => s.id === shot.id);
+    assert.strictEqual(repairedShot?.provider, repair.nextProvider);
+    assert.ok((repairedShot?.metadata as any)?.routingAudit);
+    assert.strictEqual((repairedShot?.metadata as any).routingAudit.previousProvider, "gemini");
+    assert.strictEqual((repairedShot?.metadata as any).routingAudit.newProvider, repair.nextProvider);
+    assert.ok((repairedShot?.metadata as any).routingAudit.reason);
+  });
+
+  await t.test("46. [Test E] Economics execution boundary: Repair-generated execution reaches GenerationExecutionEngine with CreditService reservation and settlement", async () => {
+    const repo = new InMemoryCreditRepository();
+    await repo.setBalance("user_p12_e", 100);
+    const creditService = new CreditService(repo);
+
+    let submitCount = 0;
+    const mockAdapter: MediaProviderAdapter = {
+      providerId: "kling",
+      capabilities: () => ({
+        providerId: "kling",
+        mediaTypes: ["video"],
+        strategies: ["image_to_video"],
+        capabilities: ["image_to_video"],
+        requiresCredentials: [],
+        statusMechanism: "poll",
+        knownLimitations: [],
+      }),
+      submit: async (req) => {
+        submitCount++;
+        return { providerJobId: `kling_job_${submitCount}_${req.executionId}`, status: "queued" };
+      },
+      getStatus: async (jobId) => ({ providerJobId: jobId, status: "succeeded", outputUrl: "https://storage.spark.io/repaired_clip.mp4" }),
+      normalizeOutput: async (job) => ({
+        mediaType: "video",
+        sourceUrl: job.outputUrl!,
+        mimeType: "video/mp4",
+        providerJobId: job.providerJobId,
+        durationSec: 5,
+        metadata: {},
+      }),
+    };
+
+    const adapters = new Map<string, MediaProviderAdapter>([
+      ["video:kling", mockAdapter],
+      ["kling", mockAdapter],
+    ]);
+
+    const engine = new GenerationExecutionEngine({
+      adapters,
+      creditService,
+      userId: "user_p12_e",
+      sleep: async () => {},
+    });
+
+    const { spec, shot } = createTestSpec();
+    const task: GenerationTask = {
+      id: "task_repair_exec_1",
+      kind: "video",
+      productionId: spec.project.id,
+      sceneId: spec.scenes[0].id,
+      shotId: shot.id,
+      aspectRatio: "16:9",
+      durationSec: 5,
+      strategy: { modality: "video", strategy: "image_to_video" },
+      requiredCapabilities: ["image_to_video"],
+      dependsOn: [],
+      status: "planned",
+      selectedModel: "kling-v2-6",
+    };
+
+    // Initial execution
+    const initialResult = await engine.executePlan({
+      spec,
+      tasks: [task],
+      dag: { productionId: spec.project.id, nodes: [{ id: task.id, status: "pending", dependsOn: [] }], dependentsIndex: {}, version: 1 },
+    });
+    assert.strictEqual(initialResult.ok, true);
+    assert.strictEqual(submitCount, 1);
+
+    const balanceAfterInitial = await creditService.getBalance("user_p12_e");
+    // Kling 5s at $0.35 = 35 credits deducted
+    assert.strictEqual(balanceAfterInitial, 65);
+
+    // Plan repair from QC failure
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+    const qcResult = {
+      id: "qc_test_exec_boundary",
+      productionId: spec.project.id,
+      shotId: shot.id,
+      level: "shot" as const,
+      status: "fail" as const,
+      score: 0.4,
+      scores: { overall: 0.4, dimensions: {} },
+      dimensions: [],
+      failures: [{
+        code: "camera_mismatch" as const,
+        dimension: "cinematography" as const,
+        message: "Camera stayed static instead of push in",
+        confidence: 0.95,
+        evidence: { expected: "push_in forward", observed: "static", confidence: 0.95 },
+        retryable: true,
+      }],
+      warnings: [],
+      recommendedAction: "repair" as const,
+      providerChange: false,
+      evaluatedAt: new Date().toISOString(),
+      userMessage: "camera mismatch",
+    };
+
+    const repair = planRepairFromQc({ qc: qcResult, spec, shot, budget, attempt: 1 });
+    assert.ok(repair.operations && repair.operations.length > 0);
+
+    const repairedSpec = applyRepairToSpec(spec, repair, shot);
+    const repairTask: GenerationTask = {
+      ...task,
+      id: "task_repair_exec_2",
+    };
+
+    // Re-execution of repaired plan through Phase 9 GenerationExecutionEngine
+    const repairExecutionResult = await engine.executePlan({
+      spec: repairedSpec,
+      tasks: [repairTask],
+      dag: { productionId: spec.project.id, nodes: [{ id: repairTask.id, status: "pending", dependsOn: [] }], dependentsIndex: {}, version: 2 },
+    });
+
+    assert.strictEqual(repairExecutionResult.ok, true);
+    assert.strictEqual(submitCount, 2);
+
+    // Verify economics: CreditService reservation & settlement executed for repair re-execution
+    const finalBalance = await creditService.getBalance("user_p12_e");
+    assert.strictEqual(finalBalance, 30); // 65 - 35 = 30 credits
+
+    const ledger = await creditService.getLedger("user_p12_e");
+    // 2 executions = 2 reservations + 2 settlements = at least 4 entries
+    assert.ok(ledger.length >= 4);
+    assert.strictEqual(ledger[0].type, "RESERVATION");
+    assert.strictEqual(ledger[1].type, "CONSUMPTION");
+    assert.strictEqual(ledger[2].type, "RESERVATION");
+    assert.strictEqual(ledger[3].type, "CONSUMPTION");
+  });
+
+  await t.test("47. [Test F] Re-execution encountering UNKNOWN_SUBMISSION immediately halts without second execution", async () => {
+    const { spec } = createTestSpec();
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+    budget.maxQcRetries = 2; // Allow multiple retries if retryable
+
+    let executionCalls = 0;
+    const loopResult = await runQcWithRepairLoop(spec, {
+      budget,
+      observations: [
+        {
+          shotId: spec.scenes[0].shots[0].id,
+          technical: { ok: false, reasons: ["camera_mismatch"], retryable: true },
+        },
+      ],
+      reexecute: async () => {
+        executionCalls++;
+        const err = new Error("unknown_submission: gateway timeout while submitting to provider");
+        (err as any).code = "unknown_submission";
+        throw err;
+      },
+    });
+
+    // UNKNOWN_SUBMISSION must halt immediately: exactly 1 re-execution attempt
+    assert.strictEqual(executionCalls, 1);
+    assert.strictEqual(loopResult.stoppedReason, "manual_review");
+    assert.ok(loopResult.report.productionResult.userMessage?.includes("reconciliation required"));
+  });
+
+  await t.test("48. [Test G] Semantic repair updates craftPlan.operations without mutating compiledPrompt", async () => {
+    const { spec, shot } = createTestSpec();
+    shot.compiledPrompt = "CANONICAL PROMPT DO NOT MUTATE";
+    const originalPrompt = shot.compiledPrompt;
+
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+    const qcResult = {
+      id: "qc_test_prompt_integrity",
+      productionId: spec.project.id,
+      shotId: shot.id,
+      level: "shot" as const,
+      status: "fail" as const,
+      score: 0.45,
+      scores: { overall: 0.45, dimensions: {} },
+      dimensions: [],
+      failures: [{
+        code: "camera_mismatch" as const,
+        dimension: "cinematography" as const,
+        message: "Expected push in forward",
+        confidence: 0.9,
+        evidence: { expected: "push_in forward", observed: "static", confidence: 0.9 },
+        retryable: true,
+      }],
+      warnings: [],
+      recommendedAction: "repair" as const,
+      providerChange: false,
+      evaluatedAt: new Date().toISOString(),
+      userMessage: "camera mismatch",
+    };
+
+    const repair = planRepairFromQc({ qc: qcResult, spec, shot, budget });
+    // changedInputs must strictly be ["craftPlan"], NEVER mutating or injecting into compiledPrompt
+    assert.deepStrictEqual(repair.changedInputs, ["craftPlan"]);
+    assert.ok(repair.operations && repair.operations.length > 0);
+
+    const repairedSpec = applyRepairToSpec(spec, repair, shot);
+    const repairedShot = repairedSpec.scenes[0].shots.find((s) => s.id === shot.id);
+    assert.ok(repairedShot);
+    // compiledPrompt remains exactly untouched
+    assert.strictEqual(repairedShot.compiledPrompt, originalPrompt);
+    // craftPlan received the new canonical operation
+    assert.ok(repairedShot.craftPlan?.operations.some((op) => op.type === "PUSH_IN"));
+  });
+
+  await t.test("49. [Test H] Repeated identical failure twice consecutively halts with manual_review and no third repair", async () => {
+    const { spec, shot } = createTestSpec();
+    const budget = createBudgetState(createDefaultQcBudget(spec.quality));
+    budget.maxQcRetries = 5; // Generous budget
+
+    let repairAttempts = 0;
+    const loopResult = await runQcWithRepairLoop(spec, {
+      budget,
+      observations: [
+        {
+          shotId: shot.id,
+          technical: { ok: false, reasons: ["camera_mismatch"], retryable: true },
+        },
+      ],
+      reexecute: async (nextSpec) => {
+        repairAttempts++;
+        return {
+          spec: nextSpec,
+          observations: [
+            {
+              shotId: shot.id,
+              // Return identical failure code consecutively
+              technical: { ok: false, reasons: ["camera_mismatch"], retryable: true },
+            },
+          ],
+        };
+      },
+    });
+
+    // Anti-oscillation guard: stops after attempt 1 because consecutive failure code is identical
+    assert.strictEqual(repairAttempts, 1);
+    assert.strictEqual(loopResult.stoppedReason, "manual_review");
+    assert.strictEqual(loopResult.repairsApplied.length, 1);
   });
 });
