@@ -45,6 +45,8 @@ export interface SceneContinuityBridge {
 }
 
 export interface SceneSpec {
+  /** Explicit speech authority, including silent talent scenes. */
+  audio?: "vo" | "talent";
   id: string;
   index: number;
   title: string;

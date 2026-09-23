@@ -1,6 +1,22 @@
 import type { ProductionBrief, CreditSettings, GenerationProgressStage } from "../../domain/types";
 import { normalizeModeString } from "./resolveProductionMode";
 
+import { resolveChapterAudio } from "./os/chapterAudio";
+
+/** Shared format director decision for canonical and live scene planning. */
+export function resolveSceneGeneratePlan(rawMode: string | undefined, scene: {
+  audio?: string; dialogue?: string; narration?: string; valueJob?: string; narrativeFunction?: string;
+}) {
+  const mode = normalizeModeString(rawMode) || "standard";
+  const audio = resolveChapterAudio({ mode, chapter: {
+    audio: scene.audio || (scene.dialogue ? "talent" : scene.narration ? "vo" : undefined),
+    job: scene.valueJob || scene.narrativeFunction,
+  } });
+  // Older canonical specs used narration over generated B-roll without an audio
+  // authority field. Preserve their visual plan until explicit scene routing exists.
+  return { audio, stillOnly: mode === "express" || (mode === "standard" && scene.audio === "vo") };
+}
+
 export interface GeneratePlan {
   normalizedMode: "express" | "standard" | "deep";
   skipExternalVoice: boolean;
@@ -29,7 +45,7 @@ export function resolveGeneratePlan(
     (hasBeats && beats.every((b) => b.audio === "talent")) ||
     (!hasBeats && hasSb && sb.every((s) => s.audio === "talent"));
 
-  const skipExternalVoice = normalizedMode === "deep" || hasOnlyTalentBeats;
+  const skipExternalVoice = normalizedMode === "deep" || (normalizedMode === "standard" && hasOnlyTalentBeats);
   const skipSfx = normalizedMode === "deep";
   const skipI2V = normalizedMode === "express";
 
@@ -42,7 +58,7 @@ export function resolveGeneratePlan(
   const voiceStageLabel =
     normalizedMode === "deep"
       ? "Voiceover synthesis (skipped — cinematic)"
-      : hasOnlyTalentBeats
+      : normalizedMode === "standard" && hasOnlyTalentBeats
         ? "Voiceover synthesis (skipped — talent dialogue)"
         : "Voiceover synthesis";
 

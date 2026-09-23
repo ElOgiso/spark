@@ -1,3 +1,4 @@
+import { resolveSceneGeneratePlan } from "../resolveGeneratePlan";
 /**
  * Resolve logical master-asset refs into provider-compatible execution inputs.
  * Planning layer stays storage-agnostic.
@@ -118,7 +119,11 @@ export function prepareTaskInputs(params: {
 
   return {
     inputs,
-    prompt: shot?.compiledPrompt || spec.creative?.intent || "",
+    prompt: task.kind === "voice"
+      ? spec.scenes.filter(scene => resolveSceneGeneratePlan(String(spec.project.productionMode), scene).audio === "vo")
+        .map(scene => scene.narration || scene.spokenLines || scene.shots.map(item => item.narration).filter(Boolean).join(" "))
+        .filter(Boolean).join("\n")
+      : shot?.compiledPrompt || spec.creative?.intent || "",
     negativePrompt: shot?.compiledNegativePrompt,
     aspectRatio: task.outputRequirements?.aspectRatio || shot?.aspectRatio || String(spec.project.aspectRatio),
     durationSec: task.outputRequirements?.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : 5),

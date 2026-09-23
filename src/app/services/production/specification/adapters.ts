@@ -24,6 +24,10 @@ import { buildResearchRequirement } from "./researchRequirement";
 import { createEmptyReferenceGraph } from "./referenceGraph";
 import { createDefaultStyleBible } from "./styleBible";
 
+import { resolveSceneGeneratePlan } from "../resolveGeneratePlan";
+import { normalizeModeString } from "../resolveProductionMode";
+import { readProductionSettingsSnapshot } from "../productionSettingsSnapshot";
+
 const SPEC_VERSION = "1.0.0";
 const COMPILER_VERSION = "1.0.0";
 
@@ -154,6 +158,7 @@ export function productionSceneToSceneSpec(
 
   return {
     id: sceneId,
+    audio: scene.audio,
     index,
     title: `Scene ${index + 1}`,
     purpose: scene.valueJob || "story_beat",
@@ -207,7 +212,7 @@ export function sceneSpecToProductionScene(scene: SceneSpec): ProductionScene {
     pacing: scene.emotionalObjective || "measured",
     scriptSnippet: scene.narration || scene.dialogue || scene.spokenLines || "",
     spokenLines: scene.narration || scene.dialogue || scene.spokenLines,
-    audio: scene.dialogue ? "talent" : "vo",
+    audio: scene.audio || (scene.dialogue ? "talent" : "vo"),
     valueJob: scene.narrativeFunction || scene.valueJob,
     visualDescription: scene.visualDescription || scene.environment || primary?.environment || "",
     startState: scene.continuity.entranceState,
@@ -263,6 +268,7 @@ export function legacyProductionToSpec(params: {
   const { production, spark, brand, character } = params;
   const brief = production.brief;
   const now = new Date().toISOString();
+  const mode = normalizeModeString(readProductionSettingsSnapshot(production, brief)?.content.productionMode || production.mode || production.productionMode || brief?.productionMode) || "standard";
   const targetDurationSec =
     production.targetDurationSec ||
     brief?.targetDurationSec ||
@@ -336,6 +342,21 @@ export function legacyProductionToSpec(params: {
     ];
   }
 
+  scenes = scenes.map(scene => {
+    const plan = resolveSceneGeneratePlan(mode, scene);
+    const speech = scene.spokenLines || scene.narration || scene.dialogue;
+    return { ...scene, audio: plan.audio,
+      narration: plan.audio === "vo" ? speech : undefined,
+      dialogue: plan.audio === "talent" ? speech : undefined,
+      shots: scene.shots.map(shot => ({ ...shot,
+        narration: plan.audio === "vo" ? shot.narration || shot.dialogue : undefined,
+        dialogue: plan.audio === "talent" ? shot.dialogue || shot.narration : undefined,
+        generationStrategy: plan.stillOnly ? "slideshow_still" as const : "image_to_video" as const,
+      })),
+    };
+  });
+  const hasNarration = scenes.some(scene => scene.audio === "vo");
+  const hasDialogue = scenes.some(scene => scene.audio === "talent" && Boolean(scene.dialogue));
   const locations = Array.from(
     new Set(scenes.map((s) => s.environment).filter((e) => e && e.trim().length > 0))
   ).slice(0, 6);
@@ -364,8 +385,8 @@ export function legacyProductionToSpec(params: {
     emotionalArc: spark?.audienceEmotion || "curiosity to payoff",
     requiresHost: Boolean(character),
     requiresCharacters: Boolean(character),
-    requiresNarration: true,
-    requiresDialogue: false,
+    requiresNarration: hasNarration,
+    requiresDialogue: hasDialogue,
     requiresAnimation: false,
     requiresProductShots: false,
     requiresDocumentaryTreatment: false,
@@ -373,8 +394,8 @@ export function legacyProductionToSpec(params: {
     requiresGeneratedEnvironments: true,
     requiresStockOrUserAssets: false,
     requiresImageGeneration: true,
-    requiresVideoGeneration: String(production.mode) !== "express" && String(production.productionMode) !== "express",
-    requiresVoiceGeneration: true,
+    requiresVideoGeneration: scenes.some(scene => scene.shots.some(shot => shot.generationStrategy !== "slideshow_still")),
+    requiresVoiceGeneration: hasNarration,
     requiresMusic: true,
     requiresSoundDesign: true,
     requiresEditing: true,
@@ -392,7 +413,7 @@ export function legacyProductionToSpec(params: {
     idea: spark?.hook || brief?.hook || production.title,
     createdAt: production.dateCreated || now,
     updatedAt: now,
-    productionMode: production.mode || production.productionMode || "standard",
+    productionMode: mode,
     creativeControl: "auto",
     targetDurationSec,
     platforms: mapPlatforms(brief?.platformRecommendation, production.formats),
@@ -525,7 +546,7 @@ export function productionSpecToBrief(spec: ProductionSpec, existing?: Productio
     cameraDirection: scene.shots[0]?.camera.framing,
     startState: scene.continuity.entranceState,
     endState: scene.continuity.exitState,
-    audio: scene.dialogue ? "talent" : "vo",
+    audio: scene.audio || (scene.dialogue ? "talent" : "vo"),
     subject: (scene.shots[0]?.subject as ProductionBriefBeat["subject"]) || "main",
   }));
 

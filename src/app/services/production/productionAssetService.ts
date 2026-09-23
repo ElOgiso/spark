@@ -5,7 +5,7 @@ export { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, ext
 import type { Production, ProductionBrief, ProductionScene, Brand, Character, ProductionAsset, ProductionFormatSettings, GenerationCreditSettings } from "../../domain/types";
 import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
-import { resolveGeneratePlan } from "./resolveGeneratePlan";
+import { resolveGeneratePlan, resolveSceneGeneratePlan } from "./resolveGeneratePlan";
 import { applyLongFormVisualPlanning, assertVisualPlanExecutable } from "./generation/strategyResolver";
 import { normalizeModeString } from "./resolveProductionMode";
 import { CapabilityRegistry } from "../capabilityRegistry";
@@ -2480,7 +2480,7 @@ export class ProductionAssetService {
 
               // HYBRID (standard) mode: respect beat audio ("vo" | "talent")
               // "talent beat: still → i2v from THAT still as firstFrame, NO ElevenLabs on that beat. vo beat: still stays still, ElevenLabs only for those lines."
-              if (mode === "standard" && s.audio === "vo" && plannedVisual?.kind !== "VIDEO") {
+              if (mode === "standard" && resolveSceneGeneratePlan(mode, s).stillOnly && plannedVisual?.kind !== "VIDEO") {
                 console.log(
                   `[SPARK Pipeline] Hybrid Mode: Scene ${globalSceneNum} audio is "vo" — still stays still (no motion synthesis).`
                 );

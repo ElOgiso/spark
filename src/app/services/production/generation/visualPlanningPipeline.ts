@@ -1,3 +1,4 @@
+import { resolveSceneGeneratePlan } from "../resolveGeneratePlan";
 /**
  * Visual planning pipeline — Phase 3 post-ProductionSpec enrichment.
  * Cinematography → Continuity → Strategy → Routing → Prompt compile → Generation tasks.
@@ -118,7 +119,7 @@ export function applyVisualPlanningPipeline(
         grammar,
         aspectRatio: String(spec.project.aspectRatio),
         maxShots: maxShotsForScene(scene.durationSec, grammar, hardCap),
-        preferI2V,
+        preferI2V: preferI2V && !resolveSceneGeneratePlan(mode, scene).stillOnly,
         characterIds,
         genre: spec.creative.genre,
         mode,
@@ -138,11 +139,12 @@ export function applyVisualPlanningPipeline(
     scenes: next.scenes.map((scene) => ({
       ...scene,
       shots: scene.shots.map((shot) => {
-        const previousShot = ordered.length ? ordered[ordered.length - 1] : null;
+        const previous = ordered.length ? ordered[ordered.length - 1] : null;
+        const previousShot = previous && previous.generationStrategy !== "slideshow_still" && previous.generationStrategy !== "text_to_image" ? previous : null;
         const resolved = resolveShotGenerationStrategy({
           shot,
           creative: next.creative,
-          preferI2V,
+          preferI2V: preferI2V && !resolveSceneGeneratePlan(mode, scene).stillOnly,
           isFirstShotInProduction: ordered.length === 0,
           previousShot,
           lastFrameChainEnabled: next.continuity.lastFrameChainEnabled,
@@ -210,7 +212,7 @@ export function applyVisualPlanningPipeline(
         const shot = orderedShots[i];
         if (shot.visualPlan) continue;
         const panel = panelByShot.get(shot.id);
-        if (!panel) continue;
+        if (!panel || shot.generationStrategy === "slideshow_still" || shot.generationStrategy === "text_to_image") continue;
         const scene = next.scenes.find((s) => s.id === shot.sceneId);
         if (!scene) continue;
         const result = planOperationalShotGeneration({
@@ -224,7 +226,7 @@ export function applyVisualPlanningPipeline(
           characters: opts.characters,
           location: opts.location,
           products: opts.products,
-          previousShot: i > 0 ? orderedShots[i - 1] : null,
+          previousShot: i > 0 && orderedShots[i - 1].generationStrategy !== "slideshow_still" && orderedShots[i - 1].generationStrategy !== "text_to_image" ? orderedShots[i - 1] : null,
           qualityMode: opts.qualityMode,
           availableProviderIds: opts.availableProviderIds,
           preferredProviderId: opts.preferredProviderId,

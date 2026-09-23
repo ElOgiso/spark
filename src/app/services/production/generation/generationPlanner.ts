@@ -17,6 +17,9 @@ import { strategyFromAlias } from "../specification/generationStrategy";
 import { strategyToRequiredCapabilities } from "../routing/capabilityMatrix";
 import { applyLongFormVisualPlanning } from "./strategyResolver";
 
+import { resolveSceneGeneratePlan } from "../resolveGeneratePlan";
+import { normalizeModeString } from "../resolveProductionMode";
+
 export type { GenerationTask };
 export type { GenerationTaskKind } from "../specification/generationTask";
 
@@ -93,7 +96,7 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
     );
   }
 
-  if (spec.audio.hasNarration || spec.audio.hasDialogue) {
+  if (normalizeModeString(String(spec.project.productionMode)) !== "deep" && spec.audio.hasNarration) {
     tasks.push(
       syncDependsOn({
         id: `${productionId}_voice`,
@@ -116,7 +119,9 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
       const decision = decisionByShot.get(shot.id);
       const keyframeId = `${shot.id}_keyframe`;
       const stillOnly =
-        (shot.visualPlan ? shot.visualPlan.kind !== "VIDEO" : shot.generationStrategy === "slideshow_still" || shot.generationStrategy === "text_to_image");
+        shot.visualPlan ? shot.visualPlan.kind !== "VIDEO" :
+          resolveSceneGeneratePlan(String(spec.project.productionMode), scene).stillOnly ||
+          shot.generationStrategy === "slideshow_still" || shot.generationStrategy === "text_to_image";
 
       const keyframeDeps: TaskDependency[] = [];
       for (const cid of shot.characterIds || []) {
@@ -169,7 +174,8 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
       );
 
       if (!stillOnly) {
-        const prevShot = previousShot(spec, shot);
+        const previous = previousShot(spec, shot);
+        const prevShot = previous && tasks.some(task => task.shotId === previous.id && task.kind === "video") ? previous : null;
         const videoDeps: TaskDependency[] = [
           edge(keyframeId, "ASSET", "hard", {
             detail: "Video requires its keyframe",
@@ -297,14 +303,23 @@ export function resolveGenerationTasks(
       if (task.productionId !== spec.project.id) return;
       if (task.sceneId && !sceneIds.has(task.sceneId)) return;
       if (task.shotId && (!shotScenes.has(task.shotId) || (task.sceneId && shotScenes.get(task.shotId) !== task.sceneId))) return;
+      if (task.kind === "voice" && !planned.some(item => item.kind === "voice")) return;
+      if (task.kind === "video" && !planned.some(item => item.kind === "video" && item.shotId === task.shotId)) return;
       const current = byId.get(task.id);
       // A reused ID must still describe the same work.
       if (current && (current.kind !== task.kind || current.shotId !== task.shotId || current.sceneId !== task.sceneId)) return;
+      const dependenciesChanged = current && [...current.dependsOn].sort().join("|") !== [...task.dependsOn].sort().join("|");
+      const selected = current ? {
+        ...task, dependencies: current.dependencies, dependsOn: current.dependsOn,
+        ...(dependenciesChanged && task.status === "succeeded" ? {
+          status: current.status, productionAssetId: undefined, completedOutput: undefined, retryCount: 0, lastError: undefined,
+        } : {}),
+      } : task;
       if (shot?.visualPlan && current && task.kind === "keyframe" && task.status !== "succeeded" && task.status !== "running") {
-        byId.set(task.id, { ...task, strategy: current.strategy, selectedProvider: current.selectedProvider,
+        byId.set(task.id, { ...selected, strategy: current.strategy, selectedProvider: current.selectedProvider,
           selectedModel: task.selectedProvider === current.selectedProvider ? task.selectedModel : undefined,
           fallbackProviders: current.fallbackProviders });
-      } else byId.set(task.id, task);
+      } else byId.set(task.id, selected);
     };
     for (const task of spec.productionTasks || []) {
       if (!task.shotId) retain(task);

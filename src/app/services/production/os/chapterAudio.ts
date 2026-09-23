@@ -1,3 +1,4 @@
+import { normalizeModeString } from "../resolveProductionMode";
 /**
  * SPARK Chapter Audio Authority
  * Resolves per-chapter audio routing ("vo" | "talent") according to production mode:
@@ -21,9 +22,9 @@ export interface ResolveChapterAudioParams {
 }
 
 export function normalizeAudioMode(rawMode?: string): "narrator" | "hybrid" | "cinematic" {
-  const m = String(rawMode || "").toLowerCase().trim();
-  if (m === "express" || m === "narrator") return "narrator";
-  if (m === "deep" || m === "cinematic") return "cinematic";
+  const m = normalizeModeString(rawMode);
+  if (m === "express") return "narrator";
+  if (m === "deep") return "cinematic";
   return "hybrid";
 }
 
