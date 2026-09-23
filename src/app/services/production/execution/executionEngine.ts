@@ -63,6 +63,7 @@ import { classifyRetryability } from "./errors";
 import type { CreditService } from "../credits";
 import { ProviderPayloadCompiler } from "../compiler/payloadCompiler";
 import { getCapabilityProfile } from "../capability/registry";
+import { createRuntimeAdapterPorts } from "./runtimePorts";
 
 export interface ExecutionEngineOptions {
   ports?: AdapterPorts;
@@ -133,7 +134,8 @@ export class GenerationExecutionEngine {
 
   constructor(opts: ExecutionEngineOptions = {}) {
     this.opts = opts;
-    this.adapters = opts.adapters || createDefaultAdapterRegistry(opts.ports || {});
+    const defaultPorts = opts.ports !== undefined ? opts.ports : createRuntimeAdapterPorts();
+    this.adapters = opts.adapters || createDefaultAdapterRegistry(defaultPorts);
     this.persistPort = opts.persistPort || createMemoryAssetPersistPort();
     this.idempotency = opts.idempotencyStore || createMemoryIdempotencyStore();
     this.logger = opts.logger || createMemoryLogger();
@@ -340,6 +342,45 @@ export class GenerationExecutionEngine {
     if (i >= 0) this.executions[i] = next;
     else this.executions.push(next);
     this.opts.onExecutionUpdate?.(next);
+  }
+
+  /**
+   * Execute one GenerationTask under canonical semantics.
+   * Single task execution boundary for live migration and direct execution.
+   */
+  public async executeTask(params: {
+    spec: ProductionSpec;
+    task: GenerationTask;
+    priorOutputs?: Record<string, string>;
+  }): Promise<{ execution: GenerationExecution; asset?: ProductionAsset; task: GenerationTask }> {
+    const priorOutputs = params.priorOutputs || {};
+    const result = await this.executeSingleTask({
+      spec: params.spec,
+      task: params.task,
+      priorOutputs,
+    });
+    this.replaceExecution(result.execution);
+    if (result.asset) {
+      const existingAssetIdx = this.assets.findIndex((a) => a.id === result.asset!.id);
+      if (existingAssetIdx >= 0) {
+        this.assets[existingAssetIdx] = result.asset;
+      } else {
+        this.assets.push(result.asset);
+      }
+    }
+    const updatedTask: GenerationTask = {
+      ...params.task,
+      status: result.execution.status === "succeeded"
+        ? "succeeded"
+        : result.execution.status === "cancelled"
+          ? "skipped"
+          : "failed",
+      productionAssetId: result.asset?.id || params.task.productionAssetId,
+      lastError: result.execution.error?.message,
+      retryCount: result.execution.attempt,
+    };
+    Object.assign(params.task, updatedTask);
+    return { ...result, task: updatedTask };
   }
 
   private async executeSingleTask(params: {
@@ -1031,4 +1072,19 @@ export class GenerationExecutionEngine {
         } as GenerationExecution),
     };
   }
+}
+
+/**
+ * Canonical task execution entry point.
+ * Executes one GenerationTask through the canonical engine.
+ */
+export async function executeGenerationTask(params: {
+  spec: ProductionSpec;
+  task: GenerationTask;
+  engine?: GenerationExecutionEngine;
+  options?: ExecutionEngineOptions;
+  priorOutputs?: Record<string, string>;
+}): Promise<{ execution: GenerationExecution; asset?: ProductionAsset; task: GenerationTask }> {
+  const engine = params.engine || new GenerationExecutionEngine(params.options || {});
+  return engine.executeTask(params);
 }

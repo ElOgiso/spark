@@ -86,6 +86,13 @@ import {
   resolveLocationPlateUrl,
   shouldReuseLocationPlateAsStill,
 } from "./locationPlatePersistence";
+import { GenerationExecutionEngine, executeGenerationTask } from "./execution/executionEngine";
+import { createRuntimeAdapterPorts } from "./execution/runtimePorts";
+import { resolveGenerationTasks, attachGenerationTasksToSpec } from "./generation/generationPlanner";
+import { resolveProductionSpec } from "./execution/productionExecutionBridge";
+import type { GenerationTask } from "./specification/generationTask";
+import type { ProductionSpec } from "./specification/productionSpec";
+import type { AdapterPorts } from "./execution/adapters/types";
 
 /**
  * ProductionAssetService — EXECUTOR only.
@@ -994,6 +1001,11 @@ export class ProductionAssetService {
     onProgress?: (progress: import("../../domain/types").GenerationProgress) => void;
     forceRegenerate?: boolean;
     signal?: AbortSignal;
+    spec?: ProductionSpec;
+    tasks?: GenerationTask[];
+    engine?: GenerationExecutionEngine;
+    ports?: AdapterPorts;
+    dryRun?: boolean;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     const brandIdForGuard = (brand as any)?.id;
@@ -1006,6 +1018,25 @@ export class ProductionAssetService {
         throw err;
       }
     };
+
+    // Canonical Execution Context (A-05b single task execution boundary)
+    const spec: ProductionSpec | undefined =
+      params.spec ||
+      (production?.reasoning as any)?.productionSpec ||
+      (production && brand ? resolveProductionSpec(production, brand, character) : undefined);
+    const resolvedTaskSet = spec ? resolveGenerationTasks(spec, true).tasks : [];
+    const tasks: GenerationTask[] = params.tasks || resolvedTaskSet;
+    const engine: GenerationExecutionEngine | undefined =
+      spec && tasks.length > 0
+        ? params.engine ||
+          new GenerationExecutionEngine({
+            ports: params.ports || createRuntimeAdapterPorts(),
+            dryRun: params.dryRun,
+            creditService: (params as any).creditService,
+            userId: (params as any).userId,
+          })
+        : undefined;
+    const priorOutputs: Record<string, string> = {};
 
     const generationSettings = resolveGenerationSettings({
       production,
@@ -1379,16 +1410,49 @@ export class ProductionAssetService {
         !skipExternalVoice &&
         (mode === "express" || (mode === "standard" && scenesNeedVo(currentStoryboard)));
 
+      const voiceTask = tasks.find((t) => t.kind === "voice");
       if (!shouldSynthesizeExternalVoice) {
         console.log(`[SPARK Pipeline] Mode is "${mode}" (cinematic / talent-only dialogue). Skipping separate ElevenLabs voiceover bed (speech delivered via video clips/talent).`);
         realVoiceUrl = undefined;
+        if (voiceTask) voiceTask.status = "skipped";
         markStage("voice", "skipped");
         emitProgress(12, "Voice", `Skipped external VO bed for ${mode} (dialogue expected inside motion clips)`);
       } else if (!forceRegenerate && isValidMediaData(production.audioUrl || brief.audioUrl)) {
         markStage("voice", "active");
         realVoiceUrl = production.audioUrl || brief.audioUrl;
+        if (voiceTask) {
+          voiceTask.status = "succeeded";
+          if (realVoiceUrl) priorOutputs[voiceTask.id] = realVoiceUrl;
+        }
         console.log(`[SPARK Pipeline] Reusing existing voiceover audio -> ${realVoiceUrl}`);
         markStage("voice", "done");
+      } else if (engine && voiceTask && spec) {
+        markStage("voice", "active");
+        emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
+        void persistCurrentStage("Voice");
+        startHeartbeat("Voice");
+        checkAborted();
+        try {
+          const res = await engine.executeTask({ spec, task: voiceTask, priorOutputs });
+          checkAborted();
+          if (res.task.status === "succeeded") {
+            const outUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
+            realVoiceUrl = outUrl;
+            voiceTask.status = "succeeded";
+            voiceTask.productionAssetId = res.asset?.id;
+            priorOutputs[voiceTask.id] = outUrl;
+          } else {
+            voiceTask.status = "failed";
+            voiceTask.lastError = res.task.lastError || "Voice task execution failed";
+            if (!lastError) lastError = `Voice: ${voiceTask.lastError}`;
+          }
+        } catch (vErr: any) {
+          if (vErr?.name === "AbortError" || signal?.aborted) throw vErr;
+          voiceTask.status = "failed";
+          voiceTask.lastError = vErr?.message || String(vErr);
+          if (!lastError) lastError = `Voice: ${voiceTask.lastError}`;
+        }
+        markStage("voice", realVoiceUrl ? "done" : "failed");
       } else {
         markStage("voice", "active");
         emitProgress(12, "Voice", "Synthesizing voiceover narration (Hook + Core + CTA)...");
@@ -2022,22 +2086,43 @@ export class ProductionAssetService {
             (s as any).shotId = compiledStill.shotId;
           }
 
+          const targetShotId = (s as any).shotId || s.id;
+          const kfTask = tasks.find((t) => (t.shotId === targetShotId || t.id === `${targetShotId}_keyframe`) && t.kind === "keyframe");
+
           try {
             checkAborted();
-            console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}, Plate: ${plateUrl ? "yes" : "no"}]...`);
-            const stillImgUrl = await withTimeout(
-              ModelRouter.executeCategoryRequest("storyboardImages", {
-                prompt: stillPrompt,
-                referenceImageUrl: stillVisualLock.primaryRefUrl,
-                referenceImageUrls: stillVisualLock.imageUrls,
-                aspectRatio: identityPack.aspectRatio,
+            let stillImgUrl: string | undefined;
+            if (engine && kfTask && spec) {
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via canonical ExecutionEngine (${kfTask.id})...`);
+              const res = await engine.executeTask({ spec, task: kfTask, priorOutputs });
+              checkAborted();
+              if (res.task.status === "succeeded") {
+                stillImgUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
+                kfTask.status = "succeeded";
+                kfTask.productionAssetId = res.asset?.id;
+                if (stillImgUrl) priorOutputs[kfTask.id] = stillImgUrl;
+              } else {
+                kfTask.status = "failed";
+                kfTask.lastError = res.task.lastError || "Keyframe generation failed";
+                (s as any).lastError = kfTask.lastError;
+                if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${kfTask.lastError}`;
+              }
+            } else {
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}, Plate: ${plateUrl ? "yes" : "no"}]...`);
+              stillImgUrl = await withTimeout(
+                ModelRouter.executeCategoryRequest("storyboardImages", {
+                  prompt: stillPrompt,
+                  referenceImageUrl: stillVisualLock.primaryRefUrl,
+                  referenceImageUrls: stillVisualLock.imageUrls,
+                  aspectRatio: identityPack.aspectRatio,
                   preferredProvider: resolvedImageProvider,
                   model: resolvedImageModel,
-              }),
-              60000,
-              `Scene ${globalSceneNum} still generation timed out after 60s`,
-              signal
-            );
+                }),
+                60000,
+                `Scene ${globalSceneNum} still generation timed out after 60s`,
+                signal
+              );
+            }
             checkAborted();
 
             if (isValidMediaData(stillImgUrl)) {
@@ -2739,7 +2824,7 @@ export class ProductionAssetService {
 
                 try {
                   checkAborted();
-                  const generateSubclip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string }> => {
+                  const generateSubclip = async (): Promise<{ url: string; lastFrameDataUrl?: string; provider: string; assetId?: string }> => {
                     const allI2vCandidates = [
                       "grok",
                       "kling",
@@ -2804,6 +2889,26 @@ export class ProductionAssetService {
                     if (!forceRegenerate && isValidMediaData(s.videoUrl) && isDurableMasterVideoReady(s.videoUrl)) {
                       console.log(`[SPARK Pipeline] Skipping I2V submit: Scene ${globalSceneNum} already has durable videoUrl.`);
                       return { url: s.videoUrl, provider: (s as any).videoProvider || activeVideo.providerId };
+                    }
+
+                    const targetShotId = shotIdForScene || (s as any).shotId || s.id;
+                    const videoTask = tasks.find((t) => (t.shotId === targetShotId || t.id === `${targetShotId}_video`) && t.kind === "video");
+
+                    if (engine && videoTask && spec) {
+                      console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum}${subclipLabel} video task via canonical ExecutionEngine (${videoTask.id})...`);
+                      const res = await engine.executeTask({ spec, task: videoTask, priorOutputs });
+                      if (res.task.status === "succeeded") {
+                        const clipUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
+                        videoTask.status = "succeeded";
+                        videoTask.productionAssetId = res.asset?.id;
+                        if (clipUrl) priorOutputs[videoTask.id] = clipUrl;
+                        return { url: clipUrl, provider: res.execution.provider || activeVideo.providerId, assetId: res.asset?.id };
+                      } else {
+                        videoTask.status = res.task.status;
+                        videoTask.lastError = res.task.lastError || "Video task execution failed";
+                        (s as any).lastError = videoTask.lastError;
+                        throw new Error(videoTask.lastError);
+                      }
                     }
 
                     const tryI2v = async (providerId: string) => {
@@ -3163,53 +3268,97 @@ export class ProductionAssetService {
               }
             } else if (sceneClips.length > 1) {
               emitProgress(82, "Merge", `Merging ${sceneClips.length} scene videos into master MP4...`);
-              try {
-                const hasVoScenes = currentStoryboard.length > 0 && currentStoryboard.some((s) => s.audio === "vo");
-                const mergeAudioUrl = (mode === "standard" && hasVoScenes) ? realVoiceUrl : undefined;
-                const targetMergeTexts = collectSceneCaptionLines(
-                  currentStoryboard,
-                  brief.beats,
-                  brief.hook,
-                  formatBurnedOnScreenText
-                );
-
-                const mergeResult = await withTimeout(
-                  assembleMasterFromClips({
-                    productionId: production.id,
-                    brandId: (brand as any)?.id,
-                    videoUrls: sceneClips,
-                    audioUrl: mergeAudioUrl,
-                    sfxUrl: realSfxUrl,
-                    onScreenTexts: targetMergeTexts,
-                    width: compileWidth,
-                    height: compileHeight,
-                    timeoutMs: 120000,
-                  }),
-                  120000,
-                  "Scene video merge timed out after 120s",
-                  signal
-                );
-
-                if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
-                  realVideoUrl = mergeResult.publicUrl;
-                  (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
-                  (production as any).canonicalMasterUrl = mergeResult.publicUrl;
-                  (brief as any).assemblyStatus = "assembly_complete";
-                  (production as any).assemblyStatus = "assembly_complete";
-                  console.log(`[SPARK Pipeline] Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
-                } else {
-                  console.warn(
-                    "[SPARK Pipeline] Scene merge did not produce a server ffmpeg master"
-                  );
+              const mergeTask = tasks.find((t) => t.kind === "merge");
+              if (engine && mergeTask && spec) {
+                try {
+                  console.log(`[SPARK Pipeline] Master merge task via canonical ExecutionEngine (${mergeTask.id})...`);
+                  const res = await engine.executeTask({ spec, task: mergeTask, priorOutputs });
+                  if (res.task.status === "succeeded") {
+                    const mergedUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
+                    realVideoUrl = mergedUrl;
+                    (brief as any).canonicalMasterUrl = mergedUrl;
+                    (production as any).canonicalMasterUrl = mergedUrl;
+                    (brief as any).assemblyStatus = "assembly_complete";
+                    (production as any).assemblyStatus = "assembly_complete";
+                    mergeTask.status = "succeeded";
+                    mergeTask.productionAssetId = res.asset?.id;
+                    if (mergedUrl) priorOutputs[mergeTask.id] = mergedUrl;
+                    console.log(`[SPARK Pipeline] Canonical Merged Master Video -> ${realVideoUrl}`);
+                  } else {
+                    mergeTask.status = "skipped";
+                    mergeTask.lastError = res.task.lastError || "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.";
+                    (brief as any).assemblyStatus = "assembly_pending";
+                    (production as any).assemblyStatus = "assembly_pending";
+                    (brief as any).assemblyError = mergeTask.lastError;
+                  }
+                } catch (mErr: any) {
+                  mergeTask.status = "skipped";
+                  mergeTask.lastError = mErr?.message || "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.";
                   (brief as any).assemblyStatus = "assembly_pending";
                   (production as any).assemblyStatus = "assembly_pending";
-                  (brief as any).assemblyError = "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.";
+                  (brief as any).assemblyError = mergeTask.lastError;
                 }
-              } catch (mergeErr: any) {
-                console.warn("[SPARK Pipeline] Scene merge notice:", mergeErr);
-                (brief as any).assemblyStatus = "assembly_pending";
-                (production as any).assemblyStatus = "assembly_pending";
-                (brief as any).assemblyError = mergeErr?.message || String(mergeErr);
+              } else {
+                try {
+                  const hasVoScenes = currentStoryboard.length > 0 && currentStoryboard.some((s) => s.audio === "vo");
+                  const mergeAudioUrl = (mode === "standard" && hasVoScenes) ? realVoiceUrl : undefined;
+                  const targetMergeTexts = collectSceneCaptionLines(
+                    currentStoryboard,
+                    brief.beats,
+                    brief.hook,
+                    formatBurnedOnScreenText
+                  );
+
+                  const mergeResult = await withTimeout(
+                    assembleMasterFromClips({
+                      productionId: production.id,
+                      brandId: (brand as any)?.id,
+                      videoUrls: sceneClips,
+                      audioUrl: mergeAudioUrl,
+                      sfxUrl: realSfxUrl,
+                      onScreenTexts: targetMergeTexts,
+                      width: compileWidth,
+                      height: compileHeight,
+                      timeoutMs: 120000,
+                    }),
+                    120000,
+                    "Scene video merge timed out after 120s",
+                    signal
+                  );
+
+                  if (mergeResult?.publicUrl && isDurableMasterVideoReady(mergeResult.publicUrl)) {
+                    realVideoUrl = mergeResult.publicUrl;
+                    (brief as any).canonicalMasterUrl = mergeResult.publicUrl;
+                    (production as any).canonicalMasterUrl = mergeResult.publicUrl;
+                    (brief as any).assemblyStatus = "assembly_complete";
+                    (production as any).assemblyStatus = "assembly_complete";
+                    if (mergeTask) {
+                      mergeTask.status = "succeeded";
+                      priorOutputs[mergeTask.id] = realVideoUrl;
+                    }
+                    console.log(`[SPARK Pipeline] Merged Master Video (${sceneClips.length} scenes) -> ${realVideoUrl}`);
+                  } else {
+                    console.warn(
+                      "[SPARK Pipeline] Scene merge did not produce a server ffmpeg master"
+                    );
+                    (brief as any).assemblyStatus = "assembly_pending";
+                    (production as any).assemblyStatus = "assembly_pending";
+                    (brief as any).assemblyError = "FFMPEG concatenation unavailable on serverless image; retaining individual scene clips.";
+                    if (mergeTask) {
+                      mergeTask.status = "skipped";
+                      mergeTask.lastError = (brief as any).assemblyError;
+                    }
+                  }
+                } catch (mergeErr: any) {
+                  console.warn("[SPARK Pipeline] Scene merge notice:", mergeErr);
+                  (brief as any).assemblyStatus = "assembly_pending";
+                  (production as any).assemblyStatus = "assembly_pending";
+                  (brief as any).assemblyError = mergeErr?.message || String(mergeErr);
+                  if (mergeTask) {
+                    mergeTask.status = "skipped";
+                    mergeTask.lastError = (brief as any).assemblyError;
+                  }
+                }
               }
               // CRITICAL: NEVER DESTROY VALID GENERATED MEDIA
               // If merge was unavailable or pending, all individual scene clips remain valid and accessible.
@@ -3223,6 +3372,11 @@ export class ProductionAssetService {
             ) {
               // True one-take production: the single clip IS the master.
               realVideoUrl = sceneClips[0];
+              const mergeTask = tasks.find((t) => t.kind === "merge");
+              if (mergeTask) {
+                mergeTask.status = "succeeded";
+                mergeTask.productionAssetId = currentStoryboard[0]?.videoAssetId;
+              }
               (brief as any).playablePreviewUrl = sceneClips[0];
               (production as any).playablePreviewUrl = sceneClips[0];
               (brief as any).assemblyStatus = "assembly_complete";
@@ -3821,6 +3975,12 @@ export class ProductionAssetService {
 
       emitProgress(isOverallSuccess ? 100 : 50, isOverallSuccess ? "Complete" : "Failed", finalMsg);
 
+      const specWithTasks = spec ? attachGenerationTasksToSpec(spec, tasks) : undefined;
+      const initialReasoning = {
+        ...production.reasoning,
+        ...(specWithTasks ? { productionSpec: specWithTasks } : {}),
+      };
+
       const synced = syncProductionMediaStores({
         production: {
           ...production,
@@ -3828,11 +3988,16 @@ export class ProductionAssetService {
           productionScenes: fullProductionScenes,
           scenes: updatedScenes,
           status: finalStatus as any,
+          reasoning: initialReasoning,
         },
         scenes: fullProductionScenes,
         masterVideoUrl: realVideoUrl,
         audioUrl: realVoiceUrl,
       });
+
+      if (specWithTasks && synced.reasoning?.productionSpec) {
+        synced.reasoning.productionSpec = attachGenerationTasksToSpec(synced.reasoning.productionSpec, tasks);
+      }
 
       return {
         brief: synced.brief,

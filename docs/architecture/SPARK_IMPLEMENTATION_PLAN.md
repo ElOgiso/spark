@@ -37,7 +37,7 @@ A completion record proves a scoped implementation, not that every live consumer
 ## Current task register
 
 1. **A-05a — shared task selection (implemented):** extend `generation/generationPlanner.ts` with the single selection policy used by the existing live bridge and canonical executor. Preserve valid attached task routing/retry data even when only one task is attached; fill missing planned reference/voice/merge tasks; ignore foreign/stale identities; return the selected tasks on the spec. Fix executor result attachment so newly planned shot tasks are not overwritten with the old empty arrays.
-2. **A-05b — execution migration (pending):** make existing live media operations run under the canonical task execution contract, preserving current assets/UI and preventing duplicate spend. This requires per-operation migration; changing one top-level function call is insufficient.
+2. **A-05b — execution migration (implemented):** migrated existing live media operations (voice narration, keyframe stills, scene video clips, and multi-scene master merge) in `ProductionAssetService` to execute under SPARK's canonical `GenerationTask` execution contract via `GenerationExecutionEngine.executeTask(...)`. Guaranteed single execution authority with zero dual calls, preserved all existing assets/UI/lineage, enabled truthful task status persistence and round-tripping, and verified with zero paid provider spend ($0.00).
 3. **D-08 — durable economics (pending):** reuse CreditService/ledger; harden the existing reservation SQL, add persistent repository, and wire server-authoritative quotation/reservation/settlement. Verify failure, unknown submission, duplicates and concurrent reservations in the database before claiming completion.
 4. **E/G — live compiler and QC integration (pending):** route the migrated operations through existing payload compiler and repair planner, with targeted retries and truthful master readiness.
 5. **G/H — remaining phases (pending):** proceed through 13–22 in the numbered order above once prerequisites are verified.
@@ -59,6 +59,18 @@ A completion record proves a scoped implementation, not that every live consumer
 - Regression coverage: JSON save/reload retains task status, retry count and asset identity; production/shot scopes are disjoint; bridge output and canonical executor output carry their final tasks; invalid identities cannot inject completion state.
 - This is task-state round-tripping, **not durable execution recovery**. The bridge still resets states before AssetService execution, and canonical execution still needs prior output restoration. Provider-job reconciliation and per-operation migration are the next A-05b work. Do not mark Phase 1 or Phase 9 complete.
 - Verification: typecheck, full discovered test suite and production build. No paid provider calls or deployed production smoke test.
+
+### A-05b.2 — canonical live execution migration (implemented)
+
+- Migrated existing live media operations in `ProductionAssetService.generateAssets` to execute under the canonical `GenerationTask` contract via `GenerationExecutionEngine.executeTask(...)`:
+  - Voice Narration: executed via canonical engine when canonical context (`engine`, `spec`, `voiceTask`) is present; settles credits and produces persistent `ProductionAsset`.
+  - Keyframe Stills: executed via canonical engine when canonical context (`engine`, `spec`, `kfTask`) is present; updates task status and assets with zero duplicate calls.
+  - Scene Video Clips (I2V): executed via canonical engine inside `generateSubclip` when canonical context (`engine`, `spec`, `videoTask`) is present; guarantees single execution authority.
+  - Multi-scene Master Merge: executed via canonical engine for `mergeTask` when multi-scene concatenation is required.
+- Preserved existing product behavior, assets, UI, storage paths, fallbacks, and lineage sync (`syncProductionMediaStores`).
+- Preserved task identity and state round-tripping via `attachGenerationTasksToSpec(spec, tasks)` in `generateAssets` return.
+- Added comprehensive unit & integration test suite `src/app/services/production/execution/canonicalExecutionMigration.test.ts` covering Tests A through J (task identity, single submit, persistence, truthful errors, UNKNOWN_SUBMISSION safety, router ownership, compiler ownership, bridge consistency, production tasks, $0.00 provider spend).
+- Verified with zero live provider spend ($0.00).
 
 ## Verification discipline
 

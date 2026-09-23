@@ -63,6 +63,9 @@ export interface ProductionExecutionBridgeParams {
   forceRegenerate?: boolean;
   signal?: AbortSignal;
   logger?: BridgeLogger;
+  ports?: import("./adapters/types").AdapterPorts;
+  engine?: import("./executionEngine").GenerationExecutionEngine;
+  dryRun?: boolean;
 }
 
 export interface ProductionExecutionBridgeResult {
@@ -478,6 +481,11 @@ export async function executeProductionViaAssetBridge(
   }
 
   const assetResult = await ProductionAssetService.generateAssets({
+    spec,
+    tasks,
+    ports: params.ports,
+    engine: params.engine,
+    dryRun: params.dryRun,
     production: {
       ...params.production,
       mode: params.production.mode || (params.brand as any)?.productionMode,
@@ -502,7 +510,7 @@ export async function executeProductionViaAssetBridge(
     onProgress: params.onProgress,
     forceRegenerate: params.forceRegenerate,
     signal: params.signal,
-  });
+  } as any);
 
   const projected = projectAssetsOntoSpec({
     spec,

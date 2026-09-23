@@ -41,7 +41,7 @@ export {
   deriveProductionState,
   DEFAULT_SCHEDULER_CONFIG,
 } from "./scheduler";
-export { GenerationExecutionEngine } from "./executionEngine";
+export { GenerationExecutionEngine, executeGenerationTask } from "./executionEngine";
 export { executeProduction } from "./productionExecutor";
 export {
   createDefaultAdapterRegistry,
