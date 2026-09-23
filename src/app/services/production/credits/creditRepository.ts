@@ -8,6 +8,7 @@ import type {
   CreditSettlement,
   CreditTransaction,
 } from "./types";
+import { isSupabaseConfigured } from "../../../backend/supabaseClient";
 
 export interface ReserveParams {
   userId: string;
@@ -195,7 +196,10 @@ export class InMemoryCreditRepository implements ICreditRepository {
         });
       } else if (overage > 0) {
         const currentBal = await this.getBalance(params.userId);
-        this.balances.set(params.userId, Math.max(0, currentBal - overage));
+        if (currentBal < overage) {
+          throw new Error(`Insufficient credits for settlement overage: required ${overage}, available ${currentBal}`);
+        }
+        this.balances.set(params.userId, currentBal - overage);
         this.ledger.push({
           id: `tx_${Math.random().toString(36).slice(2, 11)}`,
           userId: params.userId,
@@ -523,19 +527,21 @@ export class SupabaseCreditRepository implements ICreditRepository {
 
   async refund(params: RefundParams): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
     const sb = await this.getClient();
-    const { error } = await sb.rpc("admin_adjust_credits", {
-      target_user_id: params.userId,
-      credit_delta: params.amount,
-      adjustment_reason: `REFUND: ${params.reason || "reconciliation_refund"}`,
+    const { data, error } = await sb.rpc("spark_refund_credits", {
+      p_user_id: params.userId,
+      p_reservation_id: params.reservationId,
+      p_amount: params.amount,
+      p_idempotency_key: params.idempotencyKey,
+      p_reason: params.reason || "reconciliation_refund",
     });
     if (error) {
       throw new Error(`Credit refund failed: ${error.message || String(error)}`);
     }
     const res: CreditReservation = {
-      id: params.reservationId,
+      id: data?.id || params.reservationId,
       userId: params.userId,
-      generationId: `refund_${params.reservationId}`,
-      amount: params.amount,
+      generationId: data?.generation_id || `refund_${params.reservationId}`,
+      amount: data?.refund_amount || params.amount,
       status: "REFUNDED",
       consumedAmount: 0,
       releasedAmount: 0,
@@ -543,10 +549,10 @@ export class SupabaseCreditRepository implements ICreditRepository {
       pricingPolicyVersion: "spark-credit-v1.0",
       estimatedProviderCostUsd: 0,
       metadata: { reason: params.reason },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: data?.created_at || new Date().toISOString(),
+      updatedAt: data?.updated_at || new Date().toISOString(),
     };
-    return { reservation: res, idempotentReplay: false };
+    return { reservation: res, idempotentReplay: Boolean(data?.idempotent_replay) };
   }
 
   async getLedger(userId: string): Promise<CreditTransaction[]> {
@@ -596,4 +602,17 @@ export class SupabaseCreditRepository implements ICreditRepository {
     };
   }
 }
+
+/**
+ * Single construction boundary for credit repositories:
+ * Returns SupabaseCreditRepository when Supabase is configured; otherwise InMemoryCreditRepository.
+ * Fails closed on database errors without silent fallback.
+ */
+export function createCreditRepository(client?: any): ICreditRepository {
+  if (isSupabaseConfigured()) {
+    return new SupabaseCreditRepository(client);
+  }
+  return new InMemoryCreditRepository();
+}
+
 

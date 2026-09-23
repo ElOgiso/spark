@@ -1033,7 +1033,7 @@ export class ProductionAssetService {
             ports: params.ports || createRuntimeAdapterPorts(),
             dryRun: params.dryRun,
             creditService: (params as any).creditService,
-            userId: (params as any).userId,
+            userId: (params as any).userId || brand?.owner_id,
           })
         : undefined;
     const priorOutputs: Record<string, string> = {};

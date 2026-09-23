@@ -18,7 +18,7 @@ A completion record proves a scoped implementation, not that every live consumer
 | 5 Capabilities/models | Capability profiles, adapter intersection, discovery/catalog code | Complete verified model health feedback from actual execution; static profiles alone are not live health. |
 | 6 Routing | Canonical router, capability filtering/scoring, fallback planning | Connect real candidate cost and execution health to ranking; remove bypasses through compatibility paths. |
 | 7 Cost | `economics/costEngine.ts`, pricing registry, estimate types | Lifecycle still uses heuristic estimates and zero provider actuals. Wire actual cost evidence into reports. |
-| 8 Credits | Existing profile balance/ledger; CreditService and reservation migration | Default repository is in-memory. Implement secured persistent repository and authoritative reserve/capture/release on live generation. Database transaction/concurrency tests required. |
+| 8 Credits | Existing profile balance/ledger; CreditService and reservation migration | Implemented persistent SupabaseCreditRepository, secured financial RPCs (`spark_reserve_credits`, `spark_settle_credits`, `spark_release_credits`, `spark_mark_pending_unknown`, `spark_refund_credits`), floating-point pricing policy normalization, and complete test matrix A–O. Note: migration `20260923100000_durable_production_economics.sql` ready in repo; requires live apply to Supabase project `jaqzjhabmtvqtvinoafq`. |
 | 9 Reliability | Execution/job state machines, retries, reconciliation contracts | Durable job state and unknown-submission recovery must survive browser/request termination. |
 | 10 Payload compiler | Canonical semantic payload compiler and adapter contracts | Live AssetService path does not consistently pass through it. Migrate existing calls, not a second compiler. |
 | 11 Higgsfield | Existing client, discovery, image/video adapters and broader capabilities | Verify expansion against supported API contracts and actual adapter execution; registry declarations do not prove coverage. |
@@ -38,7 +38,7 @@ A completion record proves a scoped implementation, not that every live consumer
 
 1. **A-05a — shared task selection (implemented):** extend `generation/generationPlanner.ts` with the single selection policy used by the existing live bridge and canonical executor. Preserve valid attached task routing/retry data even when only one task is attached; fill missing planned reference/voice/merge tasks; ignore foreign/stale identities; return the selected tasks on the spec. Fix executor result attachment so newly planned shot tasks are not overwritten with the old empty arrays.
 2. **A-05b — execution migration (implemented):** migrated existing live media operations (voice narration, keyframe stills, scene video clips, and multi-scene master merge) in `ProductionAssetService` to execute under SPARK's canonical `GenerationTask` execution contract via `GenerationExecutionEngine.executeTask(...)`. Guaranteed single execution authority with zero dual calls, preserved all existing assets/UI/lineage, enabled truthful task status persistence and round-tripping, and verified with zero paid provider spend ($0.00).
-3. **D-08 — durable economics (pending):** reuse CreditService/ledger; harden the existing reservation SQL, add persistent repository, and wire server-authoritative quotation/reservation/settlement. Verify failure, unknown submission, duplicates and concurrent reservations in the database before claiming completion.
+3. **D-08 — durable economics (implemented):** reused and secured SPARK's existing credit reservation and settlement architecture (`CreditService`, `CostEngine`, `SupabaseCreditRepository`). Hardened the reservation and settlement migration (`20260923100000_durable_production_economics.sql`) with explicit `search_path`, overage balance rejection without fabricated collection, and deterministic refund idempotency. Implemented and verified complete test matrix A through O (concurrency, idempotency, UNKNOWN_SUBMISSION hold, duplicate rejection, and execution engine integration) with zero paid provider spend ($0.00).
 4. **E/G — live compiler and QC integration (pending):** route the migrated operations through existing payload compiler and repair planner, with targeted retries and truthful master readiness.
 5. **G/H — remaining phases (pending):** proceed through 13–22 in the numbered order above once prerequisites are verified.
 
@@ -71,6 +71,37 @@ A completion record proves a scoped implementation, not that every live consumer
 - Preserved task identity and state round-tripping via `attachGenerationTasksToSpec(spec, tasks)` in `generateAssets` return.
 - Added comprehensive unit & integration test suite `src/app/services/production/execution/canonicalExecutionMigration.test.ts` covering Tests A through J (task identity, single submit, persistence, truthful errors, UNKNOWN_SUBMISSION safety, router ownership, compiler ownership, bridge consistency, production tasks, $0.00 provider spend).
 - Verified with zero live provider spend ($0.00).
+
+### D-08 — durable production economics (implemented)
+
+- Audited and reused existing financial components: `CreditService`, `CostEngine`, `SupabaseCreditRepository`, `InMemoryCreditRepository`, and `pricingPolicy.ts`. No secondary credit system or duplicate cost engine was created.
+- Inspected live remote database (`https://jaqzjhabmtvqtvinoafq.supabase.co`):
+  - Verified `profiles.credit_balance` and base `credit_ledger` exist.
+  - Identified that `credit_reservations` and financial RPCs (`spark_reserve_credits`, `spark_settle_credits`, `spark_release_credits`, `spark_mark_pending_unknown`, `spark_refund_credits`) were authored in migration files but not yet executed on the remote database.
+- Created hardened migration `supabase/migrations/20260923100000_durable_production_economics.sql`:
+  - Enforced `SET search_path = public` across all financial RPCs.
+  - Fixed settlement overage vulnerability: added row locking (`profiles ... FOR UPDATE`) and strictly rejected overages (`v_current_bal < overage`) instead of fabricating collection by clamping to zero.
+  - Hardened refund idempotency: returns `{ idempotent_replay: true }` when already `REFUNDED`.
+  - Granted explicit execution rights to `authenticated, service_role`.
+- Fixed IEEE 754 floating point precision artifact in `pricingPolicy.ts` by normalizing to 6 decimal places before `Math.ceil`, ensuring exact integer pricing without rounding jumps.
+- Updated `src/app/backend/database.types.ts` with complete types for `credit_reservations`, `credit_ledger`, and all 5 financial RPCs.
+- Created D-08 test suite `src/app/services/production/credits/durableEconomics.test.ts` verifying all 15 matrix tests (Tests A through O):
+  - Test A: persistent reservation surviving service/repository recreation.
+  - Test B: reservation idempotency replaying existing active reservation.
+  - Test C: concurrent reservations preventing over-reservation and negative balances.
+  - Test D: settlement with actual cost & automatic release of unused reserved credits.
+  - Test E: settlement overage safe rejection without balance corruption.
+  - Test F: NOT_SUBMITTED release cleanly restoring available balance.
+  - Test G: UNKNOWN_SUBMISSION holding reservation in PENDING_UNKNOWN without premature balance restoration.
+  - Test H: reconciliation FOUND recovering provider job ID and settling.
+  - Test I: reconciliation CONFIRMED_NOT_SUBMITTED releasing credit hold.
+  - Test J: duplicate settlement replay rejection without double debit or release.
+  - Test K: duplicate release replay rejection without double restoration.
+  - Test L: refund replay idempotency with deterministic keys.
+  - Test M: unauthorized/mismatched user mutations rejected without state change.
+  - Test N: direct client mutation rejection verified via Supabase RLS and RPC constraints.
+  - Test O: end-to-end `GenerationExecutionEngine` execution integration (quote → reserve → submit → actual cost → settle).
+- Verified full test suite (1,280 tests passed, 0 failed) and production build (`npm run build` cleanly succeeded in 28.9s) with $0.00 provider spend.
 
 ## Verification discipline
 

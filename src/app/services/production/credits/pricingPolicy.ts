@@ -31,7 +31,7 @@ export function convertUsdToCredits(
 ): number {
   if (!isBillable || costUsd <= 0) return 0;
   
-  const rawCredits = costUsd * policy.creditsPerUsd * policy.marginMultiplier;
+  const rawCredits = Number((costUsd * policy.creditsPerUsd * policy.marginMultiplier).toFixed(6));
   let finalCredits = 0;
   
   switch (policy.rounding) {

@@ -16,23 +16,15 @@ import {
 } from "./pricingPolicy";
 import {
   ICreditRepository,
-  InMemoryCreditRepository,
-  SupabaseCreditRepository,
+  createCreditRepository,
 } from "./creditRepository";
-import { isSupabaseConfigured } from "../../../backend/supabaseClient";
 
 export class CreditService {
   private static instance: CreditService | null = null;
   private repo: ICreditRepository;
 
   constructor(repo?: ICreditRepository) {
-    if (repo) {
-      this.repo = repo;
-    } else if (isSupabaseConfigured()) {
-      this.repo = new SupabaseCreditRepository();
-    } else {
-      this.repo = new InMemoryCreditRepository();
-    }
+    this.repo = repo || createCreditRepository();
   }
 
   static getInstance(): CreditService {
@@ -142,7 +134,7 @@ export class CreditService {
     idempotencyKey?: string;
     reason?: string;
   }): Promise<{ reservation: CreditReservation; idempotentReplay: boolean }> {
-    const key = params.idempotencyKey || `refund_key_${params.userId}_${params.reservationId}_${Date.now()}`;
+    const key = params.idempotencyKey || `refund_key_${params.userId}_${params.reservationId}`;
     return this.repo.refund({
       userId: params.userId,
       reservationId: params.reservationId,

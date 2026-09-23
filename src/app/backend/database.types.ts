@@ -56,7 +56,28 @@ export interface CreditLedgerRow {
   admin_id: string | null;
   delta: number;
   reason: string;
+  reservation_id?: string | null;
+  generation_id?: string | null;
+  transaction_type?: string | null;
+  metadata?: Json | null;
   created_at: string;
+}
+
+export interface CreditReservationRow {
+  id: string;
+  user_id: string;
+  generation_id: string;
+  amount: number;
+  status: string;
+  consumed_amount: number;
+  released_amount: number;
+  idempotency_key: string;
+  pricing_policy_version: string;
+  estimated_provider_cost_usd: number;
+  actual_provider_cost_usd?: number | null;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CouponRow {
@@ -454,12 +475,68 @@ export interface Database {
       media_assets: Table<MediaAssetRow>;
       research_sources: Table<ResearchSourceRow>;
       research_patterns: Table<ResearchPatternRow>;
+      credit_reservations: Table<CreditReservationRow>;
+      credit_ledger: Table<CreditLedgerRow>;
     };
     Views: Record<string, never>;
     Functions: {
       admin_set_access_status: {
         Args: { target_user_id: string; new_status: string };
         Returns: boolean;
+      };
+      admin_adjust_credits: {
+        Args: { target_user_id: string; delta: number; reason: string };
+        Returns: number;
+      };
+      spark_reserve_credits: {
+        Args: {
+          p_user_id: string;
+          p_generation_id: string;
+          p_amount: number;
+          p_idempotency_key: string;
+          p_pricing_policy_version?: string;
+          p_estimated_provider_cost_usd?: number;
+          p_metadata?: Json;
+        };
+        Returns: Json;
+      };
+      spark_settle_credits: {
+        Args: {
+          p_user_id: string;
+          p_reservation_id: string;
+          p_actual_amount: number;
+          p_idempotency_key: string;
+          p_actual_provider_cost_usd?: number;
+          p_metadata?: Json;
+        };
+        Returns: Json;
+      };
+      spark_release_credits: {
+        Args: {
+          p_user_id: string;
+          p_reservation_id: string;
+          p_idempotency_key: string;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      spark_mark_pending_unknown: {
+        Args: {
+          p_user_id: string;
+          p_reservation_id: string;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      spark_refund_credits: {
+        Args: {
+          p_user_id: string;
+          p_reservation_id: string;
+          p_amount: number;
+          p_idempotency_key: string;
+          p_reason?: string;
+        };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;
