@@ -252,9 +252,23 @@ test("Phase 5.1: Fail-Closed Video Submit Path", async (t) => {
     }
   });
 
-  await t.test("6. API Handler POST /api/runtime/video: Fail-Closed Guard", async () => {
+  await t.test("6. API Handler POST /api/runtime/video: Fail-Closed Guard", async (t) => {
+    const oldUrl = process.env.SUPABASE_URL;
+    const oldKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    process.env.SUPABASE_URL = "https://auth.spark.invalid";
+    process.env.SUPABASE_PUBLISHABLE_KEY = "test-publishable";
+    t.after(() => {
+      if (oldUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = oldUrl;
+      if (oldKey === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY; else process.env.SUPABASE_PUBLISHABLE_KEY = oldKey;
+    });
+    t.mock.method(globalThis, "fetch", async (url: any) => {
+      const u = String(url);
+      if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "test-user" }));
+      if (u.includes("/rest/v1/profiles")) return new Response(JSON.stringify({ access_status: "active" }));
+      throw new Error("Unexpected provider call: " + u);
+    });
     const createMockReqRes = (body: any) => {
-      const req: any = { method: "POST", body };
+      const req: any = { method: "POST", headers: { authorization: "Bearer test-session" }, body };
       let statusCode = 200;
       let jsonBody: any = null;
       const res: any = {

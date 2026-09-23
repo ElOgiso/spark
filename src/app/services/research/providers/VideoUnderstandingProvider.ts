@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../../backend/runtimeFetch";
 import type { VideoResearch } from "../../../domain/types";
 import { ModelRouter } from "../../runtime/modelRouter";
 import { getStoredAccountTokens } from "../../socialIntegrationService";
@@ -149,7 +150,7 @@ export class VideoUnderstandingProvider {
     const langs = ["en", "en-US", "a.en"];
     for (const lang of langs) {
       try {
-        const res = await fetch(
+        const res = await runtimeFetch(
           `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(videoId)}&lang=${encodeURIComponent(lang)}`
         );
         if (!res.ok) continue;
@@ -170,7 +171,7 @@ export class VideoUnderstandingProvider {
     if (platform !== "youtube" || !videoId) return undefined;
     let routeMissing = false;
     try {
-      const res = await fetch(`/api/runtime/video?action=captions&v=${encodeURIComponent(videoId)}`);
+      const res = await runtimeFetch(`/api/runtime/video?action=captions&v=${encodeURIComponent(videoId)}`);
       if (res.status === 404) {
         routeMissing = true;
       } else if (res.ok) {
@@ -293,7 +294,7 @@ export class VideoUnderstandingProvider {
         if (googleOAuthToken) headers["Authorization"] = `Bearer ${googleOAuthToken}`;
         if (googleApiKey) fullUrl += `&key=${googleApiKey}`;
 
-        const res = await fetch(fullUrl, { headers });
+        const res = await runtimeFetch(fullUrl, { headers });
         if (res.ok) {
           const data = await res.json();
           const item = data.items?.[0];
@@ -335,7 +336,7 @@ export class VideoUnderstandingProvider {
     if (platform === "youtube" && (!title || !thumbnail)) {
       try {
         const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`;
-        const res = await fetch(oembedUrl);
+        const res = await runtimeFetch(oembedUrl);
         if (res.ok) {
           const oembed = await res.json();
           if (oembed.title && !title) title = oembed.title;

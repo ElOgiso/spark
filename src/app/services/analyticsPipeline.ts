@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../backend/runtimeFetch";
 /**
  * Phase 6J — Live multi-platform analytics pipeline (no UI).
  * Ingests real analytics for connected OAuth accounts, persists snapshots,
@@ -265,7 +266,7 @@ export async function ingestPlatformAnalytics(
   channelId?: string
 ): Promise<PlatformAnalyticsRecord> {
   const workspaceId = getBrandWorkspaceId();
-  const res = await fetch("/api/runtime/social-analytics", {
+  const res = await runtimeFetch("/api/runtime/social-analytics", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

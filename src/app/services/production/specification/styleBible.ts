@@ -190,7 +190,10 @@ export function createDefaultStyleBible(productionId?: string, brandId?: string)
  */
 export function resolveStyleBible(opts: ResolveStyleBibleOptions): ResolvedStyleBible {
   const base = createDefaultStyleBible();
-  const provenance: Record<string, StyleProvenance> = { ...(base.provenanceMap || {}) };
+  const provenance: Record<string, StyleProvenance> = {};
+  for (const [key, value] of Object.entries(base.provenanceMap || {})) {
+    if (value) provenance[key] = value;
+  }
   const appliedOverrides: string[] = [];
 
   const merged: StyleBible = {
@@ -308,11 +311,11 @@ export function styleBibleFromVisualTreatment(
     },
     lighting: {
       keyMood: treatment.lightingMood,
+      contrast: treatment.contrast,
       atmosphere: treatment.atmosphere,
     },
     color: {
       palette: treatment.palette,
-      contrast: treatment.contrast,
       saturation: treatment.saturation,
     },
     references: treatment.references || [],

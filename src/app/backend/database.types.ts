@@ -422,9 +422,9 @@ export interface ResearchPatternRow {
 }
 
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
-  Row: Row;
-  Insert: Insert;
-  Update: Update;
+  Row: { [K in keyof Row]: Row[K] };
+  Insert: { [K in keyof Insert]: Insert[K] };
+  Update: { [K in keyof Update]: Update[K] };
   Relationships: [];
 };
 
@@ -456,7 +456,12 @@ export interface Database {
       research_patterns: Table<ResearchPatternRow>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      admin_set_access_status: {
+        Args: { target_user_id: string; new_status: string };
+        Returns: boolean;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

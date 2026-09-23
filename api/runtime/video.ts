@@ -1,3 +1,4 @@
+import { requireRuntimeUser } from './_requestAuth.js';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -756,6 +757,7 @@ async function generateHiggsfield(req: VideoClipRequest): Promise<{ videoUrl: st
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireRuntimeUser(req, res))) return;
   if (isIngestMediaRequest(req)) {
     return handleIngestMedia(req, res);
   }

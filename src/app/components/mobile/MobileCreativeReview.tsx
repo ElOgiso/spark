@@ -646,7 +646,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
                   <div className="p-3 rounded-lg bg-background border border-border">
                     <div className="flex items-center justify-between mb-1.5">
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">Full Spoken Script</p>
-                      {reviewScript.source !== "empty" && (
+                      {reviewScript.source !== "none" && (
                         <span className="text-[10px] font-mono text-muted-foreground">
                           Source: {reviewScript.source}
                         </span>
@@ -661,10 +661,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
                   </p>
                   <div className="space-y-2">
                     {reviewScript.chapters.map((ch) => (
-                      <div key={ch.index} className="p-3 rounded-lg bg-background border border-border space-y-1">
+                      <div key={ch.order} className="p-3 rounded-lg bg-background border border-border space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="px-1.5 py-0.5 rounded bg-accent/20 text-accent text-[11px] font-semibold">
-                            Chapter {ch.index}
+                            Chapter {ch.order}
                           </span>
                           {ch.timecode && (
                             <span className="text-[11px] font-mono text-muted-foreground">{ch.timecode}</span>
@@ -685,7 +685,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
                 <div className="p-3 rounded-lg bg-background border border-border">
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Spoken Script</p>
-                    {reviewScript.source !== "empty" && (
+                    {reviewScript.source !== "none" && (
                       <span className="text-[10px] font-mono text-muted-foreground">
                         Source: {reviewScript.source}
                       </span>

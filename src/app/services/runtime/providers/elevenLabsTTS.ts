@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../../backend/runtimeFetch";
 import { resolveProviderKey } from "../AIProviderOrchestrator";
 import { SPARK_EXECUTIVE_VOICE_PROFILE } from "../../geminiService";
 
@@ -137,7 +138,7 @@ export async function getElevenLabsVoices(customKey?: string): Promise<{ voices:
   // 1. Direct client fetch if key is present
   if (apiKey) {
     try {
-      const res = await fetch("https://api.elevenlabs.io/v1/voices", {
+      const res = await runtimeFetch("https://api.elevenlabs.io/v1/voices", {
         method: "GET",
         headers: {
           "xi-api-key": apiKey,
@@ -170,7 +171,7 @@ export async function getElevenLabsVoices(customKey?: string): Promise<{ voices:
 
   // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side ELEVENLABS_API_KEY)
   try {
-    const proxyRes = await fetch("/api/runtime/execute", {
+    const proxyRes = await runtimeFetch("/api/runtime/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -258,7 +259,7 @@ export async function designElevenLabsVoice(params: {
   if (!apiKey || !params.description?.trim()) return null;
 
   try {
-    const res = await fetch("https://api.elevenlabs.io/v1/text-to-voice/design", {
+    const res = await runtimeFetch("https://api.elevenlabs.io/v1/text-to-voice/design", {
       method: "POST",
       signal: params.signal,
       headers: {
@@ -312,7 +313,7 @@ export async function createDesignedElevenLabsVoice(params: {
   if (!apiKey || !params.generatedVoiceId) return null;
 
   try {
-    const res = await fetch("https://api.elevenlabs.io/v1/text-to-voice/create", {
+    const res = await runtimeFetch("https://api.elevenlabs.io/v1/text-to-voice/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -353,7 +354,7 @@ export async function generateElevenLabsSoundEffect(
     throw err;
   }
   try {
-    const res = await fetch("https://api.elevenlabs.io/v1/sound-generation", {
+    const res = await runtimeFetch("https://api.elevenlabs.io/v1/sound-generation", {
       method: "POST",
       signal,
       headers: {
@@ -418,7 +419,7 @@ export async function generateElevenLabsVoice(
   // 1. Direct client call if key available
   if (apiKey) {
     try {
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}`, {
+      const res = await runtimeFetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}`, {
         method: "POST",
         signal,
         headers: {
@@ -457,7 +458,7 @@ export async function generateElevenLabsVoice(
 
   // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side ELEVENLABS_API_KEY)
   try {
-    const proxyRes = await fetch("/api/runtime/execute", {
+    const proxyRes = await runtimeFetch("/api/runtime/execute", {
       method: "POST",
       signal,
       headers: { "Content-Type": "application/json" },

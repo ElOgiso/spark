@@ -299,15 +299,7 @@ export interface AssembleMasterFromClipsParams {
 
 export async function assembleMasterFromClips(
   params: AssembleMasterFromClipsParams
-): Promise<{
-  publicUrl?: string;
-  storagePath?: string;
-  mimeType: string;
-  extension: "mp4";
-  durationSec: number;
-  provider?: string;
-  error?: string;
-} | null> {
+): Promise<import("./sceneVideoMerger").SceneMergeResult | null> {
   const { mergeSceneVideos } = await import("./sceneVideoMerger");
   // Narrator-only VO bed. Do not treat SFX as the social master audio.
   return mergeSceneVideos({

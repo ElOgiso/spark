@@ -175,7 +175,7 @@ function createI2vAdapter(providerId: string, ports: AdapterPorts = {}): MediaPr
       };
     },
 
-    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+    extractUsage(job: ProviderJobStatus): import("../../economics/types").ProviderUsageReport | undefined {
       const raw = job.raw || {};
       const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : typeof raw.duration === "number" ? raw.duration : undefined;
       const resolution = typeof raw.resolution === "string" ? raw.resolution : undefined;

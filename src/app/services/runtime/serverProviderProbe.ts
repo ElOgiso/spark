@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../backend/runtimeFetch";
 /**
  * Server-side provider availability probe & cache.
  * Avoids treating server-only keyed providers (like Higgsfield) as unavailable in the browser.
@@ -36,7 +37,7 @@ export async function probeServerProviders(): Promise<Record<string, boolean>> {
 
   probePromise = (async () => {
     try {
-      const res = await fetch("/api/runtime/execute", { method: "GET" });
+      const res = await runtimeFetch("/api/runtime/execute", { method: "GET" });
       if (res.ok) {
         const data = await res.json();
         if (data && typeof data.providers === "object") {

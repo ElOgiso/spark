@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../backend/runtimeFetch";
 import {
   isEphemeralMediaUrl,
   isSparkStorageUrl,
@@ -57,7 +58,7 @@ export async function ingestRemoteMediaToSpark(params: {
   const url = String(params.url || "").trim();
   if (!url || !params.productionId || !params.storagePath) return null;
   try {
-    const res = await fetch("/api/runtime/video", {
+    const res = await runtimeFetch("/api/runtime/video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

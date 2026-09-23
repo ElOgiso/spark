@@ -196,7 +196,7 @@ export function deriveCraftPlanFromShot(
       ? `${shot.camera.cameraMovement} movement`
       : "locked-off camera",
     shot.camera?.lens ? `${shot.camera.lens} optic` : undefined,
-    shot.lighting?.lightingStyle ? `${shot.lighting.lightingStyle} lighting` : undefined,
+    shot.lighting?.atmosphere ? `${shot.lighting.atmosphere} lighting` : undefined,
   ]
     .filter(Boolean)
     .join(" | ");

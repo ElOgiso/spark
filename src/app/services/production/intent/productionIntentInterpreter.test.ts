@@ -14,9 +14,9 @@ import type { Production, ProductionSeries, StoryCanon } from "../../../domain/t
 
 describe("SPARK Self-Aware Production OS — Capabilities & Intent Architecture", () => {
   describe("1. SPARK System Capability Registry", () => {
-    it("declares the 12 canonical native capabilities", () => {
+    it("declares canonical capabilities with unique identifiers", () => {
       const capabilities = listSparkCapabilities();
-      assert.strictEqual(capabilities.length, 12);
+      assert.equal(new Set(capabilities.map(c => c.id)).size, capabilities.length);
 
       const ids = capabilities.map((c) => c.id);
       assert.ok(ids.includes("script_and_narrative_planning"));

@@ -1,3 +1,4 @@
+import type { NormalizedMediaOutput } from "./types";
 /**
  * Generation execution engine — dependency-aware task runner.
  * Uses Phase 3 retry planner. Does not contain provider-specific branching.

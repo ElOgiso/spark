@@ -191,6 +191,19 @@ export interface ShotSpec {
   cinematic?: ShotCinematicIntelligence;
   /** Phase 4 canonical craft plan (provider-neutral creative operations) */
   craftPlan?: CraftPlan;
+  /** Existing repair lineage, retained with the shot across rerouting. */
+  metadata?: {
+    repairedAt?: string;
+    routingAudit?: {
+      previousProvider?: string;
+      previousModel?: string;
+      newProvider?: string;
+      newModel?: string;
+      routingReason: string;
+      reason: string;
+      timestamp: string;
+    };
+  };
   observability?: {
     productionId?: string;
     promptCompilerVersion?: string;

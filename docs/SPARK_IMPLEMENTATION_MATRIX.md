@@ -2,6 +2,41 @@
 
 This master matrix maps every subsystem in the SPARK Media Operating System against the requirements outlined in the architectural specifications, comparing local codebase state, Vercel deployments, and Supabase connections.
 
+## Verified hardening checkpoint — 2026-09-23
+
+The historical matrix below is not a current production-readiness certification.
+The current Notion implementation program (`3e3c371711ff80d8ada6f0389a364476`)
+defines Phase 13 as Format Directors / Production Modes. Earlier documents use
+different phase numbers; do not implement duplicate systems from those labels.
+
+- Applied and verified `protect_profile_privileges` on the connected Spark database:
+  authenticated users cannot insert profiles or update role, super-admin status,
+  credits, approval status, or reviewer fields. Display/onboarding updates remain
+  available, and the existing privileged admin RPCs retain access.
+- Branch changes protect generation APIs with verified active sessions, check
+  supplied brand ownership, constrain credential-bearing destinations to provider
+  hosts, and refuse redirects. Existing browser generation callers send sessions.
+  Server deployments require `SUPABASE_URL` and a Supabase publishable/anon key
+  (the existing service-role configuration is also recognized).
+- Repaired canonical task/shot field reads, QC repair contracts, master assembly's
+  missing import and result type, review chapter rendering, and legacy spoken-beat
+  normalization. Insufficient spoken content still fails validation.
+- `npm test` discovers all test files, including the previously omitted modules,
+  and disables the default live database client. Configured repository tests use
+  explicit fakes. Typecheck and production build pass at this checkpoint.
+
+These branch changes have not been deployed. Remaining audited release blockers
+include server-authoritative credit reservation/settlement on the live generation
+path, OAuth token isolation and ownership hardening, durable job reconciliation,
+media-ingestion isolation, real publishing execution, and the remaining phased
+production work. Phase 12 modules existing in source does not establish that every
+live path uses them. Do not mark Phase 13–22 complete from this checkpoint.
+
+Official research: Higgsfield's [changelog](https://higgsfield.ai/creator-hub/changelog)
+describes Astra handling logic/orchestration while Higgsfield generates assets.
+Spark retains its existing provider-neutral production spine; this is not a reason
+to introduce another orchestration or provider integration system.
+
 ## Master Subsystem Matrix
 
 | Product Area | Notion Status | GitHub Status | Vercel Status | Supabase Status | Current Maturity | Notes |

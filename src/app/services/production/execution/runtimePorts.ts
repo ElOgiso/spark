@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../../backend/runtimeFetch";
 /**
  * Optional runtime ports that wrap existing Spark integrations.
  * Used by productionService — unit tests inject mocks instead.
@@ -61,7 +62,7 @@ export function createRuntimeAdapterPorts(): AdapterPorts {
     async submitMerge(request: ProviderGenerationRequest) {
       const videoUrls = request.inputs.filter((i) => i.role === "source_video" && i.url).map((i) => i.url!);
       if (!videoUrls.length) throw new Error("Merge requires source videos");
-      const res = await fetch("/api/runtime/video", {
+      const res = await runtimeFetch("/api/runtime/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

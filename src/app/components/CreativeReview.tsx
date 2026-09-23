@@ -1176,7 +1176,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                     <div className="p-4 rounded-lg bg-background border border-border">
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Full Spoken Script</p>
-                        {reviewScript.source !== "empty" && (
+                        {reviewScript.source !== "none" && (
                           <span className="text-[11px] font-mono text-muted-foreground">
                             Source: {reviewScript.source}
                           </span>
@@ -1191,10 +1191,10 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {reviewScript.chapters.map((ch) => (
-                        <div key={ch.index} className="p-3.5 rounded-lg bg-background border border-border space-y-1.5">
+                        <div key={ch.order} className="p-3.5 rounded-lg bg-background border border-border space-y-1.5">
                           <div className="flex items-center justify-between">
                             <span className="px-2 py-0.5 rounded bg-accent/20 text-accent text-xs font-semibold">
-                              Chapter {ch.index}
+                              Chapter {ch.order}
                             </span>
                             {ch.timecode && (
                               <span className="text-xs font-mono text-muted-foreground">{ch.timecode}</span>
@@ -1215,7 +1215,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                   <div className="p-4 rounded-lg bg-background border border-border">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">Spoken Script</p>
-                      {reviewScript.source !== "empty" && (
+                      {reviewScript.source !== "none" && (
                         <span className="text-[11px] font-mono text-muted-foreground">
                           Source: {reviewScript.source}
                         </span>

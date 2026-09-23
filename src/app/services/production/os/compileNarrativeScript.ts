@@ -573,6 +573,26 @@ export function normalizeToNarrativeScript(
     parsedJsonObj = null;
   }
 
+  // Preserve spoken beats from the existing ProductionBrief contract. Do not
+  // accidentally narrate serialized JSON (including camera directions) as prose.
+  if (parsedJsonObj && !Array.isArray(parsedJsonObj.chapters) && Array.isArray(parsedJsonObj.beats)) {
+    parsedJsonObj.chapters = parsedJsonObj.beats.map((beat: any, index: number) => {
+      const times = typeof beat.timecode === "string"
+        ? beat.timecode.match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/) : null;
+      const durationSec = typeof beat.durationSec === "number" ? beat.durationSec
+        : times ? Number(times[3]) * 60 + Number(times[4]) - Number(times[1]) * 60 - Number(times[2]) : undefined;
+      return {
+        id: `c${index + 1}`, order: index + 1,
+        title: beat.title || `Chapter ${index + 1}`,
+        spoken: typeof beat.spokenLines === "string" ? beat.spokenLines
+          : Array.isArray(beat.spokenLines) ? beat.spokenLines.join(" ") : "",
+        durationSec, job: beat.valueJob, audio: beat.audio,
+        visualIntent: beat.physicalAction || beat.cameraDirection || "",
+        setsUpNextChapterId: index < parsedJsonObj.beats.length - 1 ? `c${index + 2}` : undefined,
+      };
+    });
+  }
+
   // If JSON parsed into a structure with chapters or spoken content, normalize and return
   if (
     parsedJsonObj &&
@@ -589,7 +609,10 @@ export function normalizeToNarrativeScript(
     if (!parsedJsonObj.targetDurationSec) {
       parsedJsonObj.targetDurationSec = params.targetDurationSec;
     }
-    if (!parsedJsonObj.hook) {
+    if (typeof parsedJsonObj.hook === "string") {
+      parsedJsonObj.hook = { spoken: parsedJsonObj.hook, opensOnPayoff: false, backstoryDeferred: false };
+    }
+    if (!parsedJsonObj.hook || typeof parsedJsonObj.hook !== "object" || Array.isArray(parsedJsonObj.hook)) {
       parsedJsonObj.hook = {
         spoken: params.spark?.hook || parsedJsonObj.chapters?.[0]?.spoken || "",
         opensOnPayoff: true,

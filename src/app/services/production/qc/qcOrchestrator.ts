@@ -312,7 +312,7 @@ export function applyRepairToSpec(
         const updatedCraftPlan = {
           ...(s.craftPlan || {
             operations: [],
-            sequenceTiming: { startSec: 0, durationSec: s.durationSec || 5 },
+            shotId: s.id,
           }),
           operations: mergedOps,
         };

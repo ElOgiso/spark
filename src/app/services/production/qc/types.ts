@@ -56,6 +56,7 @@ export type QcFailureCode =
   | "action_missing"
   | "subject_missing"
   | "style_mismatch"
+  | "visual_treatment_mismatch"
   | "prompt_mismatch"
   | "duration_mismatch"
   | "aspect_ratio_mismatch"

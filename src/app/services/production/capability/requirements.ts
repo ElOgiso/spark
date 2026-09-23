@@ -193,7 +193,7 @@ export function capabilityRequirementsFromTask(
   }
 
   const durationSeconds = isVideo || modality === "audio"
-    ? (extra.durationSec ?? (task.durationSec != null && Number.isFinite(task.durationSec) ? Math.round(task.durationSec) : undefined))
+    ? (extra.durationSec ?? (task.outputRequirements?.durationSec != null && Number.isFinite(task.outputRequirements?.durationSec) ? Math.round(task.outputRequirements?.durationSec) : undefined))
     : undefined;
 
   return {
@@ -214,12 +214,12 @@ export function capabilityRequirementsFromTask(
     },
     output: {
       durationSeconds,
-      aspectRatio: extra.aspectRatio ?? task.aspectRatio,
-      resolution: extra.resolution ?? task.resolution,
+      aspectRatio: extra.aspectRatio ?? task.outputRequirements?.aspectRatio,
+      resolution: extra.resolution ?? task.outputRequirements?.resolutionClass,
     },
     preferences: {
       objective: "balanced",
-      preferredProviderId: task.selectedProvider || task.preferredProvider,
+      preferredProviderId: task.selectedProvider,
       preferredModelId: task.selectedModel,
     },
   };

@@ -120,9 +120,9 @@ export function prepareTaskInputs(params: {
     inputs,
     prompt: shot?.compiledPrompt || spec.creative?.intent || "",
     negativePrompt: shot?.compiledNegativePrompt,
-    aspectRatio: task.aspectRatio || shot?.aspectRatio || String(spec.project.aspectRatio),
-    durationSec: task.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : 5),
-    resolution: task.resolution || shot?.resolution,
+    aspectRatio: task.outputRequirements?.aspectRatio || shot?.aspectRatio || String(spec.project.aspectRatio),
+    durationSec: task.outputRequirements?.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : 5),
+    resolution: task.outputRequirements?.resolutionClass || shot?.resolution,
     model: task.selectedModel || shot?.model,
     provider,
   };

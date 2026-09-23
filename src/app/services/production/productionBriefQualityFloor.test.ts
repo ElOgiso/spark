@@ -17,7 +17,7 @@ function installMemoryLocalStorage() {
   return store;
 }
 
-test("ProductionBriefService.generateBrief succeeds with robust domain fallback even if LLM returns empty output", async () => {
+test("ProductionBriefService.generateBrief rejects insufficient model output instead of fabricating spoken content", async () => {
   installMemoryLocalStorage();
   ProductionGenerationGuard.setEnabled(true);
 
@@ -57,18 +57,9 @@ test("ProductionBriefService.generateBrief succeeds with robust domain fallback 
   };
 
   try {
-    const brief = await ProductionBriefService.generateBrief({
-      spark,
-      brand,
-      productionMode: "standard",
-      targetDurationSec: 15,
-    });
-
-    assert.ok(brief, "Brief should be generated");
-    assert.ok(brief.beats.length >= 3, "Should have at least 3 beats");
-    assert.ok(brief.beats[0].spokenLines.length > 0, "Beats should have spoken lines");
-    const totalWords = brief.beats.reduce((acc, b) => acc + b.spokenLines.split(/\s+/).filter(Boolean).length, 0);
-    assert.ok(totalWords >= 30, `Total words (${totalWords}) should satisfy 30 word floor`);
+    await assert.rejects(() => ProductionBriefService.generateBrief({
+      spark, brand, productionMode: "standard", targetDurationSec: 15,
+    }), /fullSpokenScript is too short/);
   } finally {
     ModelRouter.executeCategoryRequest = originalExecute;
   }

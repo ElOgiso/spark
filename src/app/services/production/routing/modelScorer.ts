@@ -81,7 +81,7 @@ export function scoreProvidersForShot(
       if (exact) return exact;
     }
     const matchingModality = providerCandidates.filter((c) => c.effective.modalities.includes(capabilityReq.modality));
-    const active = matchingModality.find((c) => c.adapterSupported) || matchingModality[0];
+    const active = matchingModality.find((c) => c.effective.adapterSupported) || matchingModality[0];
     return active || providerCandidates[0];
   };
 

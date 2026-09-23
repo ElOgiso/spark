@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../backend/runtimeFetch";
 import type { AICapabilityType, AIProviderId, ThinkingState } from "../../domain/types";
 import { isServerProviderAvailable, probeServerProviders } from "./serverProviderProbe";
 
@@ -45,7 +46,7 @@ export interface AIProviderPlugin {
 async function urlToDataUri(url: string): Promise<string> {
   if (!url || url.startsWith("data:")) return url;
   try {
-    const res = await fetch(url);
+    const res = await runtimeFetch(url);
     if (!res.ok) return url;
     const contentType = res.headers.get("content-type") || "image/jpeg";
     if (typeof Buffer !== "undefined") {
@@ -295,7 +296,7 @@ export class AIProviderOrchestrator {
             }
 
             try {
-              const res = await fetch(fetchUrl, { headers });
+              const res = await runtimeFetch(fetchUrl, { headers });
               if (!res.ok) {
                 throw new Error(`Veo download failed ${res.status}: ${fetchUrl.slice(0, 120)}`);
               }
@@ -390,7 +391,7 @@ export class AIProviderOrchestrator {
               if (!opName && !finalVideoUrl) {
                 const ep = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning`;
                 try {
-                  const videoRes = await fetch(ep, {
+                  const videoRes = await runtimeFetch(ep, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -417,7 +418,7 @@ export class AIProviderOrchestrator {
             // 2. Server proxy fallback if no opName or direct call failed
             if (!opName && !finalVideoUrl) {
               try {
-                const proxyRes = await fetch("/api/runtime/execute", {
+                const proxyRes = await runtimeFetch("/api/runtime/execute", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -452,14 +453,14 @@ export class AIProviderOrchestrator {
               try {
                 let pollData: any = null;
                 if (apiKey) {
-                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}`, {
+                  const pollRes = await runtimeFetch(`https://generativelanguage.googleapis.com/v1beta/${opName}`, {
                     headers: { "x-goog-api-key": apiKey },
                   });
                   if (pollRes.ok) pollData = await pollRes.json();
                 }
 
                 if (!pollData) {
-                  const proxyPoll = await fetch("/api/runtime/execute", {
+                  const proxyPoll = await runtimeFetch("/api/runtime/execute", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -537,7 +538,7 @@ export class AIProviderOrchestrator {
                     inlineParts.push({ data: b64Part, mimeType });
                   } else if (ref && (ref.startsWith("http://") || ref.startsWith("https://"))) {
                     try {
-                      const resp = await fetch(ref);
+                      const resp = await runtimeFetch(ref);
                       if (resp.ok) {
                         const buf = await resp.arrayBuffer();
                         const bytes = new Uint8Array(buf);
@@ -608,7 +609,7 @@ export class AIProviderOrchestrator {
                 restInlineParts.push({ data: b64Part, mimeType });
               } else if (ref && (ref.startsWith("http://") || ref.startsWith("https://"))) {
                 try {
-                  const resp = await fetch(ref);
+                  const resp = await runtimeFetch(ref);
                   if (resp.ok) {
                     const buf = await resp.arrayBuffer();
                     const bytes = new Uint8Array(buf);
@@ -637,7 +638,7 @@ export class AIProviderOrchestrator {
                 const targetImageAspect = options.aspectRatio === "16:9" ? "16:9" : "9:16";
                 restParts.push({ text: `Generate a ${targetImageAspect} high-contrast production image:\n${options.prompt}` });
 
-                const restRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+                const restRes = await runtimeFetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -674,7 +675,7 @@ export class AIProviderOrchestrator {
           // 2. Server proxy fallback for Native Gemini Image
           for (const modelId of candidateNativeModels) {
             try {
-              const proxyRes = await fetch("/api/runtime/execute", {
+              const proxyRes = await runtimeFetch("/api/runtime/execute", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -726,7 +727,7 @@ export class AIProviderOrchestrator {
           if (apiKey) {
             for (const ep of imagenEndpoints) {
               try {
-                const imgRes = await fetch(ep, {
+                const imgRes = await runtimeFetch(ep, {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -819,7 +820,7 @@ export class AIProviderOrchestrator {
           payload.systemInstruction = { parts: [{ text: options.systemInstruction }] };
         }
 
-        const proxyRes = await fetch("/api/runtime/execute", {
+        const proxyRes = await runtimeFetch("/api/runtime/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: "google", endpoint, payload }),
@@ -890,7 +891,7 @@ export class AIProviderOrchestrator {
               // 1. Direct client call
               if (apiKey) {
                 try {
-                  const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
+                  const imgRes = await runtimeFetch("https://api.openai.com/v1/images/generations", {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -923,7 +924,7 @@ export class AIProviderOrchestrator {
 
               // 2. Server proxy fallback via /api/runtime/execute
               try {
-                const proxyRes = await fetch("/api/runtime/execute", {
+                const proxyRes = await runtimeFetch("/api/runtime/execute", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -987,7 +988,7 @@ export class AIProviderOrchestrator {
 
         if (apiKey) {
           try {
-            const res = await fetch("https://api.openai.com/v1/chat/completions", {
+            const res = await runtimeFetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -1007,7 +1008,7 @@ export class AIProviderOrchestrator {
               return text;
             } else if (chatModel !== "gpt-4o") {
               // Failover to gpt-4o if newly aliased model returns 404 on legacy key
-              const failoverRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              const failoverRes = await runtimeFetch("https://api.openai.com/v1/chat/completions", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -1034,7 +1035,7 @@ export class AIProviderOrchestrator {
 
         // Server Proxy Fallback via /api/runtime/execute
 
-        const proxyRes = await fetch("/api/runtime/execute", {
+        const proxyRes = await runtimeFetch("/api/runtime/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1105,7 +1106,7 @@ export class AIProviderOrchestrator {
           try {
             for (const modelId of candidateModels) {
               try {
-                const res = await fetch("https://api.anthropic.com/v1/messages", {
+                const res = await runtimeFetch("https://api.anthropic.com/v1/messages", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -1159,7 +1160,7 @@ export class AIProviderOrchestrator {
 
         for (const modelId of candidateModels) {
           try {
-            const proxyRes = await fetch("/api/runtime/execute", {
+            const proxyRes = await runtimeFetch("/api/runtime/execute", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1233,7 +1234,7 @@ export class AIProviderOrchestrator {
           // 1. Direct call
           if (apiKey) {
             try {
-              const imgRes = await fetch("https://api.x.ai/v1/images/generations", {
+              const imgRes = await runtimeFetch("https://api.x.ai/v1/images/generations", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -1266,7 +1267,7 @@ export class AIProviderOrchestrator {
 
           // 2. Server proxy fallback
           try {
-            const proxyRes = await fetch("/api/runtime/execute", {
+            const proxyRes = await runtimeFetch("/api/runtime/execute", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1360,7 +1361,7 @@ export class AIProviderOrchestrator {
 
           if (apiKey) {
             try {
-              const ttsRes = await fetch("https://api.x.ai/v1/tts", {
+              const ttsRes = await runtimeFetch("https://api.x.ai/v1/tts", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -1385,7 +1386,7 @@ export class AIProviderOrchestrator {
 
           // Server proxy fallback for TTS
           try {
-            const proxyRes = await fetch("/api/runtime/execute", {
+            const proxyRes = await runtimeFetch("/api/runtime/execute", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1451,7 +1452,7 @@ export class AIProviderOrchestrator {
         if (apiKey) {
           // 1. Try official /v1/responses endpoint
           try {
-            const respRes = await fetch("https://api.x.ai/v1/responses", {
+            const respRes = await runtimeFetch("https://api.x.ai/v1/responses", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -1477,7 +1478,7 @@ export class AIProviderOrchestrator {
 
           // 2. Fallback to /v1/chat/completions
           try {
-            const res = await fetch("https://api.x.ai/v1/chat/completions", {
+            const res = await runtimeFetch("https://api.x.ai/v1/chat/completions", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -1503,7 +1504,7 @@ export class AIProviderOrchestrator {
 
         // Server Proxy Fallback via /api/runtime/execute
 
-        const proxyRes = await fetch("/api/runtime/execute", {
+        const proxyRes = await runtimeFetch("/api/runtime/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1621,7 +1622,7 @@ export class AIProviderOrchestrator {
             ? "/higgsfield-ai/soul/cinema"
             : "/higgsfield-ai/soul/v2/standard";
 
-          const proxyRes = await fetch("/api/runtime/execute", {
+          const proxyRes = await runtimeFetch("/api/runtime/execute", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

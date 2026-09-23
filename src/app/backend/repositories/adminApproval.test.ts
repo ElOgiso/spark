@@ -1,14 +1,30 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { approveUser, rejectUser, banUser } from "./adminRepository";
+import test, { type TestContext } from "node:test";
+// Exercise configured-mode authorization against a local fake, never the live DB.
+process.env.VITE_USE_SUPABASE = "true";
+process.env.VITE_SUPABASE_URL = "https://auth.spark.invalid";
+process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "test-publishable-key";
+const { approveUser, rejectUser, banUser } = await import("./adminRepository");
 
-test("adminRepository: non-admin caller is rejected immediately", async () => {
+function mockNonAdmin(t: TestContext) {
+  t.mock.method(globalThis, "fetch", async (input: any, init: any) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "auth.spark.invalid");
+    assert.equal(url.pathname, "/rest/v1/profiles");
+    assert.equal(init?.method || "GET", "GET", "Denied callers must never mutate data");
+    return new Response(JSON.stringify({ role: "executive", is_super_admin: false }));
+  });
+}
+
+test("adminRepository: non-admin caller is rejected immediately", async (t) => {
+  mockNonAdmin(t);
   const result = await approveUser("target-user-1", "random-non-admin-user");
   assert.ok(result.error);
   assert.match(result.error, /Unauthorized/i);
 });
 
-test("adminRepository: rejectUser and banUser reject non-admin caller immediately", async () => {
+test("adminRepository: rejectUser and banUser reject non-admin caller immediately", async (t) => {
+  mockNonAdmin(t);
   const rejectRes = await rejectUser("target-user-1", "non-admin");
   assert.ok(rejectRes.error);
   assert.match(rejectRes.error, /Unauthorized/i);

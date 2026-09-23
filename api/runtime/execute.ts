@@ -1,3 +1,5 @@
+import { providerEndpoint } from './_providerEndpoint.js';
+import { requireRuntimeUser } from './_requestAuth.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,6 +13,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  if (!(await requireRuntimeUser(req, res))) return;
 
   try {
     const { provider, endpoint, payload, method = 'POST' } = req.body;
@@ -27,7 +31,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'Content-Type': 'application/json'
     };
 
-    let targetUrl = endpoint;
+    let targetUrl: string;
+    try { targetUrl = providerEndpoint(provider, endpoint); }
+    catch { return res.status(400).json({ error: 'Unsupported provider endpoint' }); }
+    if (typeof method !== 'string' || !['GET', 'POST'].includes(method.toUpperCase())) {
+      return res.status(400).json({ error: 'Unsupported provider method' });
+    }
 
     if (provider === 'openai') {
       if (!keys.openai) return res.status(400).json({ error: 'OpenAI API Key not configured in Vercel environment variables (OPENAI_API_KEY).' });
@@ -132,6 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fetchOptions: RequestInit = {
       method: method.toUpperCase(),
+      redirect: 'error',
       headers,
     };
 

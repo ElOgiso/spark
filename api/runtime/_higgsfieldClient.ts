@@ -1,3 +1,4 @@
+import { providerEndpoint } from './_providerEndpoint.js';
 /**
  * Official Higgsfield AI REST Client (Server-side runtime only)
  * Auth: Authorization: Key {api_key_id}:{api_key_secret}
@@ -180,7 +181,8 @@ export async function submit(
     ? endpointPath
     : `${HIGGSFIELD_API_BASE}${endpointPath.startsWith("/") ? "" : "/"}${endpointPath}`;
 
-  const res = await fetch(url, {
+  const res = await fetch(providerEndpoint("higgsfield", url), {
+    redirect: "error",
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -262,7 +264,8 @@ export async function pollRequest(
       await sleep(pollInterval);
       pollInterval = Math.min(5000, Math.round(pollInterval * 1.25));
 
-      const res = await fetch(pollUrl, {
+      const res = await fetch(providerEndpoint("higgsfield", pollUrl), {
+        redirect: "error",
         method: "GET",
         headers: {
           Authorization: auth.authorization,

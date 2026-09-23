@@ -125,8 +125,6 @@ export function planRepairFromQc(params: {
       preserveShotIds: spec.scenes.flatMap((s) => s.shots.map((sh) => sh.id)),
       reason: `Repeated identical failure "${primaryFailure}" detected — stopping automated repair loop for human review`,
       withinBudget: true,
-      escalate: true,
-      strategy: "escalate_human_review",
       failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
       operations: [],
       ...buildPhase9RepairMeta({
@@ -157,8 +155,6 @@ export function planRepairFromQc(params: {
         ? `Max repair attempts (${maxAttempts}) exhausted`
         : "QC regeneration budget exhausted",
       withinBudget: false,
-      escalate: true,
-      strategy: "escalate_human_review",
       failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
       operations: [],
       ...buildPhase9RepairMeta({
@@ -312,7 +308,7 @@ export function planRepairFromQc(params: {
     routingReason,
     rerouteDecision,
     operations,
-    estimatedCostUsd,
+    estimatedCostUsd: estimatedCostUsd ?? undefined,
     failureHistory: primaryFailure ? [...failureHistory, primaryFailure] : failureHistory,
     strategyChange: undefined,
     /** Legacy compatibility hint only — canonical repair is strictly CraftPlan / CraftOperations */

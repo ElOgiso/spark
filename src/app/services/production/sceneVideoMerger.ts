@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../backend/runtimeFetch";
 /**
  * Scene video merger — server ffmpeg concat only.
  * Canvas / MediaRecorder is kept unused and must never be a master success.
@@ -51,7 +52,7 @@ export async function mergeSceneVideos(
 
   let serverResp: Response;
   try {
-    serverResp = await fetch("/api/runtime/video", {
+    serverResp = await runtimeFetch("/api/runtime/video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

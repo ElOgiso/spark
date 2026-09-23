@@ -49,7 +49,7 @@ import {
 } from "./preproduction/assetBibleFromBrief";
 import { ensureAssetBibleAssets } from "./preproduction/ensureAssetBibleAssets";
 import { resolveDirectorSceneScript } from "./directorScriptAuthority";
-import { collectSparkShotClipUrls } from "./sparkShotClips";
+import { collectSparkShotClipUrls, isSparkShotClipUrl } from "./sparkShotClips";
 import { resolveProductionMode } from "./resolveProductionMode";
 import {
   resolveGenerationSettings,

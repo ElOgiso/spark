@@ -126,7 +126,7 @@ describe("official i2v frame 1 contract", () => {
     assert.doesNotMatch(pas, /referenceImageUrl:\s*realGridUrl/);
     assert.doesNotMatch(pas, /firstFrameUrl:\s*continuityPlan\.firstFrameUrl/);
     assert.match(pas, /resolveOfficialI2vClipFrames/);
-    assert.match(pas, /video\/shot-\$\{globalSceneNum\}\.mp4/);
+    assert.match(pas, /video\/shot-\$\{subclipIndexNum\}\.mp4/);
     assert.doesNotMatch(orch, /image:\s*\{\s*uri:\s*options\.referenceImageUrl/);
     assert.doesNotMatch(orch, /reference_image_urls\s*=\s*faceRefs/);
     assert.match(orch, /instances:\s*veoBuilt\.instances/);

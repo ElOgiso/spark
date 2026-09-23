@@ -539,7 +539,7 @@ export function isCapabilityDeficiency(
 
   // 3. Start/End frame / temporal continuity: does shot require start and end frames?
   if ((code === "start_state_mismatch" || code === "end_state_mismatch" || code === "handoff_failure") && shot) {
-    if (shot.firstFrameUrl && shot.lastFrameUrl && !profile.temporal?.supportsStartAndEndFrame) {
+    if (shot.references.firstFrameUrl && shot.references.lastFrameUrl && !profile.temporal?.supportsStartAndEndFrame) {
       return {
         deficient: true,
         requiredCapability: "start_and_end_frame",
@@ -549,12 +549,12 @@ export function isCapabilityDeficiency(
   }
 
   // 4. Camera control: does shot demand camera motion when provider has none?
-  if ((code === "camera_mismatch" || code === "camera_failure") && shot?.cameraMovement) {
+  if ((code === "camera_mismatch" || code === "camera_failure") && shot?.camera?.cameraMovement) {
     if (profile.camera?.controlLevel === "none") {
       return {
         deficient: true,
         requiredCapability: "camera_control",
-        reason: `Shot requires camera movement ${shot.cameraMovement} but provider has no camera control`,
+        reason: `Shot requires camera movement ${shot.camera.cameraMovement} but provider has no camera control`,
       };
     }
   }

@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../backend/runtimeFetch";
 import { PromptContextBuilder } from "./promptContextBuilder";
 import { ModelRouter } from "./runtime/modelRouter";
 import { AIProviderOrchestrator, resolveProviderKey } from "./runtime/AIProviderOrchestrator";
@@ -315,7 +316,7 @@ async function generateOpenAIVoice(text: string, voice: string = SPARK_EXECUTIVE
   if (apiKey) {
     // Attempt 1: gpt-4o-mini-tts with instructions
     try {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      const res = await runtimeFetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -349,7 +350,7 @@ async function generateOpenAIVoice(text: string, voice: string = SPARK_EXECUTIVE
     // Attempt 2: Fallback to tts-1-hd / tts-1 (no instructions field)
     for (const model of SPARK_EXECUTIVE_VOICE_PROFILE.openAiTtsFallbackModels) {
       try {
-        const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        const res = await runtimeFetch("https://api.openai.com/v1/audio/speech", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -383,7 +384,7 @@ async function generateOpenAIVoice(text: string, voice: string = SPARK_EXECUTIVE
 
   // 2. Server proxy fallback via /api/runtime/execute (uses Vercel server-side OPENAI_API_KEY)
   try {
-    const proxyRes = await fetch("/api/runtime/execute", {
+    const proxyRes = await runtimeFetch("/api/runtime/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -405,7 +406,7 @@ async function generateOpenAIVoice(text: string, voice: string = SPARK_EXECUTIVE
       if (data.audioBase64) return `data:audio/mpeg;base64,${data.audioBase64}`;
     } else {
       // Proxy fallback with tts-1-hd
-      const proxyFallback = await fetch("/api/runtime/execute", {
+      const proxyFallback = await runtimeFetch("/api/runtime/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -541,7 +542,7 @@ async function generateGeminiVoice(text: string, voiceName: string = SPARK_EXECU
     // 1b. Direct REST API fallback for gemini-3.1-flash-tts-preview
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${SPARK_EXECUTIVE_VOICE_PROFILE.ttsModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(endpoint, {
+      const res = await runtimeFetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -590,7 +591,7 @@ async function generateGeminiVoice(text: string, voiceName: string = SPARK_EXECU
 
   // 2. Server Proxy Fallback via /api/runtime/execute (uses Vercel server-side GEMINI_API_KEY)
   try {
-    const proxyRes = await fetch("/api/runtime/execute", {
+    const proxyRes = await runtimeFetch("/api/runtime/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../../backend/runtimeFetch";
 /**
  * Production I2V request: sends first-frame, end-frame, and identity refs
  * to /api/runtime/video so last-frame continuity actually reaches the adapter.
@@ -142,7 +143,7 @@ export async function requestProductionVideoClip(
   assertVideoRequestExecutable(params);
 
 
-  const res = await fetch("/api/runtime/video", {
+  const res = await runtimeFetch("/api/runtime/video", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

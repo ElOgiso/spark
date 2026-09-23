@@ -845,10 +845,14 @@ describe("Phase 6 — Official HF Docs Alignment & Guards", () => {
 
   test("execute.ts differentiates video requests and returns video URL", async () => {
     process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+    process.env.SUPABASE_URL = "https://auth.spark.invalid";
+    process.env.SUPABASE_PUBLISHABLE_KEY = "test-publishable";
     const handler = (await import("./execute.js")).default;
 
     globalThis.fetch = async (url: any, init?: any) => {
       const u = String(url);
+      if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "test-user" }), { status: 200 });
+      if (u.includes("/rest/v1/profiles")) return new Response(JSON.stringify({ access_status: "active" }), { status: 200 });
       if (u.includes("/bytedance/seedance-2.5/image-to-video")) {
         return {
           ok: true,
@@ -874,6 +878,7 @@ describe("Phase 6 — Official HF Docs Alignment & Guards", () => {
     let resJson: any = null;
     const mockReq: any = {
       method: "POST",
+      headers: { authorization: "Bearer test-session" },
       body: {
         provider: "higgsfield",
         endpoint: "/bytedance/seedance-2.5/image-to-video",
@@ -904,10 +909,14 @@ describe("Phase 6 — Official HF Docs Alignment & Guards", () => {
 
   test("execute.ts returns HTTP 500 when video poll completes without URL", async () => {
     process.env.HIGGSFIELD_API_KEY = "hf_id:hf_secret";
+    process.env.SUPABASE_URL = "https://auth.spark.invalid";
+    process.env.SUPABASE_PUBLISHABLE_KEY = "test-publishable";
     const handler = (await import("./execute.js")).default;
 
     globalThis.fetch = async (url: any) => {
       const u = String(url);
+      if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "test-user" }), { status: 200 });
+      if (u.includes("/rest/v1/profiles")) return new Response(JSON.stringify({ access_status: "active" }), { status: 200 });
       if (u.includes("/bytedance/seedance-2.5/image-to-video")) {
         return {
           ok: true,
@@ -933,6 +942,7 @@ describe("Phase 6 — Official HF Docs Alignment & Guards", () => {
     let resJson: any = null;
     const mockReq: any = {
       method: "POST",
+      headers: { authorization: "Bearer test-session" },
       body: {
         provider: "higgsfield",
         endpoint: "/bytedance/seedance-2.5/image-to-video",

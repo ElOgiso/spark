@@ -17,6 +17,8 @@ export interface ReviewScriptChapter {
   title: string;
   durationSec?: number;
   spoken: string;
+  timecode?: string;
+  visual?: string;
 }
 
 export interface ResolvedReviewScript {
@@ -52,6 +54,8 @@ export function resolveReviewScript(params: {
           title: c.title || `Chapter ${i + 1}`,
           durationSec: typeof c.durationSec === "number" ? c.durationSec : undefined,
           spoken: typeof c.spoken === "string" ? c.spoken : "",
+          timecode: typeof c.timecode === "string" ? c.timecode : undefined,
+          visual: typeof c.visual === "string" ? c.visual : undefined,
         }))
       : [];
     return {
@@ -79,6 +83,8 @@ export function resolveReviewScript(params: {
           title: c.title || `Chapter ${i + 1}`,
           durationSec: typeof c.durationSec === "number" ? c.durationSec : undefined,
           spoken: typeof c.spoken === "string" ? c.spoken : "",
+          timecode: typeof c.timecode === "string" ? c.timecode : undefined,
+          visual: typeof c.visual === "string" ? c.visual : undefined,
         })),
         source: "narrativeScript.chapters",
         hasScript: true,
@@ -101,6 +107,8 @@ export function resolveReviewScript(params: {
             title: c.title || `Chapter ${i + 1}`,
             durationSec: typeof c.durationSec === "number" ? c.durationSec : undefined,
             spoken: typeof c.spoken === "string" ? c.spoken : "",
+          timecode: typeof c.timecode === "string" ? c.timecode : undefined,
+          visual: typeof c.visual === "string" ? c.visual : undefined,
           }))
         : [];
       return {
@@ -126,6 +134,8 @@ export function resolveReviewScript(params: {
             title: c.title || `Chapter ${i + 1}`,
             durationSec: typeof c.durationSec === "number" ? c.durationSec : undefined,
             spoken: typeof c.spoken === "string" ? c.spoken : "",
+          timecode: typeof c.timecode === "string" ? c.timecode : undefined,
+          visual: typeof c.visual === "string" ? c.visual : undefined,
           })),
           source: "narrativeScriptObj",
           hasScript: true,

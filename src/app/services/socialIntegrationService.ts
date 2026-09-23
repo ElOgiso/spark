@@ -1,3 +1,4 @@
+import { runtimeFetch } from "../backend/runtimeFetch";
 /**
  * Spark Media OS — Social Platform Connector Framework
  * 
@@ -458,7 +459,7 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
     const config = OAUTH_CONFIGS[this.platform];
 
     // Server-side exchange — no client secret in browser
-    const res = await fetch("/api/auth/google/callback", {
+    const res = await runtimeFetch("/api/auth/google/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -507,7 +508,7 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
   async fetchProfileMetadata(accessToken: string): Promise<SocialProfileMetadata> {
     // Prefer server proxy (no CORS issues)
     try {
-      const proxy = await fetch("/api/runtime/social-profile", {
+      const proxy = await runtimeFetch("/api/runtime/social-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform: this.platform, access_token: accessToken }),
@@ -520,7 +521,7 @@ class YouTubePlatformAdapter implements ISocialPlatformAdapter {
       /* fall through to direct */
     }
 
-    const res = await fetch(
+    const res = await runtimeFetch(
       "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings,status&mine=true",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
@@ -638,7 +639,7 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
     }
 
     // Server-side exchange — no client secret in browser
-    const res = await fetch("/api/auth/x/callback", {
+    const res = await runtimeFetch("/api/auth/x/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -692,7 +693,7 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
 
   async fetchProfileMetadata(accessToken: string): Promise<SocialProfileMetadata> {
     try {
-      const proxy = await fetch("/api/runtime/social-profile", {
+      const proxy = await runtimeFetch("/api/runtime/social-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform: this.platform, access_token: accessToken }),
@@ -705,7 +706,7 @@ class XPlatformAdapter implements ISocialPlatformAdapter {
       /* fall through */
     }
 
-    const res = await fetch(
+    const res = await runtimeFetch(
       "https://api.twitter.com/2/users/me?user.fields=profile_image_url,public_metrics,verified,description,created_at,url,location",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
@@ -968,7 +969,7 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
 
   async loadClientConfig(): Promise<void> {
     try {
-      const res = await fetch("/api/auth/config");
+      const res = await runtimeFetch("/api/auth/config");
       if (res.ok) {
         const data = await res.json();
         if (data.googleClientId) {
@@ -1116,7 +1117,7 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
         const isGoogle = pKey.includes("youtube") || platform.toLowerCase().includes("youtube");
         const endpoint = isGoogle ? "/api/auth/google/refresh" : "/api/auth/x/refresh";
         const brandId = getBrandWorkspaceId();
-        const res = await fetch(endpoint, {
+        const res = await runtimeFetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1161,7 +1162,7 @@ export class SocialConnectorFramework implements ITokenStore, IOAuthManager, IPr
 
   async refreshToken(provider: SocialProvider, refreshToken: string, workspaceId: string): Promise<any> {
     const endpoint = (provider === "YouTube Shorts") ? "/api/auth/google/refresh" : "/api/auth/x/refresh";
-    const res = await fetch(endpoint, {
+    const res = await runtimeFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken, workspace_id: workspaceId }),
@@ -1393,7 +1394,7 @@ export async function ensureValidGoogleAccess(
   console.log(`[ensureValidGoogleAccess] Performing silent OAuth refresh for Google/YouTube...`);
   try {
     const brandId = getBrandWorkspaceId();
-    const res = await fetch("/api/auth/google/refresh", {
+    const res = await runtimeFetch("/api/auth/google/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

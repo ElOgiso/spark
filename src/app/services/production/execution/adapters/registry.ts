@@ -116,7 +116,7 @@ function createModelRouterVideoAdapter(providerId: string, ports: AdapterPorts =
         rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
       };
     },
-    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+    extractUsage(job: ProviderJobStatus): import("../../economics/types").ProviderUsageReport | undefined {
       const raw = job.raw || {};
       const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : undefined;
       const resolution = typeof raw.resolution === "string" ? raw.resolution : undefined;

@@ -112,7 +112,7 @@ export function createImageAdapter(
         rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
       };
     },
-    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+    extractUsage(job: ProviderJobStatus): import("../../economics/types").ProviderUsageReport | undefined {
       const raw = job.raw || {};
       const imageCount = typeof raw.imageCount === "number" ? raw.imageCount : 1;
       const resolution = typeof raw.resolution === "string" ? raw.resolution : undefined;
@@ -218,7 +218,7 @@ export function createVoiceAdapter(
         rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
       };
     },
-    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+    extractUsage(job: ProviderJobStatus): import("../../economics/types").ProviderUsageReport | undefined {
       const raw = job.raw || {};
       const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : undefined;
       const characterCount = typeof raw.characterCount === "number" ? raw.characterCount : typeof raw.characters === "number" ? raw.characters : undefined;
@@ -319,7 +319,7 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
         rawStatus: typeof job.status === "string" ? job.status : String(job.status || ""),
       };
     },
-    extractUsage(job: ProviderJobStatus): import("../../../economics/types").ProviderUsageReport | undefined {
+    extractUsage(job: ProviderJobStatus): import("../../economics/types").ProviderUsageReport | undefined {
       const raw = job.raw || {};
       const durationSec = typeof raw.durationSec === "number" ? raw.durationSec : undefined;
       if (durationSec === undefined) return undefined;
