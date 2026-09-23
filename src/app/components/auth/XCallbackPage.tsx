@@ -101,6 +101,8 @@ export function XCallbackPage() {
           channelId: profile.userId || "",
           verified: true,
           status: "Connected" as any,
+          scopes: [],
+          permissionsGranted: [],
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,

@@ -104,6 +104,8 @@ export function GoogleCallbackPage() {
           channelId: profile.channelId || "",
           verified: true,
           status: "Connected" as any,
+          scopes: [],
+          permissionsGranted: [],
           connectedAt: now,
           lastSyncAt: now,
           brand_id: brandId || undefined,

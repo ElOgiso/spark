@@ -454,16 +454,15 @@ export class SupabaseCreditRepository implements ICreditRepository {
       throw new Error(`Credit settlement failed: ${error.message || String(error)}`);
     }
     const settlement: CreditSettlement = {
-      id: data.id,
       reservationId: data.id,
       userId: data.user_id,
       generationId: data.generation_id,
-      actualAmount: data.consumed_amount || params.actualAmount,
-      status: "COMPLETED",
-      idempotencyKey: params.idempotencyKey,
-      actualProviderCostUsd: params.actualProviderCostUsd,
-      metadata: params.metadata || {},
-      createdAt: data.created_at || new Date().toISOString(),
+      reservedCredits: data.amount || params.actualAmount,
+      consumedCredits: data.consumed_amount || params.actualAmount,
+      releasedCredits: data.released_amount || 0,
+      actualProviderCostUsd: params.actualProviderCostUsd || 0,
+      status: "CONSUMED",
+      settledAt: data.updated_at || new Date().toISOString(),
     };
     return { settlement, idempotentReplay: Boolean(data.idempotent_replay) };
   }
