@@ -673,3 +673,22 @@ describe("asset-to-video wiring & traceability", () => {
   });
 });
 
+
+describe("canonical executor task attachment", () => {
+  it("returns newly planned task state on shots that had no attached tasks", async () => {
+    const plan = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 });
+    assert.ok(plan.spec);
+    const spec = structuredClone(plan.spec!);
+    for (const shot of spec.scenes.flatMap(scene => scene.shots)) shot.generationTasks = [];
+    const result = await executeProduction(spec, {
+      dryRun: true, ports: mockPorts(), sleep: async () => undefined,
+      measureOutput: async () => ({ width: 1080, height: 1920, fileSizeBytes: 50000 }),
+    });
+    for (const shot of result.spec.scenes.flatMap(scene => scene.shots)) {
+      const expected = result.tasks.filter(task => task.shotId === shot.id);
+      assert.ok(expected.length > 0);
+      assert.deepEqual(shot.generationTasks, expected);
+    }
+    assert.ok(spec.scenes.every(scene => scene.shots.every(shot => shot.generationTasks?.length === 0)));
+  });
+});

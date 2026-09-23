@@ -7,7 +7,7 @@ import { describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { GenerationTask } from "./specification/generationTask";
 import type { ProductionSpec } from "./specification/productionSpec";
-import { planGenerationTasks } from "./generation/generationPlanner";
+import { planGenerationTasks, resolveGenerationTasks } from "./generation/generationPlanner";
 import { orchestrateIdeaToProductionSpec } from "./intelligence/productionOrchestrator";
 import { ProductionAssetService } from "./productionAssetService";
 import {
@@ -421,5 +421,46 @@ describe("Phase 2 generate spine bridge", () => {
     } finally {
       generateMock.mock.restore();
     }
+  });
+});
+
+describe("shared generation task selection", () => {
+  it("preserves one attached task and fills missing production tasks in both paths", () => {
+    const spec = makeTinySpec();
+    spec.audio.hasNarration = true;
+    const planned = planGenerationTasks(spec);
+    const shot = spec.scenes[0].shots[0];
+    const saved = { ...planned.find(t => t.shotId === shot.id)!, retryCount: 2, selectedModel: "saved-model" };
+    shot.generationTasks = [saved];
+    const bridge = ensureGenerationTasks(spec);
+    const canonical = resolveGenerationTasks(spec);
+    assert.deepEqual(bridge.tasks, canonical.tasks);
+    assert.equal(canonical.tasks.find(t => t.id === saved.id)?.selectedModel, "saved-model");
+    assert.equal(canonical.tasks.find(t => t.id === saved.id)?.retryCount, 2);
+    assert.ok(canonical.tasks.some(t => t.kind === "voice"));
+    assert.ok(canonical.tasks.some(t => t.kind === "merge"));
+    for (const s of canonical.spec.scenes.flatMap(scene => scene.shots)) {
+      assert.deepEqual(s.generationTasks, canonical.tasks.filter(t => t.shotId === s.id));
+    }
+    assert.deepEqual(shot.generationTasks, [saved], "input spec must not be mutated");
+  });
+
+  it("rejects stale and cross-production attachments and deduplicates repeated IDs", () => {
+    const spec = makeTinySpec();
+    const planned = planGenerationTasks(spec);
+    const shot = spec.scenes[0].shots[0];
+    const saved = planned.find(t => t.shotId === shot.id)!;
+    shot.generationTasks = [saved, saved, { ...saved, id: "stale", shotId: "deleted-shot" }, { ...saved, id: "foreign", productionId: "other-production" }];
+    const { tasks } = resolveGenerationTasks(spec);
+    assert.equal(tasks.filter(t => t.id === saved.id).length, 1);
+    assert.ok(!tasks.some(t => t.id === "stale" || t.id === "foreign"));
+  });
+
+  it("explicit replanning ignores attached task overrides", () => {
+    const spec = makeTinySpec();
+    const planned = planGenerationTasks(spec);
+    const shot = spec.scenes[0].shots[0];
+    shot.generationTasks = [{ ...planned.find(t => t.shotId === shot.id)!, selectedModel: "saved-model" }];
+    assert.deepEqual(resolveGenerationTasks(spec, false).tasks, planGenerationTasks(spec));
   });
 });

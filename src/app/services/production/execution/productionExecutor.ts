@@ -5,9 +5,8 @@
 
 import type { ProductionSpec } from "../specification/productionSpec";
 import { validateProductionSpec } from "../specification";
-import { planGenerationTasks, attachGenerationTasksToSpec } from "../generation/generationPlanner";
+import { resolveGenerationTasks, attachGenerationTasksToSpec } from "../generation/generationPlanner";
 import { buildProductionDag } from "../dag/productionDag";
-import type { GenerationTask } from "../specification/generationTask";
 import {
   GenerationExecutionEngine,
   type ExecutionEngineOptions,
@@ -61,27 +60,8 @@ export async function executeProduction(
     };
   }
 
-  let tasks: GenerationTask[] = [];
-  if (options.preferExistingTasks !== false) {
-    tasks = spec.scenes.flatMap((s) => s.shots.flatMap((sh) => sh.generationTasks || []));
-    // Include production-level tasks (voice/merge) if attached on any shot only —
-    // prefer full planGenerationTasks when incomplete
-    const hasMerge = tasks.some((t) => t.kind === "merge");
-    const hasKeyframe = tasks.some((t) => t.kind === "keyframe");
-    if (!hasMerge || !hasKeyframe || tasks.length < 2) {
-      tasks = planGenerationTasks(spec);
-    }
-  } else {
-    tasks = planGenerationTasks(spec);
-  }
-
-  // Dedupe by id
-  const seen = new Set<string>();
-  tasks = tasks.filter((t) => {
-    if (seen.has(t.id)) return false;
-    seen.add(t.id);
-    return true;
-  });
+  const resolved = resolveGenerationTasks(spec, options.preferExistingTasks !== false);
+  const tasks = resolved.tasks;
 
   const dag = buildProductionDag(spec, tasks);
   const engine = new GenerationExecutionEngine(options);
@@ -89,8 +69,9 @@ export async function executeProduction(
 
   // Attach updated task statuses back onto a cloned spec (non-destructive to callers who keep old)
   const taskById = new Map(result.tasks.map((t) => [t.id, t]));
+  const attachedSpec = attachGenerationTasksToSpec(spec, result.tasks);
   const updatedSpec: ProductionSpec = {
-    ...attachGenerationTasksToSpec(spec, result.tasks),
+    ...attachedSpec,
     project: {
       ...spec.project,
       status:
@@ -101,7 +82,7 @@ export async function executeProduction(
             : spec.project.status,
       updatedAt: new Date().toISOString(),
     },
-    scenes: spec.scenes.map((scene) => ({
+    scenes: attachedSpec.scenes.map((scene) => ({
       ...scene,
       shots: scene.shots.map((shot) => ({
         ...shot,

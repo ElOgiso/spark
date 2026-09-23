@@ -270,6 +270,32 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
   }));
 }
 
+/** One task selection policy for the live bridge and canonical executor. */
+export function resolveGenerationTasks(
+  spec: ProductionSpec,
+  preferExistingTasks = true
+): { spec: ProductionSpec; tasks: GenerationTask[] } {
+  const planned = planGenerationTasks(spec);
+  const byId = new Map(planned.map(task => [task.id, task]));
+  if (preferExistingTasks) {
+    const shotIds = new Set(spec.scenes.flatMap(scene => scene.shots.map(shot => shot.id)));
+    for (const scene of spec.scenes) {
+      for (const shot of scene.shots) {
+        for (const task of shot.generationTasks || []) {
+          if (task.productionId !== spec.project.id || (task.shotId && !shotIds.has(task.shotId))) continue;
+          const current = byId.get(task.id);
+          // A reused ID must still describe the same work; never graft an old
+          // scene's state onto a newly planned task.
+          if (current && (current.kind !== task.kind || current.shotId !== task.shotId || current.sceneId !== task.sceneId)) continue;
+          byId.set(task.id, task);
+        }
+      }
+    }
+  }
+  const tasks = [...byId.values()];
+  return { tasks, spec: attachGenerationTasksToSpec(spec, tasks) };
+}
+
 export function attachGenerationTasksToSpec(
   spec: ProductionSpec,
   tasks?: GenerationTask[]

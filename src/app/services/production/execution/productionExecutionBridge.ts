@@ -25,8 +25,7 @@ import {
   sceneSpecToProductionScene,
 } from "../specification/adapters";
 import {
-  attachGenerationTasksToSpec,
-  planGenerationTasks,
+  resolveGenerationTasks,
 } from "../generation/generationPlanner";
 import {
   ProductionAssetService,
@@ -198,26 +197,7 @@ export function ensureGenerationTasks(spec: ProductionSpec): {
   spec: ProductionSpec;
   tasks: GenerationTask[];
 } {
-  const shotIds = new Set(
-    spec.scenes.flatMap((s) => (s.shots || []).map((sh) => sh.id))
-  );
-  const attached = spec.scenes.flatMap((s) =>
-    (s.shots || []).flatMap((sh) => sh.generationTasks || [])
-  );
-  // Ignore stale attached tasks that reference shot ids no longer present on the Spec
-  const attachedValid = attached.filter((t) => !t.shotId || shotIds.has(t.shotId));
-  const planned = planGenerationTasks(spec);
-  const tasks = attachedValid.length >= 2 ? attachedValid : planned;
-  const nextSpec = attachGenerationTasksToSpec(spec, tasks);
-  // Re-plan against the attached spec so production-level voice/merge tasks remain present
-  // without reintroducing orphaned pre-rename shot tasks.
-  const refreshed = planGenerationTasks(nextSpec);
-  const byId = new Map<string, GenerationTask>();
-  for (const t of refreshed) byId.set(t.id, t);
-  for (const t of tasks) {
-    if (!t.shotId || shotIds.has(t.shotId)) byId.set(t.id, t);
-  }
-  return { spec: nextSpec, tasks: Array.from(byId.values()) };
+  return resolveGenerationTasks(spec);
 }
 
 /** Retries keep the same ShotSpec.id — only attempt metadata changes. */
