@@ -278,16 +278,24 @@ export function resolveGenerationTasks(
   const planned = planGenerationTasks(spec);
   const byId = new Map(planned.map(task => [task.id, task]));
   if (preferExistingTasks) {
-    const shotIds = new Set(spec.scenes.flatMap(scene => scene.shots.map(shot => shot.id)));
+    const shotScenes = new Map(spec.scenes.flatMap(scene => scene.shots.map(shot => [shot.id, scene.id] as const)));
+    const sceneIds = new Set(spec.scenes.map(scene => scene.id));
+    const retain = (task: GenerationTask) => {
+      if (task.productionId !== spec.project.id) return;
+      if (task.sceneId && !sceneIds.has(task.sceneId)) return;
+      if (task.shotId && (!shotScenes.has(task.shotId) || (task.sceneId && shotScenes.get(task.shotId) !== task.sceneId))) return;
+      const current = byId.get(task.id);
+      // A reused ID must still describe the same work.
+      if (current && (current.kind !== task.kind || current.shotId !== task.shotId || current.sceneId !== task.sceneId)) return;
+      byId.set(task.id, task);
+    };
+    for (const task of spec.productionTasks || []) {
+      if (!task.shotId) retain(task);
+    }
     for (const scene of spec.scenes) {
       for (const shot of scene.shots) {
         for (const task of shot.generationTasks || []) {
-          if (task.productionId !== spec.project.id || (task.shotId && !shotIds.has(task.shotId))) continue;
-          const current = byId.get(task.id);
-          // A reused ID must still describe the same work; never graft an old
-          // scene's state onto a newly planned task.
-          if (current && (current.kind !== task.kind || current.shotId !== task.shotId || current.sceneId !== task.sceneId)) continue;
-          byId.set(task.id, task);
+          if (!task.shotId || task.shotId === shot.id) retain(task);
         }
       }
     }
@@ -311,6 +319,7 @@ export function attachGenerationTasksToSpec(
 
   return {
     ...spec,
+    productionTasks: all.filter(task => !task.shotId),
     scenes: spec.scenes.map((scene) => ({
       ...scene,
       shots: scene.shots.map((shot) => ({

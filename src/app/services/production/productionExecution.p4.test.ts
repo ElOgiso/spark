@@ -689,6 +689,8 @@ describe("canonical executor task attachment", () => {
       assert.ok(expected.length > 0);
       assert.deepEqual(shot.generationTasks, expected);
     }
+    assert.deepEqual(result.spec.productionTasks, result.tasks.filter(task => !task.shotId));
+    assert.ok(result.spec.productionTasks?.some(task => task.kind === "merge"));
     assert.ok(spec.scenes.every(scene => scene.shots.every(shot => shot.generationTasks?.length === 0)));
   });
 });

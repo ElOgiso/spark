@@ -7,7 +7,7 @@ import { describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { GenerationTask } from "./specification/generationTask";
 import type { ProductionSpec } from "./specification/productionSpec";
-import { planGenerationTasks, resolveGenerationTasks } from "./generation/generationPlanner";
+import { attachGenerationTasksToSpec, planGenerationTasks, resolveGenerationTasks } from "./generation/generationPlanner";
 import { orchestrateIdeaToProductionSpec } from "./intelligence/productionOrchestrator";
 import { ProductionAssetService } from "./productionAssetService";
 import {
@@ -418,6 +418,9 @@ describe("Phase 2 generate spine bridge", () => {
       const videoTasks = result.tasks.filter((t) => t.kind === "video");
       assert.ok(videoTasks.length >= 2);
       assert.ok(videoTasks.every((t) => t.status === "succeeded"));
+      const savedSpec = JSON.parse(JSON.stringify(result.production.reasoning!.productionSpec));
+      const reloaded = resolveGenerationTasks(savedSpec);
+      assert.deepEqual(reloaded.tasks, JSON.parse(JSON.stringify(result.tasks)), "persisted bridge spec must retain final task states");
     } finally {
       generateMock.mock.restore();
     }
@@ -425,6 +428,38 @@ describe("Phase 2 generate spine bridge", () => {
 });
 
 describe("shared generation task selection", () => {
+  it("retains production task state through serialization without duplicating shot tasks", () => {
+    const spec = makeTinySpec();
+    spec.audio.hasNarration = true;
+    const tasks = planGenerationTasks(spec).map(task => ({
+      ...task,
+      status: "succeeded" as const,
+      retryCount: 2,
+      productionAssetId: `asset_${task.id}`,
+    }));
+    const saved = attachGenerationTasksToSpec(spec, tasks);
+    const reloaded = resolveGenerationTasks(JSON.parse(JSON.stringify(saved)));
+    assert.deepEqual(reloaded.tasks, JSON.parse(JSON.stringify(tasks)));
+    assert.ok(saved.productionTasks?.some(task => task.kind === "voice"));
+    assert.ok(saved.productionTasks?.some(task => task.kind === "merge"));
+    assert.ok(saved.productionTasks?.every(task => !task.shotId));
+    assert.equal((saved.productionTasks!.length + saved.scenes.flatMap(scene => scene.shots).reduce((n, shot) => n + shot.generationTasks!.length, 0)), tasks.length);
+    assert.deepEqual(resolveGenerationTasks(saved, false).tasks, planGenerationTasks(spec));
+  });
+
+  it("rejects foreign, removed-scene and identity-mismatched production task state", () => {
+    const spec = makeTinySpec();
+    const merge = planGenerationTasks(spec).find(task => task.kind === "merge")!;
+    spec.productionTasks = [
+      { ...merge, productionId: "foreign", status: "succeeded" },
+      { ...merge, id: "stale_scene_task", sceneId: "deleted", status: "succeeded" },
+      { ...merge, kind: "voice", status: "succeeded" },
+    ];
+    const selected = resolveGenerationTasks(spec);
+    assert.deepEqual(selected.tasks.find(task => task.id === merge.id), merge);
+    assert.ok(!selected.tasks.some(task => task.id === "stale_scene_task"));
+  });
+
   it("preserves one attached task and fills missing production tasks in both paths", () => {
     const spec = makeTinySpec();
     spec.audio.hasNarration = true;

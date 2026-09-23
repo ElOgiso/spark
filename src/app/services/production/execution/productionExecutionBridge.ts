@@ -26,6 +26,7 @@ import {
 } from "../specification/adapters";
 import {
   resolveGenerationTasks,
+  attachGenerationTasksToSpec,
 } from "../generation/generationPlanner";
 import {
   ProductionAssetService,
@@ -407,7 +408,7 @@ export function projectAssetsOntoSpec(params: {
   tasks = applyTaskDependencyFailures(tasks);
 
   return {
-    spec: {
+    spec: attachGenerationTasksToSpec({
       ...params.spec,
       scenes: nextScenes,
       project: {
@@ -415,7 +416,7 @@ export function projectAssetsOntoSpec(params: {
         status: mediaOk ? "generating" : "failed",
         updatedAt: new Date().toISOString(),
       },
-    },
+    }, tasks),
     tasks,
   };
 }

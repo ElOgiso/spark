@@ -14,6 +14,7 @@ import type { AssetMasterRef, CharacterMaster, MasterAssetRef } from "./assetSpe
 import type { ResearchRequirementSpec } from "./researchRequirement";
 import type { ReferenceGraph } from "./referenceGraph";
 import type { StyleBible } from "./styleBible";
+import type { GenerationTask } from "./generationTask";
 
 export type CreativeControlMode = "auto" | "director" | "studio";
 
@@ -175,6 +176,8 @@ export interface ProductionSpec {
   assets: MasterAssetRef[];
   narrative: NarrativeSpec;
   scenes: SceneSpec[];
+  /** Tasks without a shot (voice, merge, etc.). Shot tasks remain on ShotSpec. */
+  productionTasks?: GenerationTask[];
   audio: AudioSpec;
   visualStyle: VisualStyleSpec;
   /** Phase 3 canonical visual language */
