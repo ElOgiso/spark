@@ -1,7 +1,7 @@
 # SPARK Implementation Plan
 
 Audit date: 2026-09-23. Source of phase numbering: [Notion phase program](https://app.notion.com/p/3e3c371711ff80d8ada6f0389a364476).
-GitHub main inspected: `d26cbe7355fd7345fc3266250756f31fe802e6aa`.
+Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `33fcfd2` on GitHub main.
 Implementation target: `main`, as explicitly requested. The previously verified commits `297d28c` and `b7b8234` are incorporated into this main-tree checkpoint.
 
 A completion record proves a scoped implementation, not that every live consumer uses it. Main contains work through Phase 12, but earlier integration requirements remain incomplete. Do not rebuild those modules. Complete their missing connections first.
@@ -57,7 +57,7 @@ A completion record proves a scoped implementation, not that every live consumer
 - The shared selector restores both scopes, rejects foreign production/removed scene/changed task identities, and retains explicit replanning behavior. Old specs with no production tasks still plan normally.
 - The live bridge attaches the final dependency-adjusted task states through the same helper used by the canonical executor. Existing production reasoning persistence carries the data; no database migration.
 - Regression coverage: JSON save/reload retains task status, retry count and asset identity; production/shot scopes are disjoint; bridge output and canonical executor output carry their final tasks; invalid identities cannot inject completion state.
-- This is task-state round-tripping, **not durable execution recovery**. The bridge still resets states before AssetService execution, and canonical execution still needs prior output restoration. Provider-job reconciliation and per-operation migration are the next A-05b work. Do not mark Phase 1 or Phase 9 complete.
+- This is task-state round-tripping, **not durable execution recovery**. The bridge previously reset running states before AssetService execution; A-05b.3 below blocks that unsafe restart. Canonical execution still needs prior output restoration. Provider-job reconciliation and per-operation migration are the next A-05b work. Do not mark Phase 1 or Phase 9 complete.
 - Verification: typecheck, full discovered test suite and production build. No paid provider calls or deployed production smoke test.
 
 ### A-05b.2 — canonical live execution migration (implemented)
@@ -102,6 +102,17 @@ A completion record proves a scoped implementation, not that every live consumer
   - Test N: direct client mutation rejection verified via Supabase RLS and RPC constraints.
   - Test O: end-to-end `GenerationExecutionEngine` execution integration (quote → reserve → submit → actual cost → settle).
 - Verified full test suite (1,280 tests passed, 0 failed) and production build (`npm run build` cleanly succeeded in 28.9s) with $0.00 provider spend.
+
+### A-05b.3 — prevent unresolved execution resubmission (implemented)
+
+- Confirmed gaps: canonical queue initialization reset saved running/skipped tasks; the live bridge reset running tasks even during forced regeneration; idempotency only recognized a subset of execution states; provider submission replay guarded known jobs but not submissions still pending or unknown.
+- Preserve running/skipped tasks in canonical scheduling. Dependents of running tasks remain blocked. Live AssetService execution refuses an unresolved running task before entering the provider path, including force-regenerate requests.
+- Extend the existing execution idempotency policy to cover all active states, pending work, and `RECONCILE_FIRST` errors. Both DAG execution and the newly merged single-task live entry point store returned execution state, including failures and unknown outcomes, rather than leaving a stale queued record.
+- An unresolved timeout stays reconciling with no completion timestamp. Its task remains running, not failed/retryable, and the existing credit hold stays unchanged.
+- Extend the existing ProviderSubmissionRegistry guard to reject concurrent or unknown replays before calling the adapter. Known submitted-job replay still returns the existing job ID.
+- Tests cover saved running/skipped state, blocked dependents, every active execution status, live force-regenerate refusal, concurrent submission, timeout replay through a new executor sharing the store, unchanged credit ledger on replay, known-job reuse, and reconciliation flag retention through live media projection and JSON reload.
+- Verification against the updated main baseline: 1,284 tests passed, typecheck passed, production build passed (existing bundle-size warnings). No paid provider calls or database changes in this checkpoint.
+- No new pipeline, database schema, UI or credit pricing changes. These guards operate on retained spec state and the existing in-memory stores. They do **not** establish cross-process locking, durable job recovery, restored completed outputs or cross-process financial verification. The newly merged durable economics work is preserved; this checkpoint does not re-certify its database claims. Phase 9 remains incomplete.
 
 ## Verification discipline
 

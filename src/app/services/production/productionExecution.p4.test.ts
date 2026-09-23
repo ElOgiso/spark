@@ -28,6 +28,7 @@ import {
 } from "./execution";
 import type { AdapterPorts } from "./execution";
 import type { GenerationTask } from "./specification/generationTask";
+import type { ExecutionStatus } from "./execution/types";
 import type { ProductionDag } from "./dag/productionDag";
 import { buildProductionDag } from "./dag/productionDag";
 import { planGenerationTasks } from "./generation/generationPlanner";
@@ -675,6 +676,44 @@ describe("asset-to-video wiring & traceability", () => {
 
 
 describe("canonical executor task attachment", () => {
+  it("does not requeue saved running or skipped work or unlock its dependent", async () => {
+    const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
+    const source = planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!;
+    let calls = 0;
+    const engine = new GenerationExecutionEngine({ ports: mockPorts({ submitImage: async () => { calls++; throw new Error("must not submit"); } }) });
+    const tasks: GenerationTask[] = [
+      { ...source, dependsOn: [], dependencies: [], status: "running" },
+      { ...source, id: "dependent", dependsOn: [source.id], dependencies: undefined, status: "blocked" },
+      { ...source, id: "cancelled-task", dependsOn: [], dependencies: [], status: "skipped" },
+    ];
+    const result = await engine.executePlan({ spec, tasks, dag: buildProductionDag(spec, tasks) });
+    assert.equal(calls, 0);
+    assert.deepEqual(result.tasks.map(task => task.status), ["running", "blocked", "skipped"]);
+    assert.equal(result.state, "running");
+    assert.equal(result.ok, false);
+  });
+
+  it("blocks every unresolved execution state in the existing idempotency store", async () => {
+    const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
+    const task = { ...planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!, dependsOn: [], dependencies: [] };
+    const prepared = prepareTaskInputs({ spec, task });
+    const inputHash = buildTaskInputHash(task, prepared.prompt, prepared.inputs.map(input => input.url || input.assetRef || ""));
+    const statuses: ExecutionStatus[] = ["ready", "pending", "preparing", "credit_reserved", "submitting", "submitted", "queued", "running", "polling", "retrying", "unknown_submission", "reconciling"];
+    for (const status of statuses) {
+      const store = createMemoryIdempotencyStore();
+      store.set(idempotencyKey(task.productionId, task.id, inputHash), {
+        id: "existing", taskId: task.id, productionId: task.productionId, provider: "openai",
+        status, attempt: 1, maxAttempts: 3, inputAssets: [], outputAssets: [], inputHash,
+      });
+      let calls = 0;
+      const engine = new GenerationExecutionEngine({ idempotencyStore: store, ports: mockPorts({ submitImage: async () => { calls++; throw new Error("must not submit"); } }) });
+      const result = await engine.executePlan({ spec, tasks: [task], dag: buildProductionDag(spec, [task]) });
+      assert.equal(calls, 0, status);
+      assert.equal(result.tasks[0].status, "running", status);
+      assert.equal(result.executions[0].id, "existing", status);
+    }
+  });
+
   it("returns newly planned task state on shots that had no attached tasks", async () => {
     const plan = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 });
     assert.ok(plan.spec);

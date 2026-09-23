@@ -80,6 +80,16 @@ export async function submitWithReliability(
       metadata: { idempotentReplay: true, ...existing.metadata },
     };
   }
+  if (existing && (existing.status === "submitting" || existing.status === "unknown_submission" || existing.status === "reconciling")) {
+    return {
+      outcome: "UNKNOWN_SUBMISSION",
+      reconciliationRequired: true,
+      error: makeExecutionError("unknown_submission", "Existing submission must be reconciled before resubmission", {
+        retryable: false,
+        retryability: "RECONCILE_FIRST",
+      }),
+    };
+  }
 
   const record: ExecutionRecord = {
     executionId: request.executionId,

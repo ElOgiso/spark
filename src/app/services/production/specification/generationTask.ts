@@ -97,6 +97,8 @@ export interface GenerationTask {
   retryCount?: number;
   maxRetries?: number;
   lastError?: string;
+  /** Provider acceptance is unresolved; do not reset or submit again before reconciliation. */
+  reconciliationRequired?: boolean;
 
   /** Phase 6 — optional operational storyboard → intent traceability */
   intentId?: string;

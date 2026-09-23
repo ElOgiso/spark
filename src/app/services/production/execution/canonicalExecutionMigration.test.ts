@@ -275,7 +275,12 @@ describe("SPARK Phase 12.2 — Canonical Live Execution Migration", () => {
     assert.equal(submitAttempts, 1, "Must NOT perform a blind second submit on UNKNOWN_SUBMISSION");
     assert.equal(res.execution.error?.code, "unknown_submission");
     assert.equal(res.execution.error?.retryability, "RECONCILE_FIRST");
-    assert.equal(res.task.status, "failed");
+    assert.equal(res.task.status, "running");
+    assert.equal(res.task.reconciliationRequired, true);
+    const reloadedTask = JSON.parse(JSON.stringify(res.task));
+    const freshEngine = new GenerationExecutionEngine({ ports: {} });
+    await assert.rejects(freshEngine.executeTask({ spec, task: reloadedTask }), /requires reconciliation/);
+    assert.equal(submitAttempts, 1);
   });
 
   // TEST F: Canonical routing ownership

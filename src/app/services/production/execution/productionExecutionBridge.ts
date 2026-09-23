@@ -237,7 +237,7 @@ export function applyTaskDependencyFailures(tasks: GenerationTask[]): Generation
   while (changed) {
     changed = false;
     for (const task of byId.values()) {
-      if (task.status === "succeeded" || task.status === "skipped" || task.status === "failed") {
+      if (task.reconciliationRequired || task.status === "succeeded" || task.status === "skipped" || task.status === "failed") {
         continue;
       }
       const deps = task.dependsOn || [];
@@ -301,7 +301,7 @@ export function projectAssetsOntoSpec(params: {
       const keyframeTask = tasks.find((t) => t.shotId === shot.id && t.kind === "keyframe");
       const videoTask = tasks.find((t) => t.shotId === shot.id && t.kind === "video");
 
-      if (keyframeTask) {
+      if (keyframeTask && !keyframeTask.reconciliationRequired) {
         if (imageUrl) {
           keyframeTask.status = "succeeded";
           keyframeTask.productionAssetId = sourceImageAssetId || keyframeTask.productionAssetId;
@@ -321,7 +321,7 @@ export function projectAssetsOntoSpec(params: {
         });
       }
 
-      if (videoTask) {
+      if (videoTask && !videoTask.reconciliationRequired) {
         if (videoUrl) {
           videoTask.status = "succeeded";
           videoTask.productionAssetId = videoAssetId || videoTask.productionAssetId;
@@ -381,6 +381,7 @@ export function projectAssetsOntoSpec(params: {
   }));
 
   for (const task of tasks) {
+    if (task.reconciliationRequired) continue;
     if (task.kind === "voice") {
       if (assetResult.audioUrl) {
         task.status = "succeeded";
@@ -440,6 +441,10 @@ export async function executeProductionViaAssetBridge(
 
   let spec = resolveProductionSpec(params.production, params.brand, params.character);
   const ensured = ensureGenerationTasks(spec);
+  const unresolved = ensured.tasks.filter(task => task.status === "running" || task.reconciliationRequired);
+  if (unresolved.length) {
+    throw new Error(`Generation requires reconciliation before resubmission: ${unresolved.map(task => task.id).join(", ")}`);
+  }
   spec = ensured.spec;
   let tasks: GenerationTask[] = ensured.tasks.map((t) => ({
     ...t,
@@ -529,7 +534,7 @@ export async function executeProductionViaAssetBridge(
   );
   const masterOk = Boolean(assetResult.videoUrl);
   const mediaOk = Boolean(masterOk || hasValidClips);
-  const anyTaskFailed = tasks.some((t) => t.status === "failed");
+  const anyTaskFailed = tasks.some((t) => t.status === "failed" || t.reconciliationRequired);
   const finalStatus = mediaOk && !anyTaskFailed ? "Ready for Review" : "Failed";
 
   const updatedProduction: Production = {

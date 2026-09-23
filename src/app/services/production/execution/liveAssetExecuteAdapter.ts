@@ -77,7 +77,7 @@ export function createLiveAssetExecuteAdapter(
         bridge.assetResult.brief.generatedAssets.generatedVideos.length > 0)
     );
     const mediaOk = Boolean(bridge.assetResult.videoUrl || hasValidClips);
-    const anyTaskFailed = bridge.tasks.some((t) => t.status === "failed");
+    const anyTaskFailed = bridge.tasks.some((t) => t.status === "failed" || t.reconciliationRequired);
     const ok = mediaOk && !anyTaskFailed;
     const now = new Date().toISOString();
     const dag = buildProductionDag(bridge.spec, bridge.tasks);

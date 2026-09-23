@@ -4,6 +4,14 @@
 
 import type { GenerationTask } from "../specification/generationTask";
 import type { GenerationExecution } from "./types";
+import { isActiveStatus } from "./jobStateMachine";
+
+/** Existing work must be reconciled before another submission is allowed. */
+export function executionNeedsReconciliation(execution: GenerationExecution): boolean {
+  if (execution.status === "succeeded") return false;
+  return isActiveStatus(execution.status) || execution.status === "pending" ||
+    execution.error?.retryability === "RECONCILE_FIRST";
+}
 
 export function hashExecutionInput(parts: Array<string | number | undefined | null>): string {
   const raw = parts.map((p) => String(p ?? "")).join("|");
@@ -63,7 +71,7 @@ export function findReusableExecution(
     return existing;
   }
   // Also block duplicate in-flight submissions
-  if (existing && (existing.status === "running" || existing.status === "polling" || existing.status === "queued")) {
+  if (existing && executionNeedsReconciliation(existing)) {
     return existing;
   }
   return undefined;

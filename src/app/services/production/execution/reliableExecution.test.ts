@@ -7,6 +7,7 @@ import { normalizeProviderStatus } from "./adapters/types";
 import { classifyRetryability, makeExecutionError } from "./errors";
 import { buildSubmissionIdempotencyKey, ProviderSubmissionRegistry, submitWithReliability } from "./providerSubmission";
 import { ReconciliationEngine } from "./reconciliationEngine";
+import { createMemoryIdempotencyStore } from "./idempotency";
 import type { MediaProviderAdapter } from "./adapters/types";
 import type { GenerationTask } from "../specification/generationTask";
 import type { ProductionSpec } from "../specification/productionSpec";
@@ -211,6 +212,8 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
     const repo = new InMemoryCreditRepository();
     await repo.setBalance("user_123", 100);
     const creditService = new CreditService(repo);
+    const idempotencyStore = createMemoryIdempotencyStore();
+    let submits = 0;
 
     const timeoutAdapter: MediaProviderAdapter = {
       providerId: "kling",
@@ -224,6 +227,7 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
         knownLimitations: [],
       }),
       submit: async () => {
+        submits++;
         throw new Error("504 Gateway Timeout: connection reset after send");
       },
       getStatus: async (id) => ({ providerJobId: id, status: "failed" }),
@@ -237,6 +241,7 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
 
     const engine = new GenerationExecutionEngine({
       adapters,
+      idempotencyStore,
       creditService,
       userId: "user_123",
       sleep: async () => {},
@@ -252,6 +257,10 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
     });
 
     assert.equal(result.ok, false);
+    assert.equal(result.state, "running");
+    assert.equal(result.tasks[0].status, "running");
+    assert.equal(result.executions[0].status, "reconciling");
+    assert.equal(result.executions[0].completedAt, undefined);
     // CRITICAL: Credits MUST NOT be released when submission outcome is unknown!
     const balance = await creditService.getBalance("user_123");
     assert.equal(balance, 65); // 35 credits remain protected under PENDING_UNKNOWN hold
@@ -259,6 +268,20 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
     const ledger = await creditService.getLedger("user_123");
     const holdTx = ledger.find((tx) => tx.type === "PENDING_UNKNOWN");
     assert.ok(holdTx, "Expected PENDING_UNKNOWN ledger transaction");
+    const submissionReplay = await submitWithReliability(timeoutAdapter, {
+      providerId: "kling", modality: "video", prompt: "A futuristic skyline",
+      productionId: task.productionId, taskId: task.id, executionId: "replay", inputs: [],
+    }, { attempt: 1, inputHash: result.executions[0].inputHash });
+    assert.equal(submissionReplay.outcome, "UNKNOWN_SUBMISSION");
+    assert.equal(submits, 1);
+    // A new executor using the existing store must not reserve or submit again,
+    // even if its caller passes the original planned task.
+    ProviderSubmissionRegistry.clear();
+    const resumed = new GenerationExecutionEngine({ adapters, idempotencyStore, creditService, userId: "user_123", sleep: async () => {} });
+    const replay = await resumed.executePlan({ spec, tasks: [task], dag: result.dag });
+    assert.equal(replay.tasks[0].status, "running");
+    assert.equal(submits, 1);
+    assert.deepEqual(await creditService.getLedger("user_123"), ledger);
   });
 
   it("4. Reconciliation successfully recovers in-flight provider job ID (FOUND) and completes execution", async () => {
@@ -420,6 +443,8 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
     ProviderSubmissionRegistry.clear();
 
     let remoteCalls = 0;
+    let finishSubmission!: () => void;
+    const pendingSubmission = new Promise<void>(resolve => { finishSubmission = resolve; });
     const adapter: MediaProviderAdapter = {
       providerId: "kling",
       capabilities: () => ({
@@ -433,6 +458,7 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
       }),
       submit: async (req) => {
         remoteCalls++;
+        await pendingSubmission;
         return { providerJobId: "kling_job_idem_1", status: "queued" };
       },
       getStatus: async (id) => ({ providerJobId: id, status: "succeeded" }),
@@ -449,7 +475,15 @@ describe("SPARK Phase 9: Reliable Generation Execution", () => {
       inputs: [],
     };
 
-    const res1 = await submitWithReliability(adapter, request, { attempt: 1, inputHash: "hash_123" });
+    const first = submitWithReliability(adapter, request, { attempt: 1, inputHash: "hash_123" });
+    try {
+      const concurrent = await submitWithReliability(adapter, request, { attempt: 1, inputHash: "hash_123" });
+      assert.equal(concurrent.outcome, "UNKNOWN_SUBMISSION");
+      assert.equal(remoteCalls, 1);
+    } finally {
+      finishSubmission();
+    }
+    const res1 = await first;
     assert.equal(res1.outcome, "SUBMITTED");
     assert.equal(remoteCalls, 1);
 

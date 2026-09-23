@@ -428,6 +428,36 @@ describe("Phase 2 generate spine bridge", () => {
 });
 
 describe("shared generation task selection", () => {
+  it("preserves unresolved tasks and their reconciliation flag when media projection has no output", () => {
+    const spec = makeTinySpec();
+    spec.audio.hasNarration = true;
+    const tasks = planGenerationTasks(spec).map(task => ({ ...task, status: "running" as const, reconciliationRequired: true, lastError: "unknown submission" }));
+    const projected = projectAssetsOntoSpec({
+      spec: attachGenerationTasksToSpec(spec, tasks), tasks,
+      assetResult: { brief: buildSpecDrivenBrief(spec), scenes: [], productionScenes: [] },
+      productionId: spec.project.id, logger: () => {},
+    });
+    assert.ok(projected.tasks.every(task => task.status === "running" && task.reconciliationRequired));
+    const saved = resolveGenerationTasks(JSON.parse(JSON.stringify(projected.spec)));
+    assert.ok(saved.tasks.every(task => task.status === "running" && task.reconciliationRequired));
+  });
+
+  it("refuses to reset running work in the live bridge, including force regenerate", async () => {
+    const spec = makeTinySpec();
+    const tasks = planGenerationTasks(spec);
+    tasks.find(task => task.kind === "merge")!.status = "running";
+    const production = { id: spec.project.id, reasoning: { productionSpec: attachGenerationTasksToSpec(spec, tasks) } } as Production;
+    const generate = mock.method(ProductionAssetService, "generateAssets", async () => { throw new Error("must not submit"); });
+    try {
+      for (const forceRegenerate of [false, true]) {
+        await assert.rejects(executeProductionViaAssetBridge({ production, brand: { id: "brand_1" } as any, forceRegenerate }), /requires reconciliation before resubmission/);
+      }
+      assert.equal(generate.mock.callCount(), 0);
+    } finally {
+      generate.mock.restore();
+    }
+  });
+
   it("retains production task state through serialization without duplicating shot tasks", () => {
     const spec = makeTinySpec();
     spec.audio.hasNarration = true;

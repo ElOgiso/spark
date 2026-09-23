@@ -35,6 +35,7 @@ import {
   buildTaskInputHash,
   createMemoryIdempotencyStore,
   findReusableExecution,
+  executionNeedsReconciliation,
   idempotencyKey,
   type IdempotencyStore,
 } from "./idempotency";
@@ -205,9 +206,10 @@ export class GenerationExecutionEngine {
 
     // Queue valid tasks
     tasks = tasks.map((t) => {
+      if (t.reconciliationRequired) return { ...t, status: "running" };
       if (t.status === "failed") return t;
       if (this.cancelled.has(t.id)) return { ...t, status: "skipped", lastError: "cancelled" };
-      if (t.status === "queued" || t.status === "succeeded") return t;
+      if (t.status === "queued" || t.status === "succeeded" || t.status === "running" || t.status === "skipped") return t;
       const dagNode = dag?.nodes?.find((n) => n.id === t.id);
       const effectiveDeps = dagNode ? dagNode.dependsOn : t.dependsOn;
       return { ...t, status: effectiveDeps.length ? "blocked" : "queued" };
@@ -280,13 +282,14 @@ export class GenerationExecutionEngine {
               priorOutputs,
             });
 
-            this.executions.push(result.execution);
+            this.replaceExecution(result.execution);
             if (result.asset) this.assets.push(result.asset);
 
             if (result.execution.status === "succeeded") {
               tasks[idx] = {
                 ...tasks[idx],
                 status: "succeeded",
+                reconciliationRequired: false,
                 productionAssetId: result.asset?.id,
                 lastError: undefined,
               };
@@ -298,6 +301,10 @@ export class GenerationExecutionEngine {
                   priorOutputs[`${taskId}__last_frame`] = lastFrame;
                 }
               }
+            } else if (executionNeedsReconciliation(result.execution)) {
+              // Unknown/in-flight work is not a failed task eligible for retry.
+              tasks[idx] = { ...tasks[idx], status: "running", reconciliationRequired: true, lastError: result.execution.error?.message || "Execution requires reconciliation before resubmission" };
+              errors.push(`${taskId}: ${tasks[idx].lastError}`);
             } else if (result.execution.status === "cancelled") {
               tasks[idx] = { ...tasks[idx], status: "skipped", lastError: "cancelled" };
               dag = markNode(dag, taskId, "skipped");
@@ -338,6 +345,9 @@ export class GenerationExecutionEngine {
   }
 
   private replaceExecution(next: GenerationExecution): void {
+    if (next.inputHash) {
+      this.idempotency.set(idempotencyKey(next.productionId, next.taskId, next.inputHash), next);
+    }
     const i = this.executions.findIndex((e) => e.id === next.id);
     if (i >= 0) this.executions[i] = next;
     else this.executions.push(next);
@@ -353,6 +363,9 @@ export class GenerationExecutionEngine {
     task: GenerationTask;
     priorOutputs?: Record<string, string>;
   }): Promise<{ execution: GenerationExecution; asset?: ProductionAsset; task: GenerationTask }> {
+    if (params.task.reconciliationRequired) {
+      throw new Error(`Generation requires reconciliation before resubmission: ${params.task.id}`);
+    }
     const priorOutputs = params.priorOutputs || {};
     const result = await this.executeSingleTask({
       spec: params.spec,
@@ -372,12 +385,15 @@ export class GenerationExecutionEngine {
       ...params.task,
       status: result.execution.status === "succeeded"
         ? "succeeded"
+        : executionNeedsReconciliation(result.execution)
+          ? "running"
         : result.execution.status === "cancelled"
           ? "skipped"
           : "failed",
       productionAssetId: result.asset?.id || params.task.productionAssetId,
       lastError: result.execution.error?.message,
       retryCount: result.execution.attempt,
+      reconciliationRequired: executionNeedsReconciliation(result.execution),
     };
     Object.assign(params.task, updatedTask);
     return { ...result, task: updatedTask };
@@ -405,11 +421,11 @@ export class GenerationExecutionEngine {
     if (reusable?.status === "succeeded") {
       return { execution: { ...reusable, metadata: { ...reusable.metadata, idempotentReuse: true } } };
     }
-    if (reusable && (reusable.status === "running" || reusable.status === "polling" || reusable.status === "queued")) {
+    if (reusable && executionNeedsReconciliation(reusable)) {
       return {
         execution: {
           ...reusable,
-          error: makeExecutionError("idempotent_reuse", "Execution already in flight", {
+          error: reusable.error || makeExecutionError("idempotent_reuse", "Execution requires reconciliation before resubmission", {
             retryable: false,
           }),
         },
@@ -773,13 +789,11 @@ export class GenerationExecutionEngine {
             return { execution };
           } else {
             // STILL_UNKNOWN: preserve hold, do not retry
-            execution = applyTransition(execution, "failed");
             execution.error = makeExecutionError(
               "unknown_submission",
               `Submission remains unknown after reconciliation: ${rec.reason}`,
               { retryable: false, retryability: "RECONCILE_FIRST" }
             );
-            execution.completedAt = new Date().toISOString();
             return { execution };
           }
         }
