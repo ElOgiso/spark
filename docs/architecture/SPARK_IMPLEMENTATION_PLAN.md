@@ -1,7 +1,7 @@
 # SPARK Implementation Plan
 
 Audit date: 2026-09-23. Source of phase numbering: [Notion phase program](https://app.notion.com/p/3e3c371711ff80d8ada6f0389a364476).
-Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `33fcfd2` on GitHub main.
+Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `2831786` on GitHub main.
 Implementation target: `main`, as explicitly requested. The previously verified commits `297d28c` and `b7b8234` are incorporated into this main-tree checkpoint.
 
 A completion record proves a scoped implementation, not that every live consumer uses it. Main contains work through Phase 12, but earlier integration requirements remain incomplete. Do not rebuild those modules. Complete their missing connections first.
@@ -113,6 +113,16 @@ A completion record proves a scoped implementation, not that every live consumer
 - Tests cover saved running/skipped state, blocked dependents, every active execution status, live force-regenerate refusal, concurrent submission, timeout replay through a new executor sharing the store, unchanged credit ledger on replay, known-job reuse, and reconciliation flag retention through live media projection and JSON reload.
 - Verification against the updated main baseline: 1,284 tests passed, typecheck passed, production build passed (existing bundle-size warnings). No paid provider calls or database changes in this checkpoint.
 - No new pipeline, database schema, UI or credit pricing changes. These guards operate on retained spec state and the existing in-memory stores. They do **not** establish cross-process locking, durable job recovery, restored completed outputs or cross-process financial verification. The newly merged durable economics work is preserved; this checkpoint does not re-certify its database claims. Phase 9 remains incomplete.
+
+### A-05b.4 — restore completed output on idempotent replay (implemented)
+
+- Confirmed defect: the executor reused a succeeded execution without returning its existing asset. The DAG then lost the task's asset ID and downstream input URL; the live single-task path also received no asset reference.
+- Extend existing output normalization to reconstruct the saved asset reference from the execution's output metadata, preferring the persistent URL. Verify production/task/scene/shot identity; reuse the existing asset ID. Do not persist another asset or invent another execution.
+- Both existing execution entry points use the same replay path. DAG results deduplicate assets by ID and restore dependency URLs and last-frame metadata through their existing success handling.
+- A succeeded record with missing output remains protected from provider resubmission. Return a recovery error if its asset cannot be restored; do not treat missing output as permission to spend again.
+- Regression coverage: replay within the same executor, a fresh executor sharing the store, dependent video receiving the recovered keyframe, direct live-task replay, unchanged asset-write count, missing outputs, and foreign production output rejection.
+- Verification: 1,285 tests passed; typecheck and production build passed (existing bundle-size warnings).
+- Scope: this restores completed outputs available in the existing execution store. A saved succeeded task with no corresponding execution/output record still needs durable repository lookup. Cross-process recovery and full production resume remain incomplete. No database, provider pricing or UI changes; no paid generations.
 
 ## Verification discipline
 

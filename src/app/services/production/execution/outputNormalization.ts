@@ -31,6 +31,42 @@ export function mediaTypeToAssetType(
   return "video";
 }
 
+/** Reconstruct the existing asset reference on replay; never write another asset. */
+export function restoreExecutionAsset(
+  execution: GenerationExecution,
+  task: GenerationTask,
+  brandId?: string
+): ProductionAsset | undefined {
+  if (execution.status !== "succeeded" || execution.productionId !== task.productionId || execution.taskId !== task.id || execution.shotId !== task.shotId || execution.sceneId !== task.sceneId) return undefined;
+  const output = execution.outputAssets[0];
+  const url = output?.persistentUrl || output?.sourceUrl;
+  if (!output?.productionAssetId || !url) return undefined;
+  return {
+    id: output.productionAssetId,
+    brandId,
+    productionId: execution.productionId,
+    taskId: execution.taskId,
+    sceneId: execution.sceneId,
+    shotId: execution.shotId,
+    assetType: mediaTypeToAssetType(output.mediaType, task.kind),
+    publicUrl: url,
+    provider: execution.provider,
+    mimeType: output.mimeType,
+    duration: output.durationSec != null ? `${output.durationSec}s` : undefined,
+    status: "completed",
+    createdAt: execution.completedAt,
+    generationSettings: {
+      taskId: task.id,
+      executionId: execution.id,
+      providerJobId: execution.providerJobId,
+      attempt: execution.attempt,
+      width: output.width,
+      height: output.height,
+      durationSec: output.durationSec,
+    },
+  };
+}
+
 /**
  * Prefer persistent URL when available; never store credentials.
  */

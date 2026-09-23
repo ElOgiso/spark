@@ -67,7 +67,7 @@ export function findReusableExecution(
   inputHash: string
 ): GenerationExecution | undefined {
   const existing = store.get(idempotencyKey(productionId, taskId, inputHash));
-  if (existing?.status === "succeeded" && existing.outputAssets.length > 0) {
+  if (existing?.status === "succeeded") {
     return existing;
   }
   // Also block duplicate in-flight submissions

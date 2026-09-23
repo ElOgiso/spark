@@ -449,6 +449,7 @@ describe("execution engine", () => {
 
   it("idempotency prevents duplicate submission for same input hash", async () => {
     let submits = 0;
+    let videos = 0;
     const ports = mockPorts({
       async submitImage(req) {
         submits++;
@@ -458,23 +459,48 @@ describe("execution engine", () => {
           provider: "openai",
         };
       },
+      async submitVideo(req) {
+        videos++;
+        assert.ok(req.inputs.some(input => input.role === "first_frame" && input.url === "https://cdn.example.test/idem.png"));
+        return { videoUrl: "https://cdn.example.test/resumed.mp4", providerJobId: "resumed-video", provider: req.providerId };
+      },
     });
     const plan = createProductionPlan({ idea: "Tip video", targetDurationSec: 15 });
     const keyframe = planGenerationTasks(plan.spec!).find((t) => t.kind === "keyframe" && t.shotId)!;
     const store = createMemoryIdempotencyStore();
-    const engine = new GenerationExecutionEngine({
+    const persist = createMemoryAssetPersistPort();
+    const options = {
       ports,
       idempotencyStore: store,
+      persistPort: persist,
       sleep: async () => undefined,
-      measureOutput: async () => ({ width: 100, height: 100, fileSizeBytes: 1000 }),
-    });
+      measureOutput: async () => ({ width: 1080, height: 1920, fileSizeBytes: 50000 }),
+    };
+    const engine = new GenerationExecutionEngine(options);
     const dag = {
       productionId: plan.spec!.project.id,
       nodes: [{ id: keyframe.id, kind: "keyframe", dependsOn: [], status: "ready" as const }],
     };
-    await engine.executePlan({ spec: plan.spec!, tasks: [{ ...keyframe }], dag });
-    await engine.executePlan({ spec: plan.spec!, tasks: [{ ...keyframe }], dag });
+    const first = await engine.executePlan({ spec: plan.spec!, tasks: [{ ...keyframe }], dag });
+    const second = await engine.executePlan({ spec: plan.spec!, tasks: [{ ...keyframe }], dag });
     assert.equal(submits, 1);
+    assert.equal(second.assets.length, 1, "same-engine replay must not duplicate returned assets");
+    assert.equal(second.tasks[0].productionAssetId, first.assets[0].id);
+    assert.equal(persist.assets.length, 1, "replay must not write a new asset");
+
+    const video = { ...planGenerationTasks(plan.spec!).find(task => task.kind === "video" && task.shotId === keyframe.shotId)!, dependsOn: [keyframe.id], dependencies: undefined };
+    const resumedTasks = [{ ...keyframe, dependsOn: [], dependencies: undefined }, video];
+    const resumedEngine = new GenerationExecutionEngine(options);
+    const resumed = await resumedEngine.executePlan({ spec: plan.spec!, tasks: resumedTasks, dag: buildProductionDag(plan.spec!, resumedTasks) });
+    assert.equal(resumed.tasks.find(task => task.id === video.id)?.status, "succeeded", JSON.stringify(resumed.errors));
+    assert.equal(submits, 1);
+    assert.equal(videos, 1);
+    assert.equal(persist.assets.length, 2);
+    assert.equal(resumed.assets.find(asset => asset.taskId === keyframe.id)?.id, first.assets[0].id);
+    const direct = await new GenerationExecutionEngine(options).executeTask({ spec: plan.spec!, task: { ...keyframe } });
+    assert.equal(direct.asset?.id, first.assets[0].id);
+    assert.equal(direct.asset?.publicUrl, first.assets[0].publicUrl);
+    assert.equal(persist.assets.length, 2);
   });
 
   it("cancels queued tasks before execution", async () => {
@@ -676,6 +702,29 @@ describe("asset-to-video wiring & traceability", () => {
 
 
 describe("canonical executor task attachment", () => {
+  it("does not regenerate completed work when cached output recovery is missing or belongs to another production", async () => {
+    const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
+    const task = { ...planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!, dependsOn: [], dependencies: [] };
+    const prepared = prepareTaskInputs({ spec, task });
+    const inputHash = buildTaskInputHash(task, prepared.prompt, prepared.inputs.map(input => input.url || input.assetRef || ""));
+    for (const foreign of [false, true]) {
+      const store = createMemoryIdempotencyStore();
+      store.set(idempotencyKey(task.productionId, task.id, inputHash), {
+        id: "completed", taskId: task.id, productionId: foreign ? "another-production" : task.productionId,
+        provider: "openai", status: "succeeded", attempt: 1, maxAttempts: 3, inputAssets: [], inputHash,
+        outputAssets: foreign ? [{ mediaType: "image", productionAssetId: "foreign-asset", persistentUrl: "https://cdn.example.test/foreign.png" }] : [],
+      });
+      let submits = 0;
+      const engine = new GenerationExecutionEngine({ idempotencyStore: store, ports: mockPorts({ submitImage: async () => { submits++; throw new Error("must not submit"); } }) });
+      const result = await engine.executePlan({ spec, tasks: [task], dag: buildProductionDag(spec, [task]) });
+      assert.equal(submits, 0);
+      assert.equal(result.tasks[0].status, "failed");
+      assert.equal(result.assets.length, 0);
+      assert.ok(result.errors.some(error => error.includes("no restorable asset")));
+      assert.equal(store.get(idempotencyKey(task.productionId, task.id, inputHash))?.status, "succeeded");
+    }
+  });
+
   it("does not requeue saved running or skipped work or unlock its dependent", async () => {
     const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
     const source = planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!;

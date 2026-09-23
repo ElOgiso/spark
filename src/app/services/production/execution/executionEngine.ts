@@ -29,6 +29,7 @@ import {
   enrichOutputMetadata,
   normalizedResultToMediaOutput,
   persistNormalizedOutput,
+  restoreExecutionAsset,
   type AssetPersistPort,
 } from "./outputNormalization";
 import {
@@ -283,7 +284,7 @@ export class GenerationExecutionEngine {
             });
 
             this.replaceExecution(result.execution);
-            if (result.asset) this.assets.push(result.asset);
+            if (result.asset && !this.assets.some(asset => asset.id === result.asset!.id)) this.assets.push(result.asset);
 
             if (result.execution.status === "succeeded") {
               tasks[idx] = {
@@ -419,7 +420,11 @@ export class GenerationExecutionEngine {
       inputHash
     );
     if (reusable?.status === "succeeded") {
-      return { execution: { ...reusable, metadata: { ...reusable.metadata, idempotentReuse: true } } };
+      const asset = restoreExecutionAsset(reusable, task, this.opts.brandId);
+      if (!asset && !this.opts.dryRun) {
+        throw makeExecutionError("output_unavailable", "Completed execution has no restorable asset; recover its output before retrying", { retryable: false });
+      }
+      return { execution: { ...reusable, metadata: { ...reusable.metadata, idempotentReuse: true } }, asset };
     }
     if (reusable && executionNeedsReconciliation(reusable)) {
       return {
