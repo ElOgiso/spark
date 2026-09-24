@@ -38,12 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://jaqzjhabmtvqtvinoafq.supabase.co";
       const supabaseServiceKey =
         process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
         process.env.SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
         process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
         "sb_publishable_vMsNKA4Icb2BD9SzgBTz4A_DTmSnwWb";
       const supabaseAnonKey =
         process.env.SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
         process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
         "sb_publishable_vMsNKA4Icb2BD9SzgBTz4A_DTmSnwWb";
 

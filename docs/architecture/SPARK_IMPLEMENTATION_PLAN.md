@@ -1,7 +1,7 @@
 # SPARK Implementation Plan
 
 Audit date: 2026-09-23. Source of phase numbering: [Notion phase program](https://app.notion.com/p/3e3c371711ff80d8ada6f0389a364476).
-Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `c6a2060`; recovery checkpoint `d20c9bc` on GitHub main.
+Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Phase 17 audited live HEAD: `396b8dbeee2d5769d50a38dcfdbdb464b120d20b`. Latest implementation baseline: Phase 18 on GitHub main.
 Implementation target: `main`, as explicitly requested. The previously verified commits `297d28c` and `b7b8234` are incorporated into this main-tree checkpoint.
 
 A completion record proves a scoped implementation, not that every live consumer uses it. Main contains work through Phase 12, but earlier integration requirements remain incomplete. Do not rebuild those modules. Complete their missing connections first.
@@ -28,7 +28,7 @@ A completion record proves a scoped implementation, not that every live consumer
 | 15 Audio | AudioSpec source bindings, conversion lineage, measured timeline placement, all-lane mixing and mastering handoff implemented | See `SPARK_PHASE_15_AUDIO_DIRECTOR_RECORD.md`. Conversion submission, live multitrack DSP and measured loudness verification remain runtime gates. |
 | 16 Video understanding | `research/providers/VideoUnderstandingProvider.ts`, watch/research integration | Extend the existing provider abstraction for uploaded references and planning/QC/craft consumers. |
 | 17 Observability/memory | Implemented canonical production observability events (`public.production_events`), secret sanitization, unified trace synthesis, fail-closed boundaries, sample-size-protected learning gates, and lifecycle/autonomy bridging | See `SPARK_PHASE_17_OBSERVABILITY_MEMORY_RECORD.md`. Migration `20260924135502_production_observability_events.sql` ready in repo; requires live apply to Supabase project `jaqzjhabmtvqtvinoafq`. |
-| 18 Security/data | RLS, profiles, admin RPCs | Profile write privileges corrected live in prior task; migration is included in this checkpoint. OAuth/token boundary, media ingestion isolation, overlapping policies and secured financial RPCs remain. |
+| 18 Security/data | RLS, profiles, admin RPCs, financial & telemetry boundaries | Consolidated overlapping RLS policies across all 21 tables into single authoritative policies per operation; removed unauthenticated telemetry insert bypass in Phase 17 migration; secured financial & admin RPCs with strict search_path, execution ACLs, and fail-closed checks; enforced server-side service-role key boundary; isolated media access and storage to brand owners; implemented test matrix A–Z. Migration `20260924145147_phase18_security_and_data_hardening.sql` ready in repo. |
 | 19 Admin operations | Existing admin credit controls | Extend with verified spend, reservations, actual margin, model/provider health and pricing management. |
 | 20 UI integration | Existing navigation, modes, credit/settings surfaces | Connect verified estimates/budget/balance; keep infrastructure details in admin/debug surfaces. No redesign. |
 | 21 Production validation | Extensive unit/mock integration tests | Paid end-to-end narrator/hybrid/cinematic production and forced failure recovery are not verified. |
@@ -192,6 +192,31 @@ A completion record proves a scoped implementation, not that every live consumer
   - `bridgeQualifiedLearningsToMemory` maps verified learnings into canonical `MemoryItem` records while deduplicating and preventing memory spam.
 - Integrated into `productionLifecycleRunner.ts`, `observability.ts`, and `learningUpdatePipeline.ts`.
 - Verification on 2026-09-24: Phase 17 test suite (26/26 tests pass across tests A through Z), full test suite (1,375/1,375 tests pass across 296 suites), clean typecheck (`tsc --noEmit`), and clean production build. Zero provider spend ($0.00).
+
+### Phase 18 — Supabase Security & Data Hardening (implemented)
+
+- Audited and hardened SPARK's Supabase security architecture across all 21 tables, RPCs, storage buckets, and server/client environment boundaries:
+  - Gate A: Audited and secured Phase 17 migration `20260924135502_production_observability_events.sql` by eliminating unauthenticated insert bypass `(user_id IS NULL AND auth.uid() IS NULL)`, explicitly restricting SELECT/INSERT to `TO authenticated`, and revoking `ALL` from `anon, public` and `UPDATE, DELETE` from `authenticated`.
+  - Comprehensive Consolidation Migration (`supabase/migrations/20260924145147_phase18_security_and_data_hardening.sql`):
+    - Systematically resolved `multiple_permissive_policies` on all 21 tables (`profiles`, `brands`, `characters`, `brand_rules`, `memory_items`, `research_sources`, `viral_sparks`, `productions`, `review_items`, `publish_jobs`, `analytics_snapshots`, `accounts`, `media_assets`, `coupons`, `credit_ledger`, `credit_reservations`, `admin_audit_log`, `notifications`, `notification_preferences`, `audit_logs`, `production_events`) by dropping legacy fragmented policies and defining single authoritative policies per command.
+    - Secured `coupons` table: eliminated public/anon read policy `USING (true)`, restricted reads to active authenticated users, and restricted write operations to verified admins.
+    - Added high-selectivity B-tree indexes across all foreign keys and policy correlation columns (`brand_id`, `user_id`, `production_id`, `role`, etc.).
+  - Privileged RPC Access Control & Search Path Hardening:
+    - Set explicit `search_path = public` across all `SECURITY DEFINER` functions.
+    - Revoked default Postgres `PUBLIC` and `anon` execution permissions on all administrative and financial RPCs: `is_admin`, `user_owns_brand`, `handle_new_user`, `admin_set_access_status`, `admin_adjust_credits`, `spark_reserve_credits`, `spark_settle_credits`, `spark_release_credits`, `spark_mark_pending_unknown`, `spark_refund_credits`.
+    - Granted execution rights strictly to `authenticated, service_role`.
+  - Storage Hardening:
+    - Hardened Supabase Storage bucket `Spark` to private (`public = false`).
+    - Enforced row-level security on `storage.objects` requiring brand ownership via `public.user_owns_brand(brand_id)` derived from object path prefixes.
+  - Client/Server Secret Boundary Enforcement:
+    - Removed forbidden `VITE_SUPABASE_SERVICE_ROLE_KEY` prefixes in `api/auth/config.ts` and `api/runtime/_sparkStorage.ts`.
+    - Enforced that service-role privileges and provider secrets remain strictly server-side, never exposed to Vite client bundles.
+- Verification on 2026-09-24:
+  - Phase 18 test suite (`src/app/services/security/phase18SecurityHardening.test.ts`): 15/15 subtests passed covering full matrix Tests A through Z.
+  - Security regressions (`runtimeSecurity.test.ts`, `productionObservability.test.ts`, `durableEconomics.test.ts`): 48/48 passed.
+  - TypeScript typecheck (`npx tsc --noEmit`): clean (0 errors).
+  - Production build (`npm run build`): cleanly succeeded.
+  - Provider spend: zero paid provider spend ($0.00).
 
 ## Verification discipline
 

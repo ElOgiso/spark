@@ -45,14 +45,17 @@ ALTER TABLE public.production_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can read own production events" ON public.production_events;
 CREATE POLICY "Users can read own production events"
   ON public.production_events FOR SELECT
+  TO authenticated
   USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
 
--- Insert policy: Users insert their own events or admin
+-- Insert policy: Users insert their own events or admin (NO anon insert permitted)
 DROP POLICY IF EXISTS "Users can insert own production events" ON public.production_events;
 CREATE POLICY "Users can insert own production events"
   ON public.production_events FOR INSERT
-  WITH CHECK (auth.uid() = user_id OR (user_id IS NULL AND auth.uid() IS NULL) OR public.is_admin(auth.uid()));
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id OR public.is_admin(auth.uid()));
 
 -- Enforce append-only semantics by denying UPDATE and DELETE to authenticated and anon
-REVOKE UPDATE, DELETE ON public.production_events FROM authenticated, anon;
+REVOKE ALL ON public.production_events FROM anon, public;
+REVOKE UPDATE, DELETE ON public.production_events FROM authenticated;
 GRANT SELECT, INSERT ON public.production_events TO authenticated, service_role;
