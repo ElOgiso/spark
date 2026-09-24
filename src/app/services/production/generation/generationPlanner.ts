@@ -1,3 +1,4 @@
+import { usesSourceVisual } from "./visualMedia";
 /**
  * Generation planner — ProductionSpec → ordered GenerationTask DAG nodes.
  * Aligns with specification/generationTask.ts (single contract).
@@ -53,8 +54,11 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
   const productionId = spec.project.id;
   const decisionByShot = new Map(spec.routing.shotDecisions.map((d) => [d.shotId, d]));
 
+  const generatedShots = spec.scenes.flatMap(scene => scene.shots).filter(shot => !usesSourceVisual(shot));
+  const hasSourcedShots = spec.scenes.some(scene => scene.shots.some(usesSourceVisual));
   const characterBaseIds = new Set(spec.characters.map((c) => c.identity.baseId));
   for (const character of spec.characters) {
+    if (hasSourcedShots && !generatedShots.some(shot => shot.characterIds.some(ref => ref.split(":")[0] === character.identity.baseId))) continue;
     const id = characterReferenceId(character.identity.baseId);
     tasks.push(
       syncDependsOn({
@@ -77,6 +81,7 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
 
   const locationIds = new Set((spec.world.locations || []).map((l) => l.id));
   for (const location of spec.world.locations || []) {
+    if (hasSourcedShots && !generatedShots.some(shot => shot.references.locationRefs.some(ref => ref.split(":")[0] === location.id))) continue;
     const id = locationReferenceId(location.id);
     tasks.push(
       syncDependsOn({
@@ -160,12 +165,12 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
             ? ["character_consistency", "multi_reference"]
             : [],
           selectedProvider:
-            !shot.visualPlan && stillOnly && shot.provider && shot.provider !== "unavailable"
+            usesSourceVisual(shot) ? "source_media" : !shot.visualPlan && stillOnly && shot.provider && shot.provider !== "unavailable"
               ? shot.provider
               : spec.routing.preferredImageProvider || "openai",
           fallbackProviders: shot.visualPlan ? undefined : decision?.fallbacks?.map((f) => f.provider).slice(0, 2),
           dependsOn: [],
-          dependencies: keyframeDeps,
+          dependencies: usesSourceVisual(shot) ? [] : keyframeDeps,
           priority: keyframePriority,
           status: "planned",
           maxRetries: 2,

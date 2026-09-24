@@ -118,6 +118,9 @@ export interface ExecutionRecord {
 }
 
 export interface ExecutionInputAsset {
+  /** Planned timing/type for shared mixed-media mastering. */
+  durationSec?: number;
+  visualPlan?: import("../specification/shotSpec").ShotSpec["visualPlan"];
   role: "first_frame" | "last_frame" | "reference" | "character" | "audio" | "source_video" | "mask" | "other";
   assetRef?: string;
   url?: string;

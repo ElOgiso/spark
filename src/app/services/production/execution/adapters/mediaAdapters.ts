@@ -267,7 +267,8 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
           outputUrl: result.videoUrl,
           raw: {
             provider: result.provider,
-            durationSec: request.durationSec,
+            durationSec: result.durationSec || request.durationSec,
+            mimeType: result.mimeType || "video/mp4",
             resolution: request.resolution,
           },
         });
@@ -288,7 +289,7 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
       return {
         mediaType: "video",
         sourceUrl: job.outputUrl,
-        mimeType: "video/mp4",
+        mimeType: String(job.raw?.mimeType || "video/mp4"),
         providerJobId: job.providerJobId,
         metadata: { provider: providerId, role: "master_merge" },
       };
@@ -309,7 +310,7 @@ export function createMergeAdapter(ports: AdapterPorts = {}): MediaProviderAdapt
               {
                 type: "video",
                 url,
-                mimeType: "video/mp4",
+                mimeType: String(job.raw?.mimeType || "video/mp4"),
                 durationSec: typeof job.raw?.durationSec === "number" ? job.raw.durationSec : undefined,
               },
             ]

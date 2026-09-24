@@ -1,3 +1,4 @@
+import { usesSourceVisual, renderVisualGraphic } from "../generation/visualMedia";
 import type { NormalizedMediaOutput } from "./types";
 /**
  * Generation execution engine — dependency-aware task runner.
@@ -200,6 +201,10 @@ export class GenerationExecutionEngine {
     }
     for (const task of tasks) {
       if (task.status !== "succeeded" || this.opts.dryRun) continue;
+      const shot = params.spec.scenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId);
+      if (task.kind === "keyframe" && shot && usesSourceVisual(shot) && task.completedOutput?.inputHash !== buildTaskInputHash(task, JSON.stringify(shot.visualPlan), [])) {
+        throw new Error(`Source visual changed since completion for ${task.id}; explicitly regenerate the shot before reuse`);
+      }
       const restored = restoreTaskOutput(task, this.opts.brandId || params.spec.project.brandId);
       if (!restored) {
         task.status = "failed";
@@ -432,17 +437,47 @@ export class GenerationExecutionEngine {
     const { spec, task, priorOutputs } = params;
     const visualSpec = applyLongFormVisualPlanning(spec);
     assertVisualPlanExecutable(visualSpec);
-    const visualKind = visualSpec.scenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId)?.visualPlan?.kind;
+    const visualShot = visualSpec.scenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId);
+    const visualKind = visualShot?.visualPlan?.kind;
+    const sourceHash = task.kind === "keyframe" && visualShot && usesSourceVisual(visualShot)
+      ? buildTaskInputHash(task, JSON.stringify(visualShot.visualPlan), []) : undefined;
     if (task.kind === "video" && visualKind && visualKind !== "VIDEO") {
       throw makeExecutionError("invalid_request", "Visual plan does not authorize AI video for this shot", { retryable: false, retryability: "DO_NOT_RETRY" });
     }
     if (task.status === "succeeded" && !this.opts.dryRun) {
+      if (sourceHash && task.completedOutput?.inputHash !== sourceHash) {
+        throw makeExecutionError("invalid_request", "Source visual changed since completion; explicitly regenerate the shot before reuse", { retryable: false, retryability: "DO_NOT_RETRY" });
+      }
       const restored = restoreTaskOutput(task, this.opts.brandId || spec.project.brandId);
       if (!restored) {
         task.reconciliationRequired = true;
         throw makeExecutionError("output_unavailable", "Completed task has no valid saved output; recover its asset before retrying", { retryable: false, retryability: "DO_NOT_RETRY" });
       }
       return restored;
+    }
+    if (!this.opts.dryRun && task.kind === "keyframe" && visualShot && usesSourceVisual(visualShot)) {
+      const plan = visualShot.visualPlan!;
+      const sourceUrl = plan.source?.url || await renderVisualGraphic(visualShot);
+      if (this.cancelled.has(task.id)) throw makeExecutionError("cancelled", "Source media execution cancelled", { retryable: false });
+      const mediaType = plan.source?.mediaType || "image";
+      const now = new Date().toISOString();
+      const execution: GenerationExecution = {
+        id: newExecutionId(), taskId: task.id, productionId: task.productionId,
+        sceneId: task.sceneId, shotId: task.shotId, provider: "source_media", inputHash: sourceHash,
+        status: "succeeded", attempt: 1, maxAttempts: 1, startedAt: now, completedAt: now,
+        inputAssets: [], outputAssets: [], usage: { actualCost: 0, currency: "USD" },
+        metadata: { visualKind: plan.kind, attribution: plan.source?.attribution || plan.graphic?.sourceLabel, sourceAssetId: plan.source?.assetId },
+      };
+      const asset = await persistNormalizedOutput({
+        output: { mediaType, sourceUrl, mimeType: mediaType === "image" ? "image/png" : "video/mp4",
+          providerJobId: execution.id, metadata: execution.metadata || {}, durationSec: visualShot.durationSec },
+        execution, task, brandId: this.opts.brandId || spec.project.brandId, persistPort: this.persistPort,
+      });
+      execution.outputAssets = [{ mediaType, sourceUrl, productionAssetId: asset.id, mimeType: asset.mimeType }];
+      return { execution, asset };
+    }
+    if (!this.opts.dryRun && task.kind === "merge" && task.dependsOn.some(dep => !priorOutputs[dep])) {
+      throw makeExecutionError("dependency_failed", "Merge is missing a required media output", { retryable: false, retryability: "DO_NOT_RETRY" });
     }
     const prepared = prepareTaskInputs({ spec, task, priorOutputs });
     const inputHash = buildTaskInputHash(

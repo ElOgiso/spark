@@ -12,7 +12,7 @@ import { framesToSec } from "../timebase";
 
 export interface FfmpegRenderPlan {
   adapterId: "ffmpeg";
-  concatInputs: Array<{ url: string; clipId: string; startSec: number; endSec: number; volume: number; muted: boolean; volumeAutomation: Array<{ atSec: number; gainDb: number }> }>;
+  concatInputs: Array<{ url: string; clipId: string; mediaType: EditorialClip["mediaType"]; timelineStartSec: number; timelineEndSec: number; playbackRate: number; startSec: number; endSec: number; volume: number; muted: boolean; volumeAutomation: Array<{ atSec: number; gainDb: number }> }>;
   /** Legacy convenience only; audioInputs is authoritative. */
   audioUrl?: string;
   audioInputs: Array<{
@@ -53,6 +53,10 @@ export function buildFfmpegRenderPlan(
     .map((c) => ({
       url: c.sourceUrl!,
       clipId: c.id,
+      mediaType: c.mediaType,
+      timelineStartSec: framesToSec(c.timelineStartFrames, timeline.frameRate),
+      timelineEndSec: framesToSec(c.timelineEndFrames, timeline.frameRate),
+      playbackRate: c.playbackRate,
       volume: c.volume,
       muted: c.muted || Boolean(video?.muted),
       volumeAutomation: c.volumeAutomation.map(point => ({ atSec: framesToSec(point.atFrames, timeline.frameRate), gainDb: point.gainDb })),

@@ -1,3 +1,4 @@
+import { usesSourceVisual, renderVisualGraphic } from "./generation/visualMedia";
 import { isEphemeralMediaUrl, isSparkStorageUrl, isPersistableSparkMediaUrl, extractSparkStoragePath } from "./mediaUrlUtils";
 import { buildProductionLookLaw, ProductionLookLaw } from "./productionLookLaw";
 // LOOKLAW_IMPORT_MARKER
@@ -1582,7 +1583,7 @@ export class ProductionAssetService {
       const sheetPanelSceneUrls: (string | undefined)[] = new Array(currentStoryboard.length);
 
       const renderStoryboardSheetOnce = async (label: string): Promise<boolean> => {
-        if (currentStoryboard.length === 0) return false;
+        if (currentStoryboard.length === 0 || spec?.scenes.some(scene => scene.shots.some(usesSourceVisual))) return false;
         try {
           checkAborted();
           emitProgress(18, "Keyframes", `Rendering multi-panel storyboard sheet (${currentStoryboard.length} panels, ${label})...`);
@@ -1844,6 +1845,33 @@ export class ProductionAssetService {
           checkAborted();
           const s = currentStoryboard[sIdx];
           const globalSceneNum = s.scene || sIdx + 1;
+
+          const sourceShot = spec?.scenes.flatMap(scene => scene.shots).find(shot => shot.id === (s.shotId || s.id));
+          if (sourceShot && usesSourceVisual(sourceShot)) {
+            const sourceTask = tasks.find(t => t.shotId === sourceShot.id && t.kind === "keyframe");
+            if (!engine || !sourceTask || !spec) throw new Error(`Missing canonical source task for ${sourceShot.id}`);
+            const result = await engine.executeTask({ spec, task: sourceTask, priorOutputs });
+            const url = result.asset?.publicUrl;
+            if (result.task.status !== "succeeded" || !url) throw new Error(`Source media unavailable for ${sourceShot.id}`);
+            const isVideo = sourceShot.visualPlan?.source?.mediaType === "video";
+            const stored = isPersistableSparkMediaUrl(url)
+              ? { publicUrl: url, assetId: sourceShot.visualPlan?.source?.assetId || result.asset?.id }
+              : await this.uploadAssetToStorage({
+              productionId: production.id, brandId: (brand as any).id,
+              assetType: isVideo ? "video" : "image",
+              storagePath: getStoragePath(`scenes/${sourceShot.id}-source.${isVideo ? "mp4" : "png"}`),
+              dataUrlOrBlob: url, mimeType: isVideo ? "video/mp4" : "image/png",
+              prompt: sourceShot.visualPlan?.source?.attribution || sourceShot.visualPlan?.graphic?.sourceLabel || sourceShot.visualPlan!.reason,
+              provider: "source_media", sceneId: sourceShot.sceneId, shotId: sourceShot.id, taskId: sourceTask.id,
+            });
+            if (!stored?.publicUrl || !isPersistableSparkMediaUrl(stored.publicUrl)) throw new Error(`Source media storage failed for ${sourceShot.id}`);
+            priorOutputs[sourceTask.id] = stored.publicUrl;
+            if (isVideo) { s.videoUrl = stored.publicUrl; s.videoAssetId = stored.assetId; sceneImages.push(""); }
+            else { s.image = stored.publicUrl; s.keyframeImageUrl = stored.publicUrl; s.sourceImageAssetId = stored.assetId; sceneImages.push(stored.publicUrl); }
+            sourceTask.productionAssetId = stored.assetId || sourceTask.productionAssetId;
+            if (sourceTask.completedOutput) sourceTask.completedOutput.asset = { ...sourceTask.completedOutput.asset, id: sourceTask.productionAssetId!, publicUrl: stored.publicUrl };
+            continue;
+          }
 
           // Panels on the sheet ARE the scene images — never re-generate when crop succeeded
           const panelStill = sheetPanelSceneUrls[sIdx];
@@ -2364,11 +2392,43 @@ export class ProductionAssetService {
         console.log(`[SPARK Pipeline] Generation parameters changed (target: ${currentDuration}s ${currentMode} [${currentProvider} · ${currentAspect}], prev: ${prevProdDuration}s ${prevProdMode} [${prevProdProvider} · ${prevProdAspect}]). Skipping stale video reuse and synthesizing fresh video.`);
       }
 
+      const hasVisualPlan = Boolean(spec?.scenes.some(scene => scene.shots.some(shot => shot.visualPlan)));
+      const compilePlannedMaster = async () => {
+        if (!spec) throw new Error("Visual plan missing");
+        if (spec.audio.hasNarration && !realVoiceUrl) throw new Error("Required narration is missing; master not assembled");
+        const { compileMixedVisualVideo } = await import("./narratorVideoCompiler");
+        const clips = [];
+        for (const shot of spec.scenes.flatMap(scene => scene.shots)) {
+          const panel = currentStoryboard.find(s => (s.shotId || s.id) === shot.id);
+          const isVideo = shot.visualPlan
+            ? shot.visualPlan.kind === "VIDEO" || shot.visualPlan.source?.mediaType === "video"
+            : tasks.some(task => task.shotId === shot.id && task.kind === "video");
+          const url = isVideo ? panel?.videoUrl : panel?.image || panel?.keyframeImageUrl;
+          if (!url) throw new Error(`Required ${isVideo ? "video" : "image"} missing for ${shot.id}; master not assembled`);
+          const steps = shot.visualPlan?.kind === "MOTION_GRAPHIC" && !shot.visualPlan.source ? shot.visualPlan.graphic?.steps : undefined;
+          const animationFrames = steps ? await Promise.all(steps.map((_, i) => renderVisualGraphic(shot, (i + 1) / steps.length))) : undefined;
+          clips.push({ url, mediaType: isVideo ? "video" as const : "image" as const,
+            durationSec: shot.durationSec, text: panel?.onScreenText, animationFrames });
+        }
+        const result = await compileMixedVisualVideo({ clips, audioUrl: realVoiceUrl, sfxUrl: realSfxUrl,
+          width: compileWidth, height: compileHeight, signal });
+        const stored = await this.uploadAssetToStorage({ productionId: production.id, brandId: (brand as any).id,
+          assetType: "video", storagePath: getStoragePath(`video/master.${result.extension}`),
+          dataUrlOrBlob: result.blob, mimeType: result.mimeType, prompt: "Ordered visual plan with narration",
+          provider: "NarratorHybridCompiler" });
+        if (!stored?.publicUrl || !isDurableMasterVideoReady(stored.publicUrl)) throw new Error("Mixed visual master storage failed");
+        realVideoUrl = stored.publicUrl;
+        (brief as any).canonicalMasterUrl = realVideoUrl;
+        (production as any).canonicalMasterUrl = realVideoUrl;
+      };
+
       if (!realVideoUrl) {
         try {
           const isExpressNarrator = skipI2V;
 
-          if (isExpressNarrator) {
+          if (isExpressNarrator && hasVisualPlan) {
+            await compilePlannedMaster();
+          } else if (isExpressNarrator) {
             // NARRATOR PIPELINE (express): Compile stills + voiceover into video without calling videoGeneration provider
             console.log(`[SPARK Pipeline] Mode is "${mode}" (Narrator). Compiling ordered stills + voiceover narration into master MP4 (0 AI video credits burned).`);
             emitProgress(70, "Compile", "Compiling Narrator slideshow video from single-scene stills & voiceover...");
@@ -2465,8 +2525,8 @@ export class ProductionAssetService {
               const globalSceneNum = s.scene || sIdx + 1;
 
               const plannedVisual = spec?.scenes.flatMap(scene => scene.shots).find(shot => shot.id === (s.shotId || s.id))?.visualPlan;
-              if (plannedVisual?.kind === "IMAGE") {
-                s.videoUrl = undefined;
+              if (plannedVisual && plannedVisual.kind !== "VIDEO") {
+                if (plannedVisual.source?.mediaType !== "video") s.videoUrl = undefined;
                 continue;
               }
 
@@ -3224,7 +3284,9 @@ export class ProductionAssetService {
               void persistCurrentStage(`Scene-Video-${globalSceneNum}`);
             }
 
-            if (mode === "standard" && sceneClips.length === 1 && currentStoryboard.length > 1) {
+            if (hasVisualPlan) {
+              await compilePlannedMaster();
+            } else if (mode === "standard" && sceneClips.length === 1 && currentStoryboard.length > 1) {
               // HYBRID MUX: Hook video (scene 1) + remaining narrator stills (scenes 2..N) + full VO narration
               emitProgress(82, "Merge", `Compiling Hybrid master MP4 (Hook video + ${currentStoryboard.length - 1} narrator stills + voiceover)...`);
               try {

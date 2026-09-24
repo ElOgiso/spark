@@ -127,6 +127,17 @@ export interface ShotSpec {
   visualPlan?: {
     kind: "IMAGE" | "VIDEO" | "STOCK" | "SCREENSHOT" | "MAP" | "CHART" | "TEXT" | "MOTION_GRAPHIC" | "USER_ASSET";
     reason: string;
+    /** Existing uploaded/licensed media, never a request to fabricate evidence. */
+    source?: { url: string; mediaType: "image" | "video"; attribution: string; assetId?: string };
+    graphic?: {
+      title: string;
+      sourceLabel?: string;
+      text?: string;
+      bars?: Array<{ label: string; value: number }>;
+      /** Geographic route rendered as a labelled schematic, not a basemap. */
+      points?: Array<{ label: string; longitude: number; latitude: number }>;
+      steps?: string[];
+    };
   };
   timingStartSec: number;
   startTime?: number;

@@ -25,7 +25,7 @@ export function mediaTypeToAssetType(
   mediaType: NormalizedMediaOutput["mediaType"],
   taskKind: GenerationTask["kind"]
 ): ProductionAsset["assetType"] {
-  if (taskKind === "keyframe") return "frame";
+  if (taskKind === "keyframe" && mediaType === "image") return "frame";
   if (mediaType === "audio") return "audio";
   if (mediaType === "image") return "image";
   return "video";
@@ -149,6 +149,11 @@ export async function persistNormalizedOutput(params: {
       width: output.width,
       height: output.height,
       durationSec: output.durationSec,
+      ...(execution.provider === "source_media" ? {
+        visualKind: execution.metadata?.visualKind,
+        sourceAttribution: execution.metadata?.attribution,
+        sourceAssetId: execution.metadata?.sourceAssetId,
+      } : {}),
       // usage only when actually provided
       ...(output.usage ? { usage: output.usage } : {}),
     },

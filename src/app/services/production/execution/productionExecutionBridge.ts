@@ -149,7 +149,7 @@ export function buildSpecLinkedStoryboard(spec: ProductionSpec): ProductionScene
         endState: shot.motion?.endState || base.endState,
         primaryChange: shot.subjectAction || base.primaryChange,
         action: shot.subjectAction || base.action,
-        audio: shot.visualPlan?.kind === "IMAGE" ? "vo" : base.audio,
+        audio: shot.visualPlan && shot.visualPlan.kind !== "VIDEO" ? "vo" : base.audio,
         spokenLines: shot.narration || shot.dialogue || base.spokenLines,
         scriptSnippet: shot.narration || shot.dialogue || base.scriptSnippet,
         image: shot.keyframeUrl || base.image,
@@ -304,9 +304,10 @@ export function projectAssetsOntoSpec(params: {
       const videoTask = tasks.find((t) => t.shotId === shot.id && t.kind === "video");
 
       if (keyframeTask && !keyframeTask.reconciliationRequired) {
-        if (imageUrl) {
+        const sourceVideo = shot.visualPlan?.source?.mediaType === "video";
+        if (sourceVideo ? videoUrl : imageUrl) {
           keyframeTask.status = "succeeded";
-          keyframeTask.productionAssetId = sourceImageAssetId || keyframeTask.productionAssetId;
+          keyframeTask.productionAssetId = (sourceVideo ? videoAssetId : sourceImageAssetId) || keyframeTask.productionAssetId;
           keyframeTask.lastError = undefined;
         } else if (shotFailed || (!imageUrl && !masterOk)) {
           keyframeTask.status = "failed";
@@ -415,7 +416,7 @@ export function projectAssetsOntoSpec(params: {
   for (const task of tasks) {
     if (task.status !== "succeeded" || !task.completedOutput) continue;
     const shot = nextScenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId);
-    const url = task.kind === "keyframe" ? shot?.keyframeUrl
+    const url = task.kind === "keyframe" ? (shot?.visualPlan?.source?.mediaType === "video" ? shot.mediaUrl : shot?.keyframeUrl)
       : task.kind === "video" ? shot?.mediaUrl
       : task.kind === "voice" ? assetResult.audioUrl
       : task.kind === "merge" ? assetResult.videoUrl : undefined;

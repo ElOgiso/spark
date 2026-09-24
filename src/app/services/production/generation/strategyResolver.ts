@@ -1,3 +1,4 @@
+import { validateSourceVisual } from "./visualMedia";
 /**
  * Deterministic generation-strategy resolver.
  * Decides WHAT kind of generation a shot needs — not which provider.
@@ -35,6 +36,14 @@ export function applyLongFormVisualPlanning(spec: ProductionSpec): ProductionSpe
         visualPlan = { kind: "VIDEO", reason: first ? "Selected hybrid opening hook." : "The beat explicitly requires visible motion." };
       } else visualPlan = { kind: "IMAGE", reason: "Narration can be supported by a still; AI video is not required." };
     }
+    if (!["IMAGE", "VIDEO"].includes(visualPlan.kind) && !visualPlan.source && !visualPlan.graphic && (shot.mediaUrl || shot.keyframeUrl || shot.references?.firstFrameUrl)) {
+      visualPlan = { ...visualPlan, source: { url: (shot.mediaUrl || shot.keyframeUrl || shot.references?.firstFrameUrl)!,
+        mediaType: shot.mediaUrl ? "video" : "image", assetId: shot.mediaUrl ? shot.videoAssetId : shot.sourceImageAssetId,
+        attribution: `Existing production asset for ${shot.id}` } };
+    }
+    if (visualPlan.kind === "TEXT" && !visualPlan.source && !visualPlan.graphic && scene.onScreenText?.trim()) {
+      visualPlan = { ...visualPlan, graphic: { title: scene.title || "Text", text: scene.onScreenText } };
+    }
     return {
       ...shot, visualPlan,
       ...(visualPlan.kind === "IMAGE" ? { generationStrategy: "slideshow_still" as const, generationStrategySpec: strategyFromAlias("slideshow_still") } : {}),
@@ -48,14 +57,14 @@ export function applyLongFormVisualPlanning(spec: ProductionSpec): ProductionSpe
 export function assertVisualPlanExecutable(spec: ProductionSpec): void {
   const mode = normalizeModeString(String(spec.project.productionMode)) || "standard";
   const shots = spec.scenes.flatMap(scene => scene.shots);
-  for (const [index, shot] of shots.entries()) {
+  for (const shot of shots) {
     const kind = shot.visualPlan?.kind;
     if (!kind) continue;
     if (kind !== "IMAGE" && kind !== "VIDEO") {
-      throw new Error(`Visual planning requires ${kind} sourcing/rendering for shot ${shot.id}; generation is paused before provider spend.`);
+      validateSourceVisual(shot);
     }
-    if (kind === "VIDEO" && (mode === "express" || (mode === "standard" && index > 0 && shots.some(s => s.visualPlan?.kind === "IMAGE")))) {
-      throw new Error(`Visual plan for shot ${shot.id} requires mixed-timeline assembly beyond the existing narrator/hybrid hook compiler.`);
+    if (kind === "VIDEO" && mode === "express") {
+      throw new Error(`Visual plan for shot ${shot.id} requests AI video in Narrator mode.`);
     }
   }
 }

@@ -111,9 +111,22 @@ export function prepareTaskInputs(params: {
   }
 
   if (task.kind === "merge") {
-    for (const dep of task.dependsOn) {
+    // Dependency sets are sorted by ID; editorial order must come from the spec.
+    const shotOrder = spec.scenes.flatMap(scene => scene.shots);
+    const orderedDeps = [...task.dependsOn].sort((a, b) => {
+      const index = (id: string) => { const i = shotOrder.findIndex(s => id === `${s.id}_keyframe` || id === `${s.id}_video` || s.generationTasks?.some(t => t.id === id)); return i < 0 ? Number.MAX_SAFE_INTEGER : i; };
+      return index(a) - index(b);
+    });
+    for (const dep of orderedDeps) {
       const url = prior[dep];
-      if (url) inputs.push({ role: "source_video", url, mimeType: "video/mp4", assetRef: dep });
+      if (!url) continue;
+      const depTask = spec.productionTasks?.find(t => t.id === dep) || spec.scenes.flatMap(s => s.shots.flatMap(s => s.generationTasks || [])).find(t => t.id === dep);
+      const depShot = spec.scenes.flatMap(s => s.shots).find(s => s.id === depTask?.shotId || dep === `${s.id}_keyframe` || dep === `${s.id}_video`);
+      const audio = depTask?.kind === "voice" || dep === `${spec.project.id}_voice`;
+      const image = !audio && (depShot?.visualPlan ? depShot.visualPlan.kind !== "VIDEO" && depShot.visualPlan.source?.mediaType !== "video" : dep.endsWith("_keyframe"));
+      inputs.push({ role: audio ? "audio" : image ? "other" : "source_video", url,
+        mimeType: audio ? "audio/mpeg" : image ? "image/png" : "video/mp4", assetRef: dep,
+        durationSec: depShot?.durationSec, visualPlan: depShot?.visualPlan });
     }
   }
 
@@ -126,7 +139,7 @@ export function prepareTaskInputs(params: {
       : shot?.compiledPrompt || spec.creative?.intent || "",
     negativePrompt: shot?.compiledNegativePrompt,
     aspectRatio: task.outputRequirements?.aspectRatio || shot?.aspectRatio || String(spec.project.aspectRatio),
-    durationSec: task.outputRequirements?.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : 5),
+    durationSec: task.outputRequirements?.durationSec ?? shot?.durationSec ?? (task.kind === "voice" ? undefined : task.kind === "merge" ? spec.project.targetDurationSec : 5),
     resolution: task.outputRequirements?.resolutionClass || shot?.resolution,
     model: task.selectedModel || shot?.model,
     provider,

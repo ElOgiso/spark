@@ -142,6 +142,8 @@ export interface AdapterPorts {
   }>;
   submitMerge?: (req: ProviderGenerationRequest) => Promise<{
     videoUrl: string;
+    mimeType?: string;
+    durationSec?: number;
     providerJobId: string;
     provider: string;
   }>;
