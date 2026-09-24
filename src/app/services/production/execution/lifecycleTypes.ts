@@ -110,6 +110,7 @@ export interface ProductionLifecycleCheckpoint {
 export interface ProductionCostRollup {
   estimated: number;
   actual: number;
+  actualCostStatus?: "measured" | "unknown" | "free";
   currency: string;
   byProvider: Record<string, number>;
   notes: string[];

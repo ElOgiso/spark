@@ -27,7 +27,7 @@ A completion record proves a scoped implementation, not that every live consumer
 | 14 Long-form visuals | Classification, supplied-source tasks, deterministic factual graphics and shared mixed-media compilation are wired | Real browser/long-duration export acceptance and deployed runtime verification remain open. Stock/screenshots require supplied media; no autonomous stock licensing or site capture is claimed. See Phase 14.2 below. |
 | 15 Audio | AudioSpec source bindings, conversion lineage, measured timeline placement, all-lane mixing and mastering handoff implemented | See `SPARK_PHASE_15_AUDIO_DIRECTOR_RECORD.md`. Conversion submission, live multitrack DSP and measured loudness verification remain runtime gates. |
 | 16 Video understanding | `research/providers/VideoUnderstandingProvider.ts`, watch/research integration | Extend the existing provider abstraction for uploaded references and planning/QC/craft consumers. |
-| 17 Observability/memory | Execution logging and existing performance/learning modules | Persist joined task/job/cost/credit/QC evidence; learn measured production outcomes rather than fabricated actuals. |
+| 17 Observability/memory | Implemented canonical production observability events (`public.production_events`), secret sanitization, unified trace synthesis, fail-closed boundaries, sample-size-protected learning gates, and lifecycle/autonomy bridging | See `SPARK_PHASE_17_OBSERVABILITY_MEMORY_RECORD.md`. Migration `20260924135502_production_observability_events.sql` ready in repo; requires live apply to Supabase project `jaqzjhabmtvqtvinoafq`. |
 | 18 Security/data | RLS, profiles, admin RPCs | Profile write privileges corrected live in prior task; migration is included in this checkpoint. OAuth/token boundary, media ingestion isolation, overlapping policies and secured financial RPCs remain. |
 | 19 Admin operations | Existing admin credit controls | Extend with verified spend, reservations, actual margin, model/provider health and pricing management. |
 | 20 UI integration | Existing navigation, modes, credit/settings surfaces | Connect verified estimates/budget/balance; keep infrastructure details in admin/debug surfaces. No redesign. |
@@ -173,6 +173,25 @@ A completion record proves a scoped implementation, not that every live consumer
   - `ContinuityEvidence`: Evaluates transition consistency across adjacent shots via boundary states.
 - 100% backward compatible with existing `VideoUnderstandingProvider` callers (`researchWatchWinners.test.ts` passes 17/17).
 - Verification on 2026-09-24: Phase 16 suite (23/23 tests pass), full test suite (1,335/1,335 tests pass across 294 suites), typecheck (0 errors), production build passed. Zero provider spend ($0.00).
+
+### Phase 17 — Observability + Production Memory (implemented)
+
+- Make SPARK capable of answering truthfully and durably: what was planned, what was routed, what was spent, did execution succeed, what asset came back, did QC accept it, was it repaired, what became final master, was it published, how did it perform, and what should SPARK learn?
+- Core law: **SPARK owns meaning. Providers own execution.** Store evidence first, learn second. Never hallucinate costs or outcomes. Unmeasured provider spend is explicitly recorded as `actualCostStatus: "unknown"`, never falsified as zero.
+- Canonical Append-Only Event Store (`public.production_events`):
+  - Created migration `20260924135502_production_observability_events.sql` establishing a narrow, dedicated event table with UUID primary key, indexed foreign keys (`production_id`, `task_id`, `execution_id`, `user_id`, `event_type`), row-level security (RLS), and explicit privilege restrictions revoking `UPDATE` and `DELETE` from authenticated and anon roles.
+- Sanitizer & Fail-Closed Boundary:
+  - Recursive secret sanitizer redacts sensitive key patterns (`authorization`, `api_key`, `access_token`, `refresh_token`, `bearer`, `secret`, `password`, `credential`, `token`, `service_role`).
+  - `ProductionObserver` enforces fail-closed behavior for `critical` events (fail the operation if storage fails) and non-blocking delivery for `diagnostic` telemetry.
+- Unified Trace Synthesis:
+  - `buildProductionTrace(productionId, repo)` reconstructs the complete lifecycle timeline: plan, routing, execution attempts, economic ledger (reservations, settlement, release, cost truth), asset history, QC assessments, repair lineages (`originalAssetId -> failureCode -> repairAction -> replacementAssetId -> secondQcVerdict`), editorial assembly, master rendering, publishing destinations, and measured analytics.
+- Sample-Size Protected Learning Gates:
+  - `deriveProviderReliabilityFromTrace` enforces `minSamplesForPreference >= 2` before any candidate ranking bias can be adjusted.
+  - `deriveRepairEffectivenessFromTrace` records both successful and failed repair outcomes.
+  - `gateAudiencePerformanceLearnings` gates out unmeasured/missing analytics and preserves sample-size thresholds.
+  - `bridgeQualifiedLearningsToMemory` maps verified learnings into canonical `MemoryItem` records while deduplicating and preventing memory spam.
+- Integrated into `productionLifecycleRunner.ts`, `observability.ts`, and `learningUpdatePipeline.ts`.
+- Verification on 2026-09-24: Phase 17 test suite (26/26 tests pass across tests A through Z), full test suite (1,375/1,375 tests pass across 296 suites), clean typecheck (`tsc --noEmit`), and clean production build. Zero provider spend ($0.00).
 
 ## Verification discipline
 

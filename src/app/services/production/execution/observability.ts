@@ -1,9 +1,8 @@
-/**
- * Structured execution observability — never log secrets.
- */
-
 import type { GenerationExecution, ExecutionStatus } from "./types";
 import { userFacingExecutionMessage } from "./errors";
+import { sanitizeEvidence } from "../observability/sanitizer";
+import { getProductionObserver } from "../observability/observer";
+import type { ProductionEventType } from "../observability/types";
 
 const SECRET = /(api[_-]?key|authorization|bearer|token|secret|password|credential)/i;
 
@@ -28,7 +27,7 @@ export type ExecutionLogger = (event: ExecutionLogEvent) => void;
 export function createMemoryLogger(): ExecutionLogger & { events: ExecutionLogEvent[] } {
   const events: ExecutionLogEvent[] = [];
   const logger = ((event: ExecutionLogEvent) => {
-    const safe = { ...event } as ExecutionLogEvent;
+    let safe = sanitizeEvidence({ ...event }) as ExecutionLogEvent;
     // belt-and-suspenders
     if (SECRET.test(JSON.stringify(safe))) {
       safe.userMessage = "SPARK is processing";
@@ -46,7 +45,7 @@ export function logExecutionTransition(
 ): void {
   const started = execution.startedAt ? Date.parse(execution.startedAt) : undefined;
   const completed = execution.completedAt ? Date.parse(execution.completedAt) : undefined;
-  logger({
+  const event: ExecutionLogEvent = {
     at: new Date().toISOString(),
     executionId: execution.id,
     taskId: execution.taskId,
@@ -63,5 +62,74 @@ export function logExecutionTransition(
     assetProduced: execution.outputAssets[0]?.productionAssetId,
     userMessage: userFacingExecutionMessage(execution.status, execution.error?.code),
     ...extras,
-  });
+  };
+  logger(event);
+
+  // Wire into canonical ProductionObserver
+  try {
+    const observer = getProductionObserver();
+    let eventType: ProductionEventType = "execution_running";
+    if (
+      execution.error?.code === "unknown_submission" ||
+      execution.error?.category === "UNKNOWN_SUBMISSION" ||
+      (execution.error?.code as string) === "UNKNOWN_SUBMISSION"
+    ) {
+      eventType = "execution_unknown_submission";
+    } else {
+      switch (execution.status) {
+        case "queued":
+          eventType = "execution_queued";
+          break;
+        case "submitting":
+          eventType = "execution_submitting";
+          break;
+        case "submitted":
+          eventType = "execution_submitted";
+          break;
+        case "running":
+          eventType = "execution_running";
+          break;
+        case "succeeded":
+          eventType = "execution_succeeded";
+          break;
+        case "failed":
+          eventType = "execution_failed";
+          break;
+        case "cancelled":
+          eventType = "execution_cancelled";
+          break;
+      }
+    }
+
+    const isCritical =
+      eventType === "execution_unknown_submission" ||
+      eventType === "execution_submitted";
+
+    void observer.recordExecution(
+      execution.productionId,
+      execution.taskId,
+      execution.id,
+      eventType,
+      {
+        provider: execution.provider,
+        model: execution.model,
+        attempt: execution.attempt,
+        status: execution.status,
+        failureCategory: execution.error?.code,
+        assetProducedId: execution.outputAssets[0]?.productionAssetId,
+        durationMs: event.durationMs,
+        ...extras,
+      },
+      isCritical,
+      {
+        providerId: execution.provider,
+        modelId: execution.model,
+        attempt: execution.attempt,
+        assetId: execution.outputAssets[0]?.productionAssetId,
+        occurredAt: event.at,
+      }
+    );
+  } catch {
+    // Observer recording failure shouldn't crash caller unless critical
+  }
 }

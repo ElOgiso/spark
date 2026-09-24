@@ -119,6 +119,7 @@ export interface ProductionOutcomeRecord {
   qcFailureCodes?: string[];
   estimatedCost?: number;
   actualCost?: number;
+  actualCostStatus?: "measured" | "unknown" | "free";
   generationDurationMs?: number;
   productionDurationMs?: number;
   masterVersion?: string;

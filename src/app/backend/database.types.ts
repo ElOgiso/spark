@@ -80,6 +80,27 @@ export interface CreditReservationRow {
   updated_at: string;
 }
 
+export interface ProductionEventRow {
+  id: string;
+  user_id: string | null;
+  brand_id: string | null;
+  production_id: string;
+  event_type: string;
+  occurred_at: string;
+  task_id: string | null;
+  scene_id: string | null;
+  shot_id: string | null;
+  execution_id: string | null;
+  provider_job_id: string | null;
+  provider_id: string | null;
+  model_id: string | null;
+  attempt: number | null;
+  asset_id: string | null;
+  reservation_id: string | null;
+  metadata: Json;
+  created_at: string;
+}
+
 export interface CouponRow {
   id: string;
   code: string;
@@ -477,6 +498,7 @@ export interface Database {
       research_patterns: Table<ResearchPatternRow>;
       credit_reservations: Table<CreditReservationRow>;
       credit_ledger: Table<CreditLedgerRow>;
+      production_events: Table<ProductionEventRow>;
     };
     Views: Record<string, never>;
     Functions: {

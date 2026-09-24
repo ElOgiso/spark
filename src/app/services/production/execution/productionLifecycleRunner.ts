@@ -35,6 +35,7 @@ import type {
   RunProductionLifecycleOptions,
 } from "./lifecycleTypes";
 import { ProductionGenerationGuard } from "../ProductionGenerationGuard";
+import { getProductionObserver } from "../observability/observer";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -184,6 +185,7 @@ export async function runProductionLifecycle(
         cost: {
           estimated: estimateCost(spec),
           actual: 0,
+          actualCostStatus: "unknown",
           currency: "USD",
           byProvider: {},
           notes: ["resume no-op"],
@@ -204,6 +206,59 @@ export async function runProductionLifecycle(
     const event: ProductionLifecycleEvent = { type, at: nowIso(), phase, message, ...extra };
     events.push(event);
     options.onEvent?.(event);
+
+    try {
+      const observer = getProductionObserver();
+      if (type === "lifecycle_started") {
+        void observer.recordPlanning(productionId, "production_planned", {
+          idea: spec.project.idea,
+          mode: spec.project.productionMode,
+          sceneCount: spec.scenes.length,
+          shotCount: spec.scenes.reduce((acc, s) => acc + s.shots.length, 0),
+          formatDirection:
+            (spec.creative as any)?.formatDirection ||
+            (spec.project as any)?.formatDirection ||
+            spec.project.productionMode,
+        });
+        void observer.recordEconomics(
+          productionId,
+          "cost_estimated",
+          {
+            estimatedCostUsd: estimateCost(spec),
+            currency: "USD",
+          },
+          false
+        );
+      } else if (type === "qc_completed" && qc) {
+        for (const shotRes of qc.report.shotResults) {
+          const sid = shotRes.shotId || "unknown_shot";
+          void observer.recordQc(productionId, sid, "qc_evaluated", {
+            score: shotRes.score,
+            verdict: shotRes.status,
+            failureCodes: shotRes.failures.map((f) => f.code),
+          });
+        }
+      } else if (type === "repair_completed" && qc) {
+        for (const rep of qc.repairsApplied) {
+          const action = rep.strategy || rep.action || rep.remediation || "repair";
+          const failCode =
+            rep.failureHistory?.[0] || rep.rootCauses?.[0]?.observedFailure || "qc_failure";
+          void observer.recordRepair(productionId, "repair_succeeded", {
+            repairAction: action,
+            failureCode: failCode,
+            succeeded: true,
+          });
+        }
+      } else if (type === "mastering_completed") {
+        void observer.recordEditorial(productionId, "mastering_succeeded", {
+          masterId: editorial?.mastering?.output?.masterId,
+          mediaUrl: editorial?.mastering?.output?.mediaUrl,
+          durationSec: editorial?.mastering?.output?.durationSec,
+        });
+      }
+    } catch {
+      // observer failure in runner does not abort lifecycle
+    }
   };
 
   const enter = (next: ProductionLifecyclePhase, message: string): boolean => {
@@ -283,6 +338,7 @@ export async function runProductionLifecycle(
       cost: {
         estimated: estimateCost(spec),
         actual: 0,
+        actualCostStatus: "unknown",
         currency: "USD",
         byProvider,
         notes: ["estimated only — providers did not report billable usage in this run"],

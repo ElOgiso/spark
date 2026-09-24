@@ -50,7 +50,7 @@ export function buildOutcomeFromLifecycle(input: {
     ok?: boolean;
     completed?: boolean;
     deliverableReady?: boolean;
-    cost?: { estimated?: number; actual?: number };
+    cost?: { estimated?: number; actual?: number; notes?: string[] };
     timing?: { durationMs?: number };
   };
   qualityScore?: number;
@@ -66,8 +66,31 @@ export function buildOutcomeFromLifecycle(input: {
   hookType?: string;
   creativeStrategyVersion?: string;
   learningSnapshotVersion?: number;
+  actualCostStatus?: "measured" | "unknown" | "free";
   now?: Date;
 }): ProductionOutcomeRecord {
+  // Cost truth: if actual cost is not explicitly measured, mark unknown
+  let actualCostStatus: "measured" | "unknown" | "free" = input.actualCostStatus || "unknown";
+  let actualCost = input.lifecycle?.cost?.actual;
+
+  if (input.actualCostStatus) {
+    actualCostStatus = input.actualCostStatus;
+    if (actualCostStatus === "unknown") actualCost = undefined;
+  } else if (actualCost !== undefined && actualCost > 0) {
+    actualCostStatus = "measured";
+  } else if (actualCost === 0) {
+    const hasUnmeasuredNote = input.lifecycle?.cost?.notes?.some((n) =>
+      /estimated only|not report billable/i.test(n)
+    );
+    if (hasUnmeasuredNote) {
+      actualCostStatus = "unknown";
+      actualCost = undefined;
+    }
+  } else {
+    actualCostStatus = "unknown";
+    actualCost = undefined;
+  }
+
   return {
     productionId: input.productionId,
     creativeStrategyVersion: input.creativeStrategyVersion,
@@ -82,7 +105,8 @@ export function buildOutcomeFromLifecycle(input: {
     repairCount: input.repairCount,
     qcFailureCodes: input.qcFailureCodes,
     estimatedCost: input.lifecycle?.cost?.estimated,
-    actualCost: input.lifecycle?.cost?.actual,
+    actualCost,
+    actualCostStatus,
     productionDurationMs: input.lifecycle?.timing?.durationMs,
     qualityScore: input.qualityScore,
     // Missing audience metrics remain undefined (= UNKNOWN), never 0
@@ -90,6 +114,49 @@ export function buildOutcomeFromLifecycle(input: {
     deliverableReady: input.lifecycle?.deliverableReady,
     completed: input.lifecycle?.completed,
     createdAt: (input.now || new Date()).toISOString(),
+  };
+}
+
+export function buildOutcomeFromTrace(
+  trace: import("../../observability/productionTrace").ProductionTrace,
+  options?: {
+    now?: Date;
+    audiencePerformanceScore?: number;
+    genre?: string;
+    hookType?: string;
+    creativeStrategyVersion?: string;
+    learningSnapshotVersion?: number;
+  }
+): ProductionOutcomeRecord {
+  const qualityScores = trace.qc.map((q) => q.score).filter((s): s is number => typeof s === "number");
+  const avgQuality = qualityScores.length
+    ? qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length
+    : undefined;
+
+  return {
+    productionId: trace.productionId,
+    format: trace.plan?.formatDirection,
+    genre: options?.genre,
+    hookType: options?.hookType,
+    creativeStrategyVersion: options?.creativeStrategyVersion,
+    learningSnapshotVersion: options?.learningSnapshotVersion,
+    platform: trace.publish?.platform,
+    durationSec: trace.plan?.targetDurationSec ?? trace.master?.durationSec,
+    providers: [...new Set(trace.executions.map((e) => e.providerId))],
+    models: [...new Set(trace.executions.map((e) => e.modelId).filter(Boolean) as string[])],
+    repairCount: trace.repairs.length,
+    qcFailureCodes: [...new Set(trace.qc.flatMap((q) => q.failureCodes))],
+    estimatedCost: trace.economics.estimatedCostUsd,
+    actualCost: trace.economics.actualCostStatus === "unknown" ? undefined : trace.economics.actualCostUsd,
+    actualCostStatus: trace.economics.actualCostStatus,
+    qualityScore: avgQuality,
+    audiencePerformanceScore:
+      trace.performance.performanceStatus === "measured" ? options?.audiencePerformanceScore : undefined,
+    deliverableReady: trace.master?.status === "succeeded",
+    completed: trace.master?.status === "succeeded" || trace.editorial?.assembled === true,
+    masterVersion: trace.master?.masterId,
+    publicationIds: trace.publish?.publishJobId ? [trace.publish.publishJobId] : undefined,
+    createdAt: (options?.now || new Date()).toISOString(),
   };
 }
 
