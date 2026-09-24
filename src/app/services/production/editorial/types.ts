@@ -115,6 +115,13 @@ export interface EditorialClip {
   mimeType?: string;
   status: EditorialClipStatus;
   provenance: EditorialProvenance;
+  /** Audio-only source semantics; embedded dialogue remains in its video clip. */
+  audioSource?: "external" | "embedded";
+  audioPlanId?: string;
+  mandatory?: boolean;
+  loop?: boolean;
+  timingBasis?: "measured" | "planned";
+  voiceConversion?: { sourceAssetId: string; targetVoiceRef: string; outputAssetId?: string };
 }
 
 export interface EditorialTrack {
@@ -221,6 +228,7 @@ export interface EditorialTimeline {
   captions: CaptionCue[];
   audioMix: AudioMixInstruction[];
   colorMastering?: ColorMasteringConfig;
+  audioMastering?: { targetLufs: number; truePeakDbtp: number };
   variants: DeliveryVariant[];
   status: EditorialStatus;
   unresolvedDependencies: UnresolvedDependency[];

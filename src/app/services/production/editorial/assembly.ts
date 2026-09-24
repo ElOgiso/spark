@@ -21,7 +21,7 @@ import {
   type EditorialEntryPolicy,
 } from "./eligibility";
 import { buildCaptionsFromSpec } from "./captions";
-import { buildAudioMixInstructions } from "./audioMix";
+import { assembleAudioTracks, buildAudioMixInstructions } from "./audioMix";
 import { createDefaultVariants, resolveAspectDimensions } from "./variants";
 import { userFacingEditorialStatus } from "./userMessages";
 
@@ -165,31 +165,6 @@ export function assembleEditorialTimeline(
         shotIds.push(shot.id);
         if (eligibility.asset?.id) assembledAssetIds.push(eligibility.asset.id);
 
-        // Narration / dialogue audio editorial clips (representation)
-        if (shot.narration || scene.narration) {
-          const nTrack = ensureTrack(tracks, "narration", 0);
-          nTrack.clips.push({
-            ...clip,
-            id: clipId("n", shot.id),
-            trackId: nTrack.id,
-            mediaType: "audio",
-            label: (shot.narration || scene.narration || "").slice(0, 80),
-            volume: 1,
-            sourceUrl: undefined,
-            assetId: assets.find((a) => a.assetType === "audio" && a.shotId === shot.id)?.id,
-          });
-        }
-        if (shot.dialogue || scene.dialogue) {
-          const dTrack = ensureTrack(tracks, "dialogue", 0);
-          dTrack.clips.push({
-            ...clip,
-            id: clipId("d", shot.id),
-            trackId: dTrack.id,
-            mediaType: "audio",
-            label: (shot.dialogue || scene.dialogue || "").slice(0, 80),
-            sourceUrl: undefined,
-          });
-        }
         if (scene.onScreenText) {
           const tTrack = ensureTrack(tracks, "text", 0);
           tTrack.clips.push({
@@ -218,62 +193,6 @@ export function assembleEditorialTimeline(
       }
     }
 
-    // Scene-level ambience / music / sfx markers
-    if (scene.ambience) {
-      const aTrack = ensureTrack(tracks, "ambience", 0);
-      aTrack.clips.push({
-        id: clipId("amb", scene.id),
-        trackId: aTrack.id,
-        sceneId: scene.id,
-        sourceStartFrames: 0,
-        sourceEndFrames: Math.max(1, cursor - sceneStart),
-        timelineStartFrames: sceneStart,
-        timelineEndFrames: cursor,
-        playbackRate: 1,
-        transform: identityTransform(),
-        opacity: 1,
-        volume: 0.4,
-        muted: false,
-        volumeAutomation: [],
-        label: scene.ambience,
-        mediaType: "audio",
-        status: "planned",
-        provenance: {
-          productionId: spec.project.id,
-          sceneId: scene.id,
-          sourceAssetIds: [],
-        },
-      });
-    }
-    if (scene.soundEffects?.length) {
-      const sTrack = ensureTrack(tracks, "sfx", 0);
-      for (const sfx of scene.soundEffects) {
-        sTrack.clips.push({
-          id: clipId("sfx", `${scene.id}_${sfx}`.slice(0, 40)),
-          trackId: sTrack.id,
-          sceneId: scene.id,
-          sourceStartFrames: 0,
-          sourceEndFrames: secToFrames(1, frameRate),
-          timelineStartFrames: sceneStart,
-          timelineEndFrames: sceneStart + secToFrames(1, frameRate),
-          playbackRate: 1,
-          transform: identityTransform(),
-          opacity: 1,
-          volume: 0.8,
-          muted: false,
-          volumeAutomation: [],
-          label: sfx,
-          mediaType: "audio",
-          status: "planned",
-          provenance: {
-            productionId: spec.project.id,
-            sceneId: scene.id,
-            sourceAssetIds: [],
-          },
-        });
-      }
-    }
-
     scenes.push({
       id: `escene_${scene.id}`,
       sceneSpecId: scene.id,
@@ -290,42 +209,9 @@ export function assembleEditorialTimeline(
     });
   }
 
-  // Music bed across full duration when required
-  if (spec.audio.hasMusic && cursor > 0) {
-    const mTrack = ensureTrack(tracks, "music", 0);
-    if (!mTrack.clips.length) {
-      mTrack.clips.push({
-        id: "music_bed_full",
-        trackId: mTrack.id,
-        sourceStartFrames: 0,
-        sourceEndFrames: cursor,
-        timelineStartFrames: 0,
-        timelineEndFrames: cursor,
-        playbackRate: 1,
-        transform: identityTransform(),
-        opacity: 1,
-        volume: 0.35,
-        muted: false,
-        volumeAutomation: [],
-        label: spec.audio.musicMood || "Score bed",
-        mediaType: "audio",
-        status: "planned",
-        provenance: { productionId: spec.project.id, sourceAssetIds: [] },
-      });
-    }
-  }
-
-  // Required narration asset check (skip in pure planned layout mode)
-  if (spec.audio.hasNarration && !allowPlanned) {
-    const hasVoice = assets.some((a) => a.assetType === "audio" && a.status === "completed");
-    const hasNarClips = tracks.some((t) => t.kind === "narration" && t.clips.length > 0);
-    if (!hasVoice && !hasNarClips) {
-      unresolved.push({
-        kind: "missing_audio",
-        message: "Narration required but no narration asset/clips present",
-      });
-    }
-  }
+  const audio = assembleAudioTracks({ spec, assets, tracks, scenes, frameRate, durationFrames: cursor, allowPlanned });
+  unresolved.push(...audio.unresolved);
+  assembledAssetIds.push(...audio.assetIds);
 
   const videoClips = tracks.find((t) => t.kind === "video")?.clips || [];
   const transitions = buildTransitionsFromClips(videoClips, frameRate);
@@ -358,6 +244,7 @@ export function assembleEditorialTimeline(
     transitions,
     captions,
     audioMix: [],
+    audioMastering: spec.audio.mastering,
     variants: createDefaultVariants({
       masterAspect: spec.project.aspectRatio || "9:16",
       masterWidth: dims.width,

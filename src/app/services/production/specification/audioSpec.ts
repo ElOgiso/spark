@@ -2,9 +2,24 @@
  * Production audio plan (dialogue, narration, ambience, music, SFX).
  */
 
+export type AudioRole = "dialogue" | "narration" | "ambience" | "music" | "sfx";
+
 export interface AudioTrackPlan {
   id: string;
-  kind: "dialogue" | "narration" | "ambience" | "music" | "sfx";
+  kind: AudioRole;
+  sceneId?: string;
+  shotId?: string;
+  assetId?: string;
+  /** Source trim, distinct from placement on the production timeline. */
+  sourceStartSec?: number;
+  loop?: boolean;
+  lane?: number;
+  /** Conversion output replaces the source; never play both as separate voices. */
+  voiceConversion?: {
+    sourceAssetId: string;
+    targetVoiceRef: string;
+    outputAssetId?: string;
+  };
   description: string;
   voiceMasterRef?: string;
   musicMasterRef?: string;
@@ -25,6 +40,10 @@ export interface AudioSpec {
   tracks: AudioTrackPlan[];
   mixNotes: string;
   lipSyncRequired: boolean;
+  mastering?: {
+    targetLufs: number;
+    truePeakDbtp: number;
+  };
 }
 
 export function buildDefaultAudioSpec(params: {

@@ -25,7 +25,7 @@ A completion record proves a scoped implementation, not that every live consumer
 | 12 QC/repair | Failure taxonomy, repair planner, rerouting and tests | Canonical repair exists; live integration, typed contracts and evidence-based final readiness remain gates. Type repairs are incorporated in this checkpoint. |
 | 13 Format directors | Shared scene mode policy, snapshot-aware adapters, mode-safe task planning and operational enrichment implemented | See `SPARK_PHASE_13_FORMAT_DIRECTORS_RECORD.md`. Paid mode runs and mixed-media master validation remain unverified; earlier compiler/QC gates remain open. |
 | 14 Long-form visuals | Existing shot strategy planner now classifies all nine visual roles; Narrator/Hybrid spend selection is wired | Source acquisition, factual map/chart/text rendering, arbitrary mixed timelines and real long-form export validation remain incomplete. See Phase 14 checkpoint below. |
-| 15 Audio | AudioSpec, voice/music/SFX paths, editorial audio mix | Wire dialogue, conversion, ambience, mix/master to one production timeline with measured durations. |
+| 15 Audio | AudioSpec source bindings, conversion lineage, measured timeline placement, all-lane mixing and mastering handoff implemented | See `SPARK_PHASE_15_AUDIO_DIRECTOR_RECORD.md`. Conversion submission, live multitrack DSP and measured loudness verification remain runtime gates. |
 | 16 Video understanding | `research/providers/VideoUnderstandingProvider.ts`, watch/research integration | Extend the existing provider abstraction for uploaded references and planning/QC/craft consumers. |
 | 17 Observability/memory | Execution logging and existing performance/learning modules | Persist joined task/job/cost/credit/QC evidence; learn measured production outcomes rather than fabricated actuals. |
 | 18 Security/data | RLS, profiles, admin RPCs | Profile write privileges corrected live in prior task; migration is included in this checkpoint. OAuth/token boundary, media ingestion isolation, overlapping policies and secured financial RPCs remain. |
@@ -41,7 +41,8 @@ A completion record proves a scoped implementation, not that every live consumer
 3. **D-08 — durable economics (implemented):** reused and secured SPARK's existing credit reservation and settlement architecture (`CreditService`, `CostEngine`, `SupabaseCreditRepository`). Hardened the reservation and settlement migration (`20260923100000_durable_production_economics.sql`) with explicit `search_path`, overage balance rejection without fabricated collection, and deterministic refund idempotency. Implemented and verified complete test matrix A through O (concurrency, idempotency, UNKNOWN_SUBMISSION hold, duplicate rejection, and execution engine integration) with zero paid provider spend ($0.00).
 4. **E/G — live compiler and QC integration (pending):** route the migrated operations through existing payload compiler and repair planner, with targeted retries and truthful master readiness.
 5. **Phase 13 — format planning (implemented):** extended existing directors on the shared spine; see the Phase 13 record for compatibility, tests and remaining runtime gates.
-6. **G/H — remaining phases (pending):** proceed through 14–22 while preserving the earlier open integration gates.
+6. **Phase 15 — audio timeline integration (implemented):** extended the existing audio/editorial/mastering contract at user request; see the Phase 15 record. Conversion submission and real multitrack rendering remain unverified.
+7. **G/H — remaining phases (pending):** Phase 14 runtime gates and Phases 16–22 remain; preserve earlier open integration and runtime gates.
 
 ### A-05a boundaries and verification
 

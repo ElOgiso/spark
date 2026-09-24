@@ -5,14 +5,27 @@
  * builds a portable render plan and optionally invokes a provided executor.
  */
 
-import type { EditorialTimeline, DeliveryVariant } from "../types";
+import type { EditorialTimeline, DeliveryVariant, EditorialClip } from "../types";
 import type { MasteringJob, MasteringRuntimeAdapter } from "./types";
+import { validateEditorialTimeline } from "../validation";
 import { framesToSec } from "../timebase";
 
 export interface FfmpegRenderPlan {
   adapterId: "ffmpeg";
-  concatInputs: Array<{ url: string; clipId: string; startSec: number; endSec: number }>;
+  concatInputs: Array<{ url: string; clipId: string; startSec: number; endSec: number; volume: number; muted: boolean; volumeAutomation: Array<{ atSec: number; gainDb: number }> }>;
+  /** Legacy convenience only; audioInputs is authoritative. */
   audioUrl?: string;
+  audioInputs: Array<{
+    url: string; clipId: string; trackId: string; role: string;
+    assetId?: string; sourceStartSec: number; sourceEndSec: number;
+    timelineStartSec: number; timelineEndSec: number; volume: number;
+    muted: boolean; loop: boolean; embedded: boolean; playbackRate: number;
+    timingBasis?: EditorialClip["timingBasis"];
+    volumeAutomation: Array<{ atSec: number; gainDb: number }>;
+    voiceConversion?: EditorialClip["voiceConversion"];
+  }>;
+  audioMastering?: EditorialTimeline["audioMastering"];
+  audioTarget: DeliveryVariant["audioTarget"];
   output: {
     width: number;
     height: number;
@@ -23,7 +36,7 @@ export interface FfmpegRenderPlan {
   };
   transitions: Array<{ type: string; atSec: number; durationSec: number }>;
   captions: Array<{ text: string; startSec: number; endSec: number; burnIn: boolean }>;
-  audioMix: Array<{ kind: string; gainDb: number; startSec: number; endSec: number }>;
+  audioMix: Array<{ kind: string; gainDb: number; startSec: number; endSec: number; targetTrackId: string; triggerTrackId?: string; duckDb?: number; priority: number }>;
   reframe?: DeliveryVariant["reframe"];
   /** Suggested argv sketch — not executed in browser */
   suggestedFilterGraphNotes: string[];
@@ -40,16 +53,32 @@ export function buildFfmpegRenderPlan(
     .map((c) => ({
       url: c.sourceUrl!,
       clipId: c.id,
+      volume: c.volume,
+      muted: c.muted || Boolean(video?.muted),
+      volumeAutomation: c.volumeAutomation.map(point => ({ atSec: framesToSec(point.atFrames, timeline.frameRate), gainDb: point.gainDb })),
       startSec: framesToSec(c.sourceStartFrames, timeline.frameRate),
       endSec: framesToSec(c.sourceEndFrames, timeline.frameRate),
     }));
 
   const audioUrl = narration?.clips.find((c) => c.sourceUrl)?.sourceUrl;
+  const audioInputs = timeline.tracks.filter(track => ["narration", "dialogue", "music", "sfx", "ambience"].includes(track.kind))
+    .flatMap(track => track.clips.filter(clip => clip.sourceUrl).map(clip => ({
+      url: clip.sourceUrl!, clipId: clip.id, trackId: track.id, role: track.kind, assetId: clip.assetId,
+      sourceStartSec: framesToSec(clip.sourceStartFrames, timeline.frameRate), sourceEndSec: framesToSec(clip.sourceEndFrames, timeline.frameRate),
+      timelineStartSec: framesToSec(clip.timelineStartFrames, timeline.frameRate), timelineEndSec: framesToSec(clip.timelineEndFrames, timeline.frameRate),
+      volume: clip.volume, muted: clip.muted || Boolean(track.muted) || (timeline.tracks.some(item => item.solo) && !track.solo),
+      loop: clip.loop === true, embedded: clip.audioSource === "embedded", playbackRate: clip.playbackRate,
+      timingBasis: clip.timingBasis, voiceConversion: clip.voiceConversion,
+      volumeAutomation: clip.volumeAutomation.map(point => ({ atSec: framesToSec(point.atFrames, timeline.frameRate), gainDb: point.gainDb })),
+    })));
 
   return {
     adapterId: "ffmpeg",
     concatInputs,
     audioUrl,
+    audioInputs,
+    audioMastering: timeline.audioMastering,
+    audioTarget: variant.audioTarget,
     output: {
       width: variant.resolution.width,
       height: variant.resolution.height,
@@ -71,6 +100,10 @@ export function buildFfmpegRenderPlan(
     })),
     audioMix: timeline.audioMix.map((m) => ({
       kind: m.kind,
+      targetTrackId: m.targetTrackId,
+      triggerTrackId: m.triggerTrackId,
+      duckDb: m.duckDb,
+      priority: m.priority,
       gainDb: m.gainDb,
       startSec: framesToSec(m.startFrames, timeline.frameRate),
       endSec: framesToSec(m.endFrames, timeline.frameRate),
@@ -112,6 +145,10 @@ export function createFfmpegAdapter(options?: {
       return Boolean(options?.executor);
     },
     async render({ job, timeline, variant }) {
+      const validation = validateEditorialTimeline(timeline);
+      if (validation.errors.some(issue => issue.code === "missing_audio" || issue.code === "invalid_audio_timing")) {
+        return { ok: false, error: { code: "audio_not_ready", message: "Required audio sources or timing are unresolved", retryable: false } };
+      }
       const plan = buildFfmpegRenderPlan(timeline, variant);
       if (!plan.concatInputs.length) {
         return {

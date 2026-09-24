@@ -154,13 +154,20 @@ export function createLiveAssetExecuteAdapter(
     }
     if (bridge.assetResult.audioUrl) {
       assets.push({
-        id: `asset_audio_${bridge.production.id}`,
+        id: bridge.assetResult.audioAssetId || `asset_audio_${bridge.production.id}`,
+        role: "narration",
         productionId: bridge.production.id,
         assetType: "audio" as const,
         publicUrl: bridge.assetResult.audioUrl,
         status: "completed" as const,
         createdAt: now,
       });
+    }
+
+    const sfxUrl = (bridge.assetResult.brief.generatedAssets as { sfxUrl?: unknown } | undefined)?.sfxUrl;
+    if (typeof sfxUrl === "string" && sfxUrl.trim()) {
+      assets.push({ id: `asset_sfx_${bridge.production.id}`, productionId: bridge.production.id,
+        assetType: "audio" as const, role: "sfx", publicUrl: sfxUrl, status: "completed" as const, createdAt: now });
     }
 
     return {

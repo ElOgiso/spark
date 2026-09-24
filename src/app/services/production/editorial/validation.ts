@@ -56,6 +56,16 @@ export function validateEditorialTimeline(
     const sorted = [...track.clips].sort((a, b) => a.timelineStartFrames - b.timelineStartFrames);
     for (let i = 0; i < sorted.length; i++) {
       const c = sorted[i];
+      const audio = ["narration", "dialogue", "music", "sfx", "ambience"].includes(track.kind);
+      if (audio && c.mandatory && !c.sourceUrl && timeline.diagnostics?.allowPlanned !== true) {
+        errors.push({ code: "missing_audio", severity: "error", message: `Required audio ${c.id} has no source`, clipId: c.id, trackId: track.id });
+      }
+      if (audio && (!Number.isFinite(c.timelineStartFrames) || !Number.isFinite(c.timelineEndFrames) || c.timelineStartFrames < 0 || c.timelineEndFrames > timeline.durationFrames)) {
+        errors.push({ code: "invalid_audio_timing", severity: "error", message: `Audio ${c.id} is outside the production timeline`, clipId: c.id });
+      }
+      if (audio && c.sourceUrl && c.audioSource !== "embedded" && c.timingBasis !== "measured") {
+        warnings.push({ code: "audio_duration_unverified", severity: "warning", message: `Audio ${c.id} uses planned timing; measured duration is unavailable`, clipId: c.id });
+      }
       if (c.sourceEndFrames <= c.sourceStartFrames) {
         errors.push({
           code: "invalid_source_range",
