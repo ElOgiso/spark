@@ -69,6 +69,15 @@ export interface GenerationTask {
   shotId?: string;
   /** Optional link to existing persisted ProductionAsset row */
   productionAssetId?: string;
+  /** Saved output reference for completed-work recovery; uses the existing asset identity. */
+  completedOutput?: {
+    executionId: string;
+    inputHash?: string;
+    attempt: number;
+    completedAt?: string;
+    asset: import("../../../domain/types").ProductionAsset;
+    lastFrameUrl?: string;
+  };
   strategy: GenerationStrategySpec;
   /** Provider-independent requirement labels */
   requiredCapabilities: string[];

@@ -1,7 +1,7 @@
 # SPARK Implementation Plan
 
 Audit date: 2026-09-23. Source of phase numbering: [Notion phase program](https://app.notion.com/p/3e3c371711ff80d8ada6f0389a364476).
-Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `2831786` on GitHub main.
+Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `c6a2060` on GitHub main.
 Implementation target: `main`, as explicitly requested. The previously verified commits `297d28c` and `b7b8234` are incorporated into this main-tree checkpoint.
 
 A completion record proves a scoped implementation, not that every live consumer uses it. Main contains work through Phase 12, but earlier integration requirements remain incomplete. Do not rebuild those modules. Complete their missing connections first.
@@ -123,6 +123,16 @@ A completion record proves a scoped implementation, not that every live consumer
 - Regression coverage: replay within the same executor, a fresh executor sharing the store, dependent video receiving the recovered keyframe, direct live-task replay, unchanged asset-write count, missing outputs, and foreign production output rejection.
 - Verification: 1,285 tests passed; typecheck and production build passed (existing bundle-size warnings).
 - Scope: this restores completed outputs available in the existing execution store. A saved succeeded task with no corresponding execution/output record still needs durable repository lookup. Cross-process recovery and full production resume remain incomplete. No database, provider pricing or UI changes; no paid generations.
+
+### A-05b.5 — recover completed tasks from saved specifications (implemented)
+
+- Confirmed gap: after a saved production was reloaded, succeeded tasks were skipped but the DAG's prior outputs were empty. A fresh live task executor also lacked the in-memory cache required for reuse.
+- Extend existing GenerationTask with a completed-output checkpoint: original execution identity, attempt, existing ProductionAsset reference, and last-frame reference. The existing spec/production reasoning persistence carries it; no second repository or pipeline.
+- Both DAG and direct task execution recover completed outputs from the checkpoint without submitting providers or persisting duplicate assets. Restore dependency URLs before scheduling. Verify asset/task/scene/shot/production identity and available brand identity.
+- Missing or mismatched checkpoints fail closed and block dependent generation. This deliberately does not guess URLs for older succeeded tasks; those require recovery from existing asset records.
+- Live bridge retains completed state and checkpoints for normal continuation. Explicit force-regeneration clears the checkpoint for the selected run; unresolved-work guards remain in force. Final media projection updates the checkpoint to the actual stored asset ID/URL. Live engine construction carries the existing brand ID.
+- Tests cover JSON spec save/reload with a fresh executor and empty idempotency store, exactly one new dependent video submission, no keyframe resubmission or duplicate asset write, original execution identity, direct task recovery, foreign output rejection, missing-output dependency blocking, and live bridge preservation/explicit reset.
+- Scope: recovery of completed work whose checkpoint reached saved production reasoning. This does not make in-flight provider jobs durable, persist every intermediate transition, add cross-process locks, verify remote media availability, or establish full production readiness. No database or financial changes, no paid generations.
 
 ## Verification discipline
 

@@ -410,6 +410,19 @@ export function projectAssetsOntoSpec(params: {
   }
 
   tasks = applyTaskDependencyFailures(tasks);
+  for (const task of tasks) {
+    if (task.status !== "succeeded" || !task.completedOutput) continue;
+    const shot = nextScenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId);
+    const url = task.kind === "keyframe" ? shot?.keyframeUrl
+      : task.kind === "video" ? shot?.mediaUrl
+      : task.kind === "voice" ? assetResult.audioUrl
+      : task.kind === "merge" ? assetResult.videoUrl : undefined;
+    task.completedOutput = {
+      ...task.completedOutput,
+      lastFrameUrl: shot?.lastFrameUrl || task.completedOutput.lastFrameUrl,
+      asset: { ...task.completedOutput.asset, id: task.productionAssetId || task.completedOutput.asset.id, publicUrl: url || task.completedOutput.asset.publicUrl },
+    };
+  }
 
   return {
     spec: attachGenerationTasksToSpec({
@@ -448,7 +461,8 @@ export async function executeProductionViaAssetBridge(
   spec = ensured.spec;
   let tasks: GenerationTask[] = ensured.tasks.map((t) => ({
     ...t,
-    status: (t.status === "blocked" ? "blocked" : "queued") as GenerationTask["status"],
+    completedOutput: params.forceRegenerate ? undefined : t.completedOutput,
+    status: (!params.forceRegenerate && t.status === "succeeded" ? "succeeded" : t.status === "blocked" ? "blocked" : "queued") as GenerationTask["status"],
   }));
 
   logger({
@@ -466,7 +480,7 @@ export async function executeProductionViaAssetBridge(
     t.kind === "keyframe" || t.kind === "voice" || t.kind === "video" || t.kind === "merge"
       ? {
           ...t,
-          status: (t.status === "blocked" ? "blocked" : "running") as GenerationTask["status"],
+          status: (t.status === "succeeded" ? "succeeded" : t.status === "blocked" ? "blocked" : "running") as GenerationTask["status"],
         }
       : t
   );

@@ -67,6 +67,43 @@ export function restoreExecutionAsset(
   };
 }
 
+export function checkpointTaskOutput(
+  execution: GenerationExecution,
+  asset?: ProductionAsset
+): GenerationTask["completedOutput"] {
+  if (execution.status !== "succeeded" || !asset?.publicUrl || asset.status !== "completed") return undefined;
+  return {
+    executionId: execution.id,
+    inputHash: execution.inputHash,
+    attempt: execution.attempt,
+    completedAt: execution.completedAt,
+    asset: { ...asset },
+    lastFrameUrl: typeof execution.metadata?.lastFrameDataUrl === "string" ? execution.metadata.lastFrameDataUrl : undefined,
+  };
+}
+
+/** Restore a saved completed result without a provider call or new persistence write. */
+export function restoreTaskOutput(task: GenerationTask, brandId?: string): { execution: GenerationExecution; asset: ProductionAsset } | undefined {
+  const saved = task.completedOutput;
+  const asset = saved?.asset;
+  if (task.status !== "succeeded" || task.reconciliationRequired || !saved?.executionId || !asset?.publicUrl || asset.status !== "completed") return undefined;
+  if (asset.id !== task.productionAssetId || asset.productionId !== task.productionId || asset.taskId !== task.id || asset.shotId !== task.shotId || asset.sceneId !== task.sceneId) return undefined;
+  if (brandId && asset.brandId && asset.brandId !== brandId) return undefined;
+  const mediaType = asset.assetType === "audio" ? "audio" : asset.assetType === "video" ? "video" : "image";
+  return {
+    asset: { ...asset },
+    execution: {
+      id: saved.executionId, inputHash: saved.inputHash, taskId: task.id, productionId: task.productionId,
+      sceneId: task.sceneId, shotId: task.shotId, provider: asset.provider || task.selectedProvider || "unknown",
+      model: task.selectedModel, status: "succeeded", attempt: saved.attempt, maxAttempts: Math.max(saved.attempt, task.maxRetries ?? 3),
+      completedAt: saved.completedAt, inputAssets: [],
+      providerJobId: asset.generationSettings?.providerJobId,
+      outputAssets: [{ productionAssetId: asset.id, persistentUrl: asset.publicUrl, mediaType, mimeType: asset.mimeType }],
+      metadata: { restoredFromTask: true, lastFrameDataUrl: saved.lastFrameUrl },
+    },
+  };
+}
+
 /**
  * Prefer persistent URL when available; never store credentials.
  */

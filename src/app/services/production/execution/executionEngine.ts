@@ -30,6 +30,8 @@ import {
   normalizedResultToMediaOutput,
   persistNormalizedOutput,
   restoreExecutionAsset,
+  checkpointTaskOutput,
+  restoreTaskOutput,
   type AssetPersistPort,
 } from "./outputNormalization";
 import {
@@ -193,6 +195,23 @@ export class GenerationExecutionEngine {
         task.lastError = verr.join(", ");
       }
     }
+    for (const task of tasks) {
+      if (task.status !== "succeeded" || this.opts.dryRun) continue;
+      const restored = restoreTaskOutput(task, this.opts.brandId || params.spec.project.brandId);
+      if (!restored) {
+        task.status = "failed";
+        task.reconciliationRequired = true;
+        task.lastError = "Completed task has no valid saved output; recover its asset before retrying";
+        errors.push(`${task.id}: ${task.lastError}`);
+        dag = markNode(dag, task.id, "failed", task.lastError);
+        continue;
+      }
+      this.replaceExecution(restored.execution);
+      if (!this.assets.some(asset => asset.id === restored.asset.id)) this.assets.push(restored.asset);
+      priorOutputs[task.id] = restored.asset.publicUrl!;
+      if (task.completedOutput?.lastFrameUrl) priorOutputs[`${task.id}__last_frame`] = task.completedOutput.lastFrameUrl;
+      dag = markNode(dag, task.id, "done");
+    }
     if (tasks.every((t) => t.status === "failed")) {
       return {
         ok: false,
@@ -207,8 +226,8 @@ export class GenerationExecutionEngine {
 
     // Queue valid tasks
     tasks = tasks.map((t) => {
-      if (t.reconciliationRequired) return { ...t, status: "running" };
       if (t.status === "failed") return t;
+      if (t.reconciliationRequired) return { ...t, status: "running" };
       if (this.cancelled.has(t.id)) return { ...t, status: "skipped", lastError: "cancelled" };
       if (t.status === "queued" || t.status === "succeeded" || t.status === "running" || t.status === "skipped") return t;
       const dagNode = dag?.nodes?.find((n) => n.id === t.id);
@@ -292,6 +311,7 @@ export class GenerationExecutionEngine {
                 status: "succeeded",
                 reconciliationRequired: false,
                 productionAssetId: result.asset?.id,
+                completedOutput: checkpointTaskOutput(result.execution, result.asset),
                 lastError: undefined,
               };
               dag = markNode(dag, taskId, "done");
@@ -392,6 +412,7 @@ export class GenerationExecutionEngine {
           ? "skipped"
           : "failed",
       productionAssetId: result.asset?.id || params.task.productionAssetId,
+      completedOutput: checkpointTaskOutput(result.execution, result.asset),
       lastError: result.execution.error?.message,
       retryCount: result.execution.attempt,
       reconciliationRequired: executionNeedsReconciliation(result.execution),
@@ -406,6 +427,14 @@ export class GenerationExecutionEngine {
     priorOutputs: Record<string, string>;
   }): Promise<{ execution: GenerationExecution; asset?: ProductionAsset }> {
     const { spec, task, priorOutputs } = params;
+    if (task.status === "succeeded" && !this.opts.dryRun) {
+      const restored = restoreTaskOutput(task, this.opts.brandId || spec.project.brandId);
+      if (!restored) {
+        task.reconciliationRequired = true;
+        throw makeExecutionError("output_unavailable", "Completed task has no valid saved output; recover its asset before retrying", { retryable: false, retryability: "DO_NOT_RETRY" });
+      }
+      return restored;
+    }
     const prepared = prepareTaskInputs({ spec, task, priorOutputs });
     const inputHash = buildTaskInputHash(
       task,
@@ -422,7 +451,8 @@ export class GenerationExecutionEngine {
     if (reusable?.status === "succeeded") {
       const asset = restoreExecutionAsset(reusable, task, this.opts.brandId);
       if (!asset && !this.opts.dryRun) {
-        throw makeExecutionError("output_unavailable", "Completed execution has no restorable asset; recover its output before retrying", { retryable: false });
+        task.reconciliationRequired = true;
+        throw makeExecutionError("output_unavailable", "Completed execution has no restorable asset; recover its output before retrying", { retryable: false, retryability: "DO_NOT_RETRY" });
       }
       return { execution: { ...reusable, metadata: { ...reusable.metadata, idempotentReuse: true } }, asset };
     }

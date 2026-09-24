@@ -31,7 +31,7 @@ import type { GenerationTask } from "./specification/generationTask";
 import type { ExecutionStatus } from "./execution/types";
 import type { ProductionDag } from "./dag/productionDag";
 import { buildProductionDag } from "./dag/productionDag";
-import { planGenerationTasks } from "./generation/generationPlanner";
+import { attachGenerationTasksToSpec, planGenerationTasks, resolveGenerationTasks } from "./generation/generationPlanner";
 import { productionSpecToBrief } from "./specification/adapters";
 
 function mockPorts(overrides?: Partial<AdapterPorts>): AdapterPorts {
@@ -501,6 +501,25 @@ describe("execution engine", () => {
     assert.equal(direct.asset?.id, first.assets[0].id);
     assert.equal(direct.asset?.publicUrl, first.assets[0].publicUrl);
     assert.equal(persist.assets.length, 2);
+
+    // Save the completed task in the existing spec, then resume with no old store.
+    const savedSpec = JSON.parse(JSON.stringify(attachGenerationTasksToSpec(plan.spec!, [first.tasks[0], video])));
+    const reloadedTasks = resolveGenerationTasks(savedSpec).tasks.filter(task => task.id === keyframe.id || task.id === video.id);
+    const freshPersist = createMemoryAssetPersistPort();
+    const freshEngine = new GenerationExecutionEngine({ ...options, idempotencyStore: createMemoryIdempotencyStore(), persistPort: freshPersist });
+    const reloaded = await freshEngine.executePlan({ spec: savedSpec, tasks: reloadedTasks, dag: buildProductionDag(savedSpec, reloadedTasks) });
+    assert.equal(reloaded.tasks.find(task => task.id === video.id)?.status, "succeeded", JSON.stringify(reloaded.errors));
+    assert.equal(submits, 1, "reload must not regenerate the completed keyframe");
+    assert.equal(videos, 2);
+    assert.equal(freshPersist.assets.length, 1, "only the new video is persisted");
+    assert.equal(reloaded.assets.find(asset => asset.taskId === keyframe.id)?.id, first.assets[0].id);
+    const restoredTask = reloadedTasks.find(task => task.id === keyframe.id)!;
+    const standalone = await new GenerationExecutionEngine({ ports: {} }).executeTask({ spec: savedSpec, task: restoredTask });
+    assert.equal(standalone.execution.id, first.executions[0].id);
+    assert.equal(standalone.asset?.id, first.assets[0].id);
+    const mismatched = structuredClone(restoredTask);
+    mismatched.completedOutput!.asset.productionId = "other-production";
+    await assert.rejects(new GenerationExecutionEngine({ ports: {} }).executeTask({ spec: savedSpec, task: mismatched }), (error: any) => error.code === "output_unavailable" && error.retryability === "DO_NOT_RETRY");
   });
 
   it("cancels queued tasks before execution", async () => {
@@ -702,6 +721,24 @@ describe("asset-to-video wiring & traceability", () => {
 
 
 describe("canonical executor task attachment", () => {
+  it("blocks dependents of a saved completed task whose output checkpoint is missing", async () => {
+    const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
+    const source = planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!;
+    const tasks: GenerationTask[] = [
+      { ...source, status: "succeeded", dependsOn: [], dependencies: [] },
+      { ...source, id: "dependent", dependsOn: [source.id], dependencies: undefined, status: "blocked" },
+    ];
+    let submits = 0;
+    const engine = new GenerationExecutionEngine({ ports: mockPorts({ submitImage: async () => { submits++; throw new Error("must not submit"); } }) });
+    const result = await engine.executePlan({ spec, tasks, dag: buildProductionDag(spec, tasks) });
+    assert.equal(submits, 0);
+    assert.equal(result.tasks[0].status, "failed");
+    assert.notEqual(result.tasks[1].status, "succeeded");
+    assert.equal(result.tasks[0].reconciliationRequired, true);
+    assert.ok(result.errors.some(error => error.includes("no valid saved output")));
+    assert.equal(tasks[0].status, "succeeded", "input remains untouched");
+  });
+
   it("does not regenerate completed work when cached output recovery is missing or belongs to another production", async () => {
     const spec = createProductionPlan({ idea: "Product explanation", targetDurationSec: 15 }).spec!;
     const task = { ...planGenerationTasks(spec).find(task => task.kind === "keyframe" && task.shotId)!, dependsOn: [], dependencies: [] };

@@ -1030,6 +1030,7 @@ export class ProductionAssetService {
       spec && tasks.length > 0
         ? params.engine ||
           new GenerationExecutionEngine({
+            brandId: brandIdForGuard,
             ports: params.ports || createRuntimeAdapterPorts(),
             dryRun: params.dryRun,
             creditService: (params as any).creditService,

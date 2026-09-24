@@ -428,6 +428,32 @@ describe("Phase 2 generate spine bridge", () => {
 });
 
 describe("shared generation task selection", () => {
+  it("preserves completed task checkpoints unless regeneration was explicitly requested", async () => {
+    const spec = makeTinySpec();
+    const tasks = planGenerationTasks(spec);
+    const task = tasks.find(task => task.kind === "keyframe" && task.shotId)!;
+    task.status = "succeeded";
+    task.productionAssetId = "saved-frame";
+    task.completedOutput = {
+      executionId: "saved-execution", attempt: 1,
+      asset: { id: "saved-frame", productionId: task.productionId, taskId: task.id, sceneId: task.sceneId, shotId: task.shotId, assetType: "frame", status: "completed", publicUrl: "https://example.test/frame.png" },
+    };
+    const production = { id: spec.project.id, reasoning: { productionSpec: attachGenerationTasksToSpec(spec, tasks) }, brief: buildSpecDrivenBrief(spec) } as Production;
+    for (const forceRegenerate of [false, true]) {
+      const generate = mock.method(ProductionAssetService, "generateAssets", async (params: any) => {
+        const passed = params.tasks.find((candidate: GenerationTask) => candidate.id === task.id);
+        assert.equal(passed.status, forceRegenerate ? "running" : "succeeded");
+        assert.equal(Boolean(passed.completedOutput), !forceRegenerate);
+        return { brief: params.brief, scenes: [], productionScenes: [] };
+      });
+      try {
+        await executeProductionViaAssetBridge({ production, brand: { id: "brand_1" } as any, forceRegenerate, logger: () => {} });
+        assert.equal(generate.mock.callCount(), 1);
+      } finally { generate.mock.restore(); }
+    }
+    assert.ok(task.completedOutput, "saved input checkpoint remains intact");
+  });
+
   it("preserves unresolved tasks and their reconciliation flag when media projection has no output", () => {
     const spec = makeTinySpec();
     spec.audio.hasNarration = true;
