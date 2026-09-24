@@ -6,6 +6,59 @@
 import type { ShotSpec, GenerationStrategy } from "../specification/shotSpec";
 import type { CreativeSpec } from "../specification/productionSpec";
 import { strategyFromAlias, type GenerationStrategySpec } from "../specification/generationStrategy";
+import type { ProductionSpec } from "../specification/productionSpec";
+import { normalizeModeString } from "../resolveProductionMode";
+
+/** Long-form visual decisions enrich the existing shot plan; no parallel task pipeline. */
+export function applyLongFormVisualPlanning(spec: ProductionSpec): ProductionSpec {
+  const mode = normalizeModeString(String(spec.project.productionMode)) || "standard";
+  const automatic = spec.project.targetDurationSec >= 120 && mode !== "deep";
+  let index = 0;
+  return { ...spec, scenes: spec.scenes.map(scene => ({ ...scene, shots: scene.shots.map(shot => {
+    const first = index++ === 0;
+    if (!automatic && !shot.visualPlan) return shot;
+    let visualPlan = shot.visualPlan;
+    if (!visualPlan) {
+      const intent = `${shot.narrativeBeat || ""} ${shot.purpose || ""} ${shot.productionReason || ""}`;
+      const classifications: Array<[RegExp, NonNullable<ShotSpec["visualPlan"]>["kind"]]> = [
+        [/\b(user[- ](?:supplied|uploaded) (?:asset|footage|image)|uploaded footage)\b/i, "USER_ASSET"],
+        [/\b(stock footage|archival footage)\b/i, "STOCK"],
+        [/\b(screenshot|screen capture|screen recording)\b/i, "SCREENSHOT"],
+        [/\b(map|geographic route)\b/i, "MAP"],
+        [/\b(chart|graph|data visualization)\b/i, "CHART"],
+        [/\b(motion graphic|animated diagram)\b/i, "MOTION_GRAPHIC"],
+        [/\b(title card|text card|quote card)\b/i, "TEXT"],
+      ];
+      const special = classifications.find(([pattern]) => pattern.test(intent));
+      if (special) visualPlan = { kind: special[1], reason: "Narrative beat explicitly calls for this visual medium." };
+      else if (mode !== "express" && (first || /\b(motion demonstration|demonstrate movement|continuous action)\b/i.test(intent))) {
+        visualPlan = { kind: "VIDEO", reason: first ? "Selected hybrid opening hook." : "The beat explicitly requires visible motion." };
+      } else visualPlan = { kind: "IMAGE", reason: "Narration can be supported by a still; AI video is not required." };
+    }
+    return {
+      ...shot, visualPlan,
+      ...(visualPlan.kind === "IMAGE" ? { generationStrategy: "slideshow_still" as const, generationStrategySpec: strategyFromAlias("slideshow_still") } : {}),
+      ...(visualPlan.kind === "VIDEO" && ["slideshow_still", "text_to_image"].includes(shot.generationStrategy)
+        ? { generationStrategy: "image_to_video" as const, generationStrategySpec: strategyFromAlias("image_to_video") } : {}),
+    };
+  }) })) };
+}
+
+/** Never replace requested factual/sourced visuals with speculative AI footage. */
+export function assertVisualPlanExecutable(spec: ProductionSpec): void {
+  const mode = normalizeModeString(String(spec.project.productionMode)) || "standard";
+  const shots = spec.scenes.flatMap(scene => scene.shots);
+  for (const [index, shot] of shots.entries()) {
+    const kind = shot.visualPlan?.kind;
+    if (!kind) continue;
+    if (kind !== "IMAGE" && kind !== "VIDEO") {
+      throw new Error(`Visual planning requires ${kind} sourcing/rendering for shot ${shot.id}; generation is paused before provider spend.`);
+    }
+    if (kind === "VIDEO" && (mode === "express" || (mode === "standard" && index > 0 && shots.some(s => s.visualPlan?.kind === "IMAGE")))) {
+      throw new Error(`Visual plan for shot ${shot.id} requires mixed-timeline assembly beyond the existing narrator/hybrid hook compiler.`);
+    }
+  }
+}
 
 export interface StrategyResolveInput {
   shot: Pick<

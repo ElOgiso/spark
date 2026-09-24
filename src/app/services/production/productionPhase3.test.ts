@@ -9,7 +9,9 @@ import { createProductionPlan } from "./intelligence/productionOrchestrator";
 import { composeGrammars } from "./grammar";
 import { planShotsForScene } from "./cinematography/shotPlanner";
 import { planCameraForShot } from "./cinematography/cameraPlanner";
-import { resolveShotGenerationStrategy } from "./generation/strategyResolver";
+import { resolveShotGenerationStrategy, applyLongFormVisualPlanning, assertVisualPlanExecutable } from "./generation/strategyResolver";
+import { resolveGenerationTasks, planGenerationTasks } from "./generation/generationPlanner";
+import { GenerationExecutionEngine } from "./execution/executionEngine";
 import { scoreProvidersForShot } from "./routing/modelScorer";
 import { selectProviderForShot } from "./routing/providerSelector";
 import { buildFallbackPlan } from "./routing/fallbackPlanner";
@@ -410,6 +412,70 @@ describe("backward compatibility", () => {
 });
 
 describe("visual planning pipeline unit", () => {
+  it("Phase 14 classifies all visual categories and preserves explicit choices", () => {
+    const spec = createProductionPlan({ idea: "A home education guide", targetDurationSec: 30 }).spec!;
+    spec.project.targetDurationSec = 3600;
+    spec.project.productionMode = "standard";
+    const source = spec.scenes[0].shots[0];
+    const intents = ["opening hook", "explain a concept", "stock footage", "screenshot", "map", "chart", "title card", "motion graphic", "uploaded footage"];
+    spec.scenes = [{ ...spec.scenes[0], shots: intents.map((purpose, index) => ({ ...source, id: `visual_${index}`, index, purpose, narrativeBeat: "", productionReason: "", generationTasks: [] })) }];
+    const result = applyLongFormVisualPlanning(spec);
+    assert.deepEqual(result.scenes[0].shots.map(shot => shot.visualPlan?.kind), ["VIDEO", "IMAGE", "STOCK", "SCREENSHOT", "MAP", "CHART", "TEXT", "MOTION_GRAPHIC", "USER_ASSET"]);
+    assert.ok(spec.scenes[0].shots.every(shot => !shot.visualPlan), "input stays unchanged");
+    assert.deepEqual(applyLongFormVisualPlanning(result), result);
+    assert.throws(() => assertVisualPlanExecutable(result), /STOCK sourcing\/rendering/);
+  });
+
+  it("Phase 14 narrator and hybrid plans do not regenerate video tasks for still beats", () => {
+    for (const mode of ["express", "standard"] as const) {
+      const spec = createProductionPlan({ idea: "A home education guide", targetDurationSec: 30 }).spec!;
+      spec.project.targetDurationSec = 3600;
+      spec.project.productionMode = mode;
+      for (const shot of spec.scenes.flatMap(scene => scene.shots)) {
+        shot.purpose = "explain a concept"; shot.narrativeBeat = ""; shot.productionReason = "";
+      }
+      const resolved = resolveGenerationTasks(spec);
+      const videoTasks = resolved.tasks.filter(task => task.kind === "video");
+      assert.equal(videoTasks.length, mode === "express" ? 0 : 1);
+      assert.doesNotThrow(() => assertVisualPlanExecutable(resolved.spec));
+      for (const shot of resolved.spec.scenes.flatMap(scene => scene.shots).filter(shot => shot.visualPlan?.kind === "IMAGE")) {
+        assert.ok(!resolved.tasks.some(task => task.shotId === shot.id && task.kind === "video"));
+        assert.equal(resolved.tasks.find(task => task.shotId === shot.id && task.kind === "keyframe")?.selectedProvider, spec.routing.preferredImageProvider || "openai");
+      }
+      assert.equal(new Set(resolved.tasks.map(task => task.id)).size, resolved.tasks.length);
+    }
+  });
+
+  it("Phase 14 survives the operational enrichment pass without video candidate expansion", () => {
+    const blueprint = createProductionPlan({ idea: "Explain household organization", targetDurationSec: 30, applyVisualPlanning: false });
+    const spec = blueprint.spec!;
+    spec.project.targetDurationSec = 3600;
+    spec.project.productionMode = "express";
+    const visual = applyVisualPlanningPipeline(spec, { grammar: blueprint.grammar!, preferI2V: true });
+    assert.ok(visual.spec.scenes.flatMap(scene => scene.shots).every(shot => shot.visualPlan?.kind === "IMAGE"));
+    assert.equal(visual.generationTasks.filter(task => task.kind === "video").length, 0);
+    const resolved = resolveGenerationTasks(visual.spec);
+    assert.equal(resolved.tasks.filter(task => task.kind === "video").length, 0);
+  });
+
+  it("Phase 14 leaves short-form and cinematic planning intact", () => {
+    const spec = createProductionPlan({ idea: "A home education guide", targetDurationSec: 30 }).spec!;
+    assert.deepEqual(applyLongFormVisualPlanning(spec), spec);
+    spec.project.targetDurationSec = 3600;
+    spec.project.productionMode = "deep";
+    assert.deepEqual(applyLongFormVisualPlanning(spec), spec);
+  });
+
+  it("Phase 14 stops unsupported source/rendering work before any adapter submission", async () => {
+    const spec = createProductionPlan({ idea: "A home education guide", targetDurationSec: 30 }).spec!;
+    spec.scenes[0].shots[0].visualPlan = { kind: "CHART", reason: "Measured comparison needs a chart" };
+    let submits = 0;
+    const engine = new GenerationExecutionEngine({ ports: { submitImage: async () => { submits++; throw new Error("must not submit"); } } });
+    const tasks = planGenerationTasks(spec);
+    await assert.rejects(engine.executePlan({ spec, tasks, dag: buildProductionDag(spec, tasks) }), /CHART sourcing\/rendering/);
+    assert.equal(submits, 0);
+  });
+
   it("applyVisualPlanningPipeline enriches a blueprint spec", () => {
     const blueprint = createProductionPlan({
       idea: "Documentary about ocean exploration",

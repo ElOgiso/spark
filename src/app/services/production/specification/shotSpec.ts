@@ -123,6 +123,11 @@ export interface ShotSpec {
   /** Why this shot exists — empty purpose shots should not be generated */
   productionReason: string;
   narrativeBeat?: string;
+  /** Phase 14: beat-level visual choice, independent of provider/model. */
+  visualPlan?: {
+    kind: "IMAGE" | "VIDEO" | "STOCK" | "SCREENSHOT" | "MAP" | "CHART" | "TEXT" | "MOTION_GRAPHIC" | "USER_ASSET";
+    reason: string;
+  };
   timingStartSec: number;
   startTime?: number;
   durationSec: number;

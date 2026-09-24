@@ -6,6 +6,7 @@ import type { Production, ProductionBrief, ProductionScene, Brand, Character, Pr
 import { getEffectiveFormatSettings, getEffectiveCreditSettings } from "../../domain/types";
 import { ModelRouter } from "../runtime/modelRouter";
 import { resolveGeneratePlan } from "./resolveGeneratePlan";
+import { applyLongFormVisualPlanning, assertVisualPlanExecutable } from "./generation/strategyResolver";
 import { normalizeModeString } from "./resolveProductionMode";
 import { CapabilityRegistry } from "../capabilityRegistry";
 import { ProductionGenerationGuard } from "./ProductionGenerationGuard";
@@ -1020,10 +1021,12 @@ export class ProductionAssetService {
     };
 
     // Canonical Execution Context (A-05b single task execution boundary)
-    const spec: ProductionSpec | undefined =
+    const rawSpec: ProductionSpec | undefined =
       params.spec ||
       (production?.reasoning as any)?.productionSpec ||
       (production && brand ? resolveProductionSpec(production, brand, character) : undefined);
+    const spec = rawSpec ? applyLongFormVisualPlanning(rawSpec) : undefined;
+    if (spec) assertVisualPlanExecutable(spec);
     const resolvedTaskSet = spec ? resolveGenerationTasks(spec, true).tasks : [];
     const tasks: GenerationTask[] = params.tasks || resolvedTaskSet;
     const engine: GenerationExecutionEngine | undefined =
@@ -2390,8 +2393,8 @@ export class ProductionAssetService {
                   width: compileWidth,
                   height: compileHeight,
                 }),
-                60000,
-                "Narrator slideshow compilation timed out after 60s",
+                Math.max(60000, (activeFormatSettings?.targetDurationSec || 60) * 1000 + 60000),
+                "Narrator slideshow compilation exceeded its duration budget",
                 signal
               );
 
@@ -2461,6 +2464,12 @@ export class ProductionAssetService {
               const s = currentStoryboard[sIdx];
               const globalSceneNum = s.scene || sIdx + 1;
 
+              const plannedVisual = spec?.scenes.flatMap(scene => scene.shots).find(shot => shot.id === (s.shotId || s.id))?.visualPlan;
+              if (plannedVisual?.kind === "IMAGE") {
+                s.videoUrl = undefined;
+                continue;
+              }
+
               if (skipI2V) {
                 console.log(
                   `[SPARK Pipeline] Mode Gate: Scene ${globalSceneNum} skipI2V is active — still + VO path only; no video model.`
@@ -2471,7 +2480,7 @@ export class ProductionAssetService {
 
               // HYBRID (standard) mode: respect beat audio ("vo" | "talent")
               // "talent beat: still → i2v from THAT still as firstFrame, NO ElevenLabs on that beat. vo beat: still stays still, ElevenLabs only for those lines."
-              if (mode === "standard" && s.audio === "vo") {
+              if (mode === "standard" && s.audio === "vo" && plannedVisual?.kind !== "VIDEO") {
                 console.log(
                   `[SPARK Pipeline] Hybrid Mode: Scene ${globalSceneNum} audio is "vo" — still stays still (no motion synthesis).`
                 );
@@ -3240,8 +3249,8 @@ export class ProductionAssetService {
                     width: compileWidth,
                     height: compileHeight,
                   }),
-                  60000,
-                  "Hybrid compilation timed out after 60s",
+                  Math.max(60000, (activeFormatSettings?.targetDurationSec || 60) * 1000 + 60000),
+                  "Hybrid compilation exceeded its duration budget",
                   signal
                 );
 

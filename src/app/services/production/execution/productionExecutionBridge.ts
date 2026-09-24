@@ -19,6 +19,7 @@ import type {
 import type { ProductionSpec } from "../specification/productionSpec";
 import type { ShotSpec } from "../specification/shotSpec";
 import type { GenerationTask } from "../specification/generationTask";
+import { applyLongFormVisualPlanning } from "../generation/strategyResolver";
 import {
   legacyProductionToSpec,
   productionSpecToBrief,
@@ -101,9 +102,9 @@ export function resolveProductionSpec(
       : {};
   const existing = reasoning.productionSpec as ProductionSpec | undefined;
   if (existing && Array.isArray(existing.scenes) && existing.scenes.length > 0) {
-    return existing;
+    return applyLongFormVisualPlanning(existing);
   }
-  return legacyProductionToSpec({ production, brand, character });
+  return applyLongFormVisualPlanning(legacyProductionToSpec({ production, brand, character }));
 }
 
 /** One storyboard panel per ShotSpec — stable shot identity into AssetService. */
@@ -148,6 +149,7 @@ export function buildSpecLinkedStoryboard(spec: ProductionSpec): ProductionScene
         endState: shot.motion?.endState || base.endState,
         primaryChange: shot.subjectAction || base.primaryChange,
         action: shot.subjectAction || base.action,
+        audio: shot.visualPlan?.kind === "IMAGE" ? "vo" : base.audio,
         spokenLines: shot.narration || shot.dialogue || base.spokenLines,
         scriptSnippet: shot.narration || shot.dialogue || base.scriptSnippet,
         image: shot.keyframeUrl || base.image,

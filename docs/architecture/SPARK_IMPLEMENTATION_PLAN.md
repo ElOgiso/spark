@@ -1,7 +1,7 @@
 # SPARK Implementation Plan
 
 Audit date: 2026-09-23. Source of phase numbering: [Notion phase program](https://app.notion.com/p/3e3c371711ff80d8ada6f0389a364476).
-Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `c6a2060` on GitHub main.
+Original audit baseline: `d26cbe7355fd7345fc3266250756f31fe802e6aa`. Latest implementation baseline: `c6a2060`; recovery checkpoint `d20c9bc` on GitHub main.
 Implementation target: `main`, as explicitly requested. The previously verified commits `297d28c` and `b7b8234` are incorporated into this main-tree checkpoint.
 
 A completion record proves a scoped implementation, not that every live consumer uses it. Main contains work through Phase 12, but earlier integration requirements remain incomplete. Do not rebuild those modules. Complete their missing connections first.
@@ -24,7 +24,7 @@ A completion record proves a scoped implementation, not that every live consumer
 | 11 Higgsfield | Existing client, discovery, image/video adapters and broader capabilities | Verify expansion against supported API contracts and actual adapter execution; registry declarations do not prove coverage. |
 | 12 QC/repair | Failure taxonomy, repair planner, rerouting and tests | Canonical repair exists; live integration, typed contracts and evidence-based final readiness remain gates. Type repairs are incorporated in this checkpoint. |
 | 13 Format directors | `resolveGeneratePlan.ts`, narrator compiler, mode-aware production logic | Extend existing Narrator/Hybrid/Cinematic planning on the shared task spine. No separate mode pipelines. |
-| 14 Long-form visuals | Narrative chapters, shot planning, still/motion support | Beat-level asset classification and selective-video planning across image/stock/map/chart/screenshot/text/user media remain incomplete. |
+| 14 Long-form visuals | Existing shot strategy planner now classifies all nine visual roles; Narrator/Hybrid spend selection is wired | Source acquisition, factual map/chart/text rendering, arbitrary mixed timelines and real long-form export validation remain incomplete. See Phase 14 checkpoint below. |
 | 15 Audio | AudioSpec, voice/music/SFX paths, editorial audio mix | Wire dialogue, conversion, ambience, mix/master to one production timeline with measured durations. |
 | 16 Video understanding | `research/providers/VideoUnderstandingProvider.ts`, watch/research integration | Extend the existing provider abstraction for uploaded references and planning/QC/craft consumers. |
 | 17 Observability/memory | Execution logging and existing performance/learning modules | Persist joined task/job/cost/credit/QC evidence; learn measured production outcomes rather than fabricated actuals. |
@@ -133,6 +133,18 @@ A completion record proves a scoped implementation, not that every live consumer
 - Live bridge retains completed state and checkpoints for normal continuation. Explicit force-regeneration clears the checkpoint for the selected run; unresolved-work guards remain in force. Final media projection updates the checkpoint to the actual stored asset ID/URL. Live engine construction carries the existing brand ID.
 - Tests cover JSON spec save/reload with a fresh executor and empty idempotency store, exactly one new dependent video submission, no keyframe resubmission or duplicate asset write, original execution identity, direct task recovery, foreign output rejection, missing-output dependency blocking, and live bridge preservation/explicit reset.
 - Scope: recovery of completed work whose checkpoint reached saved production reasoning. This does not make in-flight provider jobs durable, persist every intermediate transition, add cross-process locks, verify remote media availability, or establish full production readiness. No database or financial changes, no paid generations.
+
+### Phase 14.1 — long-form visual classification and spend control (implemented)
+
+- Extend the existing shot strategy resolver, visual planning pass, canonical task planner and live AssetService. No parallel generation pipeline or UI redesign.
+- `ShotSpec.visualPlan` classifies IMAGE, VIDEO, STOCK, SCREENSHOT, MAP, CHART, TEXT, MOTION_GRAPHIC or USER_ASSET with a reason. Explicit decisions are retained. Automatic classification applies from 120 seconds in Narrator/Hybrid; short-form and Cinematic remain unchanged unless an explicit visual choice is supplied.
+- Long Narrator plans default to image support. Hybrid selects an opening video hook and still support; explicit motion-demonstration beats may request video. Image beats do not inherit video-provider selection. Old unexecuted candidate-video tasks cannot override the new decision or multiply spend; replacing completed/in-flight work requires review.
+- Operational candidate enrichment cannot reintroduce unwanted video tasks. Canonical and live execution check visual requirements before paid work. Live image beats skip I2V, and the selected hybrid hook is not silently skipped because its audio is narration.
+- Reuse existing narrator and hybrid compilers. Their deadlines now account for target runtime instead of timing out all long-form work after 60 seconds.
+- Missing sourcing/rendering implementations fail closed before provider spend for stock/screenshot/map/chart/text/motion-graphic/user-asset requirements. Arbitrary mixed timelines beyond the existing hook-plus-stills layout are also gated. These are planned requirements, **not completed renderers**; no fake factual charts or substituted AI footage.
+- Verification covers all nine classifications, 60-minute plan economics (zero Narrator video tasks; one basic Hybrid hook task), no duplicate IDs/candidate expansion, unchanged short-form/Cinematic behavior, image-provider routing, and zero adapter submissions on unsupported visual requirements.
+- Verification on 2026-09-24: 1,292 tests passed, typecheck passed, production build passed (existing bundle-size warnings).
+- **Phase 14 is started, not complete.** Remaining: acquire/validate sources, feed supplied assets into the shared task/editorial path, implement factual renderers through existing editorial facilities, support timed arbitrary mixed media, and validate real long-form output. No paid provider tests or deployment validation in this checkpoint.
 
 ## Verification discipline
 

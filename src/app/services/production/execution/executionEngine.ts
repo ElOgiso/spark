@@ -68,6 +68,7 @@ import type { CreditService } from "../credits";
 import { ProviderPayloadCompiler } from "../compiler/payloadCompiler";
 import { getCapabilityProfile } from "../capability/registry";
 import { createRuntimeAdapterPorts } from "./runtimePorts";
+import { assertVisualPlanExecutable, applyLongFormVisualPlanning } from "../generation/strategyResolver";
 
 export interface ExecutionEngineOptions {
   ports?: AdapterPorts;
@@ -179,6 +180,8 @@ export class GenerationExecutionEngine {
     tasks: GenerationTask[];
     dag: ProductionDag;
   }): Promise<ExecutionEngineResult> {
+    params = { ...params, spec: applyLongFormVisualPlanning(params.spec) };
+    assertVisualPlanExecutable(params.spec);
     let tasks = params.tasks.map((t) => ({ ...t }));
     let dag = params.dag;
     const errors: string[] = [];
@@ -427,6 +430,12 @@ export class GenerationExecutionEngine {
     priorOutputs: Record<string, string>;
   }): Promise<{ execution: GenerationExecution; asset?: ProductionAsset }> {
     const { spec, task, priorOutputs } = params;
+    const visualSpec = applyLongFormVisualPlanning(spec);
+    assertVisualPlanExecutable(visualSpec);
+    const visualKind = visualSpec.scenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId)?.visualPlan?.kind;
+    if (task.kind === "video" && visualKind && visualKind !== "VIDEO") {
+      throw makeExecutionError("invalid_request", "Visual plan does not authorize AI video for this shot", { retryable: false, retryability: "DO_NOT_RETRY" });
+    }
     if (task.status === "succeeded" && !this.opts.dryRun) {
       const restored = restoreTaskOutput(task, this.opts.brandId || spec.project.brandId);
       if (!restored) {

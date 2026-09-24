@@ -14,7 +14,7 @@ import {
 } from "../cinematography/cinematicIntelligence";
 import { normalizeModeString } from "../resolveProductionMode";
 import { applyContinuityEngine } from "../continuity/continuityEngine";
-import { resolveShotGenerationStrategy } from "./strategyResolver";
+import { resolveShotGenerationStrategy, applyLongFormVisualPlanning } from "./strategyResolver";
 import { routeProductionShots } from "../routing/capabilityRouter";
 import { compileProductionPrompts } from "./promptCompiler";
 import { attachGenerationTasksToSpec, planGenerationTasks } from "./generationPlanner";
@@ -163,6 +163,7 @@ export function applyVisualPlanningPipeline(
   };
 
   // 4) Capability-based routing (no media calls)
+  next = applyLongFormVisualPlanning(next);
   next = routeProductionShots(next, opts.availableProviderIds);
 
   // 5) Filmmaking knowledge/skills — structured guidance for prompt compilation (no generation)
@@ -207,6 +208,7 @@ export function applyVisualPlanningPipeline(
 
       for (let i = 0; i < orderedShots.length; i++) {
         const shot = orderedShots[i];
+        if (shot.visualPlan) continue;
         const panel = panelByShot.get(shot.id);
         if (!panel) continue;
         const scene = next.scenes.find((s) => s.id === shot.sceneId);

@@ -14,6 +14,7 @@ import {
 } from "./executionEngine";
 import type { ProductionExecutionState } from "./types";
 import { ProductionGenerationGuard } from "../ProductionGenerationGuard";
+import { applyLongFormVisualPlanning } from "../generation/strategyResolver";
 
 export interface ExecuteProductionOptions extends ExecutionEngineOptions {
   /** Use tasks already on the spec when present */
@@ -36,6 +37,7 @@ export async function executeProduction(
   spec: ProductionSpec,
   options: ExecuteProductionOptions = {}
 ): Promise<ExecuteProductionResult> {
+  spec = applyLongFormVisualPlanning(spec);
   // Respect the app Production Generation ON/OFF switch for live spend.
   // dryRun / mocked paths remain allowed so planning + tests still work when OFF.
   if (options.dryRun !== true) {

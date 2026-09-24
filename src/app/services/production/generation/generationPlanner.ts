@@ -15,6 +15,7 @@ import type {
 import { syncDependsOn } from "../specification/generationTask";
 import { strategyFromAlias } from "../specification/generationStrategy";
 import { strategyToRequiredCapabilities } from "../routing/capabilityMatrix";
+import { applyLongFormVisualPlanning } from "./strategyResolver";
 
 export type { GenerationTask };
 export type { GenerationTaskKind } from "../specification/generationTask";
@@ -44,6 +45,7 @@ function locationReferenceId(locationId: string): string {
  * Plan generation tasks. Narrative order ≠ execution order unless CONTINUITY/SEQUENTIAL edges exist.
  */
 export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
+  spec = applyLongFormVisualPlanning(spec);
   const tasks: GenerationTask[] = [];
   const productionId = spec.project.id;
   const decisionByShot = new Map(spec.routing.shotDecisions.map((d) => [d.shotId, d]));
@@ -114,7 +116,7 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
       const decision = decisionByShot.get(shot.id);
       const keyframeId = `${shot.id}_keyframe`;
       const stillOnly =
-        shot.generationStrategy === "slideshow_still" || shot.generationStrategy === "text_to_image";
+        (shot.visualPlan ? shot.visualPlan.kind !== "VIDEO" : shot.generationStrategy === "slideshow_still" || shot.generationStrategy === "text_to_image");
 
       const keyframeDeps: TaskDependency[] = [];
       for (const cid of shot.characterIds || []) {
@@ -153,10 +155,10 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
             ? ["character_consistency", "multi_reference"]
             : [],
           selectedProvider:
-            stillOnly && shot.provider && shot.provider !== "unavailable"
+            !shot.visualPlan && stillOnly && shot.provider && shot.provider !== "unavailable"
               ? shot.provider
               : spec.routing.preferredImageProvider || "openai",
-          fallbackProviders: decision?.fallbacks?.map((f) => f.provider).slice(0, 2),
+          fallbackProviders: shot.visualPlan ? undefined : decision?.fallbacks?.map((f) => f.provider).slice(0, 2),
           dependsOn: [],
           dependencies: keyframeDeps,
           priority: keyframePriority,
@@ -176,6 +178,7 @@ export function planGenerationTasks(spec: ProductionSpec): GenerationTask[] {
 
         const needsContinuity =
           !!prevShot &&
+          (!prevShot.visualPlan || prevShot.visualPlan.kind === "VIDEO") &&
           (shot.generationStrategy === "first_last_frame" ||
             spec.continuity.lastFrameChainEnabled);
 
@@ -275,19 +278,33 @@ export function resolveGenerationTasks(
   spec: ProductionSpec,
   preferExistingTasks = true
 ): { spec: ProductionSpec; tasks: GenerationTask[] } {
+  spec = applyLongFormVisualPlanning(spec);
   const planned = planGenerationTasks(spec);
   const byId = new Map(planned.map(task => [task.id, task]));
   if (preferExistingTasks) {
     const shotScenes = new Map(spec.scenes.flatMap(scene => scene.shots.map(shot => [shot.id, scene.id] as const)));
     const sceneIds = new Set(spec.scenes.map(scene => scene.id));
     const retain = (task: GenerationTask) => {
+      const shot = spec.scenes.flatMap(scene => scene.shots).find(shot => shot.id === task.shotId);
+      if (shot?.visualPlan && (task.kind === "video" || task.kind === "keyframe") &&
+          (!byId.has(task.id) || (task.kind === "video" && shot.visualPlan.kind !== "VIDEO"))) {
+        if (task.status === "running" || task.status === "succeeded" || task.reconciliationRequired) {
+          throw new Error(`Visual replanning requires recovery/review of existing task ${task.id} before changing its generation plan`);
+        }
+        return;
+      }
+      if (task.kind === "video" && shot?.visualPlan && shot.visualPlan.kind !== "VIDEO") return;
       if (task.productionId !== spec.project.id) return;
       if (task.sceneId && !sceneIds.has(task.sceneId)) return;
       if (task.shotId && (!shotScenes.has(task.shotId) || (task.sceneId && shotScenes.get(task.shotId) !== task.sceneId))) return;
       const current = byId.get(task.id);
       // A reused ID must still describe the same work.
       if (current && (current.kind !== task.kind || current.shotId !== task.shotId || current.sceneId !== task.sceneId)) return;
-      byId.set(task.id, task);
+      if (shot?.visualPlan && current && task.kind === "keyframe" && task.status !== "succeeded" && task.status !== "running") {
+        byId.set(task.id, { ...task, strategy: current.strategy, selectedProvider: current.selectedProvider,
+          selectedModel: task.selectedProvider === current.selectedProvider ? task.selectedModel : undefined,
+          fallbackProviders: current.fallbackProviders });
+      } else byId.set(task.id, task);
     };
     for (const task of spec.productionTasks || []) {
       if (!task.shotId) retain(task);
