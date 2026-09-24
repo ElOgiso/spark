@@ -8,12 +8,17 @@ const env: Record<string, any> = (typeof import.meta !== "undefined" && (import.
 
 const supabaseUrl = env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
 const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
-const useSupabase = env.VITE_USE_SUPABASE !== "false";
 
 let client: SupabaseClient<Database> | null = null;
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(useSupabase && supabaseUrl && supabasePublishableKey);
+  if (typeof process !== "undefined" && process.env?.VITE_USE_SUPABASE === "false") {
+    return false;
+  }
+  if (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_USE_SUPABASE === "false") {
+    return false;
+  }
+  return Boolean(supabaseUrl && supabasePublishableKey);
 }
 
 export function getSupabaseClient(): SupabaseClient<Database> | null {
