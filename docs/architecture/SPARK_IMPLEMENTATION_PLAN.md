@@ -159,6 +159,22 @@ A completion record proves a scoped implementation, not that every live consumer
 - Verification: full suite **1,321 tests**, TypeScript and production build; nine focused Phase 14 tests cover no-spend source reuse/recovery, changed-source rejection, factual validation/escaping, motion-step order, mixed-input order/type, mixed-video eligibility, missing slots and mocked recording/cancellation cleanup. Existing bundle-size and duplicate-switch build warnings remain.
 - **Runtime acceptance remains open:** the remote browser cannot access this workspace's local test server (`ERR_BLOCKED_BY_CLIENT`). Recording tests use controlled media/DOM fixtures; they are not proof of a real encoded export. A real browser export, long-duration resource/quality test and deployed application verification are still required before declaring Phase 14 fully accepted or Spark production-ready. The browser compiler records in real time and retains output chunks in memory. No server/offline long-form render worker, automatic stock search/licensing or screenshot capture is claimed by this change.
 
+### Phase 16 — Video Understanding (implemented)
+
+- Establish a canonical, provider-neutral video understanding layer across Research, Reference Videos, Production Planning, Craft, QC, and Continuity.
+- Core law: **SPARK owns meaning. Providers own execution.** Providers do not dictate the ontology or shape of understanding results.
+- `StructuredVideoUnderstanding` unifies temporal segmentation, boundary visual states (start/end), disaggregated motion (camera vs subject vs environment), observed subjects/actions/objects, and typed evidence provenance.
+- Built-in fail-closed mechanics: low confidence or missing evidence records explicit limitations (`limitations: [...]`) and low confidence rather than hallucinating facts.
+- Seamless multi-system adapters:
+  - `ResearchAdapter`: Bidirectional compatibility with existing `VideoResearch` (`toVideoResearch`, `fromVideoResearch`).
+  - `QcMapper`: Projects understanding to `ObservedVisualState` and plugs into `VisualAnalysisService` for `evaluateShotQc`.
+  - `ReferenceGraphMapper`: Ingests video understanding into the canonical `ReferenceGraph` without duplicating graph infrastructure.
+  - `PlanningGuidanceMapper`: Suggests camera/framing/lighting parameters and registered `CraftOperation`s without auto-executing providers.
+  - `ContinuityEvidence`: Evaluates transition consistency across adjacent shots via boundary states.
+- 100% backward compatible with existing `VideoUnderstandingProvider` callers (`researchWatchWinners.test.ts` passes 17/17).
+- Verification on 2026-09-24: Phase 16 suite (23/23 tests pass), full test suite (1,335/1,335 tests pass across 294 suites), typecheck (0 errors), production build passed. Zero provider spend ($0.00).
+
 ## Verification discipline
+
 
 Run typecheck, all discovered tests and production build for each scoped checkpoint. Database changes require schema reconciliation and transaction tests. Real generation validation must separately record provider spend and output evidence. Preserve Spark's existing architecture and UI; never mark a phase complete solely because its files or tests exist.

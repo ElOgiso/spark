@@ -117,3 +117,6 @@ function summarizeFromFrameDescriptions(request: VisualAnalysisRequest): Observe
     confidence: 0.5,
   };
 }
+
+export { createVideoUnderstandingVisualAnalyzer } from "../../understanding/qcMapper";
+

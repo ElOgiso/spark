@@ -2,6 +2,7 @@ import { runtimeFetch } from "../../../backend/runtimeFetch";
 import type { VideoResearch } from "../../../domain/types";
 import { ModelRouter } from "../../runtime/modelRouter";
 import { getStoredAccountTokens } from "../../socialIntegrationService";
+import { VideoUnderstandingService } from "../../production/understanding/videoUnderstandingService";
 
 export class VideoUnderstandingProvider {
   private static CACHE_KEY = "spark_video_research_cache_v1";
@@ -513,5 +514,20 @@ Do not invent a hook, CTA, or beats if they are not in the transcript or frames.
     videoResearch.watchStatus = "watched";
     this.saveToCache(cleanUrl, videoResearch);
     return videoResearch;
+  }
+
+  /**
+   * Phase 16 Canonical entry point: Returns StructuredVideoUnderstanding.
+   * Leverages canonical VideoUnderstandingService.
+   */
+  static async understandVideo(
+    url: string,
+    options?: import("../../production/understanding/types").UnderstandVideoOptions
+  ): Promise<import("../../production/understanding/types").StructuredVideoUnderstanding> {
+    const { platform, videoId } = this.extractVideoId(url);
+    return VideoUnderstandingService.understand(
+      { kind: "public_url", url, platform, videoId },
+      options
+    );
   }
 }
