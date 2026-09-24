@@ -166,3 +166,25 @@ test("Phase 15: scene sound cues retain placement and explicit voice masters do 
   timeline = assemble(f);
   assert.equal(timeline.unresolvedDependencies.length, 0);
 });
+
+test("Phase 15 live adapter sends the timeline to the existing video endpoint and rejects unverified output", async () => {
+  const { createRuntimeAudioMasteringAdapter } = await import("./editorial/mastering/ffmpegAdapter");
+  const f = fixture(); const timeline = assemble(f);
+  let verified = false;
+  const adapter = createRuntimeAudioMasteringAdapter({ brandId: "brand", getMasterUrl: () => "https://example.test/visual.mp4", fetch: async (url, init) => {
+    assert.equal(url, "/api/runtime/video");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.action, "audio_master");
+    assert.equal(body.masterUrl, "https://example.test/visual.mp4");
+    assert.ok(body.plan.audioInputs.some((input: { role: string }) => input.role === "narration"));
+    return new Response(JSON.stringify({ success: true, audioVerified: verified, videoUrl: "https://example.test/finished.mp4", durationSec: 10 }), { status: 200 });
+  } });
+  const service = createMasteringService({ adapter });
+  const input = { timeline, variant: timeline.variants[0], productionId: f.spec.project.id };
+  const failed = await service.executeJob(await service.createJob(input), input);
+  assert.equal(failed.ok, false);
+  verified = true;
+  const completed = await service.executeJob(await service.createJob(input), input);
+  assert.equal(completed.ok, true);
+  assert.equal(completed.output?.mediaUrl, "https://example.test/finished.mp4");
+});

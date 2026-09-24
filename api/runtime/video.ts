@@ -1,3 +1,4 @@
+import { handleAudioMaster } from "./_audioMaster.js";
 import { requireRuntimeUser } from './_requestAuth.js';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { execFile } from "child_process";
@@ -782,6 +783,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
+  if (req.body?.action === "audio_master") return handleAudioMaster(req, res);
 
   try {
     const body = req.body || {};

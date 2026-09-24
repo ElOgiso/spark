@@ -266,3 +266,29 @@ export function createMockMasteringAdapter(overrides?: {
     },
   };
 }
+
+
+/** Phase 15 live finishing: the Phase 14 master supplies visuals, the timeline supplies sound. */
+export function createRuntimeAudioMasteringAdapter(options: {
+  getMasterUrl: () => string | undefined | null;
+  brandId: string;
+  signal?: AbortSignal;
+  fetch?: typeof import("../../../../backend/runtimeFetch").runtimeFetch;
+}): MasteringRuntimeAdapter {
+  return createFfmpegAdapter({
+    executor: async (plan, job) => {
+      const masterUrl = options.getMasterUrl();
+      if (!masterUrl) return { ok: false, error: { code: "missing_visual_master", message: "Visual assembly must finish before audio mastering", retryable: false } };
+      const request = options.fetch || (await import("../../../../backend/runtimeFetch")).runtimeFetch;
+      const response = await request("/api/runtime/video", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: options.signal,
+        body: JSON.stringify({ action: "audio_master", masterUrl, plan, brandId: options.brandId, productionId: job.productionId }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.success !== true || data.audioVerified !== true || !data.videoUrl) {
+        return { ok: false, error: { code: data.error || "audio_master_failed", message: data.message || "Audio finishing did not produce a verified master", retryable: false } };
+      }
+      return { ok: true, mediaUrl: data.videoUrl, durationSec: data.durationSec, fileSizeBytes: data.fileSizeBytes, mimeType: "video/mp4", container: "mp4" };
+    },
+  });
+}

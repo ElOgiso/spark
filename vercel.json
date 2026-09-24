@@ -1,9 +1,25 @@
 {
   "rewrites": [
-    { "source": "/api/runtime/ingest-media", "destination": "/api/runtime/video?ingest=1" },
-    { "source": "/api/runtime/models", "destination": "/api/runtime/execute?models=1" },
-    { "source": "/((?!assets/|api/|.*\\.[a-zA-Z0-9]+$).*)", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/api/runtime/ingest-media",
+      "destination": "/api/runtime/video?ingest=1"
+    },
+    {
+      "source": "/api/runtime/models",
+      "destination": "/api/runtime/execute?models=1"
+    },
+    {
+      "source": "/((?!assets/|api/|.*\\.[a-zA-Z0-9]+$).*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/runtime/video.ts": {
+      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,@ffprobe-installer/linux-*/**}"
+    }
+  }
 }
-

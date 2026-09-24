@@ -32,7 +32,7 @@ import type { SparkAutomationMode } from "./production/qc/types";
 import {
   runEditorialPipeline,
   assembleEditorialTimeline,
-  createExistingMasterPassthroughAdapter,
+  createRuntimeAudioMasteringAdapter,
 } from "./production/editorial";
 import type { ProductionSpec } from "./production/specification/productionSpec";
 import {
@@ -479,15 +479,17 @@ export class ProductionService implements IProductionService {
         enableQc: true,
         enableEditorial: true,
         enableMaster: true,
-        // AssetService already produces the durable master; editorial reuses it.
-        allowCompleteWithoutMaster: true,
+        // Phase 14 supplies visuals; Phase 15 finishes the timeline soundtrack.
+        allowCompleteWithoutMaster: false,
         signal,
-        masteringAdapter: createExistingMasterPassthroughAdapter(
-          () =>
+        masteringAdapter: createRuntimeAudioMasteringAdapter({
+          brandId: brand.id || production.brandId || "",
+          signal,
+          getMasterUrl: () =>
             liveExecute.getLastBridgeResult()?.assetResult.videoUrl ||
             liveExecute.getLastBridgeResult()?.production.videoUrl ||
-            production.videoUrl
-        ),
+            production.videoUrl,
+        }),
         deps: {
           executeProduction: liveExecute.executeProduction,
         },
@@ -512,6 +514,7 @@ export class ProductionService implements IProductionService {
       (videoUrl && isDurableMasterVideoReady(videoUrl)) || hasValidClips
     );
     const generationFailed =
+      report.editorial?.mastering?.ok === false ||
       report.phase === "blocked" ||
       report.phase === "failed" ||
       report.phase === "cancelled" ||

@@ -39,12 +39,20 @@ those fixes and the Phase 14 spend gates are preserved. Phase 14 runtime gates r
 
 ## Runtime boundaries
 
-This implements the audio timeline and mastering contract. Actual DSP is owned by
-an injected/server mastering executor. The existing AssetService master passthrough
-is not evidence that it rendered the new multi-track plan. Voice-conversion
-submission, end-to-end multitrack rendering, measured loudness verification and paid
-production runs remain unverified runtime work. No automatic additional provider
-spend is introduced. Earlier compiler/QC and durable execution gates remain open.
+The live mastering adapter now dispatches `audio_master` through the existing
+`/api/runtime/video` endpoint. It rebuilds the soundtrack from source clips and
+planned external audio, copies the Phase 14 visual stream unchanged, and persists
+a verified MP4 through existing storage. Source trims, placement, loops, gain,
+fade, ducking and embedded dialogue are rendered with bundled FFmpeg/ffprobe.
+Optional loudness targets are measured after encoding and failures are surfaced.
+Failed audio mastering cannot be labeled a completed live production.
+Authenticated brand access, production-scoped storage URLs, local-only media
+protocols, bounded downloads and cleanup apply to the executor. A visual/timeline
+duration mismatch blocks finishing instead of silently changing another phase.
+
+Voice-conversion provider submission remains unsupported: a supplied converted
+output is required and retains lineage. Hosted deployment and paid production
+runs have not been verified. No new provider spending or API function is added.
 
 ## Verification
 
@@ -54,3 +62,11 @@ speech overflow, mix bounds, the mastering handoff, missing audio and coverage-s
 narration duplication, scene cues and master references. Final verification:
 1,312 tests passed after rebasing onto the Phase 14 and saved-output recovery changes; TypeScript check passed, production build passed, and diff
 whitespace checks passed. Existing build warnings remain. No paid provider calls.
+
+## Runtime follow-up verification
+
+Built on main `77a4202`, preserving the concurrent Phase 14 shared compiler.
+1,326 tests passed; application TypeScript and production build passed. Real media
+checks verify narration placement, removal of previously baked audio, music
+looping/ducking, and byte-identical copied video streams. FFmpeg and ffprobe are
+pinned server dependencies with explicit Vercel binary inclusion.

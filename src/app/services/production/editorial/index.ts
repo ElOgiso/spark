@@ -109,6 +109,7 @@ export {
   createFfmpegAdapter,
   createMockMasteringAdapter,
   createExistingMasterPassthroughAdapter,
+  createRuntimeAudioMasteringAdapter,
   buildFfmpegRenderPlan,
   type FfmpegRenderPlan,
   type FfmpegExecutor,
