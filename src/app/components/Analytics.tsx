@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { ANALYTICS_EMPTY_COPY } from "../services/production/ui/userProductionExperience";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
-import { Button, WhySparkRecommends } from "./ds";
+import { Button } from "./ds";
 import { AccountProfileCards } from "./AccountProfileCards";
 import {
   fetchLiveAccountProfiles,
@@ -83,13 +84,13 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
   const avgEngagementVal = Object.values(platformAnalytics).filter((r: any) => r.engagementRate > 0);
   const avgEngagement = avgEngagementVal.length > 0
     ? (avgEngagementVal.reduce((sum, r: any) => sum + (r.engagementRate || 0), 0) / avgEngagementVal.length).toFixed(1) + "%"
-    : "7.2%";
+    : "—";
 
   const overallMetrics = [
-    { label: "Total Views", value: formatCount(totalViews), change: "+0%", icon: Eye, pos: true },
-    { label: "Avg Engagement", value: avgEngagement, change: "+0%", icon: Heart, pos: true },
-    { label: "Followers / Subscribers", value: formatCount(totalFollowers), change: "+0%", icon: MessageCircle, pos: true },
-    { label: "Productions", value: String(publishedProductions.length), change: "+0", icon: Zap, pos: true },
+    { label: "Total Views", value: formatCount(totalViews), change: "—", icon: Eye },
+    { label: "Avg Engagement", value: avgEngagement, change: "—", icon: Heart },
+    { label: "Followers / Subscribers", value: formatCount(totalFollowers), change: "—", icon: MessageCircle },
+    { label: "Productions", value: String(publishedProductions.length), change: "—", icon: Zap },
   ];
 
   // 2. What Worked (Top content uploads)
@@ -103,30 +104,11 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
         title: item.title || "Untitled",
         platform: item.platform || "YouTube",
         views: item.views != null ? formatCount(item.views) : "—",
-        engagement: item.likes != null && item.views && item.views > 0 ? ((item.likes / item.views) * 100).toFixed(1) + "%" : "8.2%",
-        completion: "68%",
-        why: `Hook delivered high velocity views within the platform feed. Nigerian relevance trigger hit ${item.views?.toLocaleString()} impressions.`,
+        engagement: item.likes != null && item.views && item.views > 0 ? ((item.likes / item.views) * 100).toFixed(1) + "%" : "—",
+        completion: item.averageViewDuration != null ? String(item.averageViewDuration) : "—",
+        why: "Measured from the connected channel. SPARK does not invent a performance story.",
       }))
-    : [
-        {
-          id: "c1",
-          title: "How AI Creates Viral Content",
-          platform: "YouTube",
-          views: "2.4M",
-          engagement: "8.2%",
-          completion: "68%",
-          why: "Hook addressed specific pain point in first 4s. Numbered list format reduced drop-off. Nigerian example in minute 3 drove share spike.",
-        },
-        {
-          id: "c2",
-          title: "Behind the Scenes: AI Production",
-          platform: "TikTok",
-          views: "1.8M",
-          engagement: "6.5%",
-          completion: "71%",
-          why: "Raw behind-the-scenes format triggered authenticity signal. 'Nobody shows you this' hook created curiosity gap that held 73% past 30s.",
-        },
-      ];
+    : [];
 
   // 3. What Failed (Low performing uploads)
   const failures = sortedContent.length > 2
@@ -135,45 +117,28 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
         title: item.title || "Untitled",
         platform: item.platform || "YouTube",
         views: item.views != null ? formatCount(item.views) : "—",
-        engagement: item.likes != null && item.views && item.views > 0 ? ((item.likes / item.views) * 100).toFixed(1) + "%" : "1.8%",
-        why: `Format dropped off early. Introduction pacing ran too long before hook payoff. Recommendation: optimize vertical framing and mobile captions.`,
+        engagement: item.likes != null && item.views && item.views > 0 ? ((item.likes / item.views) * 100).toFixed(1) + "%" : "—",
+        why: "Measured from the connected channel.",
       }))
-    : [
-        {
-          id: "f1",
-          title: "Technical Tutorial Series Ep. 4",
-          platform: "YouTube",
-          views: "45K",
-          engagement: "1.8%",
-          why: "Over-indexed on technical depth without local context. Introduction ran 47 seconds before hook payoff. No mobile optimization.",
-        },
-      ];
+    : [];
 
   // 4. Hook Patterns
-  const hookPatterns = [
-    { hook: '"Nobody talks about this, but..."', performance: "3.2×", category: "Exclusivity" },
-    { hook: '"I spent [X] days testing this..."', performance: "2.8×", category: "Proof" },
-    { hook: '"This changed everything for me"', performance: "2.4×", category: "Transformation" },
-    { hook: "Show dramatic before/after in first 3s", performance: "2.1×", category: "Visual" },
-  ];
+  const hookPatterns: { hook: string; performance: string; category: string }[] = [];
 
   // 5. Platform Fit
   const platformFit = Object.values(platformAnalytics).length > 0
     ? Object.values(platformAnalytics).map((p: any) => {
-        const score = p.engagementRate > 0 ? Math.min(100, Math.round(p.engagementRate * 10)) : 80;
+        const score = p.engagementRate > 0 ? Math.min(100, Math.round(p.engagementRate * 10)) : null;
         return {
           platform: p.platform,
-          score: score > 0 ? score : 80,
-          status: p.syncFailure 
-            ? "Sync failed — check connection" 
-            : `${p.followers.toLocaleString()} subscribers · ${p.postsCount} posts`,
+          score,
+          status: p.syncFailure
+            ? "Sync failed — check connection"
+            : `${Number(p.followers || 0).toLocaleString()} subscribers · ${p.postsCount || 0} posts`,
           trend: p.growthPercent >= 0 ? ("up" as const) : ("down" as const),
         };
       })
-    : [
-        { platform: "YouTube", score: 94, status: "Primary strength — long-form authority", trend: "up" as const },
-        { platform: "TikTok", score: 82, status: "Strong short-form clips from long content", trend: "up" as const },
-      ];
+    : [];
 
   // 6. Audience Signals
   const audienceSignals = (memoryItems || [])
@@ -184,16 +149,8 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
       type: "high",
     }));
 
-  const defaultAudienceSignals = [
-    { signal: "Local business success stories drive 4× comment velocity", type: "high" },
-    { signal: "Content mentioning specific Nigerian cities gets 2.3× share rate", type: "high" },
-    { signal: "Mobile-first framing (vertical, captions on) retains 31% longer", type: "high" },
-    { signal: "Intro over 20 seconds causes 38% drop-off spike", type: "warning" },
-  ];
-  
-  const finalAudienceSignals = audienceSignals.length > 0 ? audienceSignals : defaultAudienceSignals;
+  const finalAudienceSignals = audienceSignals;
 
-  // 7. Recommended Productions
   const nextProductions = (viralSparks || []).slice(0, 3).map((v: any) => ({
     id: v.id,
     title: v.title,
@@ -202,24 +159,7 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
     platform: v.platformFit,
   }));
 
-  const defaultProductionsList = [
-    {
-      id: "p1",
-      title: "How Nigerians Are Using AI to Build Media Empires",
-      reason: "Combines top hook pattern + local success angle + trending topic. Projected 94% brand fit.",
-      score: 97,
-      platform: "YouTube + TikTok",
-    },
-    {
-      id: "p2",
-      title: "Free AI Tools Replacing ₦500K in Software",
-      reason: "Local affordability angle with proven 'free tools' hook. High share potential across demographic.",
-      score: 95,
-      platform: "YouTube + Reels",
-    },
-  ];
-
-  const finalProductions = nextProductions.length > 0 ? nextProductions : defaultProductionsList;
+  const finalProductions = nextProductions;
 
   // 8. Memory Updates Suggested & Confirmed
   const memoryUpdates = Object.values(platformAnalytics)
@@ -229,18 +169,11 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
       type: "new" as const,
     }));
 
-  const defaultMemoryUpdates = [
-    { text: "Updated: peak engagement window confirmed as Tue–Thu 2–4 PM (was previously Mon–Fri 9 AM)", type: "updated" },
-    { text: "Learned: Nigerian local context mention increases shares by 2.3× — now applied to all scripts", type: "new" },
-    { text: "Confirmed: tutorial completion rates drop sharply after 12 minutes for this audience", type: "confirmed" },
-  ];
+  const finalMemoryUpdates = memoryUpdates;
 
-  const finalMemoryUpdates = memoryUpdates.length > 0 ? memoryUpdates : defaultMemoryUpdates;
-
-  // 9. Rationale Summary text
   const dynamicRationale = totalViews > 0
-    ? `Monthly views across connected channels total ${formatCount(totalViews)} with an audience pool of ${formatCount(totalFollowers)} followers/subscribers. Localizing formatting to vertical layouts and optimizing short-form pacer cuts reduces drop-off velocities by estimated 35%.`
-    : "Monthly views hit 24.8M with a record-high $142K revenue (+24.5%). Localizing tutorials with accessible Nigerian creator pricing model and West African cultural triggers reduced immediate video drop-offs by 37%.";
+    ? `Connected channels report ${formatCount(totalViews)} views and ${formatCount(totalFollowers)} followers or subscribers.`
+    : ANALYTICS_EMPTY_COPY;
 
   const dynamicEvidence = Object.values(platformAnalytics).length > 0
     ? Object.values(platformAnalytics).map((p: any) => {
@@ -249,10 +182,7 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
         }
         return `${p.platform}: ${p.followers.toLocaleString()} subscribers with ${p.views.toLocaleString()} total views across ${p.postsCount} uploads.`;
       })
-    : [
-        "What Happened: Overall engagement increased to 7.2% (+2.3%), driven by 'How AI Creates Viral Content' tutorial format hitting an exceptional 8.2% engagement.",
-        "Why It Happened: Introduction challenges delivered high curiosity value within the first 4s, and Yoruba subtitles tutorial exceeded average completion rates by 14%.",
-      ];
+    : [ANALYTICS_EMPTY_COPY];
 
   return (
     <>
@@ -290,7 +220,7 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
                   <div key={m.label} className="rounded-xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between mb-3">
                       <Icon className="w-4 h-4 text-muted-foreground" />
-                      <span className={`text-xs font-medium ${m.pos ? "text-success" : "text-destructive"}`}>{m.change}</span>
+                      <span className="text-xs font-medium text-muted-foreground">{m.change}</span>
                     </div>
                     <p className="text-3xl font-medium tracking-tight">{m.value}</p>
                     <p className="text-xs text-muted-foreground mt-1.5">{m.label}</p>
@@ -306,19 +236,19 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
             <p className="text-xs text-muted-foreground mb-1">
               Data conclusions derived from connected channels over the past 30 days:
             </p>
-            <WhySparkRecommends
-              details={{
-                reason: dynamicRationale,
-                evidence: dynamicEvidence,
-                confidence: "Very High",
-                confidencePercent: 96,
-                expectedOutcome: "Projected audience growth rate stabilization above 40% with a continued decline in production resource overhead.",
-                risk: "Low",
-                nextBestAction: "Distribute Video Clips",
-                brandRules: ["Audience Growth Pillar #1", "Pricing Realism Rule"]
-              }}
-              defaultExpanded={true}
-            />
+            {totalViews > 0 || sortedContent.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm text-foreground">{dynamicRationale}</p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  {dynamicEvidence.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">Only numbers returned by connected channels are shown.</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{ANALYTICS_EMPTY_COPY}</p>
+            )}
           </section>
 
           {/* What Worked */}
@@ -328,6 +258,9 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
               <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What Worked</h2>
             </div>
             <div className="space-y-4">
+              {topPerformers.length === 0 && (
+                <p className="text-sm text-muted-foreground">{ANALYTICS_EMPTY_COPY}</p>
+              )}
               {topPerformers.map((item) => (
                 <div key={item.id} className="rounded-xl border border-success/20 bg-success/5 p-6">
                   <div className="flex items-start justify-between gap-4 mb-3">
@@ -366,6 +299,9 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
               <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What Failed</h2>
             </div>
             <div className="space-y-3">
+              {failures.length === 0 && (
+                <p className="text-sm text-muted-foreground">{ANALYTICS_EMPTY_COPY}</p>
+              )}
               {failures.map((item) => (
                 <div key={item.id} className="rounded-xl border border-warning/20 bg-warning/5 p-5">
                   <div className="flex items-start justify-between gap-4 mb-3">
@@ -402,6 +338,9 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
                 <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Best Hook Patterns</h2>
               </div>
               <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+                {hookPatterns.length === 0 && (
+                  <p className="text-sm text-muted-foreground">{ANALYTICS_EMPTY_COPY}</p>
+                )}
                 {hookPatterns.map((h, i) => (
                   <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-accent/5 transition-colors">
                     <span className="text-xs text-muted-foreground w-4 flex-shrink-0">{i + 1}</span>
@@ -429,15 +368,15 @@ export function Analytics({ onNavigate }: AnalyticsProps) {
                       <div className="flex items-center gap-2">
                         {p.trend === "up" && <TrendingUp className="w-3.5 h-3.5 text-success" />}
                         {p.trend === "down" && <TrendingDown className="w-3.5 h-3.5 text-warning" />}
-                        <span className={`text-sm font-medium ${
-                          p.score >= 80 ? "text-success" : p.score >= 65 ? "text-warning" : "text-muted-foreground"
-                        }`}>{p.score}%</span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {p.score == null ? "—" : `${p.score}%`}
+                        </span>
                       </div>
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-1.5">
                       <div
-                        className={`h-full rounded-full ${p.score >= 80 ? "bg-success" : p.score >= 65 ? "bg-warning" : "bg-muted-foreground/40"}`}
-                        style={{ width: `${p.score}%` }}
+                        className={`h-full rounded-full ${p.score != null && p.score >= 80 ? "bg-success" : p.score != null && p.score >= 65 ? "bg-warning" : "bg-muted-foreground/40"}`}
+                        style={{ width: `${p.score ?? 0}%` }}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">{p.status}</p>

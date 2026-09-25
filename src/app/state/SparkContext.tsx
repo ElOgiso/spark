@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { NotificationService } from "../notifications/notificationService";
+import { reviewStatusAfterMaster, userSafeGenerationMessage } from "../services/production/ui/userProductionExperience";
 import { loadPersistedState, savePersistedState } from "./persistence";
 import { generateSuperSparkResponse, SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import {
@@ -2711,7 +2712,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const updatedProd = syncProductionMediaStores({
           production: {
             ...prod,
-            status: "Ready for Review",
+            status: reviewStatusAfterMaster(prod),
           },
           scenes,
           masterVideoUrl: masterUrl,
@@ -4561,7 +4562,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const job = state.publishJobs.find((j: any) => j.productionId === productionId) ||
                 state.productions.find((p: any) => p.id === productionId);
     if (!job) {
-      alert("Production not found.");
+      NotificationService.addNotification({
+        title: "Publish failed",
+        description: "Production not found.",
+        type: "publishing_failed",
+        priority: "high",
+        relatedRoute: "/calendar",
+      });
       return;
     }
     const production = state.productions.find((p: any) => p.id === productionId) || (job as any);
@@ -4614,11 +4621,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ),
       }));
       NotificationService.addNotification({
-        title: "Publishing Blocked",
-        message: reason,
-        type: "warning",
+        title: "Publishing blocked",
+        description: userSafeGenerationMessage(reason),
+        type: "publishing_failed",
+        priority: "high",
+        relatedRoute: "/calendar",
       });
-      alert(`Publishing blocked: ${reason}`);
       return;
     }
 
@@ -4650,7 +4658,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...prev,
         publishJobs: [generatedJob, ...(prev.publishJobs || []).filter((j: any) => j.productionId !== productionId)],
       }));
-      alert(`Publishing unavailable: ${reason}`);
+      NotificationService.addNotification({
+        title: "Publish failed",
+        description: userSafeGenerationMessage(reason),
+        type: "publishing_failed",
+        priority: "high",
+        relatedRoute: "/calendar",
+      });
       return;
     }
 
@@ -4660,7 +4674,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     if (!connectedAcc) {
-      alert(`Publishing unavailable: No connected ${platform === "YouTube Shorts" ? "YouTube" : platform} account.`);
+      NotificationService.addNotification({
+        title: "Publish failed",
+        description: `No connected ${platform === "YouTube Shorts" ? "YouTube" : platform} account.`,
+        type: "publishing_failed",
+        priority: "high",
+        relatedRoute: "/more",
+      });
       return;
     }
 
@@ -4686,7 +4706,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               : j
           ),
         }));
-        alert(`Publishing not completed: ${reason}`);
+        NotificationService.addNotification({
+          title: "Publish failed",
+          description: userSafeGenerationMessage(reason),
+          type: "system_update",
+          priority: "high",
+        });
         return;
       }
 
@@ -4730,8 +4755,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 timing: lifecycleData.timing,
               }
             : { ok: true, completed: true, deliverableReady: true },
-          qualityScore: (production as any)?.brief?.brandFitScore || 80,
-          audiencePerformanceScore: 75,
+          qualityScore: (production as any)?.brief?.brandFitScore,
           platform: String(platform),
         });
 
@@ -4808,9 +4832,21 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.warn("[SparkContext] Post-publish retention policy notice:", retErr);
       }
 
-      alert(`Successfully published to ${platform}!${postUrl ? ` URL: ${postUrl}` : ""}`);
+      NotificationService.addNotification({
+        title: "Published",
+        description: `Published to ${platform}.${postUrl ? ` ${postUrl}` : ""}`,
+        type: "publishing_complete",
+        priority: "medium",
+        relatedRoute: "/calendar",
+      });
     } catch (err: any) {
-      alert(`Publishing failed: ${err.message}`);
+      NotificationService.addNotification({
+        title: "Publish failed",
+        description: userSafeGenerationMessage(err?.message || "Publishing failed."),
+        type: "publishing_failed",
+        priority: "high",
+        relatedRoute: "/calendar",
+      });
     }
   };
 

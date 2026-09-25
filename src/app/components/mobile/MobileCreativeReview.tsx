@@ -38,6 +38,14 @@ import {
   reviewMediaImgClass,
 } from "../../services/production/reviewHonesty";
 import { resolveReviewScript } from "../../services/production/reviewScriptResolver";
+import {
+  allowsUnsafeRetry,
+  presentLifecycleProgress,
+  submissionEvidence,
+  UNKNOWN_SUBMISSION_COPY,
+  userModePresentation,
+  userSafeGenerationMessage,
+} from "../../services/production/ui/userProductionExperience";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -65,33 +73,22 @@ function asText(value: unknown, fallback = ""): string {
 
 
 function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any, brief: any, brand: any }) {
-  
   const formatSettings = activeProd?.settingsSnapshot?.formatSettings || brief?.formatSettings || brand?.settings || {};
-  let contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
-  
-  
-  
-  let genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
-  let genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
-
-  const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
-  const imageProvider = aiSettings?.routing?.storyboardImages || "Best Available";
-  const imageModel = aiSettings?.models?.storyboardImages;
-  
-  const videoProvider = formatSettings.preferredVideoProvider || aiSettings?.routing?.videoGeneration || "Best Available";
-  const videoModel = formatSettings.preferredVideoModel || aiSettings?.models?.videoGeneration;
-
-  const fmtMode = activeProd?.settingsSnapshot?.productionMode || "express";
-  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || "16:9";
+  const contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
+  const genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
+  const genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
+  const mode = userModePresentation(
+    activeProd?.settingsSnapshot?.productionMode || activeProd?.productionMode || brief?.productionMode,
+  );
+  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || formatSettings?.aspectMode || "16:9";
 
   return (
     <div className="mx-4 mt-4 mb-2 p-3 rounded-xl bg-card border border-border/70 shadow-sm flex flex-col gap-2">
       <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Production identity</h3>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono text-muted-foreground">
-        <span>Format &middot; <span className="text-foreground">{contentFormat} ({fmtMode} {fmtAspect})</span></span>
-        <span>Genre &middot; <span className="text-foreground">{genreLabel}</span></span>
-        <span>Stills &middot; <span className="text-foreground">{imageProvider}{imageModel ? " \u00B7 " + imageModel : ""}</span></span>
-        <span>Video &middot; <span className="text-foreground">{videoProvider}{videoModel ? " \u00B7 " + videoModel : ""}</span></span>
+        <span>Format · <span className="text-foreground">{contentFormat} ({fmtAspect})</span></span>
+        <span>Mode · <span className="text-foreground">{mode.label}</span></span>
+        <span>Genre · <span className="text-foreground">{genreLabel}</span></span>
       </div>
     </div>
   );
@@ -162,6 +159,18 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const [selectedReviewSceneId, setSelectedReviewSceneId] = useState<string | null>(null);
   const [selectedReviewShotId, setSelectedReviewShotId] = useState<string | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [generateLock, setGenerateLock] = useState(false);
+
+  const retryBlocked = !allowsUnsafeRetry(
+    submissionEvidence([
+      activeProd?.lastError,
+      item?.lastError,
+      brief?.lastError,
+      genProgress?.message,
+      genProgress?.stage,
+    ]),
+  );
+  const liveStage = presentLifecycleProgress(genProgress);
 
   useEffect(() => {
     const st = String(item?.status || activeProd?.status || "");
@@ -189,22 +198,28 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   };
 
   const handleGenerateAssets = (forceRegenerate = false) => {
+    if (retryBlocked) {
+      setFeedback(UNKNOWN_SUBMISSION_COPY);
+      return;
+    }
     if (!prodId || !generateProductionAssets) {
       setFeedback("Production ID not found.");
       setTimeout(() => setFeedback(null), 3000);
       return;
     }
+    if (generateLock || isGenerating) return;
 
-    setFeedback(forceRegenerate ? "Forcing full regeneration..." : "Continuing asset generation...");
+    setGenerateLock(true);
+    setFeedback(forceRegenerate ? "Generating media…" : "Continuing generation…");
     void generateProductionAssets(prodId, forceRegenerate)
       .then(() => {
-        setFeedback(forceRegenerate ? "Assets regenerated!" : "Asset generation complete!");
+        setFeedback("Generation finished. Review uses the saved production state.");
         setTimeout(() => setFeedback(null), 3000);
       })
       .catch((err: any) => {
-        setFeedback(`Generation failed: ${err?.message || "Error"}`);
-        setTimeout(() => setFeedback(null), 3500);
-      });
+        setFeedback(userSafeGenerationMessage(err?.message || String(err || "")));
+      })
+      .finally(() => setGenerateLock(false));
   };
 
   const handleCancelGeneration = () => {
@@ -364,43 +379,43 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         </button>
         <h1 className="text-lg font-bold leading-snug mb-2 text-white line-clamp-2">{proposal.title}</h1>
         <div className="flex gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span className="text-xs font-semibold">{proposal.opportunityScore}% Fit</span>
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="text-xs font-semibold">{proposal.aiConfidence}% AI Confidence</span>
-          </div>
+          {typeof proposal.opportunityScore === "number" && (
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span className="text-xs font-semibold">{proposal.opportunityScore}% Fit</span>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 pb-[380px] min-h-0">
 
-      {isGenerating && genProgress && (
+      {isGenerating && (
         <div className="mx-4 mt-4 p-4 rounded-xl bg-card border border-accent/40 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <RotateCw className="w-3.5 h-3.5 text-accent animate-spin" />
-              <span className="text-xs font-semibold text-foreground">
-                {genProgress?.stage ? `Stage: ${genProgress.stage}` : "Synthesizing Media"}
-              </span>
+              <span className="text-xs font-semibold text-foreground">{liveStage.stage}</span>
             </div>
             <span className="text-[11px] font-mono font-bold text-accent bg-accent/20 px-2 py-0.5 rounded-full">
-              {typeof genProgress?.percent === "number" && genProgress.percent >= 0 ? `${genProgress.percent}%` : "Starting..."}
+              {liveStage.percent == null ? "In progress" : `${liveStage.percent}%`}
             </span>
           </div>
 
           <div className="w-full h-1.5 bg-accent/10 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-300"
-              style={{ width: `${typeof genProgress?.percent === "number" && genProgress.percent > 0 ? Math.max(genProgress.percent, 3) : 3}%` }}
-            />
+            {liveStage.percent == null ? (
+              <div className="h-full w-1/3 bg-accent/70 rounded-full animate-pulse" />
+            ) : (
+              <div
+                className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-300"
+                style={{ width: `${liveStage.percent}%` }}
+              />
+            )}
           </div>
 
-          <p className="text-[11px] text-muted-foreground">
-            {genProgress?.message || "Synthesizing storyboard keyframes, thumbnails, and audio..."}
-          </p>
+          {genProgress?.message ? (
+            <p className="text-[11px] text-muted-foreground">{userSafeGenerationMessage(String(genProgress.message))}</p>
+          ) : null}
 
           {genProgress?.stages && (
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/40">
@@ -437,10 +452,12 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-amber-200">
-              {activeProd?.lastError || item?.lastError || brief?.lastError}
+              {userSafeGenerationMessage(String(activeProd?.lastError || item?.lastError || brief?.lastError))}
             </p>
             <p className="text-[10px] text-amber-200/70 mt-0.5">
-              Locked character sheet required for host / story / anime formats.
+              {retryBlocked
+                ? UNKNOWN_SUBMISSION_COPY
+                : "Open generation again only after SPARK confirms the previous attempt."}
             </p>
           </div>
         </div>
@@ -832,21 +849,22 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         ) : (
           <button
             onClick={() => handleGenerateAssets(false)}
-            className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+            disabled={retryBlocked || generateLock}
+            className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
           >
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span>{hasPlayableVideo ? "Generate Assets" : "Continue Generation"}</span>
+            <span>{retryBlocked ? "Checking status" : hasPlayableVideo ? "Generate Assets" : "Continue Generation"}</span>
           </button>
         )}
 
         {/* 2) Regenerate all */}
         <button
           onClick={() => handleGenerateAssets(true)}
-          disabled={isGenerating}
+          disabled={isGenerating || retryBlocked || generateLock}
           className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
         >
           <RotateCw className={`w-4 h-4 text-white/70 ${isGenerating ? "animate-spin" : ""}`} />
-          <span>Regenerate All</span>
+          <span>{retryBlocked ? "Checking status" : "Regenerate All"}</span>
         </button>
 
         {/* 3) Reject / Request revision */}

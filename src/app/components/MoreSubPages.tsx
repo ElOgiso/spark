@@ -82,6 +82,7 @@ import { ServiceDiscovery } from "../services/runtime/serviceDiscovery";
 import { McpManager } from "../services/runtime/mcpManager";
 import { ServiceHealthMonitor } from "../services/runtime/serviceHealthMonitor";
 import { IntegrationManifest } from "../services/runtime/integrationManifest";
+import { USER_MODE_COPY, presentLedgerEntry } from "../services/production/ui/userProductionExperience";
 import { MarketerDesktopView } from "./marketer/MarketerDesktopView";
 
 interface SubPageProps {
@@ -99,6 +100,38 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
   const spark = useSpark() as any;
   const { state, addMemoryItem, removeMemoryItem, character, productions, reviewItems } = spark;
   const activeMemoryItems: MemoryItem[] = spark.memoryItems || state?.memoryItems || [];
+  const [creditHistory, setCreditHistory] = useState<{ label: string; signed: string }[]>([]);
+  const [creditHistoryState, setCreditHistoryState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+
+  useEffect(() => {
+    const userId = auth.currentUser?.id;
+    if (!auth.isAuthenticated || !userId) {
+      setCreditHistory([]);
+      setCreditHistoryState("idle");
+      return;
+    }
+    let cancelled = false;
+    setCreditHistoryState("loading");
+    void (async () => {
+      try {
+        const { createCreditRepository } = await import("../services/production/credits/creditRepository");
+        const rows = await createCreditRepository().getLedger(userId);
+        if (cancelled) return;
+        setCreditHistory(
+          rows
+            .slice(0, 12)
+            .map((row) => presentLedgerEntry(row))
+            .filter((row): row is { label: string; signed: string } => Boolean(row)),
+        );
+        setCreditHistoryState("ready");
+      } catch {
+        if (!cancelled) setCreditHistoryState("unavailable");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.isAuthenticated, auth.currentUser?.id]);
 
   // Sub-pages states
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -773,7 +806,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                   <div>
                     <h3 className="text-base font-semibold text-foreground">Production Generation</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      When ON, SPARK can create productions, briefs, images, and video — and spend credits. When OFF, only Super Spark chat works.
+                      When ON, SPARK can create productions and spend credits. When OFF, Super Spark, planning, and chat stay available. Generation spend does not.
                     </p>
                   </div>
                   <button
@@ -794,7 +827,7 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                     When <strong>ON</strong> (Default), SPARK can create productions and spend credits on briefs, storyboards, stills, motion, and voice.
                   </p>
                   <p>
-                    When <strong>OFF</strong>, only Super Spark chat works. No production rows, no briefs, no image or video generation, and no other credit spend.
+                    When <strong>OFF</strong>, Super Spark, planning, and chat stay available. Generation actions are paused and no generation spend occurs.
                   </p>
                 </div>
               </div>
@@ -804,15 +837,15 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
                 <div>
                   <h3 className="text-base font-semibold text-foreground">Default Production Mode</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Controls production depth and media asset generation pipeline (Notion Standard).
+                    Brand default only. Changing this does not switch a production that already started.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { id: "express" as const, label: "Narrator", desc: "Images + voice + music/SFX + captions + motion", time: "2–4 hours" },
-                    { id: "standard" as const, label: "Hybrid", desc: "Animated hook + narrator pipeline", time: "6–12 hours" },
-                    { id: "deep" as const, label: "Cinematic", desc: "Storyboard + video generation + consistency + voice + audio", time: "24–48 hours" },
+                    { id: "express" as const, label: USER_MODE_COPY.express.label, desc: USER_MODE_COPY.express.description, time: "2–4 hours" },
+                    { id: "standard" as const, label: USER_MODE_COPY.standard.label, desc: USER_MODE_COPY.standard.description, time: "6–12 hours" },
+                    { id: "deep" as const, label: USER_MODE_COPY.deep.label, desc: USER_MODE_COPY.deep.description, time: "24–48 hours" },
                   ].map((m) => {
                     const isActive = spark.productionMode === m.id || (m.id === "express" && spark.productionMode === "narrator") || (m.id === "standard" && spark.productionMode === "hybrid") || (m.id === "deep" && spark.productionMode === "cinematic");
                     return (
@@ -1288,22 +1321,55 @@ export function MoreSubPages({ onNavigate, subPath }: SubPageProps & { subPath: 
             <div className="space-y-6">
               <div className="rounded-xl border border-border bg-card p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Active Plan</p>
-                  <h3 className="text-2xl font-bold text-accent-foreground">Not configured</h3>
-                  <p className="text-xs text-muted-foreground">Billing is not connected in this environment yet.</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Available credits</p>
+                  <h3 className="text-2xl font-bold text-foreground">
+                    {auth.isAuthenticated
+                      ? auth.profile
+                        ? auth.creditBalance
+                        : "Loading credits…"
+                      : "Sign in"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {auth.isAuthenticated
+                      ? "Read from your Spark credit balance. Estimates stay separate until a production plan has a cost."
+                      : "Sign in to see Spark Credits."}
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Billing Frequency</p>
-                  <h3 className="text-2xl font-medium">—</h3>
-                  <p className="text-xs text-muted-foreground">No subscription on file.</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Subscription</p>
+                  <h3 className="text-2xl font-medium">Not configured</h3>
+                  <p className="text-xs text-muted-foreground">No subscription is connected. Credits are not a plan price.</p>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Payment Method</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Payment method</p>
                   <h3 className="text-2xl font-medium flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-muted-foreground" />
                     None
                   </h3>
-                  <p className="text-xs text-muted-foreground">Add a payment method when billing goes live.</p>
+                  <p className="text-xs text-muted-foreground">Purchases are not configured in this environment.</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-border/50">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Credit history</h3>
+                </div>
+                <div className="px-5 py-4 space-y-2">
+                  {creditHistoryState === "loading" && (
+                    <p className="text-sm text-muted-foreground">Loading credit history…</p>
+                  )}
+                  {creditHistoryState === "unavailable" && (
+                    <p className="text-sm text-muted-foreground">Credit history is unavailable right now.</p>
+                  )}
+                  {(creditHistoryState === "idle" || creditHistoryState === "ready") && creditHistory.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No credit activity yet.</p>
+                  )}
+                  {creditHistory.map((row, index) => (
+                    <div key={`${row.label}-${row.signed}-${index}`} className="flex items-center justify-between text-sm">
+                      <span>{row.label}</span>
+                      <span className="font-mono">{row.signed}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 

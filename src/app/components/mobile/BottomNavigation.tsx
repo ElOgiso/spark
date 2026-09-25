@@ -9,11 +9,11 @@ interface BottomNavigationProps {
 }
 
 const navItems = [
-  { id: "spark" as const, label: "Spark", icon: Zap },
-  { id: "viral-sparks" as const, label: "Viral", icon: TrendingUp },
-  { id: "review" as const, label: "Review", icon: CheckSquare },
-  { id: "analytics" as const, label: "Analytics", icon: BarChart3 },
-  { id: "more" as const, label: "More", icon: MoreHorizontal },
+  { id: "spark" as const, label: "SPARK", icon: Zap },
+  { id: "viral-sparks" as const, label: "VIRAL", icon: TrendingUp },
+  { id: "review" as const, label: "REVIEW", icon: CheckSquare },
+  { id: "analytics" as const, label: "ANALYTICS", icon: BarChart3 },
+  { id: "more" as const, label: "MORE", icon: MoreHorizontal },
 ];
 
 export function BottomNavigation({
@@ -35,6 +35,8 @@ export function BottomNavigation({
           return (
             <button
               key={item.id}
+              type="button"
+              aria-label={item.id === "viral-sparks" ? "VIRAL SPARKS" : item.label}
               onClick={() => onTabChange(item.id)}
               className={`
                 flex flex-col items-center justify-center gap-1 py-1.5 px-3 min-w-[56px]

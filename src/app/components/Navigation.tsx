@@ -3,21 +3,23 @@ import { Zap, Brain, TrendingUp, CheckSquare, Calendar, BarChart3, MoreHorizonta
 import { useAuth } from "../state/AuthContext";
 import { SparkLogo } from "./SparkLogo";
 
-interface NavItem {
-  name: string;
-  icon: React.ComponentType<{ className?: string }>;
-  path: string;
-}
+import { LOCKED_PRIMARY_NAV } from "../services/production/ui/userProductionExperience";
 
-const navItems: NavItem[] = [
-  { name: "Spark", icon: Zap, path: "/" },
-  { name: "My Spark", icon: Brain, path: "/my-spark" },
-  { name: "Viral Sparks", icon: TrendingUp, path: "/viral-sparks" },
-  { name: "Review", icon: CheckSquare, path: "/review" },
-  { name: "Calendar", icon: Calendar, path: "/calendar" },
-  { name: "Analytics", icon: BarChart3, path: "/analytics" },
-  { name: "More", icon: MoreHorizontal, path: "/more" },
-];
+const NAV_ICONS = {
+  spark: Zap,
+  "my-spark": Brain,
+  "viral-sparks": TrendingUp,
+  review: CheckSquare,
+  calendar: Calendar,
+  analytics: BarChart3,
+  more: MoreHorizontal,
+} as const;
+
+const navItems = LOCKED_PRIMARY_NAV.map((item) => ({
+  name: item.label,
+  path: item.path,
+  icon: NAV_ICONS[item.id],
+}));
 
 interface NavigationProps {
   currentPath?: string;
@@ -73,6 +75,7 @@ export function Navigation({ currentPath = "/", onNavigate }: NavigationProps) {
           return (
             <button
               key={item.name}
+              type="button"
               onClick={() => onNavigate?.(item.path)}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg

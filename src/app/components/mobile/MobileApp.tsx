@@ -7,6 +7,7 @@ import { MobileReview } from "./MobileReview";
 import { MobileAnalytics } from "./MobileAnalytics";
 import { MobileMore } from "./MobileMore";
 import { MobileMySpark } from "./MobileMySpark";
+import { Calendar as CalendarPage } from "../Calendar";
 
 import { MoreSubPages } from "../MoreSubPages";
 
@@ -23,6 +24,11 @@ export function MobileApp() {
     if (cleanPath === "/my-spark" || cleanPath === "/more/my-spark" || cleanPath === "my-spark") {
       setSubPath(null);
       setActiveTab("my-spark");
+      return;
+    }
+    if (cleanPath === "/calendar") {
+      setSubPath("/calendar");
+      setActiveTab("more");
       return;
     }
     if (cleanPath.startsWith("/more/")) {
@@ -50,6 +56,9 @@ export function MobileApp() {
   };
 
   const renderContent = () => {
+    if (activeTab === "more" && subPath === "/calendar") {
+      return <CalendarPage onNavigate={handleMobileNavigate} />;
+    }
     if (activeTab === "more" && subPath) {
       return <MoreSubPages onNavigate={handleMobileNavigate} subPath={subPath} />;
     }

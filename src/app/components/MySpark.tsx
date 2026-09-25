@@ -1,4 +1,5 @@
 import { getModelsForProviderAndCapability } from "../services/runtime/modelCatalog";
+import { USER_MODE_COPY, AUTOMATION_USER_LABELS } from "../services/production/ui/userProductionExperience";
 import { useState } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
@@ -349,15 +350,15 @@ export function MySpark({ onNavigate }: MySparkProps) {
   };
 
   const automationConfig = {
-    manual: { label: "Manual", desc: "All decisions require your approval", color: "text-warning", bg: "bg-warning/10", border: "border-warning/30" },
-    balanced: { label: "Balanced", desc: "AI handles routine decisions, you approve strategy", color: "text-accent-foreground", bg: "bg-accent/20", border: "border-accent/40" },
-    autonomous: { label: "Autonomous", desc: "AI operates independently, you set direction", color: "text-success", bg: "bg-success/10", border: "border-success/30" },
+    manual: { label: AUTOMATION_USER_LABELS.manual, desc: "All decisions require your approval", color: "text-warning", bg: "bg-warning/10", border: "border-warning/30" },
+    balanced: { label: AUTOMATION_USER_LABELS.balanced, desc: "SPARK handles routine decisions. You approve strategy.", color: "text-accent-foreground", bg: "bg-accent/20", border: "border-accent/40" },
+    autonomous: { label: AUTOMATION_USER_LABELS.autonomous, desc: "SPARK operates independently. You set direction.", color: "text-success", bg: "bg-success/10", border: "border-success/30" },
   };
 
   const productionConfig = {
-    express: { label: "Narrator", desc: "Images + voice + music/SFX + captions + motion", time: "2–4 hours" },
-    standard: { label: "Hybrid", desc: "Animated hook + narrator pipeline", time: "6–12 hours" },
-    deep: { label: "Cinematic", desc: "Storyboard + video generation + consistency + voice + audio", time: "24–48 hours" },
+    express: { label: USER_MODE_COPY.express.label, desc: USER_MODE_COPY.express.description, time: "2–4 hours" },
+    standard: { label: USER_MODE_COPY.standard.label, desc: USER_MODE_COPY.standard.description, time: "6–12 hours" },
+    deep: { label: USER_MODE_COPY.deep.label, desc: USER_MODE_COPY.deep.description, time: "24–48 hours" },
   };
 
   const aMode = automationConfig[automationMode as keyof typeof automationConfig] || automationConfig.balanced;

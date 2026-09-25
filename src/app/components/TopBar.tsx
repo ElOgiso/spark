@@ -213,6 +213,17 @@ export function TopBar({
       </div>
 
       <div className="flex items-center gap-4">
+        {auth.isAuthenticated && (
+          <button
+            type="button"
+            onClick={() => handleNavigate("/more/billing")}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/50 bg-accent/5 hover:bg-accent/15 text-xs font-medium"
+            aria-label="Available Spark Credits"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>{auth.profile ? `${auth.creditBalance} credits` : "Loading credits…"}</span>
+          </button>
+        )}
         <NotificationCenter onNavigate={handleNavigate} />
 
         {/* User Profile / Auth State */}

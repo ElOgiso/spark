@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Palette,
   ChevronRight,
+  Calendar,
   CheckCircle2,
   ArrowLeft,
   Plus,
@@ -309,9 +310,9 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
   });
 
   const modeConfig = {
-    manual: { label: "Manual", description: "All decisions require approval", color: "text-warning" },
-    balanced: { label: "Balanced", description: "AI handles routine, you approve strategic", color: "text-accent-foreground" },
-    autonomous: { label: "Autonomous", description: "AI makes most decisions", color: "text-success" },
+    manual: { label: "Manual Review Required", description: "All decisions require approval", color: "text-warning" },
+    balanced: { label: "Approval Required", description: "SPARK handles routine work. You approve strategy.", color: "text-accent-foreground" },
+    autonomous: { label: "Autonomous", description: "SPARK makes most decisions", color: "text-success" },
   };
 
   const defaultOffer = offers.find((o: any) => o.active && o.isDefault) || offers.find((o: any) => o.active);
@@ -322,6 +323,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
       title: "Brand",
       items: [
         { icon: Sparkles, label: "My Spark", badge: "Brand & Research", path: "/my-spark" },
+        { icon: Calendar, label: "Calendar", badge: "Schedule", path: "/calendar" },
         { icon: Archive, label: "Assets", badge: `${assets.length} files` },
         { icon: Brain, label: "Memory", badge: `${memoryItems.length} rules` },
         { icon: Tag, label: "Marketer", badge: marketerBadge },
@@ -338,7 +340,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
     {
       title: "Account & Team",
       items: [
-        { icon: CreditCard, label: "Billing", badge: "Not set" },
+        { icon: CreditCard, label: "Billing", badge: auth.isAuthenticated && auth.profile ? `${auth.creditBalance} credits` : "Sign in" },
         { icon: Code, label: "API", badge: `${apiKeyList.length} keys` },
         { 
           icon: Sparkles, 
@@ -1222,7 +1224,7 @@ export function MobileMore({ onNavigate }: MobileMoreProps = {}) {
               }`}
             >
               <div className="text-xs font-semibold">Off</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">chat only — no credits</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">chat and planning — no spend</div>
             </button>
             <button
               type="button"

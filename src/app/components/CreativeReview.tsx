@@ -1,7 +1,15 @@
 import { resolveProductionContentFormat } from "../services/production/contentFormatDirectives";
+import {
+  allowsUnsafeRetry,
+  presentLifecycleProgress,
+  submissionEvidence,
+  UNKNOWN_SUBMISSION_COPY,
+  userModePresentation,
+  userSafeGenerationMessage,
+} from "../services/production/ui/userProductionExperience";
 import { resolveLiveVisualGenre } from "../services/production/visualGenreDirectives";
 import { VISUAL_GENRE_OPTIONS } from "../domain/visualGenre";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { NotificationService } from "../notifications/notificationService";
@@ -91,28 +99,14 @@ function asText(value: unknown, fallback = ""): string {
 
 
 function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any, brief: any, brand: any }) {
-  // 1. Content Format
-  
   const formatSettings = activeProd?.settingsSnapshot?.formatSettings || brief?.formatSettings || brand?.settings || {};
-  let contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
-  
-  // 2. Visual Genre
-  
-  
-  let genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
-  let genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
-
-  // 3. Image AI
-  const aiSettings = activeProd?.settingsSnapshot?.aiSettings || brief?.aiSettings || brand?.aiSettings;
-  const imageProvider = aiSettings?.routing?.storyboardImages || "Best Available";
-  const imageModel = aiSettings?.models?.storyboardImages;
-  
-  // 4. Video AI
-  const videoProvider = formatSettings.preferredVideoProvider || aiSettings?.routing?.videoGeneration || "Best Available";
-  const videoModel = formatSettings.preferredVideoModel || aiSettings?.models?.videoGeneration;
-
-  const fmtMode = activeProd?.settingsSnapshot?.productionMode || "express";
-  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || "16:9";
+  const contentFormat = resolveProductionContentFormat({ production: activeProd, brief, formatSettings });
+  const genreId = resolveLiveVisualGenre({ production: activeProd, brief, formatSettings });
+  const genreLabel = VISUAL_GENRE_OPTIONS.find((g: any) => g.id === genreId)?.label || genreId || "Auto";
+  const mode = userModePresentation(
+    activeProd?.settingsSnapshot?.productionMode || activeProd?.productionMode || brief?.productionMode,
+  );
+  const fmtAspect = activeProd?.settingsSnapshot?.formatSettings?.aspectMode || formatSettings?.aspectMode || "16:9";
 
   return (
     <div className="p-4 rounded-2xl bg-card border border-border/70 shadow-sm space-y-3">
@@ -123,20 +117,16 @@ function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any
       </div>
       <div className="flex flex-wrap gap-4 text-sm font-mono text-muted-foreground">
         <div className="flex items-center gap-1">
-          <span className="opacity-70">Format &middot;</span>
-          <span className="text-foreground">{contentFormat} ({fmtMode} {fmtAspect})</span>
+          <span className="opacity-70">Format ·</span>
+          <span className="text-foreground">{contentFormat} ({fmtAspect})</span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="opacity-70">Genre &middot;</span>
+          <span className="opacity-70">Mode ·</span>
+          <span className="text-foreground">{mode.label}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="opacity-70">Genre ·</span>
           <span className="text-foreground">{genreLabel}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="opacity-70">Stills &middot;</span>
-          <span className="text-foreground">{imageProvider}{imageModel ? " \u00B7 " + imageModel : ""}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="opacity-70">Video &middot;</span>
-          <span className="text-foreground">{videoProvider}{videoModel ? " \u00B7 " + videoModel : ""}</span>
         </div>
       </div>
     </div>
@@ -204,6 +194,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
 
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const generateLockRef = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C">("B");
   const [showAssetsGallery, setShowAssetsGallery] = useState(false);
@@ -286,13 +277,35 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
     );
   }
 
+  const retryBlocked = !allowsUnsafeRetry(
+    submissionEvidence([
+      activeProd?.lastError,
+      activeProd?.generationProgress?.message,
+      activeProd?.generationProgress?.stage,
+    ]),
+  );
+  const liveStage = presentLifecycleProgress(activeProd?.generationProgress);
+
   const handleGenerateAssets = () => {
+    if (retryBlocked) {
+      setActionSuccess(UNKNOWN_SUBMISSION_COPY);
+      return;
+    }
+    if (generateLockRef.current || activeProd?.isGeneratingAssets) return;
     if (activeProd?.id && generateProductionAssets) {
-      setActionSuccess("Generating Assets...");
-      void generateProductionAssets(activeProd.id, false).then(() => {
-        setActionSuccess("Assets Generated");
-        setTimeout(() => setActionSuccess(null), 3000);
-      });
+      generateLockRef.current = true;
+      setActionSuccess("Generating media…");
+      void generateProductionAssets(activeProd.id, false)
+        .then(() => {
+          setActionSuccess("Generation finished. Review uses the saved production state.");
+          setTimeout(() => setActionSuccess(null), 3000);
+        })
+        .catch((err: unknown) => {
+          setActionSuccess(userSafeGenerationMessage(err instanceof Error ? err.message : String(err)));
+        })
+        .finally(() => {
+          generateLockRef.current = false;
+        });
     }
   };
 
@@ -370,15 +383,21 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
       return;
     }
 
+    if (retryBlocked || generateLockRef.current || activeProd?.isGeneratingAssets) {
+      if (retryBlocked) setActionSuccess(UNKNOWN_SUBMISSION_COPY);
+      return;
+    }
+    generateLockRef.current = true;
     setRegenerating(true);
-    setActionSuccess("Regenerating Assets...");
+    setActionSuccess("Generating media…");
     try {
       await generateProductionAssets(prodId, true);
-      setActionSuccess("Regenerated");
+      setActionSuccess("Generation finished. Review uses the saved production state.");
     } catch (err) {
       console.warn("[CreativeReview] Regenerate notice:", err);
-      setActionSuccess("Regeneration failed");
+      setActionSuccess(userSafeGenerationMessage(err instanceof Error ? err.message : String(err)));
     } finally {
+      generateLockRef.current = false;
       setRegenerating(false);
       setTimeout(() => setActionSuccess(null), 3000);
     }
@@ -766,13 +785,15 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
                   <p className="text-sm font-semibold text-amber-200">
                     {motionFailed ? "Motion synthesis failed" : "Generation issue"}
                   </p>
-                  <p className="text-xs text-amber-100/90 mt-1 break-words">{errText}</p>
+                  <p className="text-xs text-amber-100/90 mt-1 break-words">{userSafeGenerationMessage(String(errText))}</p>
                   <p className="text-xs text-amber-200/70 mt-1">
                     {isCharacterGate
-                      ? "A locked character reference sheet is required for host / story / anime formats before asset rendering can begin."
-                      : motionFailed
-                        ? "Stills succeeded; image-to-video did not return clips. Use Regenerate All after checking the video provider (Grok/xAI), or wait for failover/slideshow recovery on the latest build."
-                        : "Open Regenerate All to retry asset synthesis."}
+                      ? "A locked character reference sheet is required before asset rendering can begin."
+                      : !allowsUnsafeRetry(String(errText))
+                        ? UNKNOWN_SUBMISSION_COPY
+                        : motionFailed
+                        ? "Stills are ready. Motion did not return clips yet. Wait for SPARK to confirm status before another attempt."
+                        : "Open Regenerate All only after SPARK confirms the previous attempt."}
                   </p>
                 </div>
               </div>
@@ -1359,14 +1380,14 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               size="lg"
               icon={<Sparkles className={`w-4 h-4 ${activeProd?.isGeneratingAssets ? "animate-spin text-purple-400" : ""}`} />}
               onClick={handleGenerateAssets}
-              disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
+              disabled={retryBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
             >
               {activeProd?.isGeneratingAssets &&
                activeProd.generationProgress?.stage !== "Complete" &&
                activeProd.generationProgress?.stage !== "Failed" &&
                activeProd.generationProgress?.stage !== "Cancelled" &&
                !(activeProd.generationProgress?.stages || []).some((s: any) => s?.id === "video" && s?.status === "failed")
-                ? (activeProd.generationProgress?.stage ? `Synthesizing ${activeProd.generationProgress.stage}...` : "Synthesizing Assets...")
+                ? (liveStage.indeterminate ? `${liveStage.stage}…` : `${liveStage.stage} ${liveStage.percent}%`)
                 : (brief?.videoUrl || brief?.generatedAssets?.generatedVideos?.length)
                 ? "Generate Assets"
                 : "Continue Generation"}
@@ -1376,9 +1397,9 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               size="lg"
               icon={<RotateCw className={`w-4 h-4 ${regenerating ? "animate-spin text-purple-400" : ""}`} />}
               onClick={handleRegenerate}
-              disabled={activeProd?.isGeneratingAssets || regenerating || exporting}
+              disabled={retryBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
             >
-              {regenerating ? "Regenerating..." : "Regenerate All"}
+              {regenerating ? "Generating media…" : retryBlocked ? "Checking status" : "Regenerate All"}
             </Button>
             <Button
               variant="ghost"
