@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { NotificationService } from "../notifications/notificationService";
-import { reviewStatusAfterMaster, userSafeGenerationMessage } from "../services/production/ui/userProductionExperience";
+import { reviewStatusAfterMaster, userModePresentation, userSafeGenerationMessage } from "../services/production/ui/userProductionExperience";
 import { loadPersistedState, savePersistedState } from "./persistence";
 import { generateSuperSparkResponse, SPARK_EXECUTIVE_VOICE_PROFILE } from "../services/geminiService";
 import {
@@ -2905,6 +2905,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (activeGenerationControllers.current.has(productionId)) {
+      if (!forceRegenerate) {
+        console.info(`[SparkContext] Duplicate generate ignored for ${productionId}; a generation is already in flight.`);
+        return;
+      }
       activeGenerationControllers.current.get(productionId)?.abort();
     }
     const controller = new AbortController();
@@ -2935,9 +2939,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               isGeneratingAssets: true,
               lastError: undefined,
               generationProgress: {
-                percent: 1,
                 stage: "Initializing",
-                message: `Initializing ${seedPlan.normalizedMode.toUpperCase()} production pipeline (single spine)...`,
+                message: `Initializing ${userModePresentation(seedPlan.normalizedMode).label} production pipeline (single spine)...`,
                 stages: seedPlan.stages,
                 updatedAt: new Date().toISOString(),
               },
