@@ -1,7 +1,10 @@
 import { resolveProductionContentFormat } from "../services/production/contentFormatDirectives";
 import {
   allowsUnsafeRetry,
+  presentFromCostEstimate,
+  presentInsufficientCredits,
   presentLifecycleProgress,
+  readAttachedCostEstimate,
   submissionEvidence,
   UNKNOWN_SUBMISSION_COPY,
   userModePresentation,
@@ -11,6 +14,7 @@ import { resolveLiveVisualGenre } from "../services/production/visualGenreDirect
 import { VISUAL_GENRE_OPTIONS } from "../domain/visualGenre";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSpark } from "../state/SparkContext";
+import { useAuth } from "../state/AuthContext";
 import { TopBar } from "./TopBar";
 import { NotificationService } from "../notifications/notificationService";
 import { Button, WhySparkRecommends } from "./ds";
@@ -135,6 +139,7 @@ function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any
 
 export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeReviewProps) {
   const { reviewItems, productions, brand, character, approveReviewItem, rejectOrRequestEditReviewItem, generateProductionAssets, cancelProduction, deleteProduction, fixProductionScene, selectProductionCandidate, publishProduction, automationMode, mergeProductionScenes } = useSpark() as any;
+  const auth = useAuth();
 
   // 1. Resolve focus target ID from sessionStorage, then SPA currentPage / location query
   const [focusId, setFocusId] = useState<string | null>(() => readSparkReviewFocusId(currentPage));
@@ -285,10 +290,22 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
     ]),
   );
   const liveStage = presentLifecycleProgress(activeProd?.generationProgress);
+  const creditEstimate = presentFromCostEstimate(
+    readAttachedCostEstimate(activeProd) || readAttachedCostEstimate(brief),
+  );
+  const creditGate =
+    auth.profile && creditEstimate.kind === "known"
+      ? presentInsufficientCredits(auth.creditBalance, creditEstimate.credits)
+      : { blocked: false as const };
+  const creditsBlocked = creditGate.blocked;
 
   const handleGenerateAssets = () => {
     if (retryBlocked) {
       setActionSuccess(UNKNOWN_SUBMISSION_COPY);
+      return;
+    }
+    if (creditsBlocked) {
+      setActionSuccess("Not enough Spark Credits");
       return;
     }
     if (generateLockRef.current || activeProd?.isGeneratingAssets) return;
@@ -383,8 +400,9 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
       return;
     }
 
-    if (retryBlocked || generateLockRef.current || activeProd?.isGeneratingAssets) {
+    if (retryBlocked || creditsBlocked || generateLockRef.current || activeProd?.isGeneratingAssets) {
       if (retryBlocked) setActionSuccess(UNKNOWN_SUBMISSION_COPY);
+      else if (creditsBlocked) setActionSuccess("Not enough Spark Credits");
       return;
     }
     generateLockRef.current = true;
@@ -1339,6 +1357,20 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
       {/* Fixed Action Bar */}
       <div className="fixed bottom-0 left-0 md:left-56 right-0 bg-card border-t border-border p-5 shadow-2xl z-50">
         <div className="max-w-5xl mx-auto flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground text-center">
+            {creditEstimate.kind === "known" ? `Estimated cost ${creditEstimate.label}` : "Estimate unavailable"}
+            {" · "}
+            {auth.profile ? `Available credits ${auth.creditBalance}` : "Available credits loading"}
+          </p>
+          {creditEstimate.kind === "known" && (
+            <p className="text-[11px] text-muted-foreground text-center">{creditEstimate.disclaimer}</p>
+          )}
+          {creditsBlocked && creditGate.blocked && (
+            <div className="text-xs text-center text-warning">
+              Not enough Spark Credits. Available {creditGate.available}. Estimated requirement {creditGate.required}.{" "}
+              <button type="button" className="underline" onClick={() => onNavigate?.("/more/billing")}>Billing</button>
+            </div>
+          )}
           {actionSuccess && (
             <div
               className={`p-2 rounded-lg text-xs font-medium text-center border ${
@@ -1380,7 +1412,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               size="lg"
               icon={<Sparkles className={`w-4 h-4 ${activeProd?.isGeneratingAssets ? "animate-spin text-purple-400" : ""}`} />}
               onClick={handleGenerateAssets}
-              disabled={retryBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
+              disabled={retryBlocked || creditsBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
             >
               {activeProd?.isGeneratingAssets &&
                activeProd.generationProgress?.stage !== "Complete" &&
@@ -1397,7 +1429,7 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
               size="lg"
               icon={<RotateCw className={`w-4 h-4 ${regenerating ? "animate-spin text-purple-400" : ""}`} />}
               onClick={handleRegenerate}
-              disabled={retryBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
+              disabled={retryBlocked || creditsBlocked || activeProd?.isGeneratingAssets || regenerating || exporting}
             >
               {regenerating ? "Generating media…" : retryBlocked ? "Checking status" : "Regenerate All"}
             </Button>

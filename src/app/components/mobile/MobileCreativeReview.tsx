@@ -3,6 +3,7 @@ import { resolveLiveVisualGenre } from "../../services/production/visualGenreDir
 import { VISUAL_GENRE_OPTIONS } from "../../domain/visualGenre";
 import { useState, useEffect, useMemo } from "react";
 import { useSpark } from "../../state/SparkContext";
+import { useAuth } from "../../state/AuthContext";
 import { InteractiveVideoPlayer, ThumbnailVariantCard } from "../MediaPreviewHelper";
 import {
   ArrowLeft,
@@ -40,7 +41,10 @@ import {
 import { resolveReviewScript } from "../../services/production/reviewScriptResolver";
 import {
   allowsUnsafeRetry,
+  presentFromCostEstimate,
+  presentInsufficientCredits,
   presentLifecycleProgress,
+  readAttachedCostEstimate,
   submissionEvidence,
   UNKNOWN_SUBMISSION_COPY,
   userModePresentation,
@@ -49,6 +53,7 @@ import {
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
+  onNavigate?: (path: string) => void;
   item?: any;
 }
 
@@ -94,7 +99,7 @@ function ProductionIdentityStrip({ activeProd, brief, brand }: { activeProd: any
   );
 }
 
-export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps) {
+export function MobileCreativeReview({ onBack, onNavigate, item }: MobileCreativeReviewProps) {
   const {
     approveReviewItem,
     brand,
@@ -109,6 +114,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     character,
     mergeProductionScenes,
   } = useSpark() as any;
+  const auth = useAuth();
 
   const activeProd = productions?.find((p: any) =>
     (item?.productionId && p.id === item.productionId) ||
@@ -171,6 +177,14 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
     ]),
   );
   const liveStage = presentLifecycleProgress(genProgress);
+  const creditEstimate = presentFromCostEstimate(
+    readAttachedCostEstimate(activeProd) || readAttachedCostEstimate(brief),
+  );
+  const creditGate =
+    auth.profile && creditEstimate.kind === "known"
+      ? presentInsufficientCredits(auth.creditBalance, creditEstimate.credits)
+      : { blocked: false as const };
+  const creditsBlocked = creditGate.blocked;
 
   useEffect(() => {
     const st = String(item?.status || activeProd?.status || "");
@@ -200,6 +214,10 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
   const handleGenerateAssets = (forceRegenerate = false) => {
     if (retryBlocked) {
       setFeedback(UNKNOWN_SUBMISSION_COPY);
+      return;
+    }
+    if (creditsBlocked) {
+      setFeedback("Not enough Spark Credits");
       return;
     }
     if (!prodId || !generateProductionAssets) {
@@ -837,6 +855,20 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         className="fixed bottom-0 left-0 right-0 z-[95] bg-[#0B0F17] border-t border-white/10 px-4 pt-3.5 space-y-2.5 shadow-2xl"
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 16px))" }}
       >
+        <p className="text-[11px] text-white/70 text-center">
+          {creditEstimate.kind === "known" ? `Estimated cost ${creditEstimate.label}` : "Estimate unavailable"}
+          {" · "}
+          {auth.profile ? `Available ${auth.creditBalance}` : "Credits loading"}
+        </p>
+        {creditsBlocked && creditGate.blocked && (
+          <button
+            type="button"
+            onClick={() => onNavigate?.("/more/billing")}
+            className="w-full text-[11px] text-amber-200 text-center"
+          >
+            Not enough Spark Credits. Available {creditGate.available}. Need {creditGate.required}. Open Billing.
+          </button>
+        )}
         {/* 1) Continue generation / Generate Assets OR Cancel generation */}
         {isGenerating ? (
           <button
@@ -849,7 +881,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         ) : (
           <button
             onClick={() => handleGenerateAssets(false)}
-            disabled={retryBlocked || generateLock}
+            disabled={retryBlocked || generateLock || creditsBlocked}
             className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
           >
             <Sparkles className="w-4 h-4 text-purple-400" />
@@ -860,7 +892,7 @@ export function MobileCreativeReview({ onBack, item }: MobileCreativeReviewProps
         {/* 2) Regenerate all */}
         <button
           onClick={() => handleGenerateAssets(true)}
-          disabled={isGenerating || retryBlocked || generateLock}
+          disabled={isGenerating || retryBlocked || generateLock || creditsBlocked}
           className="w-full py-3.5 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40"
         >
           <RotateCw className={`w-4 h-4 text-white/70 ${isGenerating ? "animate-spin" : ""}`} />

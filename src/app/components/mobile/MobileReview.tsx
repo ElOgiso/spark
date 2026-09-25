@@ -73,7 +73,7 @@ function getPreviewMediaUrl(prod?: any, review?: any): string | undefined {
   );
 }
 
-function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }) {
+function ReviewDetail({ item, onBack, onNavigate }: { item: ReviewItem; onBack: () => void; onNavigate?: (path: string) => void }) {
   const {
     approveReviewItem,
     rejectOrRequestEditReviewItem,
@@ -89,7 +89,7 @@ function ReviewDetail({ item, onBack }: { item: ReviewItem; onBack: () => void }
   const hasMediaOrBrief = Boolean(activeProd || item.brief || item.videoUrl || item.audioUrl || (item.scenes && item.scenes.length > 0));
 
   if (item.type === "creative" || hasMediaOrBrief) {
-    return <MobileCreativeReview onBack={onBack} item={item} />;
+    return <MobileCreativeReview onBack={onBack} onNavigate={onNavigate} item={item} />;
   }
 
   const handleGenerateAssets = (force = false) => {
@@ -360,7 +360,7 @@ export function MobileReview({ onNavigate }: MobileReviewProps = {}) {
 
   if (selectedReview) {
     const currentReview = reviews.find((r) => r.id === selectedReview.id) || selectedReview;
-    return <ReviewDetail item={currentReview} onBack={() => setSelectedReview(null)} />;
+    return <ReviewDetail item={currentReview} onBack={() => setSelectedReview(null)} onNavigate={onNavigate} />;
   }
 
   const filtered = activeFilter === "all"

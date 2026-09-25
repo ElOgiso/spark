@@ -17,7 +17,7 @@ No second review, dashboard, or production state. Presentation helpers live in `
 - Modes: `MySpark.tsx`, `MobileMySpark.tsx`, `MoreSubPages.tsx` use Narrator / Hybrid / Cinematic copy. Internal keys remain express / standard / deep.
 - Automation stays a separate control: Manual Review Required, Approval Required, Autonomous.
 - Production OFF copy in settings: chat and planning stay available; generation spend does not.
-- Credits: `TopBar` and `/more/billing` read `auth.creditBalance` (profile `credit_balance`). Billing history reads `createCreditRepository().getLedger` and `presentLedgerEntry`. No direct ledger writes.
+- Credits: `TopBar` and `/more/billing` read `auth.creditBalance` (profile `credit_balance`). Billing history reads `createCreditRepository().getLedger` and `presentLedgerEntry`. Review generate actions show an attached canonical estimate, or "Estimate unavailable". A known estimate above the loaded balance disables generate and says "Not enough Spark Credits" with a Billing action. No direct ledger writes. JSX does not price a click itself.
 - Analytics: `Analytics.tsx` and `MobileAnalytics.tsx` no longer seed demo views, hook multipliers, audience claims, or revenue. Empty state uses `ANALYTICS_EMPTY_COPY`.
 - Review: `CreativeReview.tsx` and `MobileCreativeReview.tsx` show `userSafeGenerationMessage`, block regenerate while submission evidence is unknown, and map live progress through `presentLifecycleProgress` without inventing a percent. Review identity shows Narrator / Hybrid / Cinematic, not provider or model ids.
 - Master merge: `SparkContext.mergeProductionScenes` sets status with `reviewStatusAfterMaster`. A master URL alone becomes Checking Quality, not Ready for Review, unless lifecycle `deliverableReady` is true. QC `passed: false` becomes Needs Edit.
@@ -26,7 +26,7 @@ No second review, dashboard, or production state. Presentation helpers live in `
 
 ## Not claimed
 
-- JSX does not call CostEngine to price a click. Unknown or missing attached estimates stay "Estimate unavailable".
+- JSX does not call CostEngine to price a click. Unknown or missing attached estimates stay "Estimate unavailable" and do not render as 0 or Free.
 - Mobile is not a seven-tab clone of desktop.
 - Phase 21 paid narrator/hybrid/cinematic validation was not run.
 - Live Supabase was not migrated.
