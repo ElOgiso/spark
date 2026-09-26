@@ -5,7 +5,11 @@
  *
  * Sources:
  * - Social influencer Prompt 1 (realistic portrait foundation)
- * - Product advertising Prompt 2 (editorial model foundation) + Prompt 3 (3-view sheet)
+ * - SPARK library — Character portrait + 3-view sheet
+ * - Product advertising Prompt 3 (3-view sheet geometry)
+ *
+ * Master rule: CHANGE THE INPUTS. KEEP THE ENGINE.
+ * Reference image controls identity. Template controls production behavior.
  */
 
 import {
@@ -54,16 +58,16 @@ export interface CompiledCharacterPrompt {
   referenceImageUrls: string[];
 }
 
-const REALISTIC_PORTRAIT_FOUNDATION = `A full-body street-style portrait in vertical 9:16 format shows a person standing square to the camera with both feet planted shoulder-width apart on a clean, grey, residential pavement. Hair and wardrobe follow the IDENTITY LOCK below. One hand loosely holds a bag strap while the other arm hangs by their side, posture relaxed with shoulders gently pulled back and chin level for steady eye contact with the lens, creating a calm and approachable expression with a closed-lip smile. Complexion is natural, with subtle natural detail—visible pores, fine skin texture, a flush on the cheeks, under-eye shadow, eyebrows with stray hairs, soft lips, clear iris detail, and daylight catchlights. The narrow alleyway behind features a low brick wall with faded mortar, a slim tree trunk, metal gate, grey step, and blank shop shutter, with gentle overcast daylight from above and slightly frontal yielding soft, even shadows under the chin and within clothing folds, keeping background slightly darker. Framed eye-level from mid-chest height with no cropping of the body, this digital image is captured in sharp, deep focus on a modern smartphone with natural color accuracy, no noise, film grain, LUT stylization, harsh light, or lens artifacts present, evoking a calm urban mood and authentic realism.`;
+const REALISTIC_PORTRAIT_FOUNDATION = `A full-body street-style portrait in vertical 9:16 format shows the locked character standing square to the camera with both feet planted shoulder-width apart on a clean, grey, residential pavement. One hand loosely holds a bag strap while the other arm hangs by their side, posture relaxed with shoulders gently pulled back and chin level for steady eye contact with the lens, creating a calm and approachable expression with a closed-lip smile. Complexion is natural, with subtle natural detail—visible pores, fine skin texture, a flush on the cheeks, under-eye shadow, eyebrows with stray hairs, soft lips, clear iris detail, and daylight catchlights. The narrow alleyway behind features a low brick wall with faded mortar, a slim tree trunk, metal gate, grey step, and blank shop shutter, with gentle overcast daylight from above and slightly frontal yielding soft, even shadows under the chin and within clothing folds, keeping background slightly darker. Framed eye-level from mid-chest height with no cropping of the body, this digital image is captured in sharp, deep focus on a modern smartphone with natural color accuracy, no noise, film grain, LUT stylization, harsh light, or lens artifacts present, evoking a calm urban mood and authentic realism.`;
 
-const EDITORIAL_PORTRAIT_FOUNDATION = `A full-length vertical editorial street portrait, 9:16. The person from the IDENTITY LOCK stands in a physically believable environment with natural posture and weight, both feet visible at the bottom of the frame. Clothing behaves like real fabric. Soft overcast daylight, no harsh shadows, deep focus. Natural film grain, candid documentary mood. No accidental branding, no invented logos.`;
+const EDITORIAL_PORTRAIT_FOUNDATION = `A full-length vertical editorial portrait, 9:16. The locked character stands in a physically believable environment with natural posture and weight, both feet visible at the bottom of the frame. Clothing behaves like real fabric for the chosen medium. Soft even key light, no harsh shadows, deep focus. No accidental branding, no invented logos.`;
 
 const SHEET_FOUNDATION = `Three-panel character reference sheet, 16:9, of the exact same person as in the input photo — identical face, identical facial structure, identical hair, identical features in all three panels, same person photographed three times. Keep the outfit and styling from the input photo, modest fully-clothed, opaque fabric, no revealing styling. Panel 1 (left third): full body, standing neutral, five fingers per hand. Panel 2 (center third): true 90-degree side profile, MEDIUM bust — upper chest to top of head, full hair silhouette, not a tight face crop. Panel 3 (right third): frontal MEDIUM bust facing camera, neutral calm expression, same framing rule. Background: smooth solid plain mid-grey seamless studio, one perfectly even flat grey tone, no texture, no gradient, no vignette, floor blending into the same grey. Soft even diffused studio light, no specular highlights on skin. No real brand logos or copyrighted graphics, replace any with generic abstract designs.`;
 
 function mediumLockFor(genre: CharacterGenreId): string {
   switch (genre) {
     case "3D":
-      return "MEDIUM LOCK: Real pixel / feature-CGI 3D character construction — coherent materials, render lighting, digital sculpt readability. Not photoreal live-action photography. Not 2D anime linework. Not mobile-game plastic.";
+      return "MEDIUM LOCK: Real pixel / feature-CGI 3D character construction — coherent materials, subsurface, studio key, digital sculpt readability. Not photoreal live-action photography. Not 2D anime linework. Not mobile-game plastic.";
     case "Anime":
       return "MEDIUM LOCK: 2D anime character construction — consistent line weight, anime proportions, anime color flats. Do not render photoreal skin or live-action photography. Do not render 3D CGI.";
     case "Cartoon":
@@ -116,14 +120,17 @@ export function buildIdentityLock(input: CharacterFoundationInput): string {
   const hasRef = Boolean(input.identityImageUrl || input.characterSheetUrl);
   return [
     "IDENTITY LOCK — KEEP CHARACTER FEATURES.",
-    "Face, facial structure, hair, skin, eyes, distinctive marks, and build stay the same person.",
+    "KEEP across every output and every genre change: face, facial structure, bone structure, hair style and color, hairline, skin tone, eyes, brows, nose, mouth, distinctive marks, body build and proportions.",
+    "These features belong to the user's character. Do not invent a new person when they create or regenerate their own character.",
+    "CHANGE only what the user explicitly edited (wardrobe, expression, location, medium/genre). Do not restyle hair or reshape the face unless the user changed those fields.",
     "When a reference image is supplied, the reference controls identity. The template controls production behavior.",
-    "Do not invent a different face. Do not restyle hair unless the user explicitly changed hair.",
-    "Do not copy the moodboard person's identity onto this character.",
+    "Do not copy the moodboard person's identity onto this character. Moodboard is STYLE / MEDIUM only.",
     hasRef
       ? "INPUT PHOTO / SHEET is the identity source. Match that face and hair in every output."
       : "No photo yet — use only the listed identity variables. Do not invent extra distinctive marks.",
-    rows.length ? "IDENTITY VARIABLES:\n" + rows.join("\n") : "IDENTITY VARIABLES: infer a single coherent person from the brief, then lock them.",
+    rows.length
+      ? "CHANGE — IDENTITY VARIABLES (user-owned, then KEEP):\n" + rows.join("\n")
+      : "CHANGE — IDENTITY VARIABLES: infer a single coherent person from the brief, then lock them.",
   ].join("\n");
 }
 
@@ -142,7 +149,7 @@ export function compileCharacterFoundations(input: CharacterFoundationInput): Co
     "MASTER RULE: CHANGE THE INPUTS. KEEP THE ENGINE.",
     mediumLock,
     identityLock,
-    "FOUNDATION — PORTRAIT (keep camera logic, anatomy, authenticity):",
+    "FOUNDATION — PORTRAIT (keep camera logic, anatomy, authenticity; swap only medium / lighting / materials for this genre):",
     portraitFoundationFor(genreId),
     "OUTPUT: single character, vertical 9:16 unless a different format is required. Modest fully-clothed. No logos.",
   ].join("\n\n");
@@ -150,7 +157,7 @@ export function compileCharacterFoundations(input: CharacterFoundationInput): Co
   const sheetMedium =
     genreId === "Realistic" || genreId === "Cinematic"
       ? "Photorealistic matte unretouched skin with visible pores, no smoothing, no plastic skin, no glamour lighting."
-      : `Apply the ${option.label} medium lock to every panel. Keep panel geometry identical.`;
+      : `Apply the ${option.label} medium lock to every panel. Keep panel geometry identical. Never weaken same-person consistency.`;
 
   const sheetPrompt = [
     "MASTER RULE: CHANGE THE INPUTS. KEEP THE ENGINE.",
@@ -159,7 +166,7 @@ export function compileCharacterFoundations(input: CharacterFoundationInput): Co
     "FOUNDATION — THREE-VIEW CHARACTER SHEET (keep geometry and same-person lock):",
     SHEET_FOUNDATION,
     sheetMedium,
-    "CRITICAL: the sheet is a continuity tool. Do not weaken the exact-same-person requirement.",
+    "CRITICAL: the sheet is a continuity tool. Do not weaken the exact-same-person requirement. Identical face, identical facial structure, identical hair, identical features in all three panels.",
   ].join("\n\n");
 
   const refs: string[] = [];
@@ -185,6 +192,10 @@ export function compileCharacterPortraitPrompt(input: CharacterFoundationInput):
 
 export function compileCharacterSheetPrompt(input: CharacterFoundationInput): string {
   return compileCharacterFoundations(input).sheetPrompt;
+}
+
+export function compileCharacterFromGenreFoundation(input: CharacterFoundationInput): CompiledCharacterPrompt {
+  return compileCharacterFoundations(input);
 }
 
 export { normalizeCharacterGenre };
