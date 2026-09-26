@@ -14,27 +14,10 @@ import {
   characterGenreOption,
   normalizeCharacterGenre,
   type CharacterGenreId,
+  type CharacterIdentityVariables,
 } from "../../domain/characterGenre";
 
-export interface CharacterIdentityVariables {
-  name?: string;
-  role?: string;
-  age?: string;
-  gender?: string;
-  ethnicity?: string;
-  skin?: string;
-  hair?: string;
-  eyes?: string;
-  face?: string;
-  build?: string;
-  wardrobe?: string;
-  accessories?: string;
-  expression?: string;
-  posture?: string;
-  personality?: string;
-  environment?: string;
-  definingTraits?: string;
-}
+export type { CharacterIdentityVariables };
 
 export interface CompileCharacterFoundationsParams {
   genre?: string | null;
