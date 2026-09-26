@@ -18,13 +18,17 @@ import type {
   CraftPlan,
   CraftOperation,
   CraftOperationType,
+  CraftTargetType,
   ResolvedSemanticShot,
 } from "./types";
 import { CreativeOperationRegistry } from "./operationRegistry";
+import { productStillCraft } from "../skills/sparkSkills";
 
 export interface DeriveCraftPlanOptions {
   /** Keep existing custom operations if shot already has a craftPlan */
   preserveExisting?: boolean;
+  /** User intent when the production job is a product still. Maps onto an existing craft purpose. */
+  productStillIntent?: string;
 }
 
 /**
@@ -147,21 +151,37 @@ export function deriveCraftPlanFromShot(
   }
 
   // 2. Derive Composition Operation
-  const compType = shotTypeToCompositionType(shot.camera?.shotType, shot.purpose);
+  const productCraft = options?.productStillIntent
+    ? productStillCraft(options.productStillIntent)
+    : null;
+  const compType = productCraft ?? shotTypeToCompositionType(shot.camera?.shotType, shot.purpose);
   if (compType && !existingTypes.has(compType)) {
     const caps = registry.getCapabilitiesForOperation(compType);
-    const targetType =
-      compType === "WIDE_ESTABLISHING" ? "ENVIRONMENT" : "SUBJECT";
+    const definition = registry.getDefinition(compType);
+    const accepted = definition?.acceptedTargets ?? [];
+    const targetType: CraftTargetType =
+      productCraft && accepted.includes("PRODUCT")
+        ? "PRODUCT"
+        : accepted.includes("SUBJECT")
+          ? "SUBJECT"
+          : (accepted[0] ?? "SUBJECT");
 
     operations.push({
       id: `op_${compType.toLowerCase()}_${shot.id}`,
       type: compType,
-      category: "COMPOSITION",
-      purpose: shot.camera?.framing || `Compositional framing for ${shot.purpose}`,
+      category: definition?.category ?? "COMPOSITION",
+      purpose: productCraft
+        ? `Product still: ${productCraft} for ${shot.purpose}`
+        : shot.camera?.framing || `Compositional framing for ${shot.purpose}`,
       target: {
         type: targetType,
-        id: targetType === "SUBJECT" ? shot.subject : undefined,
-        label: targetType === "SUBJECT" ? shot.subject : "Scene Environment",
+        id: targetType === "SUBJECT" || targetType === "PRODUCT" ? shot.subject : undefined,
+        label:
+          targetType === "ENVIRONMENT"
+            ? "Scene Environment"
+            : targetType === "PRODUCT"
+              ? shot.subject || "Product"
+              : shot.subject,
       },
       parameters:
         compType === "MACRO_DETAIL"
@@ -169,11 +189,12 @@ export function deriveCraftPlanFromShot(
           : {},
       capabilityRequirements: caps,
     });
+    existingTypes.add(compType);
   }
 
   // 3. Product / Lighting Specials based on narrative function
   const purposeBlob = `${shot.purpose} ${shot.productionReason} ${shot.subjectAction}`.toLowerCase();
-  if (purposeBlob.includes("hero") && !existingTypes.has("HERO_SHOT")) {
+  if (!productCraft && purposeBlob.includes("hero") && !existingTypes.has("HERO_SHOT")) {
     operations.push({
       id: `op_hero_${shot.id}`,
       type: "HERO_SHOT",

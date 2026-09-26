@@ -32,6 +32,8 @@ export interface ShotPlanContext {
   mode?: ResolvedMode;
   /** Phase 5 project look treatment */
   treatment?: VisualTreatment;
+  /** Set only when the production job is a product still. The craft planner maps it. */
+  productStillIntent?: string;
 }
 
 function shotPurpose(
@@ -275,7 +277,10 @@ export function planShotsForScene(ctx: ShotPlanContext): ShotSpec[] {
       qcStatus: "pending",
       cinematic,
     };
-    shot.craftPlan = deriveCraftPlanFromShot(shot);
+    shot.craftPlan = deriveCraftPlanFromShot(
+      shot,
+      ctx.productStillIntent ? { productStillIntent: ctx.productStillIntent } : undefined
+    );
     t += durationSec;
     return shot;
   });

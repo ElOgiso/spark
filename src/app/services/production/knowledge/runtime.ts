@@ -3,6 +3,7 @@
  */
 
 import type { ProductionSpec } from "../specification/productionSpec";
+import type { SceneSpec } from "../specification/sceneSpec";
 import type { ShotSpec } from "../specification/shotSpec";
 import { composeSkillOutputs } from "./composer";
 import { ensureFilmmakingSkillLibrary } from "./library";
@@ -16,6 +17,44 @@ import type {
 import { isVisualGenreId, resolveVisualGenre, visualGenreSkillTags } from "../../../domain/visualGenre";
 
 const CONTINUITY_MERGE_CAP = 6;
+const PRODUCT_STILL_PURPOSE = /\b(packshot|hero still|product photo|product shot|flat lay|flatlay|lifestyle image)\b/i;
+const COVER_PURPOSE = /\b(cover|thumbnail|poster)\b/i;
+
+function brandIsLocked(spec: ProductionSpec): boolean {
+  if (spec.project?.brandId) return true;
+  const bible = spec.styleBible;
+  if (!bible) return false;
+  if (bible.brandId) return true;
+  return Object.values(bible.provenanceMap ?? {}).some((value) => value === "BRAND");
+}
+
+/**
+ * Tags that select Spark operating skills.
+ * The recorded production skill is authoritative. Shot facts only add a job
+ * the shot itself is (a cover, a product still, or a media-role collision).
+ */
+export function sparkOperatingTags(
+  spec: ProductionSpec,
+  _scene: SceneSpec | undefined,
+  shot: ShotSpec
+): string[] {
+  const tags: string[] = [];
+  const skillId = spec.meta?.sparkSkill?.id;
+  const purpose = `${shot.purpose ?? ""} ${shot.productionReason ?? ""}`;
+  const strategy = String(shot.generationStrategy ?? "");
+  const hasCharacterRef =
+    (shot.characterIds?.length ?? 0) > 0 || (shot.references?.characterRefs?.length ?? 0) > 0;
+  const hasFirst = Boolean(shot.references?.firstFrameUrl || shot.keyframeUrl);
+  const referenceStrategy = /multi_reference|reference[-_]to[-_]video/i.test(strategy);
+
+  if (skillId === "narrated_explainer") tags.push("narrated_explainer");
+  if (skillId === "product_still" || PRODUCT_STILL_PURPOSE.test(purpose)) tags.push("product_still");
+  if (skillId === "brand_lock" || brandIsLocked(spec)) tags.push("brand_lock");
+  if (skillId === "cover_frame" || COVER_PURPOSE.test(purpose)) tags.push("publish_cover");
+  if ((hasFirst && hasCharacterRef) || referenceStrategy) tags.push("media_roles");
+
+  return tags;
+}
 
 export function runFilmmakingSkills(ctx: FilmmakingSkillContext): ComposedSkillOutput {
   ensureFilmmakingSkillLibrary();
@@ -97,16 +136,19 @@ export function skillContextFromShot(
     isIsolatedShot,
     requiresMotion,
     requiresTimeline,
-    tags: visualGenreSkillTags({
-      visualGenre: isVisualGenreId(spec.meta?.visualGenre)
-        ? spec.meta.visualGenre
-        : resolveVisualGenre({
-            explicit: spec.meta?.visualGenre,
-            contentFormat: spec.meta?.contentFormat,
-            specGenre: spec.creative?.genre,
-          }),
-      cinematicCraft: spec.meta?.cinematicCraft !== false,
-    }),
+    tags: [
+      ...visualGenreSkillTags({
+        visualGenre: isVisualGenreId(spec.meta?.visualGenre)
+          ? spec.meta.visualGenre
+          : resolveVisualGenre({
+              explicit: spec.meta?.visualGenre,
+              contentFormat: spec.meta?.contentFormat,
+              specGenre: spec.creative?.genre,
+            }),
+        cinematicCraft: spec.meta?.cinematicCraft !== false,
+      }),
+      ...sparkOperatingTags(spec, scene, shot),
+    ],
   };
 }
 

@@ -32,6 +32,7 @@ import {
   COMPILER_VERSION,
 } from "../specification/adapters";
 import { validateProductionSpec, type SpecValidationResult } from "../specification";
+import { resolveSparkSkill } from "../skills/sparkSkills";
 import { buildResearchRequirement } from "../specification/researchRequirement";
 import { seedReferenceGraph, seedStyleBible } from "../specification/identityContracts";
 import type { GenerationTask } from "../specification/generationTask";
@@ -363,6 +364,10 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
           ? "cinema"
           : "social";
 
+  const sparkSkill = resolveSparkSkill(
+    [input.idea, directed.creative.intent].filter(Boolean).join("\n")
+  );
+
   const spec: ProductionSpec = {
     id: `spec_${productionId}`,
     version: 1,
@@ -435,6 +440,10 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
         visualDirection: directed.creative.visualLanguage,
       }),
       cinematicCraft: settingsSnapshot?.formatSettings?.cinematicCraft !== false,
+      sparkSkill: {
+        id: sparkSkill.id,
+        sequence: [...sparkSkill.sequence],
+      },
     },
   };
 

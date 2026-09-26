@@ -9,6 +9,7 @@ import type { SceneSpec } from "../specification/sceneSpec";
 import type { ShotSpec } from "../specification/shotSpec";
 import { VIDEO_NEGATIVE_LAWS } from "../productionPromptPacks";
 import { COMPILER_VERSION } from "../specification/adapters";
+import { SPARK_OPERATING_CONSTRAINT_PREFIXES } from "../knowledge/library/sparkOperatingSkills";
 
 export interface SemanticPromptLayer {
   productionTitle: string;
@@ -59,6 +60,19 @@ const BANNED_FILLER = /\b(beautiful|stunning|epic|masterpiece|ultra[- ]detailed|
 
 function stripFiller(text: string): string {
   return text.replace(BANNED_FILLER, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function constraintsForPrompt(constraints: string[]): string[] {
+  const preferred: string[] = [];
+  const rest: string[] = [];
+  for (const constraint of constraints) {
+    if (SPARK_OPERATING_CONSTRAINT_PREFIXES.some((prefix) => constraint.startsWith(prefix))) {
+      preferred.push(constraint);
+    } else {
+      rest.push(constraint);
+    }
+  }
+  return [...preferred, ...rest].slice(0, 8);
 }
 
 function characterBlock(spec: ProductionSpec, shot: ShotSpec): string {
@@ -170,7 +184,7 @@ function compileProviderPrompt(
   if (guidance) {
     const skillLines: string[] = [];
     if (guidance.constraints.length) {
-      skillLines.push(`FILMMAKING CONSTRAINTS: ${guidance.constraints.slice(0, 8).join(" | ")}`);
+      skillLines.push(`FILMMAKING CONSTRAINTS: ${constraintsForPrompt(guidance.constraints).join(" | ")}`);
     }
     if (guidance.recommendations.length) {
       skillLines.push(`FILMMAKING GUIDANCE: ${guidance.recommendations.slice(0, 6).join(" | ")}`);

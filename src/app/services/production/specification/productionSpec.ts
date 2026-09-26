@@ -207,6 +207,11 @@ export interface ProductionSpec {
     /** Locked visual look tradition (under format). */
     visualGenre?: import("../../../domain/visualGenre").VisualGenreId;
     cinematicCraft?: boolean;
+    /** Spark skill for this production. A job choice, not a provider. */
+    sparkSkill?: {
+      id: import("../skills/sparkSkills").SparkSkillId;
+      sequence: string[];
+    };
     /** Autonomous Production Asset Director output (planning only — not media) */
     assetDirector?: {
       requirementCount: number;

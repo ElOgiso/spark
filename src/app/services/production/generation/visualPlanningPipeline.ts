@@ -124,6 +124,8 @@ export function applyVisualPlanningPipeline(
         genre: spec.creative.genre,
         mode,
         treatment,
+        productStillIntent:
+          spec.meta.sparkSkill?.id === "product_still" ? spec.creative.intent : undefined,
       });
       return { ...scene, shots };
     }),

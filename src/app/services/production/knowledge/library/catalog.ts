@@ -6,6 +6,7 @@
 import type { FilmmakingSkill, SkillPrinciple } from "../types";
 import { rule, skill } from "./helpers";
 import { GENRE_DIRECTOR_SKILLS } from "./genreDirectorSkills";
+import { SPARK_OPERATING_SKILLS } from "./sparkOperatingSkills";
 export { GENRE_DIRECTOR_SKILLS };
 
 function principle(
@@ -754,6 +755,7 @@ export const CORE_FILMMAKING_SKILLS: FilmmakingSkill[] = [
 export const FILMMAKING_SKILL_CATALOG: FilmmakingSkill[] = [
   ...CORE_FILMMAKING_SKILLS,
   ...GENRE_DIRECTOR_SKILLS,
+  ...SPARK_OPERATING_SKILLS,
 ];
 
 export const FILMMAKING_SKILL_IDS: string[] = FILMMAKING_SKILL_CATALOG.map((s) => s.id);

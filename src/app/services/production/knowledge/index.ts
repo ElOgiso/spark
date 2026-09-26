@@ -45,6 +45,7 @@ export {
   runFilmmakingSkills,
   toShotFilmmakingGuidance,
   skillContextFromShot,
+  sparkOperatingTags,
   applyFilmmakingSkillsToProduction,
   getSkillVersion,
 } from "./runtime";
@@ -56,4 +57,6 @@ export {
   FILMMAKING_SKILL_IDS,
   CORE_FILMMAKING_SKILLS,
   GENRE_DIRECTOR_SKILLS,
+  SPARK_OPERATING_SKILLS,
+  SPARK_OPERATING_CONSTRAINT_PREFIXES,
 } from "./library";
