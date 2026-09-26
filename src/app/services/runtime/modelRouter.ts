@@ -83,54 +83,31 @@ export class ModelRouter {
       console.warn(`[ModelRouter] Preferred provider "${preferred}" does not support capability "${capability}" for category "${category}". Falling back to Best Available.`);
     }
 
-    // Delegate media categories to canonical routeMediaCapability
-    if (category === "videoGeneration") {
+    // Delegate media categories to canonical routeMediaCapability.
+    // No hardcoded provider if the router cannot select one.
+    if (category === "videoGeneration" || category === "storyboardImages" || category === "voice") {
       const decision = routeMediaCapability({
-        modality: "video",
-        generationMode: "image_to_video",
+        modality: category === "videoGeneration" ? "video" : category === "voice" ? "audio" : "image",
+        generationMode:
+          category === "videoGeneration"
+            ? "image_to_video"
+            : category === "voice"
+              ? "text_to_speech"
+              : "text_to_image",
         preferences: {
           preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
         },
       });
-      if (decision.selected) {
-        return decision.selected.providerId as AIProviderId;
+      if (!decision.selected) {
+        throw new Error(
+          `Canonical router returned no compatible provider for ${category}. Refusing a hardcoded fallback.`
+        );
       }
-    }
-
-    if (category === "storyboardImages") {
-      const decision = routeMediaCapability({
-        modality: "image",
-        generationMode: "text_to_image",
-        preferences: {
-          preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
-        },
-      });
-      if (decision.selected) {
-        return decision.selected.providerId as AIProviderId;
-      }
-    }
-
-    if (category === "voice") {
-      const decision = routeMediaCapability({
-        modality: "audio",
-        generationMode: "text_to_speech",
-        preferences: {
-          preferredProviderId: preferred && preferred !== "auto" ? preferred : undefined,
-        },
-      });
-      if (decision.selected) {
-        return decision.selected.providerId as AIProviderId;
-      }
+      return decision.selected.providerId as AIProviderId;
     }
 
     // Category Best Available Default Table
     switch (category) {
-      case "storyboardImages":
-        return "openai"; // Default: OpenAI -> Gemini -> Grok -> Kling
-      case "videoGeneration":
-        return "gemini"; // Default: Gemini -> Grok -> Kling -> Runway -> Luma -> Higgsfield
-      case "voice":
-        return "elevenlabs"; // Default: ElevenLabs -> Grok -> OpenAI -> Gemini
       case "superSpark":
       case "executive":
       case "automation":

@@ -74,7 +74,15 @@ export function listCapabilityProfiles(): MediaCapabilityProfile[] {
 }
 
 export function resolveHealthSnapshot(providerId: string): ProviderHealthSnapshot {
-  const metrics = ServiceHealthMonitor.getInstance().getMetrics(providerId);
+  const monitor = ServiceHealthMonitor.getInstance();
+  if (!monitor.hasObservation(providerId)) {
+    return {
+      providerId,
+      status: "unknown",
+      lastCheck: new Date().toISOString(),
+    };
+  }
+  const metrics = monitor.getMetrics(providerId);
   const status =
     metrics.status === "healthy"
       ? "healthy"

@@ -309,10 +309,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
     });
 
     try {
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
       const refUrl = formData.characterSheetUrl || formData.characterImageUrl || undefined;
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: getActiveSessionUserId(),
+        tag: "onboarding_character_sheet",
         referenceImageUrl: refUrl,
         referenceImageUrls: refUrl ? [refUrl] : undefined,
         capability: "Image Generation",

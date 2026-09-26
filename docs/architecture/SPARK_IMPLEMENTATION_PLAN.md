@@ -44,6 +44,7 @@ A completion record proves a scoped implementation, not that every live consumer
 5. **Phase 13 — format planning (implemented):** extended existing directors on the shared spine; see the Phase 13 record for compatibility, tests and remaining runtime gates.
 6. **Phase 15 — audio timeline integration (implemented locally):** narration placement and music ducking tests pass with the restored `ffmpeg-static` binary. Measured LUFS on a paid master is deferred live acceptance.
 7. **Phase 22:** release-candidate hardening is recorded separately. Paid mode runs, the unapplied `conversation_sessions` migration, deployed runtime, and live VIRAL SPARKS understanding are live-launch items. Phase 23 was not started.
+8. **Wiring pass (after Phase 22):** the live planner and legacy adapter seed `ReferenceGraph` and `StyleBible` from character sheets, locations, brand look, and accepted-watch source video. `ServiceHealthMonitor.recordOutcome` feeds the canonical router, which no longer treats an unseen provider as healthy and no longer hardcodes a media fallback. Review quotes `CostEngine` from the attached spec. Studio and onboarding image actions reserve through `CreditService` before `ModelRouter`. QC does not mark a bare URL as a technical pass. `executeProductionPlan` cannot spend beside `generateAssetsForProduction`.
 
 ### A-05a boundaries and verification
 

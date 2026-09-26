@@ -4271,8 +4271,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const charPrompt = `Masterclass character design sheet, cinematic executive host portrait for brand "${state.brand?.name || "SPARK"}", ${state.brand?.niche || "Executive Media"}. ${prompt}`;
       let charImg = state.character?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
       try {
-        const { ModelRouter } = await import("../services/runtime/modelRouter");
-        const generated = await ModelRouter.executeCategoryRequest("storyboardImages", { prompt: charPrompt, capability: "Image Generation" });
+        const { submitMeteredStoryboardImage } = await import("../services/production/studioImageSubmit");
+        const generated = await submitMeteredStoryboardImage({
+          prompt: charPrompt,
+          userId: currentUserId,
+          tag: "character_concept",
+          capability: "Image Generation",
+        });
         if (generated && typeof generated === "string" && generated.trim().length > 0) charImg = generated;
       } catch (err) {
         console.warn("[SparkContext] Character image generation notice:", err);

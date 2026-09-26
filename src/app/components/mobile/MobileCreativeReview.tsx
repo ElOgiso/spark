@@ -50,6 +50,7 @@ import {
   userModePresentation,
   userSafeGenerationMessage,
 } from "../../services/production/ui/userProductionExperience";
+import { quoteAttachedProduction } from "../../services/production/economics/productionQuote";
 
 interface MobileCreativeReviewProps {
   onBack?: () => void;
@@ -178,7 +179,9 @@ export function MobileCreativeReview({ onBack, onNavigate, item }: MobileCreativ
   );
   const liveStage = presentLifecycleProgress(genProgress);
   const creditEstimate = presentFromCostEstimate(
-    readAttachedCostEstimate(activeProd) || readAttachedCostEstimate(brief),
+    readAttachedCostEstimate(activeProd) ||
+      readAttachedCostEstimate(brief) ||
+      quoteAttachedProduction(activeProd),
   );
   const creditGate =
     auth.profile && creditEstimate.kind === "known"

@@ -21,8 +21,7 @@ import { createDefaultRoutingSpec } from "./routingSpec";
 import { createDefaultQualitySpec } from "./qualitySpec";
 import { emptyContinuityState } from "./continuitySpec";
 import { buildResearchRequirement } from "./researchRequirement";
-import { createEmptyReferenceGraph } from "./referenceGraph";
-import { createDefaultStyleBible } from "./styleBible";
+import { seedReferenceGraph, seedStyleBible } from "./identityContracts";
 
 import { resolveSceneGeneratePlan } from "../resolveGeneratePlan";
 import { normalizeModeString } from "../resolveProductionMode";
@@ -481,8 +480,36 @@ export function legacyProductionToSpec(params: {
         "No burned-in text on stills",
       ],
     },
-    styleBible: createDefaultStyleBible(production.id, production.brandId || brand?.id),
-    referenceGraph: createEmptyReferenceGraph(production.id),
+    styleBible: seedStyleBible({
+      productionId: production.id,
+      brandId: production.brandId || brand?.id,
+      look:
+        brief?.visualDirection ||
+        brand?.style?.filter((s) => s.active).map((s) => s.label).join(", ") ||
+        "",
+    }),
+    referenceGraph: seedReferenceGraph({
+      productionId: production.id,
+      characters,
+      locations: locationMasters.map((l) => ({
+        id: l.identity.ref,
+        name: l.name,
+        description: l.description,
+      })),
+      sourceVideoUrl:
+        spark?.sourceUrl ||
+        spark?.youtubeUrl ||
+        spark?.researchContext?.sourceUrl ||
+        spark?.researchContext?.youtubeUrl,
+      sourceVideoLabel: spark?.researchContext?.title || spark?.title,
+      sourceVideoNotes: [
+        spark?.researchContext?.hookPattern,
+        spark?.researchContext?.openingLine,
+        ...(spark?.researchContext?.visualActions || []),
+      ]
+        .filter(Boolean)
+        .join(". "),
+    }),
     continuity: {
       globalLocks: ["host_identity", "wardrobe", "set"],
       identityPackSummary: character?.style || character?.traits?.join(", ") || "locked primary subject",

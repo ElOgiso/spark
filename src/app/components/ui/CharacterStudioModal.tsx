@@ -63,11 +63,13 @@ export const CharacterStudioModal: React.FC<CharacterStudioModalProps> = ({ isOp
     });
 
     try {
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
       const refUrl = sheetUrl || character?.characterSheetUrl || character?.imageUrl || undefined;
       const overrides = toGeneratorExecutionOverrides(aiPreference);
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: auth.currentUser?.id || auth.session?.user?.id,
+        tag: "character_sheet",
         referenceImageUrl: refUrl,
         referenceImageUrls: refUrl ? [refUrl] : undefined,
         capability: "Image Generation",

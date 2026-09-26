@@ -249,9 +249,11 @@ export function MobileConversationalFlow({ onComplete }: MobileConversationalFlo
     });
 
     try {
-      const { ModelRouter } = await import("../../../services/runtime/modelRouter");
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const { submitMeteredStoryboardImage } = await import("../../../services/production/studioImageSubmit");
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: auth.currentUser?.id || auth.session?.user?.id,
+        tag: "mobile_character_sheet",
         referenceImageUrl: characterSheetUrl || undefined,
         referenceImageUrls: characterSheetUrl ? [characterSheetUrl] : undefined,
         capability: "Image Generation",

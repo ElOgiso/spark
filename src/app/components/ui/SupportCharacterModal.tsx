@@ -67,10 +67,12 @@ export const SupportCharacterModal: React.FC<SupportCharacterModalProps> = ({ is
     });
 
     try {
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
       const overrides = toGeneratorExecutionOverrides(aiPreference);
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: auth.currentUser?.id || auth.session?.user?.id,
+        tag: "support_character",
         referenceImageUrl: sheetUrl || undefined,
         aspectRatio: "16:9",
         capability: "Image Generation",

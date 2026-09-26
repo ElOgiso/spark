@@ -36,6 +36,7 @@ import type {
 } from "./lifecycleTypes";
 import { ProductionGenerationGuard } from "../ProductionGenerationGuard";
 import { getProductionObserver } from "../observability/observer";
+import { validateNormalizedOutput } from "./outputValidation";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -80,36 +81,71 @@ function mapAutomationMode(
   return "balanced";
 }
 
-function observationsFromAssets(
+function measuredTechnical(
+  mediaType: "image" | "video" | "audio",
+  sourceUrl?: string,
+  meta?: { mimeType?: string; durationSec?: number; width?: number; height?: number; fileSizeBytes?: number }
+): ShotObservationInput["technical"] {
+  if (!sourceUrl || /pending|failed|error/i.test(sourceUrl)) {
+    return { ok: false, reasons: ["missing_or_unusable_media_url"], retryable: true };
+  }
+  const measured = Boolean(
+    meta?.mimeType || meta?.durationSec || meta?.width || meta?.height || meta?.fileSizeBytes
+  );
+  if (!measured) return undefined;
+  return validateNormalizedOutput(
+    {
+      mediaType,
+      sourceUrl,
+      mimeType: meta?.mimeType || "",
+      durationSec: meta?.durationSec,
+      width: meta?.width,
+      height: meta?.height,
+      fileSizeBytes: meta?.fileSizeBytes,
+      providerJobId: "qc-observation",
+      metadata: {},
+    },
+    { mediaType, durationSec: meta?.durationSec }
+  );
+}
+
+export function observationsFromAssets(
   spec: ProductionSpec,
   assets: ProductionAsset[]
 ): ShotObservationInput[] {
   const observations: ShotObservationInput[] = [];
   for (const asset of assets) {
     if (!asset.shotId) continue;
+    const mediaType =
+      asset.assetType === "image" || asset.assetType === "frame" || asset.assetType === "thumbnail"
+        ? "image"
+        : asset.assetType === "audio"
+          ? "audio"
+          : "video";
+    const durationSec = Number(asset.duration);
     observations.push({
       shotId: asset.shotId,
-      mediaType:
-        asset.assetType === "image" || asset.assetType === "frame" || asset.assetType === "thumbnail"
-          ? "image"
-          : asset.assetType === "audio"
-            ? "audio"
-            : "video",
+      mediaType,
       sourceUrl: asset.publicUrl,
       assetId: asset.id,
       taskId: asset.taskId,
-      technical: { ok: true, reasons: [], retryable: false },
+      technical: measuredTechnical(mediaType, asset.publicUrl, {
+        mimeType: asset.mimeType,
+        durationSec: Number.isFinite(durationSec) && durationSec > 0 ? durationSec : undefined,
+      }),
     });
   }
   for (const scene of spec.scenes) {
     for (const shot of scene.shots) {
       if (observations.some((o) => o.shotId === shot.id)) continue;
       if (shot.mediaUrl || shot.keyframeUrl) {
+        const mediaType = shot.mediaUrl ? "video" : "image";
+        const sourceUrl = shot.mediaUrl || shot.keyframeUrl;
         observations.push({
           shotId: shot.id,
-          mediaType: shot.mediaUrl ? "video" : "image",
-          sourceUrl: shot.mediaUrl || shot.keyframeUrl,
-          technical: { ok: true, reasons: [], retryable: false },
+          mediaType,
+          sourceUrl,
+          technical: measuredTechnical(mediaType, sourceUrl),
         });
       }
     }

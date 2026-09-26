@@ -21,6 +21,7 @@ import { Button, WhySparkRecommends } from "./ds";
 import { InteractiveVideoPlayer, ThumbnailVariantCard, MiniMediaThumbnail } from "./MediaPreviewHelper";
 import { ReviewIntelligencePanel } from "./ReviewIntelligencePanel";
 import { buildReviewProductionView } from "../services/production/reviewPresentation";
+import { quoteAttachedProduction } from "../services/production/economics/productionQuote";
 import { resolveProductionDeleteTargetId } from "../services/production/productionDeleteTarget";
 import {
   ArrowLeft,
@@ -291,7 +292,9 @@ export function CreativeReview({ onNavigate, onBack, currentPage }: CreativeRevi
   );
   const liveStage = presentLifecycleProgress(activeProd?.generationProgress);
   const creditEstimate = presentFromCostEstimate(
-    readAttachedCostEstimate(activeProd) || readAttachedCostEstimate(brief),
+    readAttachedCostEstimate(activeProd) ||
+      readAttachedCostEstimate(brief) ||
+      quoteAttachedProduction(activeProd),
   );
   const creditGate =
     auth.profile && creditEstimate.kind === "known"

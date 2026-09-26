@@ -1139,6 +1139,8 @@ function FrameCharacter({
   const supportFileInputRef = useRef<HTMLInputElement>(null);
   const [isGeneratingPlate, setIsGeneratingPlate] = useState(false);
   const [isGeneratingSupport, setIsGeneratingSupport] = useState(false);
+  const auth = useAuth();
+  const studioUserId = auth.currentUser?.id || auth.session?.user?.id;
 
   const isStoryOrAnime =
     data.characterGenre?.toLowerCase().includes("anime") ||
@@ -1158,9 +1160,11 @@ function FrameCharacter({
         contentFormat: data.characterGenre?.toLowerCase().includes("anime") ? "anime" : "story",
         environmentDescription: data.characterDescription || undefined,
       });
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: studioUserId,
+        tag: "genesis_location_plate",
         aspectRatio: data.aspectMode === "landscape" ? "16:9" : "9:16",
         capability: "Image Generation",
       });
@@ -1202,9 +1206,11 @@ function FrameCharacter({
         personality: "Contrasting silhouette and palette, dynamic companion role",
       });
 
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: studioUserId,
+        tag: "genesis_support_character",
         aspectRatio: "16:9",
         capability: "Image Generation",
       });
@@ -2601,9 +2607,11 @@ export function BrandGenesisFlow({
     });
 
     try {
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: auth.currentUser?.id || auth.session?.user?.id,
+        tag: "genesis_character_sheet",
         referenceImageUrl: data.characterSheetUrl || undefined,
         referenceImageUrls: data.characterSheetUrl ? [data.characterSheetUrl] : undefined,
         capability: "Image Generation",

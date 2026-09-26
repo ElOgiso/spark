@@ -16,6 +16,8 @@ import {
   attachProductionSettingsSnapshot,
 } from "./production/productionSettingsSnapshot";
 import { executeProduction } from "./production/execution/productionExecutor";
+import { observationsFromAssets } from "./production/execution/productionLifecycleRunner";
+import { quoteProductionSpec } from "./production/economics/productionQuote";
 import {
   resolveProductionSpec,
   createLiveAssetExecuteAdapter,
@@ -23,10 +25,8 @@ import {
   type ProductionLifecycleReport,
   type RunProductionLifecycleOptions,
 } from "./production/execution";
-import { createRuntimeAdapterPorts } from "./production/execution/runtimePorts";
 import {
   runQcWithRepairLoop,
-  type ShotObservationInput,
 } from "./production/qc";
 import type { SparkAutomationMode } from "./production/qc/types";
 import {
@@ -273,6 +273,7 @@ export class ProductionService implements IProductionService {
       })),
       reasoning: {
         productionSpec: plan.spec,
+        economics: plan.spec ? { estimate: quoteProductionSpec(plan.spec) } : undefined,
         approvalSummary: plan.spec?.approvalSummary,
         grammarIds: plan.spec?.meta?.grammarIds || plan.trace.selectedGrammarIds,
         productionIntelligenceTrace: plan.trace,
@@ -580,6 +581,9 @@ export class ProductionService implements IProductionService {
           ? bridge.production.reasoning
           : {}),
         productionSpec: report.spec,
+        economics: {
+          estimate: quoteProductionSpec(report.spec || resolvedSpec),
+        },
         generationSpine: {
           bridge: "productionExecutionBridge",
           conductor: "runProductionLifecycle",
@@ -747,16 +751,36 @@ export class ProductionService implements IProductionService {
       throw new Error("ProductionSpec missing — run createProductionFromSpark / planning first");
     }
 
+    if (params.dryRun !== true) {
+      if (!params.brand) {
+        throw new Error(
+          "Live production execution must use generateAssetsForProduction with a brand. The DAG executor is not a second spender."
+        );
+      }
+      const ran = await this.generateAssetsForProduction({
+        production: params.production,
+        brand: params.brand,
+        signal: params.signal,
+        automationMode: params.automationMode,
+      });
+      return {
+        production: ran.production,
+        ok: ran.production.status !== "Failed",
+        state: String(ran.production.status),
+        assetCount: Array.isArray(ran.brief?.generatedAssets?.generatedVideos)
+          ? ran.brief.generatedAssets.generatedVideos.length
+          : 0,
+      };
+    }
+
     if (params.signal?.aborted) {
       throw new Error("Aborted");
     }
 
-    // Production Generation ON/OFF is enforced inside executeProduction for live runs.
     const result = await executeProduction(spec, {
       brandId: params.brand?.id || params.production.brandId,
-      dryRun: params.dryRun === true,
-      ports: params.dryRun ? undefined : createRuntimeAdapterPorts(),
-      sleep: params.dryRun ? async () => undefined : undefined,
+      dryRun: true,
+      sleep: async () => undefined,
     });
 
     let qcSummary: Record<string, unknown> | undefined;
@@ -764,36 +788,7 @@ export class ProductionService implements IProductionService {
     let finalSpec = result.spec;
 
     if (params.enableQc !== false && !params.dryRun && result.ok) {
-      const observations: ShotObservationInput[] = [];
-      for (const asset of result.assets) {
-        if (!asset.shotId) continue;
-        observations.push({
-          shotId: asset.shotId,
-          mediaType:
-            asset.assetType === "image" || asset.assetType === "frame" || asset.assetType === "thumbnail"
-              ? "image"
-              : asset.assetType === "audio"
-                ? "audio"
-                : "video",
-          sourceUrl: asset.publicUrl,
-          assetId: asset.id,
-          taskId: asset.taskId,
-          technical: { ok: true, reasons: [], retryable: false },
-        });
-      }
-      for (const scene of result.spec.scenes) {
-        for (const shot of scene.shots) {
-          if (observations.some((o) => o.shotId === shot.id)) continue;
-          if (shot.mediaUrl || shot.keyframeUrl) {
-            observations.push({
-              shotId: shot.id,
-              mediaType: shot.mediaUrl ? "video" : "image",
-              sourceUrl: shot.mediaUrl || shot.keyframeUrl,
-              technical: { ok: true, reasons: [], retryable: false },
-            });
-          }
-        }
-      }
+      const observations = observationsFromAssets(result.spec, result.assets);
 
       const mode = (params.automationMode ||
         params.brand?.automation_mode ||

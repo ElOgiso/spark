@@ -96,10 +96,12 @@ export const LocationPlateStudioModal: React.FC<LocationPlateStudioModalProps> =
     });
 
     try {
-      const { ModelRouter } = await import("../../services/runtime/modelRouter");
+      const { submitMeteredStoryboardImage } = await import("../../services/production/studioImageSubmit");
       const overrides = toGeneratorExecutionOverrides(aiPreference);
-      const imgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      const imgUrl = await submitMeteredStoryboardImage({
         prompt,
+        userId: auth.currentUser?.id || auth.session?.user?.id,
+        tag: "location_plate",
         referenceImageUrl: plateUrl || undefined,
         referenceImageUrls: plateUrl ? [plateUrl] : undefined,
         aspectRatio,

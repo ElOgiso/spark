@@ -33,6 +33,7 @@ import {
 } from "../specification/adapters";
 import { validateProductionSpec, type SpecValidationResult } from "../specification";
 import { buildResearchRequirement } from "../specification/researchRequirement";
+import { seedReferenceGraph, seedStyleBible } from "../specification/identityContracts";
 import type { GenerationTask } from "../specification/generationTask";
 import { directCreativeIntent, type CreativeDirectorResult, type CreativeDirection } from "./creativeDirector";
 import { planNarrative, type NarrativeBeatPlan } from "./narrativePlanner";
@@ -548,6 +549,35 @@ export function orchestrateIdeaToProductionSpec(input: OrchestrateIdeaInput): Or
   const shotCount = plannedSpec.scenes.reduce((n, s) => n + s.shots.length, 0);
   plannedSpec = {
     ...plannedSpec,
+    referenceGraph: seedReferenceGraph({
+      productionId,
+      characters: plannedSpec.characters,
+      locations: plannedSpec.world.locations.map((location) => ({
+        id: location.id,
+        name: location.name,
+        description: location.description,
+      })),
+      sourceVideoUrl:
+        input.spark?.sourceUrl ||
+        input.spark?.youtubeUrl ||
+        input.spark?.researchContext?.sourceUrl ||
+        input.spark?.researchContext?.youtubeUrl,
+      sourceVideoLabel: input.spark?.researchContext?.title || input.spark?.title,
+      sourceVideoNotes: [
+        input.spark?.researchContext?.hookPattern,
+        input.spark?.researchContext?.openingLine,
+        ...(input.spark?.researchContext?.visualActions || []),
+      ]
+        .filter(Boolean)
+        .join(". "),
+      existingGraph: plannedSpec.referenceGraph,
+    }),
+    styleBible: seedStyleBible({
+      productionId,
+      brandId: input.brand?.id,
+      look: plannedSpec.visualStyle?.look || directed.creative.visualLanguage,
+      existing: plannedSpec.styleBible,
+    }),
     approvalSummary: {
       projectTitle: plannedSpec.project.title,
       genreLabel: directed.grammar.label,

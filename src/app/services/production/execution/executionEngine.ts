@@ -61,6 +61,7 @@ import type {
 import type { ProductionAsset } from "../../../domain/types";
 
 import { CostEngine } from "../economics/costEngine";
+import { ServiceHealthMonitor } from "../../runtime/serviceHealthMonitor";
 import { submitWithReliability, buildSubmissionIdempotencyKey } from "./providerSubmission";
 import { ReconciliationEngine } from "./reconciliationEngine";
 import { normalizeProviderStatus } from "./adapters/types";
@@ -863,10 +864,15 @@ export class GenerationExecutionEngine {
         logExecutionTransition(this.logger, execution);
         execution = await this.checkpoint(execution);
 
+        const providerAttemptStarted = Date.now();
         const subResult = await submitWithReliability(adapter, request, {
           attempt,
           inputHash,
         });
+        const providerLatencyMs = Date.now() - providerAttemptStarted;
+        const noteProviderHealth = (ok: boolean) => {
+          ServiceHealthMonitor.getInstance().recordOutcome(provider, { ok, latencyMs: providerLatencyMs });
+        };
 
         if (subResult.outcome === "NOT_SUBMITTED") {
           if (reservedCredits && this.opts.creditService && this.opts.userId) {
@@ -919,6 +925,7 @@ export class GenerationExecutionEngine {
           }
 
           execution = applyTransition(execution, "unknown_submission");
+          noteProviderHealth(false);
           execution.error = subResult.error;
           if (reservedCredits) {
             execution.metadata = {
@@ -1057,6 +1064,7 @@ export class GenerationExecutionEngine {
             }
           }
 
+          noteProviderHealth(false);
           throw makeExecutionError(
             classifyProviderFailure(status.errorMessage || "generation_failed"),
             status.errorMessage || "Provider job failed",
@@ -1064,6 +1072,7 @@ export class GenerationExecutionEngine {
           );
         }
 
+        noteProviderHealth(true);
         let output: NormalizedMediaOutput;
         if (adapter.normalizeResult) {
           const normResult = await adapter.normalizeResult(status);
