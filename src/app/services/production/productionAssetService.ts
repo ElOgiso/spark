@@ -35,7 +35,7 @@ import {
   resolveDirectorPixelRefs,
 } from "./resolveLiveDirectorRefs";
 import { evaluateVisualContinuity } from "./visualContinuityGate";
-import { isI2vApiProvider, requestProductionVideoClip } from "./productionVideoRequest";
+import { isI2vApiProvider } from "./productionVideoRequest";
 import { routeMediaCapability } from "./capability";
 import { resolveOfficialI2vClipFrames } from "./officialI2vFrames";
 import {
@@ -89,6 +89,7 @@ import {
   shouldReuseLocationPlateAsStill,
 } from "./locationPlatePersistence";
 import { GenerationExecutionEngine, executeGenerationTask } from "./execution/executionEngine";
+import { createDurableIdempotencyStore } from "./execution/durableIdempotency";
 import { createRuntimeAdapterPorts } from "./execution/runtimePorts";
 import { resolveGenerationTasks, attachGenerationTasksToSpec } from "./generation/generationPlanner";
 import { resolveProductionSpec } from "./execution/productionExecutionBridge";
@@ -1008,6 +1009,10 @@ export class ProductionAssetService {
     engine?: GenerationExecutionEngine;
     ports?: AdapterPorts;
     dryRun?: boolean;
+    creditService?: import("./credits/creditService").CreditService;
+    userId?: string;
+    idempotencyStore?: import("./execution/idempotency").IdempotencyStore;
+    requireCredits?: boolean;
   }): Promise<ProductionAssetGenerationResult> {
     const { production, brief, brand, character, characters, memoryItems = [], creditSettings, onProgress, forceRegenerate, signal } = params;
     const brandIdForGuard = (brand as any)?.id;
@@ -1030,6 +1035,7 @@ export class ProductionAssetService {
     if (spec) assertVisualPlanExecutable(spec);
     const resolvedTaskSet = spec ? resolveGenerationTasks(spec, true).tasks : [];
     const tasks: GenerationTask[] = params.tasks || resolvedTaskSet;
+    const liveUserId = params.userId || (brand as any)?.owner_id || (brand as any)?.ownerId;
     const engine: GenerationExecutionEngine | undefined =
       spec && tasks.length > 0
         ? params.engine ||
@@ -1037,8 +1043,16 @@ export class ProductionAssetService {
             brandId: brandIdForGuard,
             ports: params.ports || createRuntimeAdapterPorts(),
             dryRun: params.dryRun,
-            creditService: (params as any).creditService,
-            userId: (params as any).userId || (brand as any)?.owner_id,
+            creditService: params.creditService,
+            userId: liveUserId,
+            requireCredits: params.requireCredits,
+            forceNewExecution: Boolean(forceRegenerate),
+            idempotencyStore:
+              params.idempotencyStore ||
+              createDurableIdempotencyStore({
+                userId: liveUserId,
+                brandId: brandIdForGuard,
+              }),
           })
         : undefined;
     const priorOutputs: Record<string, string> = {};
@@ -1611,23 +1625,11 @@ export class ProductionAssetService {
           if (sheetLock.directorNotes.length) {
             console.log(`[SPARK Pipeline] Director refs (sheet): ${sheetLock.directorNotes.join("; ")}`);
           }
-          console.log(
-            `[SPARK Pipeline] Provider Request: Storyboard SHEET (${sheetCompiled.layout}, ${sheetCompiled.panelCount} panels, ${label}) via ModelRouter ("storyboardImages")...`
+          console.warn(
+            `[SPARK Pipeline] Storyboard sheet provider submit closed (${label}). Canonical per-shot keyframes will run. No provider spend.`
           );
-          const { ModelRouter: SheetRouter } = await import("../runtime/modelRouter");
-          const sheetImgUrl = await withTimeout(
-            SheetRouter.executeCategoryRequest("storyboardImages", {
-              prompt: sheetCompiled.prompt,
-              referenceImageUrl: sheetLock.primaryRefUrl,
-              referenceImageUrls: sheetLock.imageUrls,
-              aspectRatio: identityPack.aspectRatio,
-                  preferredProvider: resolvedImageProvider,
-                  model: resolvedImageModel,
-            }),
-            90000,
-            "Storyboard sheet generation timed out after 90s",
-            signal
-          );
+          const sheetImgUrl = "";
+          throw new Error("Paid storyboard sheet submit refused outside GenerationExecutionEngine");
           checkAborted();
           if (isValidMediaData(sheetImgUrl)) {
             let finalSheet = sheetImgUrl;
@@ -1649,8 +1651,9 @@ export class ProductionAssetService {
             }
             realGridUrl = finalSheet;
             brief.storyboardGridUrl = finalSheet;
-            if (!brief.generatedAssets) brief.generatedAssets = {};
-            brief.generatedAssets.storyboardGridUrl = finalSheet;
+            const sheetAssets = brief.generatedAssets || {};
+            brief.generatedAssets = sheetAssets;
+            sheetAssets.storyboardGridUrl = finalSheet;
             (brief.generatedAssets as any).storyboardSheetLayout = sheetCompiled.layout;
             (brief.generatedAssets as any).storyboardSheetPanelCount = sheetCompiled.panelCount;
             (brief.generatedAssets as any).frameLockId = frameLock.frameLockId;
@@ -1663,6 +1666,9 @@ export class ProductionAssetService {
           return hasRealStoryboardSheet;
         } catch (sheetErr: any) {
           if (sheetErr?.name === "AbortError" || signal?.aborted) throw sheetErr;
+          if (String(sheetErr?.message || "").includes("refused outside GenerationExecutionEngine")) {
+            return false;
+          }
           console.warn("[SPARK Pipeline] Storyboard sheet generation notice:", sheetErr);
           if (!lastError) lastError = `Storyboard Sheet: ${sheetErr?.message || String(sheetErr)}`;
           return hasRealStoryboardSheet;
@@ -2124,36 +2130,35 @@ export class ProductionAssetService {
           try {
             checkAborted();
             let stillImgUrl: string | undefined;
-            if (engine && kfTask && spec) {
-              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via canonical ExecutionEngine (${kfTask.id})...`);
-              const res = await engine.executeTask({ spec, task: kfTask, priorOutputs });
+            let canonicalKeyframe = kfTask;
+            if (spec && !canonicalKeyframe) {
+              const plannedStill = resolveGenerationTasks(spec, true).tasks.find(
+                (t) => t.kind === "keyframe" && (t.shotId === targetShotId || t.id === `${targetShotId}_keyframe`)
+              );
+              if (plannedStill) {
+                tasks.push(plannedStill);
+                canonicalKeyframe = plannedStill;
+              }
+            }
+            if (!engine || !spec || !canonicalKeyframe) {
+              const reason = `Paid still generation refused before spend: scene ${globalSceneNum} has no canonical keyframe GenerationTask.`;
+              if (!lastError) lastError = reason;
+              (s as any).lastError = reason;
+            } else {
+              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via canonical ExecutionEngine (${canonicalKeyframe.id})...`);
+              const res = await engine.executeTask({ spec, task: canonicalKeyframe, priorOutputs });
               checkAborted();
               if (res.task.status === "succeeded") {
                 stillImgUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
-                kfTask.status = "succeeded";
-                kfTask.productionAssetId = res.asset?.id;
-                if (stillImgUrl) priorOutputs[kfTask.id] = stillImgUrl;
+                canonicalKeyframe.status = "succeeded";
+                canonicalKeyframe.productionAssetId = res.asset?.id;
+                if (stillImgUrl) priorOutputs[canonicalKeyframe.id] = stillImgUrl;
               } else {
-                kfTask.status = "failed";
-                kfTask.lastError = res.task.lastError || "Keyframe generation failed";
-                (s as any).lastError = kfTask.lastError;
-                if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${kfTask.lastError}`;
+                canonicalKeyframe.status = res.task.status;
+                canonicalKeyframe.lastError = res.task.lastError || "Keyframe generation failed";
+                (s as any).lastError = canonicalKeyframe.lastError;
+                if (!lastError) lastError = `Scene ${globalSceneNum} Still: ${canonicalKeyframe.lastError}`;
               }
-            } else {
-              console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum} of ${currentStoryboard.length} still frame via ModelRouter ("storyboardImages") [Refs: ${stillVisualLock.imageUrls.length}, Subject: ${resolvedSubject}, Format: ${contentFormat}, Plate: ${plateUrl ? "yes" : "no"}]...`);
-              stillImgUrl = await withTimeout(
-                ModelRouter.executeCategoryRequest("storyboardImages", {
-                  prompt: stillPrompt,
-                  referenceImageUrl: stillVisualLock.primaryRefUrl,
-                  referenceImageUrls: stillVisualLock.imageUrls,
-                  aspectRatio: identityPack.aspectRatio,
-                  preferredProvider: resolvedImageProvider,
-                  model: resolvedImageModel,
-                }),
-                60000,
-                `Scene ${globalSceneNum} still generation timed out after 60s`,
-                signal
-              );
             }
             checkAborted();
 
@@ -2964,159 +2969,39 @@ export class ProductionAssetService {
                     const targetShotId = shotIdForScene || (s as any).shotId || s.id;
                     const videoTask = tasks.find((t) => (t.shotId === targetShotId || t.id === `${targetShotId}_video`) && t.kind === "video");
 
-                    if (engine && videoTask && spec) {
-                      console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum}${subclipLabel} video task via canonical ExecutionEngine (${videoTask.id})...`);
-                      const res = await engine.executeTask({ spec, task: videoTask, priorOutputs });
-                      if (res.task.status === "succeeded") {
-                        const clipUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
-                        videoTask.status = "succeeded";
-                        videoTask.productionAssetId = res.asset?.id;
-                        if (clipUrl) priorOutputs[videoTask.id] = clipUrl;
-                        return { url: clipUrl, provider: res.execution.provider || activeVideo.providerId, assetId: res.asset?.id };
-                      } else {
-                        videoTask.status = res.task.status;
-                        videoTask.lastError = res.task.lastError || "Video task execution failed";
-                        (s as any).lastError = videoTask.lastError;
-                        throw new Error(videoTask.lastError);
-                      }
-                    }
-
-                    const tryI2v = async (providerId: string) => {
-                      const normP = providerId.toLowerCase();
-                      const isHf = normP === "higgsfield" || normP === "higgsfield-seedance";
-                      const effectiveRefs =
-                        normP === "grok"
-                          ? identityRefs.slice(0, 7)
-                          : identityRefs;
-
-                      const prefersPureI2v =
-                        (s as any).videoMode === "i2v" ||
-                        preferredVideoModel?.toLowerCase().includes("image-to-video") ||
-                        preferredVideoModel?.toLowerCase().includes("i2v");
-
-                      // When preferred provider is higgsfield and identityRefs.length > 0,
-                      // set mode toward R2V consistently or document still-baked path (no silent drop).
-                      const hfMode = isHf && identityRefs.length > 0 && !prefersPureI2v
-                        ? "reference-to-video"
-                        : undefined;
-
-                      if (isHf && identityRefs.length > 0) {
-                        if (hfMode === "reference-to-video") {
-                          console.info(
-                            `[HF Contract Routing] Scene ${globalSceneNum}${subclipLabel}: Routing to Higgsfield Seedance R2V (reference-to-video) with ${identityRefs.length} reference image(s) + shot still.`
-                          );
-                        } else {
-                          console.info(
-                            `[HF I2V Honesty] Scene ${globalSceneNum}${subclipLabel}: Higgsfield Seedance I2V selected (still-baked path). Identity is carried by the shot still; ${identityRefs.length} reference image(s) are baked into the still and not sent in the HF I2V API body.`
-                          );
-                        }
-                      }
-
-                      let effectiveVideoModel = preferredVideoModel;
-                      if (!effectiveVideoModel) {
-                        const routed = routeMediaCapability({
-                          modality: "video",
-                          generationMode: (hfMode === "reference-to-video" || (s as any).videoMode === "reference-to-video") ? "video_to_video" : "image_to_video",
-                          references: effectiveRefs.length ? { types: ["image"], minimumCount: effectiveRefs.length } : undefined,
-                          temporal: {
-                            requiresStartFrame: true,
-                            requiresEndFrame: Boolean(subclipPlannedEnd),
-                          },
-                          output: {
-                            durationSeconds: subclipDur,
-                            aspectRatio: identityPack.aspectRatio,
-                          },
-                          preferences: {
-                            preferredProviderId: providerId,
-                            productionMode: generationSettings.productionMode as any,
-                            priority: (s as any).isHero ? "hero" : "supporting",
-                          },
-                        });
-                        effectiveVideoModel = routed.selected?.modelId;
-                      }
-
-                      const apiClip = await requestProductionVideoClip({
-                        provider: providerId,
-                        prompt: sceneMotionPrompt,
-                        firstFrameUrl: subclipStartFrame,
-                        sourceImageAssetId: s.sourceImageAssetId || s.stillAssetId,
-                        lastFrameUrl: subclipPrevLast,
-                        endFrameUrl: subclipPlannedEnd,
-                        characterSheetUrl: sceneCharSheetUrl || undefined,
-                        referenceImageUrls: effectiveRefs,
-                        aspectRatio: identityPack.aspectRatio,
-                        durationSec: subclipDur,
-                        model: effectiveVideoModel,
-                        mode: hfMode || (s as any).videoMode,
-                        productionId: production.id,
-                        brandId: (brand as any).id,
-                        shotIndex: globalSceneNum,
-                        subclipIndex: k + 1,
-                      });
-
-                      const billableReqId = apiClip.requestId || "req_completed";
-                      console.log(
-                        `[I2V BILLABLE] provider=${providerId} model=${effectiveVideoModel || "default"} durationSec=${subclipDur} scene=${globalSceneNum} subclipIndex=${k + 1} request_id=${billableReqId}`
+                    if (!spec || !engine) {
+                      throw new Error(
+                        `Paid video generation refused outside GenerationExecutionEngine: scene ${globalSceneNum} is missing canonical engine context. No provider submit.`
                       );
-
-                      return {
-                        url: apiClip.videoUrl,
-                        lastFrameDataUrl: apiClip.lastFrameDataUrl,
-                        provider: apiClip.provider,
-                      };
-                    };
-
-                    if (isI2vApiProvider(activeVideo.providerId)) {
-                      try {
-                        return await tryI2v(activeVideo.providerId);
-                      } catch (primaryI2vErr: any) {
-                        console.warn(
-                          `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} notice Scene ${globalSceneNum}${subclipLabel}:`,
-                          primaryI2vErr
-                        );
-                        const errStr = String(primaryI2vErr?.message || primaryI2vErr);
-                        const isTimeoutAfterSubmit =
-                          /poll timed out|timeout exceeded|timed out/i.test(errStr) &&
-                          !/create task failed|image2video failed|video\.generate failed/i.test(errStr);
-                        if (isTimeoutAfterSubmit) {
-                          console.warn(
-                            `[SPARK Pipeline] Primary I2V provider ${activeVideo.providerId} timed out after submit. Aborting failover to avoid double-billing.`
-                          );
-                          throw primaryI2vErr;
-                        }
-
-                        for (const fallbackProvider of i2vFallbacks) {
-                          try {
-                            console.log(
-                              `[SPARK Pipeline] Attempting I2V fallback to ${fallbackProvider} for Scene ${globalSceneNum}${subclipLabel}...`
-                            );
-                            return await tryI2v(fallbackProvider);
-                          } catch (fallbackErr: any) {
-                            console.warn(
-                              `[SPARK Pipeline] Fallback I2V provider ${fallbackProvider} notice Scene ${globalSceneNum}${subclipLabel}:`,
-                              fallbackErr
-                            );
-                          }
-                        }
+                    }
+                    let canonicalVideoTask = videoTask;
+                    if (!canonicalVideoTask) {
+                      const plannedVideo = resolveGenerationTasks(spec, true).tasks.find(
+                        (t) => t.kind === "video" && (t.shotId === targetShotId || t.id === `${targetShotId}_video`)
+                      );
+                      if (plannedVideo) {
+                        tasks.push(plannedVideo);
+                        canonicalVideoTask = plannedVideo;
                       }
                     }
-
-                    const routed = await ModelRouter.executeCategoryRequest("videoGeneration", {
-                      prompt: sceneMotionPrompt,
-                      aspectRatio: identityPack.aspectRatio,
-                      firstFrameUrl: subclipStartFrame,
-                      characterSheetUrl: sceneCharSheetUrl || undefined,
-                      referenceImageUrls: identityRefs,
-                      durationSec: subclipDur,
-                      lastFrameUrl: subclipPrevLast,
-                      endFrameUrl: subclipPlannedEnd,
-                      preferredProvider: activeVideo.providerId,
-                      model: preferredVideoModel,
-                      productionId: production.id,
-                      brandId: (brand as any).id,
-                      shotIndex: globalSceneNum,
-                    });
-                    return { url: routed, provider: activeVideo.providerId };
+                    if (!canonicalVideoTask) {
+                      throw new Error(
+                        `Paid video generation refused before spend: no canonical video GenerationTask for shot ${targetShotId}.`
+                      );
+                    }
+                    console.log(`[SPARK Pipeline] Provider Request: Scene ${globalSceneNum}${subclipLabel} video task via canonical ExecutionEngine (${canonicalVideoTask.id})...`);
+                    const res = await engine.executeTask({ spec, task: canonicalVideoTask, priorOutputs });
+                    if (res.task.status === "succeeded") {
+                      const clipUrl = res.asset?.publicUrl || (res.execution.outputAssets[0]?.sourceUrl as string);
+                      canonicalVideoTask.status = "succeeded";
+                      canonicalVideoTask.productionAssetId = res.asset?.id;
+                      if (clipUrl) priorOutputs[canonicalVideoTask.id] = clipUrl;
+                      return { url: clipUrl, provider: res.execution.provider || activeVideo.providerId, assetId: res.asset?.id };
+                    }
+                    canonicalVideoTask.status = res.task.status;
+                    canonicalVideoTask.lastError = res.task.lastError || "Video task execution failed";
+                    (s as any).lastError = canonicalVideoTask.lastError;
+                    throw new Error(canonicalVideoTask.lastError);
                   };
 
                   const generated = await withTimeout(
@@ -3761,45 +3646,8 @@ export class ProductionAssetService {
 
             try {
               checkAborted();
-              console.log(`[SPARK Pipeline] Provider Request: Thumbnail Variant ${variantLetter} image via ModelRouter ("storyboardImages") [Refs: ${thumbVisualLock.imageUrls.length}]...`);
-              const thumbImgData = await withTimeout(
-                ModelRouter.executeCategoryRequest("storyboardImages", {
-                  prompt: thumbPrompt,
-                  referenceImageUrl: thumbVisualLock.primaryRefUrl,
-                  referenceImageUrls: thumbVisualLock.imageUrls,
-                  aspectRatio: identityPack.aspectRatio,
-                  preferredProvider: resolvedImageProvider,
-                  model: resolvedImageModel,
-                }),
-                45000,
-                `Thumbnail variant ${variantLetter} generation timed out after 45s`,
-                signal
-              );
-              checkAborted();
-
-              if (isValidMediaData(thumbImgData)) {
-                let finalThumb = thumbImgData;
-                try {
-                  const storedThumb = await this.uploadAssetToStorage({
-                    productionId: production.id,
-                    brandId: (brand as any).id,
-                    assetType: "thumbnail",
-                    storagePath: getStoragePath(`thumbnails/variant-${variantLetter.toLowerCase()}.png`),
-                    dataUrlOrBlob: thumbImgData,
-                    mimeType: "image/png",
-                    prompt: thumbPrompt,
-                    provider: "ModelRouter",
-                  });
-                  if (storedThumb?.publicUrl) finalThumb = storedThumb.publicUrl;
-                  console.log(`[SPARK Pipeline] Storage Upload: Thumbnail Variant ${variantLetter} -> ${finalThumb}`);
-                } catch (storageErr) {
-                  console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} upload failed, retaining provider URL:`, storageErr);
-                }
-                thumbUrl = finalThumb;
-              } else {
-                console.warn(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} returned non-image data`);
-                if (!lastError) lastError = `Thumbnail Variant ${variantLetter}: No image bytes returned`;
-              }
+              console.warn(`[SPARK Pipeline] Thumbnail ${variantLetter} provider submit refused outside GenerationExecutionEngine. No provider spend.`);
+              continue;
             } catch (thumbErr: any) {
               if (thumbErr?.name === "AbortError" || signal?.aborted) throw thumbErr;
               console.error(`[SPARK Pipeline] Thumbnail Variant ${variantLetter} image generation failed:`, thumbErr);
@@ -4294,6 +4142,9 @@ export class ProductionAssetService {
     character?: Character;
     production: Production;
     memoryItems?: import("../../domain/types").MemoryItem[];
+    creditService?: import("./credits/creditService").CreditService;
+    userId?: string;
+    requireCredits?: boolean;
   }): Promise<ProductionScene | null> {
     const { productionId, sceneIndex, editNotes, brand, character, production, memoryItems = [] } = params;
     ProductionGenerationGuard.assertEnabled("ProductionAssetService.fixProductionScene", brand?.id);
@@ -4468,19 +4319,40 @@ export class ProductionAssetService {
       }
 
       // Always refresh the still for the fix so motion starts from the revised beat
+      const fixSpec = resolveProductionSpec(production, brand, character);
+      const fixUserId = params.userId || (brand as any)?.owner_id || (brand as any)?.ownerId;
+      const fixEngine = new GenerationExecutionEngine({
+        brandId: (brand as any)?.id,
+        creditService: params.creditService,
+        userId: fixUserId,
+        requireCredits: params.requireCredits ?? Boolean(params.creditService),
+        forceNewExecution: true,
+        idempotencyStore: createDurableIdempotencyStore({
+          userId: fixUserId,
+          brandId: (brand as any)?.id,
+        }),
+      });
+      const fixShotId = (sceneToFix as any).shotId || shotId;
+      const fixTasks = resolveGenerationTasks(fixSpec, true).tasks;
       {
-        const generatedStill = await withTimeout(
-          ModelRouter.executeCategoryRequest("storyboardImages", {
-            prompt: compiledStill.prompt,
-            referenceImageUrl: fixVisualLock.primaryRefUrl,
-            referenceImageUrls: fixVisualLock.imageUrls,
-            aspectRatio: identityPack.aspectRatio,
-                  preferredProvider: resolvedImageProvider,
-                  model: resolvedImageModel,
-          }),
-          60000,
-          `Scene ${sceneIndex} still regeneration timed out after 60s`
+        const stillTask = fixTasks.find(
+          (t) => t.kind === "keyframe" && (t.shotId === fixShotId || t.id === `${fixShotId}_keyframe`)
         );
+        if (!stillTask) {
+          sceneToFix.status = "needs_edit";
+          sceneToFix.lastError = "Still repair refused before spend: no canonical keyframe GenerationTask.";
+          return sceneToFix;
+        }
+        const stillRun = await fixEngine.executeTask({
+          spec: fixSpec,
+          task: {
+            ...stillTask,
+            status: "queued",
+            completedOutput: undefined,
+            reconciliationRequired: false,
+          },
+        });
+        const generatedStill = stillRun.asset?.publicUrl || (stillRun.execution.outputAssets[0]?.sourceUrl as string) || "";
         if (isValidMediaData(generatedStill)) {
           let finalStill = generatedStill;
           try {
@@ -4661,47 +4533,39 @@ export class ProductionAssetService {
       }
 
       let generatedClip = "";
-      let generatedLastFrameDataUrl: string | undefined;
-      if (isI2vApiProvider(activeVideo.providerId) && fixFirstFrame) {
-        const apiClip = await withTimeout(
-          requestProductionVideoClip({
-            provider: activeVideo.providerId,
-            prompt: motionPrompt,
-            firstFrameUrl: fixFirstFrame,
-            endFrameUrl: fixEndFrame,
-            referenceImageUrls: [],
-            aspectRatio: identityPack.aspectRatio,
-            durationSec: fixI2vDuration,
-            model: fixPreferredModel,
-            productionId,
-            brandId: (brand as any).id,
-            shotIndex: sceneIndex,
-          }),
-          fixTimeoutMs,
-          `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
-        );
-        generatedClip = apiClip.videoUrl;
-        generatedLastFrameDataUrl = apiClip.lastFrameDataUrl;
-      } else {
-        generatedClip = await withTimeout(
-          ModelRouter.executeCategoryRequest("videoGeneration", {
-            prompt: motionPrompt,
-            firstFrameUrl: fixFirstFrame,
-            referenceImageUrl: fixFirstFrame,
-            referenceImageUrls: [],
-            aspectRatio: identityPack.aspectRatio,
-            durationSec: fixI2vDuration,
-            lastFrameUrl: fixLastFrame,
-            endFrameUrl: fixEndFrame,
-            preferredProvider: activeVideo.providerId,
-            productionId,
-            brandId: (brand as any).id,
-            shotIndex: sceneIndex,
-          }),
-          fixTimeoutMs,
-          `Scene ${sceneIndex} video regeneration timed out after ${Math.round(fixTimeoutMs / 1000)}s`
+      const videoTask = fixTasks.find(
+        (t) => t.kind === "video" && (t.shotId === fixShotId || t.id === `${fixShotId}_video`)
+      );
+      if (!videoTask) {
+        throw new Error(
+          `Scene ${sceneIndex} video repair refused before spend: no canonical video GenerationTask.`
         );
       }
+      const specForVideo = {
+        ...fixSpec,
+        scenes: fixSpec.scenes.map((scene) => ({
+          ...scene,
+          shots: scene.shots.map((shot) =>
+            shot.id === fixShotId ? { ...shot, keyframeUrl: sceneStill || shot.keyframeUrl } : shot
+          ),
+        })),
+      };
+      const videoRun = await fixEngine.executeTask({
+        spec: specForVideo,
+        task: {
+          ...videoTask,
+          status: "queued",
+          completedOutput: undefined,
+          reconciliationRequired: false,
+          selectedProvider: videoTask.selectedProvider || activeVideo.providerId,
+          selectedModel: videoTask.selectedModel || fixPreferredModel,
+        },
+      });
+      if (videoRun.execution.status !== "succeeded") {
+        throw new Error(videoRun.task.lastError || videoRun.execution.error?.message || "Canonical video repair failed");
+      }
+      generatedClip = videoRun.asset?.publicUrl || (videoRun.execution.outputAssets[0]?.sourceUrl as string) || "";
+      const generatedLastFrameDataUrl = videoRun.execution.metadata?.lastFrameDataUrl as string | undefined;
 
       let finalClipUrl = generatedClip;
       if (isPlayableVideoUrl(generatedClip)) {

@@ -40,6 +40,10 @@ export interface IdempotencyStore {
   get(key: string): GenerationExecution | undefined;
   set(key: string, execution: GenerationExecution): void;
   clear?(): void;
+  /** Awaited by the engine before provider submit and after terminal states. */
+  flush?(key?: string): Promise<void>;
+  /** Load durable checkpoints for a production into this store. */
+  hydrate?(productionId: string): Promise<void>;
 }
 
 export function createMemoryIdempotencyStore(): IdempotencyStore {

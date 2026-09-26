@@ -82,6 +82,10 @@ export interface ExecutionEngineOptions {
   brandId?: string;
   creditService?: CreditService;
   userId?: string;
+  /** Live paid generation must reserve before submit. Tests omit this. */
+  requireCredits?: boolean;
+  /** Intentional regenerate: do not reuse a succeeded execution for the same input. */
+  forceNewExecution?: boolean;
   lookupFn?: (idempotencyKey: string, requestId?: string) => Promise<import("./types").ProviderJobStatus | null>;
   /** Injected delay (tests can set 0) */
   sleep?: (ms: number) => Promise<void>;
@@ -383,6 +387,23 @@ export class GenerationExecutionEngine {
     this.opts.onExecutionUpdate?.(next);
   }
 
+  /** Persist in-flight identity before any provider submit. Does not publish a partial result. */
+  private async checkpoint(execution: GenerationExecution): Promise<GenerationExecution> {
+    const next: GenerationExecution = {
+      ...execution,
+      metadata: {
+        ...(execution.metadata || {}),
+        checkpointAt: new Date().toISOString(),
+      },
+    };
+    if (next.inputHash) {
+      const key = idempotencyKey(next.productionId, next.taskId, next.inputHash);
+      this.idempotency.set(key, next);
+      await this.idempotency.flush?.(key);
+    }
+    return next;
+  }
+
   /**
    * Execute one GenerationTask under canonical semantics.
    * Single task execution boundary for live migration and direct execution.
@@ -486,13 +507,40 @@ export class GenerationExecutionEngine {
       prepared.inputs.map((i) => i.url || i.assetRef || "")
     );
 
+    try {
+      await this.idempotency.hydrate?.(task.productionId);
+    } catch (hydrateErr: any) {
+      const execution: GenerationExecution = {
+        id: newExecutionId(),
+        taskId: task.id,
+        productionId: task.productionId,
+        sceneId: task.sceneId,
+        shotId: task.shotId,
+        provider: prepared.provider,
+        model: prepared.model,
+        status: "failed",
+        attempt: (task.retryCount || 0) + 1,
+        maxAttempts: task.maxRetries ?? DEFAULT_BACKOFF_POLICY.maxAttempts,
+        inputAssets: prepared.inputs,
+        outputAssets: [],
+        inputHash,
+        completedAt: new Date().toISOString(),
+        error: makeExecutionError(
+          "unknown",
+          `Durable execution state could not be loaded: ${hydrateErr?.message || hydrateErr}`,
+          { retryable: false, retryability: "RECONCILE_FIRST" }
+        ),
+      };
+      return { execution };
+    }
+
     const reusable = findReusableExecution(
       this.idempotency,
       task.productionId,
       task.id,
       inputHash
     );
-    if (reusable?.status === "succeeded") {
+    if (reusable?.status === "succeeded" && !this.opts.forceNewExecution) {
       const asset = restoreExecutionAsset(reusable, task, this.opts.brandId);
       if (!asset && !this.opts.dryRun) {
         task.reconciliationRequired = true;
@@ -669,6 +717,37 @@ export class GenerationExecutionEngine {
           resolution: prepared.resolution,
         });
         const estCostUsd = est.amount ?? 0;
+        const paidGenerative =
+          task.kind === "keyframe" ||
+          task.kind === "video" ||
+          task.kind === "voice" ||
+          task.kind === "sfx" ||
+          task.kind === "music";
+
+        if (this.opts.requireCredits && paidGenerative) {
+          if (!this.opts.creditService || !this.opts.userId) {
+            const err = makeExecutionError(
+              "insufficient_credits",
+              "Live generation requires CreditService and userId before provider submit",
+              { retryable: false }
+            );
+            execution = applyTransition(execution, "failed");
+            execution.error = err;
+            execution.completedAt = new Date().toISOString();
+            return { execution: await this.checkpoint(execution) };
+          }
+          if (est.status === "UNKNOWN") {
+            const err = makeExecutionError(
+              "invalid_request",
+              "Unknown provider cost — refusing to reserve zero or submit as free",
+              { retryable: false }
+            );
+            execution = applyTransition(execution, "failed");
+            execution.error = err;
+            execution.completedAt = new Date().toISOString();
+            return { execution: await this.checkpoint(execution) };
+          }
+        }
 
         // Credit reservation (Phase 8 CreditService)
         if (this.opts.creditService && this.opts.userId && est.status !== "UNKNOWN" && estCostUsd > 0 && !reservedCredits) {
@@ -686,6 +765,10 @@ export class GenerationExecutionEngine {
             reservedCredits = {
               reservationId: res.reservation.id,
               amount: res.reservation.amount,
+            };
+            execution.metadata = {
+              ...(execution.metadata || {}),
+              reservationId: res.reservation.id,
             };
             execution = applyTransition(execution, "credit_reserved");
             logExecutionTransition(this.logger, execution);
@@ -771,7 +854,14 @@ export class GenerationExecutionEngine {
         };
 
         execution = applyTransition(execution, "submitting");
+        if (reservedCredits) {
+          execution.metadata = {
+            ...(execution.metadata || {}),
+            reservationId: reservedCredits.reservationId,
+          };
+        }
         logExecutionTransition(this.logger, execution);
+        execution = await this.checkpoint(execution);
 
         const subResult = await submitWithReliability(adapter, request, {
           attempt,
@@ -796,7 +886,7 @@ export class GenerationExecutionEngine {
 
           if (retryability === "DO_NOT_RETRY") {
             execution = applyTransition(execution, "exhausted");
-            return { execution };
+            return { execution: await this.checkpoint(execution) };
           }
 
           if (retryability === "SAFE_TO_RETRY" && attempt < maxAttempts) {
@@ -816,7 +906,7 @@ export class GenerationExecutionEngine {
           }
 
           execution = applyTransition(execution, "exhausted");
-          return { execution };
+          return { execution: await this.checkpoint(execution) };
         }
 
         if (subResult.outcome === "UNKNOWN_SUBMISSION") {
@@ -830,7 +920,14 @@ export class GenerationExecutionEngine {
 
           execution = applyTransition(execution, "unknown_submission");
           execution.error = subResult.error;
+          if (reservedCredits) {
+            execution.metadata = {
+              ...(execution.metadata || {}),
+              reservationId: reservedCredits.reservationId,
+            };
+          }
           logExecutionTransition(this.logger, execution);
+          execution = await this.checkpoint(execution);
 
           // Reconcile
           execution = applyTransition(execution, "reconciling");
@@ -848,6 +945,7 @@ export class GenerationExecutionEngine {
             execution.providerJobId = rec.providerJobId;
             execution = applyTransition(execution, "submitted");
             logExecutionTransition(this.logger, execution);
+            execution = await this.checkpoint(execution);
           } else if (rec.status === "CONFIRMED_NOT_SUBMITTED") {
             if (reservedCredits && this.opts.creditService && this.opts.userId) {
               await this.opts.creditService.release({
@@ -865,7 +963,7 @@ export class GenerationExecutionEngine {
               continue;
             }
             execution = applyTransition(execution, "exhausted");
-            return { execution };
+            return { execution: await this.checkpoint(execution) };
           } else {
             // STILL_UNKNOWN: preserve hold, do not retry
             execution.error = makeExecutionError(
@@ -873,7 +971,7 @@ export class GenerationExecutionEngine {
               `Submission remains unknown after reconciliation: ${rec.reason}`,
               { retryable: false, retryability: "RECONCILE_FIRST" }
             );
-            return { execution };
+            return { execution: await this.checkpoint(execution) };
           }
         }
 
@@ -881,6 +979,7 @@ export class GenerationExecutionEngine {
           execution.providerJobId = subResult.providerJobId;
           execution = applyTransition(execution, "submitted");
           logExecutionTransition(this.logger, execution);
+          execution = await this.checkpoint(execution);
         }
 
         execution = applyTransition(execution, "running");
@@ -1058,6 +1157,7 @@ export class GenerationExecutionEngine {
         };
         this.idempotency.set(idempotencyKey(task.productionId, task.id, inputHash), execution);
         logExecutionTransition(this.logger, execution, { assetProduced: asset.id });
+        execution = await this.checkpoint(execution);
         return { execution, asset };
       } catch (err: any) {
         if (reservedCredits && this.opts.creditService && this.opts.userId && attempt >= maxAttempts && fallbackIndex >= fallbacks.length) {

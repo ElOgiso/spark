@@ -20,32 +20,36 @@ export function mapRowToSession(row: ConversationSessionRow): ConversationSessio
   };
 }
 
+function remoteFailure(action: string, error: { message?: string; code?: string } | null): Error {
+  const detail = error?.message || error?.code || "unknown error";
+  return new Error(`conversation_sessions ${action} failed: ${detail}`);
+}
+
 export const conversationSessionRepository = {
-  /** List all conversation sessions for a brand */
+  /** List all conversation sessions for a brand. A remote error is not an empty success. */
   async listSessions(brandId: string): Promise<ConversationSession[]> {
     const localSessions = this.getLocalSessions(brandId);
 
     if (!isSupabaseConfigured()) return localSessions;
     const supabase = getSupabaseClient();
-    if (!supabase) return localSessions;
-
-    try {
-      const { data, error } = await (supabase.from("conversation_sessions") as any)
-        .select("*")
-        .eq("brand_id", brandId)
-        .eq("is_archived", false)
-        .order("updated_at", { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        const remoteSessions = (data as ConversationSessionRow[]).map(mapRowToSession);
-        this.saveLocalSessions(brandId, remoteSessions);
-        return remoteSessions;
-      }
-    } catch (err) {
-      console.warn("[SessionRepository] Remote fetch notice:", err);
+    if (!supabase) {
+      throw new Error("conversation_sessions list failed: Supabase client missing");
     }
 
-    return localSessions;
+    const { data, error } = await (supabase.from("conversation_sessions") as any)
+      .select("*")
+      .eq("brand_id", brandId)
+      .eq("is_archived", false)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("[SessionRepository] conversation_sessions query failed:", error);
+      throw remoteFailure("list", error);
+    }
+
+    const remoteSessions = ((data || []) as ConversationSessionRow[]).map(mapRowToSession);
+    this.saveLocalSessions(brandId, remoteSessions);
+    return remoteSessions;
   },
 
   /** Create a new session */
@@ -53,6 +57,7 @@ export const conversationSessionRepository = {
     const newSession: ConversationSession = {
       id: session.id || `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       brandId: session.brandId || "default-brand",
+      userId: session.userId,
       title: session.title || "New Executive Session",
       subtitle: session.subtitle,
       category: session.category || "executive",
@@ -69,21 +74,27 @@ export const conversationSessionRepository = {
     // Sync to Supabase
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          await (supabase.from("conversation_sessions") as any).insert({
-            id: newSession.id,
-            brand_id: newSession.brandId,
-            title: newSession.title,
-            subtitle: newSession.subtitle,
-            category: newSession.category,
-            is_archived: false,
-            created_at: newSession.createdAt,
-            updated_at: newSession.updatedAt,
-          });
-        } catch (err) {
-          console.warn("[SessionRepository] Supabase session insert notice:", err);
-        }
+      if (!supabase) {
+        throw new Error("conversation_sessions create failed: Supabase client missing");
+      }
+      if (!newSession.userId) {
+        throw new Error("conversation_sessions create failed: authenticated user_id is required");
+      }
+      const { error } = await (supabase.from("conversation_sessions") as any).insert({
+        id: newSession.id,
+        workspace_id: newSession.workspaceId || null,
+        brand_id: newSession.brandId,
+        user_id: newSession.userId,
+        title: newSession.title,
+        subtitle: newSession.subtitle,
+        category: newSession.category,
+        is_archived: false,
+        created_at: newSession.createdAt,
+        updated_at: newSession.updatedAt,
+      });
+      if (error) {
+        console.error("[SessionRepository] conversation_sessions insert failed:", error);
+        throw remoteFailure("create", error);
       }
     }
 
@@ -109,19 +120,20 @@ export const conversationSessionRepository = {
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          await (supabase.from("conversation_sessions") as any)
-            .update({
-              title: updatedSession.title,
-              subtitle: updatedSession.subtitle,
-              category: updatedSession.category,
-              updated_at: updatedSession.updatedAt,
-            })
-            .eq("id", sessionId);
-        } catch (err) {
-          console.warn("[SessionRepository] Supabase update notice:", err);
-        }
+      if (!supabase) {
+        throw new Error("conversation_sessions update failed: Supabase client missing");
+      }
+      const { error } = await (supabase.from("conversation_sessions") as any)
+        .update({
+          title: updatedSession.title,
+          subtitle: updatedSession.subtitle,
+          category: updatedSession.category,
+          updated_at: updatedSession.updatedAt,
+        })
+        .eq("id", sessionId);
+      if (error) {
+        console.error("[SessionRepository] conversation_sessions update failed:", error);
+        throw remoteFailure("update", error);
       }
     }
 
@@ -141,13 +153,18 @@ export const conversationSessionRepository = {
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          await (supabase.from("conversation_sessions") as any).delete().eq("id", sessionId);
-          await (supabase.from("executive_conversation_messages") as any).delete().eq("session_id", sessionId);
-        } catch (err) {
-          console.warn("[SessionRepository] Supabase delete notice:", err);
-        }
+      if (!supabase) {
+        throw new Error("conversation_sessions delete failed: Supabase client missing");
+      }
+      const { error } = await (supabase.from("conversation_sessions") as any).delete().eq("id", sessionId);
+      if (error) {
+        console.error("[SessionRepository] conversation_sessions delete failed:", error);
+        throw remoteFailure("delete", error);
+      }
+      const messageDelete = await (supabase.from("executive_conversation_messages") as any).delete().eq("session_id", sessionId);
+      if (messageDelete.error) {
+        console.error("[SessionRepository] session message delete failed:", messageDelete.error);
+        throw remoteFailure("delete messages", messageDelete.error);
       }
     }
 

@@ -37,6 +37,7 @@ import {
 import { normalizeHandle } from "../domain/accountUtils";
 import { resolveGeneratePlan } from "../services/production/resolveGeneratePlan";
 import { conversationSessionRepository } from "../backend/repositories/conversationSessionRepository";
+import { CreditService } from "../services/production/credits/creditService";
 import { generateSessionTitle } from "../services/sessionTitleService";
 import { eventBus } from "../services/runtime/eventBus";
 import { resolveSeriesBible, advanceSeriesCanon } from "../services/memory/seriesBibleService";
@@ -555,10 +556,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setState((prev: any) => ({ ...prev, chatMessages: msgs }));
         }
       } else {
-        const fresh = await conversationSessionRepository.createSession({ brandId, title: "New Executive Session" });
+        const fresh = await conversationSessionRepository.createSession({
+          brandId,
+          userId: currentUserId || undefined,
+          title: "New Executive Session",
+        });
         setSessions([fresh]);
         setActiveSessionId(fresh.id);
       }
+    }).catch((err) => {
+      console.error("[SparkContext] conversation_sessions remote failure (not treated as an empty session):", err);
     });
   }, []);
 
@@ -575,6 +582,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const tempSession: ConversationSession = {
       id: tempId,
       brandId,
+      userId: currentUserId || undefined,
       title: "New Executive Session",
       isArchived: false,
       createdAt: new Date().toISOString(),
@@ -583,7 +591,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSessions((prev) => [tempSession, ...prev.filter((s) => s.id !== tempId)]);
     setActiveSessionId(tempId);
     setState((prev: any) => ({ ...prev, chatMessages: [] }));
-    void conversationSessionRepository.createSession(tempSession);
+    void conversationSessionRepository.createSession(tempSession).catch((err) => {
+      console.error("[SparkContext] conversation_sessions create failed:", err);
+    });
     return tempId;
   };
 
@@ -615,6 +625,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (updated) {
         setSessions((prev) => prev.map((s) => (s.id === sessionId ? updated : s)));
       }
+    }).catch((err) => {
+      console.error("[SparkContext] conversation_sessions rename failed:", err);
     });
   };
   // Detect User ID changes or explicit workspace reset signals
@@ -2328,6 +2340,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 characters: state.characters || [],
                 memoryItems: state.memoryItems || [],
                 creditSettings: effectiveCredit,
+                userId: currentUserId || undefined,
+                creditService: CreditService.getInstance(),
+                requireCredits: true,
                 signal: controller.signal,
                 onProgress: (progress) => {
                   if (shouldHaltProductionWrites(effectiveProdId, controller.signal)) return;
@@ -2557,6 +2572,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         character: state.character,
         production: prod,
         memoryItems: state.memoryItems || [],
+        userId: currentUserId || undefined,
+        creditService: CreditService.getInstance(),
+        requireCredits: true,
       });
 
       if (updatedScene) {
@@ -3039,6 +3057,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         characters: state.characters || [],
         memoryItems: state.memoryItems || [],
         creditSettings: effectiveCredit,
+        userId: currentUserId || undefined,
+        creditService: CreditService.getInstance(),
+        requireCredits: true,
         forceRegenerate,
         signal: controller.signal,
         onProgress: (progress) => {

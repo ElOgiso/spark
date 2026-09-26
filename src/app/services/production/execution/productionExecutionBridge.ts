@@ -67,6 +67,10 @@ export interface ProductionExecutionBridgeParams {
   ports?: import("./adapters/types").AdapterPorts;
   engine?: import("./executionEngine").GenerationExecutionEngine;
   dryRun?: boolean;
+  creditService?: import("../credits/creditService").CreditService;
+  userId?: string;
+  idempotencyStore?: import("./idempotency").IdempotencyStore;
+  requireCredits?: boolean;
 }
 
 export interface ProductionExecutionBridgeResult {
@@ -532,6 +536,10 @@ export async function executeProductionViaAssetBridge(
     onProgress: params.onProgress,
     forceRegenerate: params.forceRegenerate,
     signal: params.signal,
+    creditService: params.creditService,
+    userId: params.userId,
+    idempotencyStore: params.idempotencyStore,
+    requireCredits: params.requireCredits,
   } as any);
 
   const projected = projectAssetsOntoSpec({

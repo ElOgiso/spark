@@ -315,12 +315,11 @@ test("Phase 5.1: Fail-Closed Video Submit Path", async (t) => {
     assert.match(mock3.getJson().error, /not a sheet or storyboard grid/i);
   });
 
-  await t.test("7. AIProviderOrchestrator: Uses Resolved Provider, Not Hardcoded Grok", async () => {
-    let capturedProvider: string | undefined;
+  await t.test("7. AIProviderOrchestrator: Video Generation does not submit outside the engine", async () => {
+    let fetches = 0;
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (_url: string, init: any) => {
-      const parsed = JSON.parse(init.body);
-      capturedProvider = parsed.provider;
+    globalThis.fetch = (async () => {
+      fetches++;
       return new Response(JSON.stringify({ success: true, videoUrl: "https://example.com/clip.mp4" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -328,18 +327,19 @@ test("Phase 5.1: Fail-Closed Video Submit Path", async (t) => {
     }) as typeof fetch;
 
     try {
-      // Execute with preferredProvider: "kling"
-      const vidUrl = await AIProviderOrchestrator.execute({
-        capability: "Video Generation",
-        prompt: "cinematic dolly",
-        firstFrameUrl: "https://example.com/shot-1.png",
-        preferredProvider: "kling",
-        durationSec: 5,
-        customApiKeys: { KLING_API_KEY: "mock-key" },
-      });
-
-      assert.equal(vidUrl, "https://example.com/clip.mp4");
-      assert.equal(capturedProvider, "kling", "AIProviderOrchestrator must dispatch using preferredProvider 'kling', not 'grok'");
+      await assert.rejects(
+        () =>
+          AIProviderOrchestrator.execute({
+            capability: "Video Generation",
+            prompt: "cinematic dolly",
+            firstFrameUrl: "https://example.com/shot-1.png",
+            preferredProvider: "kling",
+            durationSec: 5,
+            customApiKeys: { KLING_API_KEY: "mock-key" },
+          }),
+        /GenerationExecutionEngine/
+      );
+      assert.equal(fetches, 0, "orchestrator must not reach the provider");
     } finally {
       globalThis.fetch = originalFetch;
     }

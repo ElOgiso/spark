@@ -228,6 +228,8 @@ export class AutonomousEngine {
             characters: state.characters || [],
             memoryItems: state.memoryItems || [],
             automationMode: "autonomous",
+            userId: (brand as any)?.owner_id || (brand as any)?.ownerId,
+            requireCredits: true,
           })
           .then(({ production: finishedProd }) => {
             updateWorkspaceState((prev) => ({

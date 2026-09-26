@@ -1306,49 +1306,11 @@ export class AIProviderOrchestrator {
           throw new Error("Grok image generation failed and no fallback available.");
         }
 
-        // 4B. Video Generation — official i2v (image + optional last/end). Resolves target provider, never hardcoded 'grok'.
+        // 4B. Video Generation is not a spend path. Canonical I2V transport lives in videoI2vAdapter.
         if (options.capability === "Video Generation") {
-          const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-          const firstFrame = options.firstFrameUrl || options.referenceImageUrl;
-          const resolvedProvider =
-            options.preferredProvider && options.preferredProvider !== "auto"
-              ? options.preferredProvider
-              : ((options as any).provider || "grok");
-          if (!firstFrame) {
-            throw new Error(`${resolvedProvider} i2v requires this shot's still as frame 1.`);
-          }
-          const clip = await requestProductionVideoClip({
-            provider: resolvedProvider,
-            prompt: options.prompt,
-            firstFrameUrl: firstFrame,
-            lastFrameUrl: options.lastFrameUrl || options.endFrameUrl,
-            endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
-            characterSheetUrl: options.characterSheetUrl,
-            referenceImageUrls: options.referenceImageUrls || (options.characterSheetUrl ? [options.characterSheetUrl] : []),
-            aspectRatio: options.aspectRatio,
-            durationSec: options.durationSec,
-            model: options.model || (resolvedProvider === "grok" ? "grok-imagine-video-1.5" : undefined),
-            productionId: options.productionId,
-            brandId: options.brandId,
-            shotIndex: options.shotIndex,
-          });
-          if (!clip.videoUrl) {
-            throw new Error(`${resolvedProvider} Video Generation returned no video URL.`);
-          }
-          if (options.productionId && clip.videoUrl) {
-            const { scheduleAutoIngestMedia } = await import("../production/ingestMediaToSpark");
-            const shot = options.shotIndex && options.shotIndex > 0 ? Math.round(options.shotIndex) : Date.now();
-            void scheduleAutoIngestMedia({
-              url: clip.videoUrl,
-              brandId: options.brandId,
-              productionId: options.productionId,
-              assetType: "video",
-              storagePath: `video/shot-${shot}.mp4`,
-              shotIndex: options.shotIndex,
-            });
-          }
-          if (options.onChunk) options.onChunk(clip.videoUrl);
-          return clip.videoUrl;
+          throw new Error(
+            "Paid video generation refused outside GenerationExecutionEngine. Direct provider submit is closed."
+          );
         }
 
         // 4C. Grok Voice / TTS (/v1/tts)
@@ -1552,26 +1514,9 @@ export class AIProviderOrchestrator {
         if (options.capability !== "Video Generation") {
           throw new Error("Kling plugin currently supports Video Generation only.");
         }
-        const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-        const klingFirst = options.firstFrameUrl || options.referenceImageUrl;
-        if (!klingFirst) {
-          throw new Error("Kling i2v requires this shot's still as frame 1.");
-        }
-        const clip = await requestProductionVideoClip({
-          provider: "kling",
-          prompt: options.prompt,
-          firstFrameUrl: klingFirst,
-          endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
-          referenceImageUrls: [],
-          aspectRatio: options.aspectRatio,
-          durationSec: options.durationSec,
-          model: options.model || "kling-v2-6",
-          productionId: options.productionId,
-          brandId: options.brandId,
-          shotIndex: options.shotIndex,
-        });
-        if (options.onChunk) options.onChunk(clip.videoUrl);
-        return clip.videoUrl;
+        throw new Error(
+          "Paid video generation refused outside GenerationExecutionEngine. Direct provider submit is closed."
+        );
       },
     });
 
@@ -1585,26 +1530,9 @@ export class AIProviderOrchestrator {
         if (options.capability !== "Video Generation") {
           throw new Error("Seedance plugin currently supports Video Generation only.");
         }
-        const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-        const seedanceFirst = options.firstFrameUrl || options.referenceImageUrl;
-        if (!seedanceFirst) {
-          throw new Error("Seedance i2v requires this shot's still as frame 1.");
-        }
-        const clip = await requestProductionVideoClip({
-          provider: "seedance",
-          prompt: options.prompt,
-          firstFrameUrl: seedanceFirst,
-          endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
-          referenceImageUrls: [],
-          aspectRatio: options.aspectRatio,
-          durationSec: options.durationSec,
-          model: options.model || "doubao-seedance-1-5-pro-251215",
-          productionId: options.productionId,
-          brandId: options.brandId,
-          shotIndex: options.shotIndex,
-        });
-        if (options.onChunk) options.onChunk(clip.videoUrl);
-        return clip.videoUrl;
+        throw new Error(
+          "Paid video generation refused outside GenerationExecutionEngine. Direct provider submit is closed."
+        );
       },
     });
 
@@ -1654,41 +1582,11 @@ export class AIProviderOrchestrator {
           return imageUrl;
         }
 
-        // 8B. Higgsfield Video Generation (Seedance 2.5 / 2.0 I2V / R2V) via production adapter
+        // 8B. Higgsfield video is not a spend path beside the canonical engine.
         if (options.capability === "Video Generation") {
-          const { requestProductionVideoClip } = await import("../production/productionVideoRequest");
-          const isR2v =
-            (options as any).mode === "reference-to-video" ||
-            (options as any).mode === "r2v" ||
-            options.model?.toLowerCase().includes("r2v") ||
-            options.model?.toLowerCase().includes("reference-to-video");
-
-          const hfFirst = options.firstFrameUrl || options.referenceImageUrl;
-          if (!isR2v && !hfFirst) {
-            throw new Error("Higgsfield i2v requires this shot's still as frame 1.");
-          }
-          const clip = await requestProductionVideoClip({
-            provider: "higgsfield",
-            prompt: options.prompt,
-            firstFrameUrl: hfFirst,
-            endFrameUrl: options.endFrameUrl || options.lastFrameUrl,
-            referenceImageUrls: options.referenceImageUrls || (options.referenceImageUrl ? [options.referenceImageUrl] : []),
-            aspectRatio: options.aspectRatio,
-            durationSec: options.durationSec,
-            model: options.model || (isR2v ? "seedance-2.5-r2v" : "seedance-2.5-i2v"),
-            productionId: options.productionId,
-            brandId: options.brandId,
-            shotIndex: options.shotIndex,
-            mode: (options as any).mode,
-            imageUrls: (options as any).imageUrls,
-            videoUrls: (options as any).videoUrls,
-            audioUrls: (options as any).audioUrls,
-          });
-          if (!clip.videoUrl) {
-            throw new Error("Higgsfield Video Generation returned no video URL.");
-          }
-          if (options.onChunk) options.onChunk(clip.videoUrl);
-          return clip.videoUrl;
+          throw new Error(
+            "Paid video generation refused outside GenerationExecutionEngine. Direct provider submit is closed."
+          );
         }
 
         throw new Error(`Higgsfield plugin does not support capability "${options.capability}".`);
@@ -1720,6 +1618,11 @@ export class AIProviderOrchestrator {
     this.initialize();
 
     const capability = options.capability || "Chat";
+    if (capability === "Video Generation") {
+      throw new Error(
+        "Paid video generation refused outside GenerationExecutionEngine. Direct provider submit is closed."
+      );
+    }
     const customKeys = options.customApiKeys;
 
     // Build ordered list of candidate provider plugins
@@ -1759,9 +1662,7 @@ export class AIProviderOrchestrator {
     // Video Understanding: Grok (default) -> Gemini -> OpenAI -> Claude
     // Chat / Reasoning / Production: OpenAI -> Gemini -> Claude -> Grok
     let categoryPriority: AIProviderId[];
-    if (capability === "Video Generation") {
-      categoryPriority = ["gemini", "grok", "kling", "seedance", "runway", "luma", "higgsfield"];
-    } else if (capability === "Image Generation") {
+    if (capability === "Image Generation") {
       categoryPriority = ["openai", "gemini", "grok", "kling", "higgsfield"];
     } else if (capability === "Text To Speech") {
       categoryPriority = ["elevenlabs", "grok", "openai", "gemini"];
@@ -1810,7 +1711,7 @@ export class AIProviderOrchestrator {
 
     // Execute with automatic retry & seamless failover across candidate providers
     let lastError: Error | null = null;
-    const maxCandidates = capability === "Image Generation" || capability === "Video Generation" ? 3 : Math.min(candidates.length, 4);
+    const maxCandidates = capability === "Image Generation" ? 3 : Math.min(candidates.length, 4);
     const candidatesToTry = candidates.slice(0, maxCandidates);
 
     if (options.referenceImageUrl || options.referenceImageUrls?.length) {

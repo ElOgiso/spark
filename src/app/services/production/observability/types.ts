@@ -44,6 +44,7 @@ export type ProductionEventType =
   | "execution_failed"
   | "execution_cancelled"
   | "execution_unknown_submission"
+  | "execution_checkpoint"
   // QC
   | "qc_started"
   | "qc_evaluated"

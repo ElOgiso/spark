@@ -406,14 +406,9 @@ describe("source laws + memory feed", () => {
     const orch = fs.readFileSync(path.join(__dirname, "../runtime/AIProviderOrchestrator.ts"), "utf8");
     const router = fs.readFileSync(path.join(__dirname, "../runtime/modelRouter.ts"), "utf8");
     const videoBlocks = pas.match(/executeCategoryRequest\(\s*"videoGeneration"[\s\S]*?\}\)/g) || [];
-    assert.ok(videoBlocks.length >= 1);
-    for (const block of videoBlocks) {
-      assert.doesNotMatch(block, /memoryItems/);
-    }
+    assert.equal(videoBlocks.length, 0, "AssetService must not submit videoGeneration beside the engine");
     const imageBlocks = pas.match(/executeCategoryRequest\(\s*"storyboardImages"[\s\S]*?\}\)/g) || [];
-    for (const block of imageBlocks) {
-      assert.doesNotMatch(block, /memoryItems/);
-    }
+    assert.equal(imageBlocks.length, 0, "AssetService must not submit storyboardImages beside the engine");
     assert.match(orch, /export interface AIExecutionOptions/);
     assert.doesNotMatch(orch.slice(orch.indexOf("export interface AIExecutionOptions"), orch.indexOf("export interface AIProviderPlugin")), /memoryItems/);
     assert.match(router, /memoryItems: _omitMemoryItems/);

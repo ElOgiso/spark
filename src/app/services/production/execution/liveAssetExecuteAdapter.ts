@@ -23,6 +23,10 @@ export interface LiveAssetExecuteContext {
   onProgress?: (progress: GenerationProgress) => void;
   forceRegenerate?: boolean;
   signal?: AbortSignal;
+  creditService?: import("../credits/creditService").CreditService;
+  userId?: string;
+  idempotencyStore?: import("./idempotency").IdempotencyStore;
+  requireCredits?: boolean;
 }
 
 export interface LiveAssetExecuteAdapter {
@@ -68,6 +72,10 @@ export function createLiveAssetExecuteAdapter(
       onProgress: ctx.onProgress,
       forceRegenerate: ctx.forceRegenerate,
       signal: ctx.signal,
+      creditService: ctx.creditService,
+      userId: ctx.userId,
+      idempotencyStore: ctx.idempotencyStore,
+      requireCredits: ctx.requireCredits,
     });
     lastBridgeResult = bridge;
 

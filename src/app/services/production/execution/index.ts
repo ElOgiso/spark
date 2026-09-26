@@ -28,6 +28,7 @@ export {
   findReusableExecution,
   idempotencyKey,
 } from "./idempotency";
+export { createDurableIdempotencyStore, createMemoryCheckpointJournal } from "./durableIdempotency";
 export { prepareTaskInputs } from "./inputPreparation";
 export { validateNormalizedOutput, expectationsFromPrepared } from "./outputValidation";
 export {

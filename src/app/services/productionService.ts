@@ -357,6 +357,9 @@ export class ProductionService implements IProductionService {
     forceRegenerate?: boolean;
     signal?: AbortSignal;
     automationMode?: AutomationMode | SparkAutomationMode;
+    creditService?: import("./production/credits/creditService").CreditService;
+    userId?: string;
+    requireCredits?: boolean;
   }): Promise<{ production: Production; brief: ProductionBrief }> {
     const {
       production,
@@ -459,6 +462,8 @@ export class ProductionService implements IProductionService {
 
     // Always resolve a ProductionSpec (legacy rows rebuild via adapter).
     const resolvedSpec = resolveProductionSpec(production, brand, character);
+    const { CreditService } = await import("./production/credits/creditService");
+    const liveUserId = params.userId || (brand as any)?.owner_id || (brand as any)?.ownerId;
     const liveExecute = createLiveAssetExecuteAdapter({
       production,
       brand,
@@ -469,6 +474,9 @@ export class ProductionService implements IProductionService {
       onProgress: handleProgress,
       forceRegenerate,
       signal,
+      creditService: params.creditService || CreditService.getInstance(),
+      userId: liveUserId,
+      requireCredits: params.requireCredits !== false,
     });
 
     const report = await runProductionLifecycle({
