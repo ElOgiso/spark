@@ -4,9 +4,9 @@ Starting SHA: `31c96fea9226af2fd98cb22e31fb642bb399c137` (`docs(production): rec
 
 Phase 21R implementation (already on that baseline): `e3198b29c0a41127a81368d5235296d1f15dfcd1`
 
-Readiness commit: `PENDING_READINESS_SHA`
+Readiness commit: `b4e687bd3fb484d31570d89348a22feb492156ef` (`chore(readiness): complete phase 22 release candidate hardening`)
 
-Ending SHA: `PENDING_ENDING_SHA`
+Ending SHA: `git log -1` on `main` after the stamp commit that names `b4e687bd`. A commit cannot contain its own hash, so this file points at the readiness commit and the branch tip rather than pasting the tip hash.
 
 Branch: `main` only. Live Supabase project: `jaqzjhabmtvqtvinoafq`.
 

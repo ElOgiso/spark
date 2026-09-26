@@ -3,7 +3,7 @@
 Release candidate: **READY**
 Live launch: **DEFERRED**
 
-Code baseline: `main` after Phase 22 (see the Phase 22 record for the ending SHA).
+Code baseline: `b4e687bd3fb484d31570d89348a22feb492156ef` on `main` (Phase 22 readiness). The stamp commit that names this SHA is the branch tip.
 
 Database migrations: `production_events` and `credit_reservations` are on the live project and closed to anon. `conversation_sessions` is **not** applied. That migration is required before live launch.
 
