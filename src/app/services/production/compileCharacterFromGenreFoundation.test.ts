@@ -5,7 +5,8 @@ import {
   formatIdentityBlock,
   foundationContainsForbiddenIdentity,
 } from "./compileCharacterFromGenreFoundation";
-import { normalizeCharacterGenre } from "../../domain/characterGenre";
+import { moodboardUrlsForGenre, normalizeCharacterGenre } from "../../domain/characterGenre";
+import { PRODUCTION_CONTENT_FORMAT_OPTIONS, normalizeContentFormat } from "../../domain/contentFormat";
 import { buildProductionCharacterSheetPrompt } from "./characterSheetPrompt";
 
 describe("character genre catalog", () => {
@@ -16,6 +17,30 @@ describe("character genre catalog", () => {
     assert.equal(normalizeCharacterGenre("photoreal"), "realistic");
     assert.equal(normalizeCharacterGenre("anime"), "anime");
     assert.equal(normalizeCharacterGenre("3D Cartoon"), "pixel_3d");
+  });
+
+  it("ships a real moodboard URL for every catalog genre", () => {
+    for (const id of ["realistic", "cinematic", "pixel_3d", "anime", "cartoon"] as const) {
+      const urls = moodboardUrlsForGenre(id);
+      assert.ok(urls.length >= 1, id);
+      assert.match(urls[0], /^https:\/\//);
+    }
+  });
+});
+
+describe("content format vs character genre", () => {
+  it("does not list anime as a production format", () => {
+    assert.deepEqual(
+      PRODUCTION_CONTENT_FORMAT_OPTIONS.map((o) => o.id),
+      ["faceless", "host", "story"],
+    );
+  });
+
+  it("maps genre words out of format", () => {
+    assert.equal(normalizeContentFormat("anime"), "story");
+    assert.equal(normalizeContentFormat("3D"), "story");
+    assert.equal(normalizeContentFormat("host"), "host");
+    assert.equal(normalizeContentFormat("faceless"), "faceless");
   });
 });
 
