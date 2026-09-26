@@ -2,6 +2,8 @@
 
 Starting SHA: `70837326364b71df033ce4356e918fd19db8c660` (`test(production): record phase 21 full validation`)
 
+Implementation commit: `e3198b29c0a41127a81368d5235296d1f15dfcd1` (`fix(production): attach durable credits and close video bypass`)
+
 Branch: `main` only. Live Supabase project referenced by the client: `jaqzjhabmtvqtvinoafq`.
 
 Phase 21 outcome remains **FAIL**. This checkpoint does not certify production readiness and does not start Phase 22.
