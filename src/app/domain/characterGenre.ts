@@ -25,6 +25,26 @@ export type CharacterGenreId =
 
 export type CharacterGenreFamily = "live_action" | "stylized_2d" | "stylized_3d";
 
+export interface CharacterIdentityVariables {
+  name?: string;
+  role?: string;
+  age?: string;
+  gender?: string;
+  ethnicity?: string;
+  skin?: string;
+  hair?: string;
+  eyes?: string;
+  face?: string;
+  build?: string;
+  wardrobe?: string;
+  accessories?: string;
+  expression?: string;
+  posture?: string;
+  personality?: string;
+  environment?: string;
+  definingTraits?: string;
+}
+
 export interface CharacterGenreOption {
   id: CharacterGenreId;
   label: string;
@@ -35,7 +55,7 @@ export interface CharacterGenreOption {
   visualGenreId: VisualGenreId;
   mediumLockLine: string;
   doNot: string;
-  /** STYLE / MEDIUM refs only. Never identity. Empty until library pixels are attached. */
+  /** STYLE / MEDIUM refs only. Never identity. */
   referenceImages: string[];
 }
 
@@ -50,7 +70,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Photoreal live-action smartphone photography. Visible pores, natural cloth, observed daylight. Not beauty-filter, not CGI, not 2D anime.",
     doNot: "not CGI, not 2D anime, not beauty-filter, not plastic skin",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "cinematic",
@@ -62,7 +84,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Photoreal cinema still. Production lighting, cinema lens language, physically plausible materials. Not smartphone UGC, not CGI, not 2D anime.",
     doNot: "not smartphone UGC grade, not CGI, not 2D anime",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1675726205553-4e348f24da2c?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "pixel_3d",
@@ -74,7 +98,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Feature-CGI / pixel-3D character. Coherent materials, subsurface, studio key. Not photoreal live-action, not 2D anime linework, not mobile-game plastic.",
     doNot: "not photoreal live-action, not 2D anime, not mobile-game plastic",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1741894785509-d87c84bdc275?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "anime",
@@ -86,7 +112,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: 2D anime character construction — consistent line weight, anime proportions, cel color flats. Not photoreal skin, not live-action photography, not 3D CGI.",
     doNot: "not photoreal, not live-action, not 3D CGI",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1576843789623-ba1d22102973?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "cartoon",
@@ -98,7 +126,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Stylized 2D cartoon. Broad readable shapes, graphic color, clean silhouette. Not photoreal, not 3D CGI, not anime cel unless Anime is selected.",
     doNot: "not photoreal, not 3D CGI",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1719198539292-e44add6d15c9?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "illustration",
@@ -110,7 +140,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Illustration medium. Drawn or painted figure, not a photograph, not 3D render.",
     doNot: "not photoreal photograph, not 3D render",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1667419136229-ce2c6e127a43?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "comic",
@@ -122,7 +154,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Graphic-novel / comic character. Inked line, graphic color. Not photoreal.",
     doNot: "not photoreal",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1632837287299-04fcf768d376?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "painterly",
@@ -134,7 +168,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Painterly figure. Visible pigment, theatrical light. Not photoreal, not 3D CGI.",
     doNot: "not photoreal, not 3D CGI",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1509117947687-5090307f5ee7?w=900&q=85&fit=crop",
+    ],
   },
   {
     id: "clay",
@@ -146,7 +182,9 @@ export const CHARACTER_GENRE_OPTIONS: CharacterGenreOption[] = [
     mediumLockLine:
       "MEDIUM LOCK: Stop-motion / clay miniature. Tactile materials, handmade surface. Not smooth photoreal CGI, not 2D anime.",
     doNot: "not photoreal live-action, not 2D anime, not feature CGI plastic",
-    referenceImages: [],
+    referenceImages: [
+      "https://images.unsplash.com/photo-1657260630992-76a75351b0f4?w=900&q=85&fit=crop",
+    ],
   },
 ];
 
@@ -231,6 +269,30 @@ export function characterGenreToVisualGenre(id: CharacterGenreId): VisualGenreId
 
 export function visualGenreToCharacterGenre(id?: VisualGenreId | string | null): CharacterGenreId {
   return normalizeCharacterGenre(id) || "realistic";
+}
+
+export function moodboardUrlsForGenre(id: CharacterGenreId | string | null | undefined): string[] {
+  const resolved = normalizeCharacterGenre(id) || "realistic";
+  return characterGenreOption(resolved).referenceImages.filter(Boolean);
+}
+
+/** Identity photo first (if any), then genre moodboard as STYLE / MEDIUM only. */
+export function compileCharacterReferenceUrls(params: {
+  genre?: string | null;
+  identityImageUrl?: string | null;
+  extraMediumUrls?: string[];
+}): string[] {
+  const out: string[] = [];
+  const identity = params.identityImageUrl?.trim();
+  if (identity) out.push(identity);
+  for (const url of moodboardUrlsForGenre(params.genre)) {
+    if (!out.includes(url)) out.push(url);
+  }
+  for (const url of params.extraMediumUrls || []) {
+    const v = url?.trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
 }
 
 export function characterGenreAsVisualOption(id: CharacterGenreId): VisualGenreOption {
