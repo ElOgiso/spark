@@ -255,19 +255,20 @@ test("Asset image prompt compilers produce higher-win-rate reference language", 
   const { buildLocationPlatePrompt } = await import("./locationPlatePrompt");
   const { buildProductionProductSheetPrompt } = await import("./productSheetPrompt");
 
-  // 1. Character sheet: 3-panel grey seamless (#808080) and single identity LOCKS
+  // 1. Character sheet: library 3-view geometry and single identity LOCKS
   const charPrompt = buildProductionCharacterSheetPrompt({
     creatorName: "Santiago",
     role: "protagonist",
     genre: "Cinematic",
     closeUpPriority: true,
   });
-  assert.match(charPrompt, /3-PANEL SEAMLESS TURNAROUND on neutral 18% studio grey backdrop/i);
-  assert.match(charPrompt, /Panel 1: FRONT full-body/i);
-  assert.match(charPrompt, /Panel 2: BACK full-body/i);
-  assert.match(charPrompt, /Panel 3: High-detail FACE CLOSE-UP/i);
-  assert.match(charPrompt, /CLOSE-UP PRIORITY: The face close-up panel defines primary facial geometry/i);
+  assert.match(charPrompt, /library 3-view geometry/i);
+  assert.match(charPrompt, /Panel 1 \(left third\): full body/i);
+  assert.match(charPrompt, /true 90-degree side profile, MEDIUM bust/i);
+  assert.match(charPrompt, /frontal MEDIUM bust facing camera/i);
+  assert.match(charPrompt, /CLOSE-UP PRIORITY: The frontal medium-bust panel defines primary facial geometry/i);
   assert.match(charPrompt, /LOCKS: Exactly ONE single human identity across all panels/i);
+  assert.doesNotMatch(charPrompt, /Korean woman/i);
 
   // 2. Location plate: empty environment + 3/4 depth angle
   const locPrompt = buildLocationPlatePrompt({
@@ -288,4 +289,3 @@ test("Asset image prompt compilers produce higher-win-rate reference language", 
   assert.match(propPrompt, /NO human body, NO skin, NO mannequin head/i);
   assert.match(propPrompt, /IP LOCK: Original generic \/ fictional design\. NO real-world brand logos/i);
 });
-
