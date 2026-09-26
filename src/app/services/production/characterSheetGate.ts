@@ -3,7 +3,7 @@ import type { ProductionAssetRegistry } from "./assets/registry";
 import { hasValidCharacterIdentityAnchor as identityAnchorFromAssets } from "./assets/characterIdentity";
 import { hasValidCharacterSheet } from "./characterSheetValidation";
 
-export type EffectiveContentFormat = "faceless" | "host" | "story" | "anime";
+export type EffectiveContentFormat = "faceless" | "host" | "story" | "ugc" | "ads" | "explainer" | "anime";
 
 export { hasValidCharacterSheet };
 
@@ -23,7 +23,6 @@ export function getEffectiveContentFormat(params: {
 }): EffectiveContentFormat {
   const { production, brief, brand, character, formatSettings } = params;
 
-  // 1. Explicit formatSettings contentFormat or archetype
   const explicitFormat = (
     (production as any)?.formatSettings?.contentFormat ||
     (brief as any)?.formatSettings?.contentFormat ||
@@ -43,12 +42,21 @@ export function getEffectiveContentFormat(params: {
     ) {
       return "faceless";
     }
+    if (explicitFormat === "ugc" || explicitFormat.includes("selfie")) {
+      return "ugc";
+    }
+    if (explicitFormat === "ads" || explicitFormat.includes("advert")) {
+      return "ads";
+    }
+    if (explicitFormat.includes("explain")) {
+      return "explainer";
+    }
     if (
       explicitFormat.includes("anime") ||
-      explicitFormat.includes("manga") ||
-      explicitFormat.includes("animation")
+      explicitFormat.includes("manga")
     ) {
-      return "anime";
+      // Anime is a look, not a production format. Gate it as story (needs identity).
+      return "story";
     }
     if (
       explicitFormat.includes("story") ||
@@ -66,7 +74,6 @@ export function getEffectiveContentFormat(params: {
     }
   }
 
-  // 2. Infer from production mode, platform fit, visual directions, and style tags
   const combinedStrings = [
     production?.mode,
     brief?.productionMode,
@@ -97,7 +104,7 @@ export function getEffectiveContentFormat(params: {
     combinedStrings.includes("manga") ||
     combinedStrings.includes("animated")
   ) {
-    return "anime";
+    return "story";
   }
 
   if (
@@ -111,15 +118,9 @@ export function getEffectiveContentFormat(params: {
     return "story";
   }
 
-  // Default format is "host"
   return "host";
 }
 
-/**
- * Phase 4 identity anchor — thin wrapper over assets/characterIdentity.
- * Prefer registry canonical/approved character refs when registry is provided;
- * otherwise fall back to URL sheet validation.
- */
 export function hasValidCharacterIdentityAnchor(params: {
   character?: Partial<Character> | null;
   registry?: ProductionAssetRegistry;
@@ -136,13 +137,6 @@ export function hasValidCharacterIdentityAnchor(params: {
   return identityAnchorFromAssets(params);
 }
 
-/**
- * Gate check before starting asset generation.
- * - faceless: sheet optional, generate proceeds.
- * - host | story | anime: requires a real character identity anchor (registry) or sheet URL.
- * Optional registry/productionId/entityId enable Phase 4 identity-anchor checks;
- * URL fallback remains for backward compatibility.
- */
 export function canStartAssetGeneration(params: {
   production?: Partial<Production> | null;
   brief?: Partial<ProductionBrief> | null;
@@ -155,12 +149,10 @@ export function canStartAssetGeneration(params: {
 }): { allowed: boolean; reason?: string; contentFormat: EffectiveContentFormat } {
   const contentFormat = getEffectiveContentFormat(params);
 
-  // Faceless format: character sheet is optional; generate proceeds
   if (contentFormat === "faceless") {
     return { allowed: true, contentFormat };
   }
 
-  // host | story | anime: identity anchor or character sheet required
   if (params.registry && (params.productionId || params.production?.id)) {
     const anchor = hasValidCharacterIdentityAnchor({
       character: params.character,
