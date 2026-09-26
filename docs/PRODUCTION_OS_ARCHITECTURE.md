@@ -1,4 +1,14 @@
-# Spark Production OS — Architecture Audit (Phase 0)
+# Spark Production OS — Architecture
+
+## Current authority (Phase 22)
+
+SPARK owns meaning. Providers own execution. One production spine:
+
+`ProductionSpec` → format director → shot plan → craft → capability registry → canonical router → `CostEngine` → `CreditService` → `GenerationExecutionEngine` → `ProviderPayloadCompiler` → provider adapter → QC → `RepairPlanner` → editorial/audio/master → review → publish.
+
+Asset-bible sheets are **not** shots on that spine. They are a studio operation (`ensureAssetBibleAssets`) and cannot submit an image unless the caller passes `studioBilling` (`CreditService` + `userId`). `ProductionAssetService.generateAssets` does not call them.
+
+Live provider certification and deployed runtime checks are deferred until provider credits and a Spark deployment exist. This file's older sections below are historical phase notes, not a second pipeline.
 
 ## Goal
 

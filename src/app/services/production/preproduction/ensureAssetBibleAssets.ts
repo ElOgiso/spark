@@ -1,14 +1,11 @@
 /**
  * SPARK Preproduction Asset Bible Ensurer
- * Automatically synthesizes, uploads, and binds missing asset sheets (props, locations, wardrobe variants)
- * planned in the asset bible before per-shot I2V motion synthesis.
  *
- * Rules:
- * - Capped auto prop generations per run (default max 5) to protect credits
- * - Uploads / re-hosts to durable Spark Storage
- * - Character sheets remain strictly guarded by characterSheetGate (never bypassed)
- * - Non-fatal: individual asset failures log warnings without killing the production
- * - Skip ensure for faceless format when no props are needed
+ * OPTION B — reusable studio sheets, not a production DAG shot.
+ * `generateAssets` must not call this. A paid sheet is allowed only when the
+ * caller passes `studioBilling` (CreditService + userId). Missing billing,
+ * unknown price, or insufficient credits fail before ModelRouter submit.
+ * Durable Spark Storage upload remains the persistence step after a quoted image.
  */
 
 import type { Brand, Character } from "../../../domain/types";
@@ -22,6 +19,13 @@ import { buildProductionProductSheetPrompt } from "../productSheetPrompt";
 import { buildLocationPlatePrompt } from "../locationPlatePrompt";
 import { buildProductionCharacterSheetPrompt } from "../characterSheetPrompt";
 import { brandProductionStoragePath } from "../brandProductionStoragePath";
+import type { CreditService } from "../credits/creditService";
+import { CostEngine } from "../economics/costEngine";
+
+export interface StudioSheetBilling {
+  creditService: CreditService;
+  userId: string;
+}
 
 export interface EnsureAssetBibleAssetsParams {
   bible?: AssetBibleEntry[] | null;
@@ -39,6 +43,8 @@ export interface EnsureAssetBibleAssetsParams {
   aspectRatio?: string;
   forceRegenerate?: boolean;
   preferredImageProvider?: string;
+  /** Required before any paid sheet. Absent callers record a refusal and do not submit. */
+  studioBilling?: StudioSheetBilling;
   onProgress?: (tag: string, index: number, total: number) => void;
 }
 
@@ -69,6 +75,78 @@ function isValidMediaUrl(val?: string | null): val is string {
     trimmed.startsWith("data:image/") ||
     trimmed.startsWith("blob:")
   );
+}
+
+const STUDIO_BILLING_REQUIRED =
+  "Asset bible image generation requires explicit studio credit authorization. No provider submit.";
+
+/**
+ * Studio sheet transport. Reserves before ModelRouter and settles or releases after.
+ * This is not GenerationExecutionEngine: sheets are not production shots.
+ */
+async function submitPricedStudioSheet(params: {
+  billing?: StudioSheetBilling;
+  productionId: string;
+  tag: string;
+  prompt: string;
+  aspectRatio: string;
+  preferredImageProvider?: string;
+  referenceImageUrl?: string;
+}): Promise<string> {
+  if (!params.billing?.creditService || !params.billing.userId) {
+    throw new Error(STUDIO_BILLING_REQUIRED);
+  }
+  const providerId =
+    params.preferredImageProvider && params.preferredImageProvider !== "auto"
+      ? params.preferredImageProvider
+      : "openai";
+  const modelId = providerId === "openai" ? "dall-e-3" : providerId;
+  const est = CostEngine.estimateCost({
+    providerId,
+    modelId,
+    modality: "image",
+  });
+  if (est.status === "UNKNOWN" || !(typeof est.amount === "number" && est.amount > 0)) {
+    throw new Error("Unknown studio sheet cost — refusing to reserve zero or submit.");
+  }
+  const quote = params.billing.creditService.quote({
+    estimatedCostUsd: est.amount,
+    generationId: `bible_${params.productionId}_${params.tag}`,
+  });
+  const reserved = await params.billing.creditService.reserve({
+    quote,
+    userId: params.billing.userId,
+    idempotencyKey: `bible_${params.productionId}_${params.tag}`,
+    metadata: { scope: "asset_bible_studio", tag: params.tag, providerId, modelId },
+  });
+  try {
+    const { ModelRouter } = await import("../../runtime/modelRouter");
+    const rawImgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+      prompt: params.prompt,
+      aspectRatio: params.aspectRatio,
+      capability: "Image Generation",
+      preferredProvider: (params.preferredImageProvider as any) || undefined,
+      referenceImageUrl: params.referenceImageUrl,
+    });
+    if (!isValidMediaUrl(rawImgUrl)) {
+      throw new Error("Image provider returned empty or invalid URL");
+    }
+    await params.billing.creditService.settle({
+      reservationId: reserved.reservation.id,
+      userId: params.billing.userId,
+      actualProviderCostUsd: est.amount,
+    });
+    return rawImgUrl;
+  } catch (err) {
+    await params.billing.creditService
+      .release({
+        reservationId: reserved.reservation.id,
+        userId: params.billing.userId,
+        reason: err instanceof Error ? err.message : String(err),
+      })
+      .catch(() => undefined);
+    throw err;
+  }
 }
 
 export async function ensureAssetBibleAssets(
@@ -232,7 +310,6 @@ export async function ensureAssetBibleAssets(
       }
 
       try {
-        const { ModelRouter } = await import("../../runtime/modelRouter");
         const prompt = buildProductionProductSheetPrompt({
           productName: entry.label,
           brandName: brand?.name,
@@ -241,16 +318,14 @@ export async function ensureAssetBibleAssets(
           genre: (brand as any)?.genre || "Realistic",
         });
 
-        const rawImgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        const rawImgUrl = await submitPricedStudioSheet({
+          billing: params.studioBilling,
+          productionId,
+          tag: entry.tag,
           prompt,
           aspectRatio,
-          capability: "Image Generation",
-          preferredProvider: (preferredImageProvider as any) || undefined,
+          preferredImageProvider,
         });
-
-        if (!isValidMediaUrl(rawImgUrl)) {
-          throw new Error("Image provider returned empty or invalid URL");
-        }
 
         // Re-host / upload to Spark Storage
         const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");
@@ -316,24 +391,22 @@ export async function ensureAssetBibleAssets(
       }
 
       try {
-        const { ModelRouter } = await import("../../runtime/modelRouter");
-        const prompt = buildLocationPlatePrompt({
-          locationName: entry.label,
+        const prompt = buildProductionProductSheetPrompt({
+          productName: entry.label,
           brandName: brand?.name,
-          environmentDescription: entry.notes,
-          visualMedium: (brand as any)?.genre || "Realistic",
+          category: "Prop",
+          usageContext: entry.notes,
+          genre: (brand as any)?.genre || "Realistic",
         });
 
-        const rawImgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        const rawImgUrl = await submitPricedStudioSheet({
+          billing: params.studioBilling,
+          productionId,
+          tag: entry.tag,
           prompt,
-          aspectRatio: "16:9",
-          capability: "Image Generation",
-          preferredProvider: (preferredImageProvider as any) || undefined,
+          aspectRatio,
+          preferredImageProvider,
         });
-
-        if (!isValidMediaUrl(rawImgUrl)) {
-          throw new Error("Image provider returned empty or invalid URL");
-        }
 
         // Re-host / upload to Spark Storage
         const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");
@@ -424,7 +497,6 @@ export async function ensureAssetBibleAssets(
       }
 
       try {
-        const { ModelRouter } = await import("../../runtime/modelRouter");
         const prompt = buildProductionCharacterSheetPrompt({
           creatorName: character?.name || entry.label,
           brandName: brand?.name,
@@ -433,17 +505,15 @@ export async function ensureAssetBibleAssets(
           genre: (brand as any)?.genre || "Realistic",
         });
 
-        const rawImgUrl = await ModelRouter.executeCategoryRequest("storyboardImages", {
+        const rawImgUrl = await submitPricedStudioSheet({
+          billing: params.studioBilling,
+          productionId,
+          tag: entry.tag,
           prompt,
-          referenceImageUrl: baseCharRef,
           aspectRatio: "16:9",
-          capability: "Image Generation",
-          preferredProvider: (preferredImageProvider as any) || undefined,
+          preferredImageProvider,
+          referenceImageUrl: baseCharRef,
         });
-
-        if (!isValidMediaUrl(rawImgUrl)) {
-          throw new Error("Image provider returned empty or invalid URL");
-        }
 
         // Re-host / upload to Spark Storage
         const { ProductionAssetService, isSparkStorageUrl } = await import("../productionAssetService");

@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import { ensureAssetBibleAssets } from "./ensureAssetBibleAssets";
 import { listMissingAssetBibleEntries, type AssetBibleEntry } from "./assetBibleFromBrief";
 import { resolveOfficialI2vClipFrames, looksLikeSheetOrGridUrl } from "../officialI2vFrames";
+import { CreditService } from "../credits/creditService";
+import { InMemoryCreditRepository } from "../credits/creditRepository";
+
+async function testStudioBilling(userId = "studio_user") {
+  const repo = new InMemoryCreditRepository();
+  await repo.setBalance(userId, 500);
+  return { creditService: new CreditService(repo), userId };
+}
 
 test("listMissing -> ensure generates prop URL for a bible prop entry when image generate is mocked", async () => {
   const { ModelRouter } = await import("../../runtime/modelRouter");
@@ -41,6 +49,7 @@ test("listMissing -> ensure generates prop URL for a bible prop entry when image
       productionId: "prod-test-1",
       contentFormat: "standard",
       existingElements: [],
+      studioBilling: await testStudioBilling("studio_prop"),
     });
 
     assert.equal(result.generated.length, 1);
@@ -84,6 +93,7 @@ test("failed prop ensure logs error and does not throw or abort the run", async 
       productionId: "prod-test-2",
       contentFormat: "standard",
       existingElements: [],
+      studioBilling: await testStudioBilling("studio_fail"),
     });
 
     assert.equal(result.generated.length, 0);
@@ -185,6 +195,7 @@ test("ensureAssetBibleAssets strictly respects maxPropGenerations cap", async ()
       contentFormat: "standard",
       existingElements: [],
       maxPropGenerations: 2,
+      studioBilling: await testStudioBilling("studio_cap"),
     });
 
     assert.equal(result.generated.length, 2, "Must cap generations at 2");
@@ -308,6 +319,7 @@ test("Resume: forceRegenerate=true regenerates even if existing assets exist", a
         },
       ],
       forceRegenerate: true,
+      studioBilling: await testStudioBilling("studio_force"),
     });
 
     assert.equal(executeCount, 1, "Must call generator when forceRegenerate=true");
@@ -344,6 +356,7 @@ test("ephemeral provider URL returned by ensure is NOT treated as a durable fulf
       productionId: "prod-test-ephemeral",
       contentFormat: "standard",
       existingElements: [],
+      studioBilling: await testStudioBilling("studio_ephemeral"),
     });
 
     const assert = (await import("node:assert/strict")).default;
