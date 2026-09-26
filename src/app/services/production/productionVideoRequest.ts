@@ -71,7 +71,7 @@ export async function requestProductionVideoClip(
     );
   }
 
-  if (isHf) {
+  if (isHf && !isR2v) {
     if (params.firstFrameUrl?.startsWith("asset://")) {
       throw new Error(
         "Higgsfield Seedance I2V does not support asset:// URI scheme. A public HTTPS firstFrameUrl is required."
@@ -132,9 +132,25 @@ export async function requestProductionVideoClip(
       );
     }
 
-    if (!isR2v && params.referenceImageUrls && params.referenceImageUrls.length > 0) {
+    if (params.referenceImageUrls && params.referenceImageUrls.length > 0) {
       console.info(
         `[HF I2V Honesty] Higgsfield Seedance I2V only conditions on first frame (and optional end frame); ${params.referenceImageUrls.length} reference image(s) are baked into the still and not passed in the HF I2V API payload.`
+      );
+    }
+  }
+
+  if (isHf && isR2v) {
+    if (params.firstFrameUrl?.startsWith("asset://")) {
+      params.firstFrameUrl = undefined;
+    }
+    const referencePool = [
+      params.firstFrameUrl,
+      ...(params.imageUrls || []),
+      ...(params.referenceImageUrls || []),
+    ].filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url));
+    if (referencePool.length === 0) {
+      throw new Error(
+        "Higgsfield Seedance R2V requires at least 1 public HTTPS reference image (storyboard grids not allowed)."
       );
     }
   }

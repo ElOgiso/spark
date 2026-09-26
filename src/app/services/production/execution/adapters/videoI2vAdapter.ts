@@ -62,6 +62,19 @@ function createI2vAdapter(providerId: string, ports: AdapterPorts = {}): MediaPr
       const first = request.inputs.find((i) => i.role === "first_frame")?.url;
       const end = request.inputs.find((i) => i.role === "last_frame")?.url;
       const refs = request.inputs.filter((i) => i.role === "reference" || i.role === "character").map((i) => i.url!).filter(Boolean);
+      const compiled = request.compiledRequest;
+      const raw = compiled?.rawPayload;
+      const modelSaysR2v = /r2v|reference-to-video|reference_to_video/i.test(request.model || "");
+      const isR2v = compiled?.operation === "reference_to_video" || modelSaysR2v;
+      const compiledImages = Array.isArray(raw?.image_urls)
+        ? raw.image_urls.filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+        : [];
+      const compiledVideos = Array.isArray(raw?.video_urls)
+        ? raw.video_urls.filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+        : request.inputs.filter((i) => i.role === "source_video").map((i) => i.url!).filter(Boolean);
+      const compiledAudio = Array.isArray(raw?.audio_urls)
+        ? raw.audio_urls.filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+        : request.inputs.filter((i) => i.role === "audio").map((i) => i.url!).filter(Boolean);
 
       try {
         const result = ports.submitVideo
@@ -78,6 +91,14 @@ function createI2vAdapter(providerId: string, ports: AdapterPorts = {}): MediaPr
               resolution: request.resolution,
               productionId: request.productionId,
               brandId: request.brandId,
+              ...(isR2v
+                ? {
+                    mode: "reference-to-video",
+                    imageUrls: compiledImages.length > 0 ? compiledImages : refs,
+                    videoUrls: compiledVideos,
+                    audioUrls: compiledAudio,
+                  }
+                : {}),
             }).then((r) => ({
               videoUrl: r.videoUrl,
               lastFrameDataUrl: r.lastFrameDataUrl,

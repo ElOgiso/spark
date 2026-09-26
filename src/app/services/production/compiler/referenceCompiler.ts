@@ -11,6 +11,7 @@ import type { ReferenceGraph } from "../specification/referenceGraph";
 import type { MediaCapabilityProfile } from "../capability/types";
 import type { SemanticReference } from "../specification/semanticMedia";
 import type { CompiledMediaInput, ProviderMediaRole } from "./types";
+import { isDirectProviderMediaUrl } from "../../../../../api/runtime/_videoContract";
 
 export interface ReferenceCompilationResult {
   firstFrame?: string;
@@ -188,6 +189,29 @@ export function compileReferences(params: {
     }
   }
 
+  const sourceVideos: Array<{ url: string; semanticNodeId?: string }> = [];
+  const considerSource = (url: string | undefined, semanticNodeId?: string) => {
+    if (!url || seenUrls.has(url)) return;
+    if (!isDirectProviderMediaUrl(url)) {
+      warnings.push(
+        `SOURCE_VIDEO_NOT_A_MEDIA_URL: ${url.slice(0, 48)} is not a provider video input and was not compiled onto the wire.`
+      );
+      return;
+    }
+    seenUrls.add(url);
+    sourceVideos.push({ url, semanticNodeId });
+  };
+  if (referenceGraph?.nodes) {
+    for (const node of referenceGraph.nodes) {
+      if (node.type === "SOURCE_VIDEO") considerSource(node.url, node.id);
+    }
+  }
+  if (shot.semanticReferences) {
+    for (const sRef of shot.semanticReferences) {
+      if (sRef.role === "SOURCE_VIDEO") considerSource(sRef.url);
+    }
+  }
+
   // Sort candidate references by priority
   candidateRefs.sort((a, b) => a.priority - b.priority);
 
@@ -210,6 +234,16 @@ export function compileReferences(params: {
       semanticRole: c.semanticRole,
       semanticNodeId: c.semanticNodeId,
       importance: c.priority === 1 ? "required" : "preferred",
+    });
+  }
+
+  for (const video of sourceVideos) {
+    inputs.push({
+      role: "source_video",
+      url: video.url,
+      semanticRole: "SOURCE_VIDEO",
+      semanticNodeId: video.semanticNodeId,
+      importance: "preferred",
     });
   }
 

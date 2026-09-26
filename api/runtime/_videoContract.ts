@@ -61,6 +61,15 @@ export function looksLikeStoryboardGridUrl(url: string): boolean {
   return /storyboard[-_]?grid/i.test(url);
 }
 
+/** HTTPS media the provider can fetch. Watch pages are not video inputs. */
+export function isDirectProviderMediaUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  if (/youtu\.be|youtube\.com|youtube-nocookie\.com/i.test(trimmed)) return false;
+  if (/vimeo\.com/i.test(trimmed) && !/\.(mp4|webm|mov)(\?|$)/i.test(trimmed)) return false;
+  return true;
+}
+
 export function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
@@ -747,5 +756,25 @@ export function buildHiggsfieldSeedanceR2vBody(req: VideoClipRequest): Record<st
     ...(!is20 ? { output_format: "mp4" } : {}),
   };
 
+  const videos = directProviderMediaList(req.videoUrls);
+  const audios = directProviderMediaList(req.audioUrls);
+  if (videos.length > 0) body.video_urls = videos;
+  if (audios.length > 0) body.audio_urls = audios;
+
   return body;
+}
+
+function directProviderMediaList(urls?: string[]): string[] {
+  if (!urls) return [];
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const ref of urls) {
+    if (typeof ref !== "string") continue;
+    const trimmed = ref.trim();
+    if (!isDirectProviderMediaUrl(trimmed) || looksLikeStoryboardGridUrl(trimmed)) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    clean.push(trimmed);
+  }
+  return clean;
 }

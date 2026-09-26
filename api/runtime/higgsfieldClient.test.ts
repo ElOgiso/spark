@@ -412,6 +412,43 @@ describe("Phase 4 — Production Integration & Upstream Hardening", () => {
     assert.equal(calledBody.firstFrameUrl, "https://spark.storage/keyframes/shot-1.png");
   });
 
+  test("requestProductionVideoClip allows Higgsfield R2V without a start frame", async () => {
+    let calledBody: any = null;
+
+    globalThis.fetch = async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/api/runtime/video")) {
+        calledBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            videoUrl: "https://hf.ai/r2v-output.mp4",
+            provider: "higgsfield",
+          }),
+        } as any;
+      }
+      throw new Error("Unexpected fetch: " + u);
+    };
+
+    const { requestProductionVideoClip } = await import("../../src/app/services/production/productionVideoRequest.js");
+    const res = await requestProductionVideoClip({
+      provider: "higgsfield",
+      prompt: "Hold the character and move through the street",
+      mode: "reference-to-video",
+      model: "seedance-2.5-r2v",
+      imageUrls: ["https://spark.storage/characters/hero.png"],
+      videoUrls: ["https://spark.storage/motion/walk.mp4"],
+      aspectRatio: "9:16",
+    });
+
+    assert.equal(res.videoUrl, "https://hf.ai/r2v-output.mp4");
+    assert.equal(calledBody.mode, "reference-to-video");
+    assert.equal(calledBody.firstFrameUrl, undefined);
+    assert.deepEqual(calledBody.imageUrls, ["https://spark.storage/characters/hero.png"]);
+    assert.deepEqual(calledBody.videoUrls, ["https://spark.storage/motion/walk.mp4"]);
+  });
+
   test("createHiggsfieldVideoAdapter is registered in execution registry", async () => {
     const { createDefaultAdapterRegistry } = await import("../../src/app/services/production/execution/adapters/registry.js");
     const registry = createDefaultAdapterRegistry();
