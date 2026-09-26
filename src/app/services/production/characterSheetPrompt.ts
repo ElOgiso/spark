@@ -1,10 +1,17 @@
 /**
  * SPARK Production Character Model Sheet Generator
- * Creates professional multi-view character design bibles (turnarounds, expressions, detail callouts, action poses)
- * used for zero-drift visual locking in video and image generation pipelines.
+ * Creates professional multi-view character design bibles used for zero-drift
+ * visual locking in video and image generation pipelines.
+ *
+ * Identity is never foundation. Compile = identity-free engine + genre medium
+ * lock + user identity slots. Sample look-alikes do not live in this file.
  */
 
 import { slugify } from "./elements/productionElements";
+import {
+  compileCharacterFromGenreFoundation,
+  type CharacterIdentityVariables,
+} from "./compileCharacterFromGenreFoundation";
 
 export interface CharacterSheetPromptParams {
   creatorName?: string;
@@ -13,7 +20,7 @@ export interface CharacterSheetPromptParams {
   niche?: string;
   purpose?: string;
   researchOneLiner?: string;
-  genre?: string; // Realistic | Cinematic | Anime | Art | 3D / 3D Render
+  genre?: string; // Realistic | Cinematic | Anime | 3D | ...
   personality?: string;
   skinTone?: string;
   hairStyle?: string;
@@ -21,71 +28,63 @@ export interface CharacterSheetPromptParams {
   directorNotes?: string;
   layoutStyle?: "turnaround_3view" | "full_turnaround_multiview";
   closeUpPriority?: boolean;
+  identity?: CharacterIdentityVariables;
+  hasIdentityImage?: boolean;
 }
 
-function mediumStyleDirective(genre: string): string {
-  const g = genre.toLowerCase();
-  if (g.includes("anime")) {
-    return "MEDIUM LOCK: Anime character construction — consistent line weight, anime proportions, anime color flats. Do not render photoreal skin or live-action photography.";
-  }
-  if (g.includes("3d") || g.includes("cgi") || g.includes("render")) {
-    return "MEDIUM LOCK: 3D/CG character construction — coherent materials, render lighting, digital sculpt readability. Do not mix 2D anime linework or live-action photography.";
-  }
-  if (g.includes("wuxia") || g.includes("martial")) {
-    return "MEDIUM LOCK: Period martial-arts character design — costume-era silhouette, wuxia production language. Keep one coherent cinematic treatment.";
-  }
-  if (g.includes("cinematic")) {
-    return "MEDIUM LOCK: Cinematic live-action photography — physically plausible materials, production lighting, cinema lens language.";
-  }
-  return "MEDIUM LOCK: Photorealistic live-action character bible — physically plausible face/body/wardrobe. One coherent medium only.";
+function identityFromLegacyParams(params: CharacterSheetPromptParams): CharacterIdentityVariables {
+  return {
+    name: params.creatorName,
+    role: params.role,
+    personality: params.personality,
+    skin: params.skinTone,
+    hair: params.hairStyle,
+    wardrobe: params.wardrobe,
+    ...(params.identity || {}),
+  };
 }
 
 export function buildProductionCharacterSheetPrompt(params: CharacterSheetPromptParams): string {
   const name = params.creatorName?.trim() || (params.role === "support" ? "Supporting Character" : "Lead Host");
   const brandName = params.brandName?.trim() || "SPARK";
-  const characterGenre = params.genre?.trim() || "Realistic";
-  const personality = params.personality?.trim() || (params.role === "support" ? "Dynamic supporting character" : "Authoritative, engaging visionary");
-  const roleDesc = params.role === "support" ? "support" : (params.role || "host");
-  const isSupport = params.role === "support" || roleDesc.toLowerCase().includes("support");
-  const purpose = params.purpose?.trim();
-  const niche = params.niche?.trim();
-  const research = params.researchOneLiner?.trim();
-
-  const wardrobeDirective = isSupport
-    ? "WARDROBE & SILHOUETTE LOCK: distinct silhouette and distinct color palette from primary lead; one single outfit inferred from genre + brand; do not invent a second costume."
-    : "WARDROBE LOCK: one outfit inferred from genre + brand; do not invent a second costume.";
-
+  const isSupport = params.role === "support" || String(params.role || "").toLowerCase().includes("support");
   const elementTag = isSupport
     ? `@support_${slugify(params.creatorName) || "character"}`
     : `@${slugify(params.creatorName) || "main_character"}`;
 
-  return `
-Professional animation model sheet, single character, studio turnaround.
-ELEMENT TAG: ${elementTag}
-STYLE: ${characterGenre} consistent with brand ${brandName}.
-${mediumStyleDirective(characterGenre)}
-CHARACTER: ${name}, role ${roleDesc}, personality ${personality}.
-${purpose ? `NARRATIVE FUNCTION: ${purpose}` : ""}
-${niche ? `NICHE CONTEXT: ${niche}` : ""}
-${research ? `STORY CONTEXT: ${research}` : ""}
-${params.wardrobe?.trim() ? `WARDROBE STATE: ${params.wardrobe.trim()}` : wardrobeDirective}
-${params.directorNotes?.trim() ? `DIRECTOR NOTES: ${params.directorNotes.trim()}` : ""}
-${
-  params.layoutStyle === "full_turnaround_multiview"
-    ? `LAYOUT ON ONE IMAGE:
-- Top: name + role + 3 palette swatches
-- Row: FRONT, 3/4 FRONT, LEFT, RIGHT, BACK, 3/4 REAR, same height, neutral gray
-- Right: face close-up + 2 costume details
-- Bottom-left: 8 labeled expressions
-- Bottom-right: 4 brand-safe poses (presenting, pointing, reacting, standing) — not random movie stunts`
-    : `LAYOUT ON ONE IMAGE:
-- 3-PANEL SEAMLESS TURNAROUND on neutral 18% studio grey backdrop (#808080), soft even diffuse light, zero cast shadows.
-- Panel 1: FRONT full-body orthographic standing view, natural relaxed pose, complete wardrobe visibility.
-- Panel 2: BACK full-body orthographic standing view, identical height and scale, rear wardrobe construction.
-- Panel 3: High-detail FACE CLOSE-UP portrait, neutral expression, crisp eye color, skin texture, and hair grooming.`
+  const compiled = compileCharacterFromGenreFoundation({
+    genre: params.genre,
+    identity: identityFromLegacyParams(params),
+    brandName,
+    niche: params.niche,
+    purpose: params.purpose,
+    directorNotes: [params.directorNotes, params.researchOneLiner].filter(Boolean).join("\n") || undefined,
+    hasIdentityImage: params.hasIdentityImage,
+    layoutStyle: params.layoutStyle === "full_turnaround_multiview" ? "full_turnaround_multiview" : "turnaround_3view",
+    closeUpPriority: params.closeUpPriority,
+  });
+
+  return [
+    `ELEMENT TAG: ${elementTag}`,
+    `STYLE: ${compiled.genreLabel} consistent with brand ${brandName}.`,
+    compiled.mediumLockLine,
+    compiled.sheetPrompt,
+    "LOCKS: Exactly ONE single human identity across all panels. Identical bone structure, face, hair, skin tone, outfit, and colors in every cell. No collage of different people.",
+    params.hasIdentityImage ? "If user uploaded a face, match that face." : "No uploaded face — use only CHARACTER IDENTITY text. Do not invent a look-alike.",
+    "This sheet owns identity — shot prompts must not redefine face/hair/wardrobe details already locked here.",
+  ].join("\n");
 }
-${params.closeUpPriority ? "CLOSE-UP PRIORITY: The face close-up panel defines primary facial geometry and eye details for all downstream shots.\n" : ""}LOCKS: Exactly ONE single human identity across all panels. Identical bone structure, face, hair, skin tone, outfit, and colors in every cell. No collage of different people.
-If user uploaded a face, match that face.
-This sheet owns identity — shot prompts must not redefine face/hair/wardrobe details already locked here.
-`.trim();
+
+export function buildProductionCharacterPortraitPrompt(params: CharacterSheetPromptParams): string {
+  const compiled = compileCharacterFromGenreFoundation({
+    genre: params.genre,
+    identity: identityFromLegacyParams(params),
+    brandName: params.brandName,
+    niche: params.niche,
+    purpose: params.purpose,
+    directorNotes: params.directorNotes,
+    hasIdentityImage: params.hasIdentityImage,
+    layoutStyle: "portrait_9x16",
+  });
+  return compiled.portraitPrompt;
 }
