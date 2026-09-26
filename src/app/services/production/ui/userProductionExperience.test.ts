@@ -9,6 +9,10 @@ import {
   measuredPerformance,
   presentFromCostEstimate,
   presentInsufficientCredits,
+  presentGenerateSpendGate,
+  coverFrameIsAvailable,
+  presentBrandLock,
+  ESTIMATE_REQUIRED_COPY,
   presentLedgerEntry,
   reviewStatusAfterMaster,
   presentLifecycleProgress,
@@ -54,6 +58,39 @@ test("TEST I — insufficient credits blocks when the estimate exceeds balance",
   if (blocked.blocked) assert.equal(blocked.title, "Not enough Spark Credits");
   assert.equal(presentInsufficientCredits(180, 42).blocked, false);
   assert.equal(presentInsufficientCredits(0, null).blocked, false);
+});
+
+test("generate spend stays blocked when the quote is unknown", () => {
+  const unknown = presentGenerateSpendGate({ kind: "unknown", label: "Estimate unavailable" }, 200, true);
+  assert.equal(unknown.blocked, true);
+  if (unknown.blocked) assert.equal(unknown.title, ESTIMATE_REQUIRED_COPY);
+  const short = presentGenerateSpendGate(
+    { kind: "known", credits: 80, label: "\u2248 80 Spark Credits", disclaimer: "" },
+    10,
+    true,
+  );
+  assert.equal(short.blocked, true);
+  const ok = presentGenerateSpendGate(
+    { kind: "known", credits: 8, label: "\u2248 8 Spark Credits", disclaimer: "" },
+    80,
+    true,
+  );
+  assert.equal(ok.blocked, false);
+});
+
+test("cover frame waits for an approved or playable film", () => {
+  assert.equal(coverFrameIsAvailable({ status: "Drafting" }), false);
+  assert.equal(coverFrameIsAvailable({ status: "Ready for Review" }), true);
+  assert.equal(coverFrameIsAvailable({ status: "Drafting", videoUrl: "https://cdn.example/master.mp4" }), true);
+  assert.equal(coverFrameIsAvailable({ status: "Approved", isGeneratingAssets: true }), false);
+});
+
+test("brand lock copy does not invent a mark", () => {
+  assert.equal(presentBrandLock(null).locked, false);
+  const locked = presentBrandLock({ brandName: "Northstar", brandId: "brand_1" });
+  assert.equal(locked.locked, true);
+  assert.match(locked.label, /Northstar/);
+  assert.match(locked.label, /Do not redraw/);
 });
 
 test("TEST Q — unknown submission has no unsafe retry", () => {
