@@ -1,0 +1,230 @@
+/* Source-led extension: BrandGenesisFlow's obsidian, violet and soft surfaces. */
+.spark-experience {
+  --spark-obsidian: #0b0f17;
+  --spark-violet: #9333ea;
+  background: var(--spark-obsidian);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 28px;
+  overflow: hidden;
+}
+.spark-profile-header {
+  padding: 32px;
+  background: radial-gradient(
+    ellipse at 0 0,
+    rgba(168, 85, 247, 0.09),
+    transparent 65%
+  );
+}
+.spark-account-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09);
+  display: grid;
+  place-items: center;
+}
+.spark-purpose {
+  border-radius: 20px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.spark-usecase-select {
+  background: transparent;
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  width: 100%;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.spark-select {
+  background: #171b26;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.spark-usecase-select option,
+.spark-select option {
+  background: #171b26;
+  color: white;
+}
+.spark-profile-section {
+  padding: 28px 32px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+}
+.spark-asset-shelf {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.spark-asset {
+  width: 144px;
+  flex: 0 0 144px;
+}
+.spark-asset-preview {
+  height: 100px;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.2s;
+}
+.spark-asset:hover .spark-asset-preview {
+  background: rgba(168, 85, 247, 0.09);
+}
+.spark-primary,
+.spark-secondary {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 50px;
+  min-height: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+.spark-primary {
+  background: var(--spark-violet, #9333ea);
+  color: white;
+  box-shadow: 0 0 24px rgba(168, 85, 247, 0.15);
+}
+.spark-primary:hover {
+  background: #a855f7;
+}
+.spark-secondary {
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.7);
+}
+.spark-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.spark-icon-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+}
+.spark-content-tab {
+  padding: 12px 0;
+  border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.spark-content-tab.is-active {
+  color: white;
+  border-color: #a855f7;
+}
+.spark-feed-empty {
+  padding: 48px 16px;
+  text-align: center;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.spark-work-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 16px;
+}
+.spark-series-card {
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 20px;
+}
+.spark-profile-composer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 64px);
+  margin: 8px 32px 32px;
+  padding: 17px 20px;
+  text-align: left;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  border-radius: 50px;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+.spark-experience-dialog {
+  background: #0b0f17;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+}
+.spark-experience :focus-visible,
+.genesis-conversation :focus-visible {
+  outline: 2px solid #c084fc;
+  outline-offset: 4px;
+}
+.genesis-primary {
+  box-shadow: 0 0 24px rgba(168, 85, 247, 0.18);
+  transition: background 0.2s;
+}
+.spark-controls-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 8px;
+  color: #b8a6cc;
+  font-size: 12px;
+}
+.spark-controls-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+@media (max-width: 639px) {
+  .spark-experience {
+    border-radius: 0;
+    margin: -12px -16px 0;
+  }
+  .spark-profile-header {
+    padding: 24px 20px;
+  }
+  .spark-account-avatar {
+    width: 76px;
+    height: 76px;
+  }
+  .spark-profile-section {
+    padding: 24px 20px;
+  }
+  .spark-asset-shelf {
+    gap: 14px;
+  }
+  .spark-asset {
+    width: 120px;
+    flex-basis: 120px;
+  }
+  .spark-asset-preview {
+    height: 90px;
+  }
+  .spark-profile-composer {
+    width: calc(100% - 40px);
+    margin: 0 20px 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .genesis-conversation *,
+  .spark-experience * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

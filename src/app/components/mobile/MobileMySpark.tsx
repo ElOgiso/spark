@@ -1,6 +1,7 @@
 import { getModelsForProviderAndCapability } from "../../services/runtime/modelCatalog";
 import { USER_MODE_COPY, AUTOMATION_USER_LABELS } from "../../services/production/ui/userProductionExperience";
 import { useState } from "react";
+import { SparkSocialProfile } from "../SparkSocialProfile";
 import { useSpark } from "../../state/SparkContext";
 import { CharacterSheetLightbox } from "../onboarding/CharacterSheetLightbox";
 import { CharacterStudioModal } from "../ui/CharacterStudioModal";
@@ -101,6 +102,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
   // Purpose Expand State
   const [isPurposeExpanded, setIsPurposeExpanded] = useState(false);
+  const [showBrandControls, setShowBrandControls] = useState(false);
   const [showSheetLightbox, setShowSheetLightbox] = useState(false);
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
@@ -376,6 +378,15 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
 
   return (
     <div className="w-full min-h-[100dvh] flex flex-col space-y-4 pt-3 pb-6 px-4 antialiased">
+      <SparkSocialProfile onNavigate={path => onNavigate?.(path)} onEditPurpose={() => { setShowBrandControls(true); openEditIdentity(); }} onOpenAsset={kind => {
+        setShowBrandControls(true);
+        if (kind === "character") setShowCharacterStudio(true);
+        if (kind === "voice") setShowVoiceStudio(true);
+        if (kind === "location") setShowLocationPlateStudio(true);
+        if (kind === "cast") setShowSupportCharacterModal(true);
+      }} />
+      <details className="spark-controls-disclosure" open={showBrandControls} onToggle={event => setShowBrandControls(event.currentTarget.open)}>
+        <summary>Brand controls · assets, sources & preferences {showBrandControls ? "−" : "+"}</summary>
       {/* 1. Compact Header: Brand Name, Niche, Archetype, Active Badge, Edit Button */}
       <div className="flex items-start justify-between gap-3 pt-2 pb-2 border-b border-border/40">
         <div className="min-w-0 flex-1">
@@ -1918,6 +1929,7 @@ export function MobileMySpark({ onNavigate }: MobileMySparkProps = {}) {
         isOpen={showSupportCharacterModal}
         onClose={() => setShowSupportCharacterModal(false)}
       />
+      </details>
     </div>
   );
 }

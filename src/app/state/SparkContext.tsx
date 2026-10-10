@@ -1540,7 +1540,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         desires: [],
       },
       tone: tone ? [{ label: tone, active: true }] : [],
-      settings: { pillars_user_edited: false },
+      settings: { pillars_user_edited: false, ...(data.sparkUseCase ? { sparkUseCase: data.sparkUseCase } : {}) },
     };
     const genesisBible = buildBrandBiblePatch(genesisBrand, { forceFrom: "onboard" });
     if (genesisBible) {
@@ -1703,7 +1703,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }));
     }
 
-    if (brandId && isUuid(brandId)) {
+    if (brandId && isUuid(brandId) && auth.mode !== "demo") {
       try {
         const {
           persistBrandUpdate,
@@ -1712,7 +1712,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           persistFormatSettings,
         } = await import("../backend/workspaceSync");
 
-        await persistBrandUpdate(brandId, {
+        const genesisSaved = await persistBrandUpdate(brandId, {
           name: brandName,
           niche: niche,
           archetype: genesisBrand.archetype,
@@ -1732,6 +1732,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           review_required: reviewRequired,
         });
 
+        if (!genesisSaved) throw new Error("Your Spark identity could not be saved. Please retry.");
         await persistCharacterUpdate(brandId, {
           name: creatorName,
           role: "Lead Host",
@@ -1764,9 +1765,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         // Persist initial format settings to cloud for this brand
-        await persistFormatSettings(brandId, resolvedFormatSettings);
+        if (!await persistFormatSettings(brandId, resolvedFormatSettings)) {
+          throw new Error("Your Spark format could not be saved. Please retry.");
+        }
       } catch (persistErr) {
         console.warn("[SparkContext] initializeBrandGenesis persist error:", persistErr);
+        throw persistErr;
       }
     }
 
@@ -1783,7 +1787,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await auth.refreshBrands();
     } else {
       // Mark onboarding complete in Supabase profiles for initial brand
-      await auth.markOnboardingComplete(brandId);
+      await auth.markOnboardingComplete(brandId, true);
     }
   };
 
@@ -4745,6 +4749,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       const postUrl = result.postUrl || "";
+      const accountToken = Object.values(getStoredAccountTokens(state.brand?.id)).find(token => normalizeHandle(token.handle) === normalizeHandle(connectedAcc.handle) && normalizePlatformKey(token.platform) === normalizePlatformKey(connectedAcc.platform));
       const publishJob: PublishJob = {
         id: `pub-${Date.now()}`,
         productionId,
@@ -4752,6 +4757,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         platform: platform as any,
         status: "Published",
         scheduledTime: new Date().toISOString(),
+        postUrl: result.postUrl,
+        platformPostId: result.postId,
+        accountId: accountToken?.channelId,
+        publishedAt: result.publishedAt,
       };
       const publishJobWithUrl = { ...publishJob, postUrl } as PublishJob & { postUrl?: string };
 
@@ -4763,7 +4772,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const brandId = getBrandWorkspaceId();
       if (brandId) {
-        void persistPublishJobCreate(brandId, publishJob);
+        void persistPublishJobCreate(brandId, publishJobWithUrl);
         void persistProductionUpdate(productionId, { status: "Published" } as any);
       }
 

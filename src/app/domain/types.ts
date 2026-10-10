@@ -498,6 +498,11 @@ export interface PublishJob {
   platform: string;
   scheduledTime: string;
   status: "Scheduled" | "Export Ready" | "Published" | "Failed" | "Needs Review";
+  /** Verified destination receipt. Old status-only rows must not enter the feed. */
+  postUrl?: string;
+  platformPostId?: string;
+  accountId?: string;
+  publishedAt?: string;
 }
 
 export interface ExportPackage {

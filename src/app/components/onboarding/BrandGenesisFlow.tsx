@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import { GenesisConversation, TOOL_LABELS, type GenesisMessage } from "./GenesisConversation";
+import { SPARK_USE_CASES, GENESIS_TOOL_FRAMES, inferSparkUseCase, isSparkUseCase, nextGenesisTool, requestedGenesisTool, useCaseDefinition, type GenesisTool, type SparkUseCase } from "../../domain/sparkExperience";
 import {
   ChevronLeft, Play, Pause, Plus, X, Check,
   Volume2, VolumeX, Link2, RefreshCw, Upload, Mic, Shuffle,
@@ -9,14 +11,10 @@ import mainLogo from "@/imports/MAIN_LOGO.png";
 import chatLogo from "@/imports/CHAT_LOGO.png";
 import { useAuth } from "../../state/AuthContext";
 import { useSpark } from "../../state/SparkContext";
-import { socialConnectorFramework, getOAuthAuthorizationUrl, getBrandWorkspaceId, setActiveSessionBrand } from "../../services/socialIntegrationService";
+import { socialConnectorFramework, getStoredAccountTokens, getOAuthAuthorizationUrl, getBrandWorkspaceId, setActiveSessionBrand } from "../../services/socialIntegrationService";
 import { isUuid } from "../../backend/mappers/workspaceMappers";
 import {
   getElevenLabsVoices,
-  previewElevenLabsVoice,
-  generateElevenLabsVoice,
-  designElevenLabsVoice,
-  createDesignedElevenLabsVoice,
   ElevenLabsVoiceSummary,
 } from "../../services/runtime/providers/elevenLabsTTS";
 import { ResearchSourceService } from "../../services/research/researchSourceService";
@@ -70,6 +68,8 @@ async function persistGenesisMediaIfBrandReady(
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
 export interface BrandGenesisData {
   brandName: string;
+  sparkUseCase?: SparkUseCase;
+  chatHistory?: Array<{ id: number; sender: string; text: string }>;
   creatorName?: string;
   niche: string;
   audience?: string;
@@ -471,7 +471,7 @@ function ModeCard({ label, desc, selected, onSelect }: { label: string; desc: st
 }
 
 // ─── Persistent Chat Panel ─────────────────────────────────────────────────────
-interface ChatMessage { id: number; role: "user" | "spark"; text: string; }
+type ChatMessage = GenesisMessage;
 
 const FRAME_NAMES: Record<number, string> = {
   0: "Welcome & Introduction",
@@ -579,6 +579,7 @@ function NeonAskField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !disabled && value.trim() && onSend()}
+          aria-label="Message Super Spark"
           placeholder="Ask Super Spark or type a custom answer…"
           disabled={disabled}
         />
@@ -599,7 +600,7 @@ function NeonAskField({
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           {value.trim() && !disabled && (
-            <button type="button" onClick={onSend} className="p-1 hover:opacity-80 transition-opacity">
+            <button type="button" aria-label="Send message" onClick={onSend} className="p-1 min-w-11 min-h-11 flex items-center justify-center hover:opacity-80 transition-opacity">
               <Send className="w-3.5 h-3.5" style={{ color: "rgba(240,24,255,0.85)" }} />
             </button>
           )}
@@ -789,6 +790,7 @@ function AmbientOrbs() {
 
 // ─── Internal Genesis State ────────────────────────────────────────────────────
 interface GenesisInternalState {
+  sparkUseCase?: SparkUseCase;
   connectedPlatforms: string[];
   connectedHandles: Record<string, string>;
   brandName: string;
@@ -1052,11 +1054,18 @@ function FrameBrand({ data, onChange, justEntered }: { data: GenesisInternalStat
       <div className="space-y-2">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Brand name</label>
         <input
+          aria-label="Brand name"
           value={data.brandName}
           onChange={(e) => onChange({ brandName: e.target.value })}
           placeholder="Your channel or brand name"
           className="w-full bg-white/6 border border-white/12 rounded-xl px-4 py-3.5 text-sm text-white placeholder-white/22 outline-none focus:border-purple-500/55 transition-colors"
         />
+      </div>
+      <div className="space-y-2">
+        <label htmlFor="genesis-audience" className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Audience</label>
+        <input id="genesis-audience" value={data.audience} onChange={e => onChange({ audience: e.target.value })} placeholder="Who is this Spark creating for?" className={selectClass} />
+        <label htmlFor="genesis-goal" className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Operating purpose</label>
+        <textarea id="genesis-goal" value={data.goal} onChange={e => onChange({ goal: e.target.value })} placeholder="What should Spark help you achieve?" className={selectClass} rows={3} />
       </div>
       <div className="space-y-2">
         <label className="text-[10px] text-white/38 uppercase tracking-widest font-semibold">Niche</label>
@@ -1664,7 +1673,7 @@ function FrameSources({
   data: GenesisInternalState;
   onChange: (d: Partial<GenesisInternalState>) => void;
   onAddSource: (url: string) => void;
-  syncStatuses: Record<string, "syncing" | "ready">;
+  syncStatuses: Record<string, "syncing" | "ready" | "failed">;
 }) {
   const [input, setInput] = useState("");
 
@@ -1715,7 +1724,7 @@ function FrameSources({
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-white/60 truncate">{url}</p>
                   <p className={`text-[10px] mt-0.5 ${isReady ? "text-green-400" : "text-white/25"}`}>
-                    {isReady ? "Ready · Indexed" : "Syncing…"}
+                    {isReady ? "Ready · Indexed" : syncStatuses[url] === "failed" ? "Could not index · remove and retry" : "Syncing…"}
                   </p>
                 </div>
                 {isReady ? (
@@ -2174,6 +2183,7 @@ function toGenesisData(data: GenesisInternalState, mode?: "first_user" | "additi
   return {
     brandName: data.brandName,
     creatorName: data.creatorName || data.brandName,
+    sparkUseCase: data.sparkUseCase,
     niche: data.niche,
     audience: data.audience,
     goal: data.goal,
@@ -2225,14 +2235,17 @@ export function BrandGenesisFlow({
   const { initializeBrandGenesis, aiSettings } = useSpark();
 
   const [frame, setFrame] = useState(0);
-  const [prevFrame, setPrevFrame] = useState(0);
-  const [animKey, setAnimKey] = useState(0);
+  const [acceptedTools, setAcceptedTools] = useState<GenesisTool[]>([]);
+  const [draftScope] = useState(() => auth.brand?.id || "new");
+  const conversationKey = `spark:genesis:v1:${auth.currentUser?.id || "guest"}:${mode}:${draftScope}`;
+  const [restoredKey, setRestoredKey] = useState<string | null>(null);
   const [data, setData] = useState<GenesisInternalState>(DEFAULT_STATE);
   const [askValue, setAskValue] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [chatThinking, setChatThinking] = useState(false);
-  const [chatExpanded, setChatExpanded] = useState(false);
   const [legalMode, setLegalMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [justEnteredFrame, setJustEnteredFrame] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
 
@@ -2245,7 +2258,7 @@ export function BrandGenesisFlow({
   const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
   const [voicesList, setVoicesList] = useState<ElevenLabsVoiceSummary[]>([]);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [syncStatuses, setSyncStatuses] = useState<Record<string, "syncing" | "ready">>({});
+  const [syncStatuses, setSyncStatuses] = useState<Record<string, "syncing" | "ready" | "failed">>({});
 
   // Onboard Director Gemini Voice state
   const [voiceMuted, setVoiceMuted] = useState(() => onboardDirectorVoiceService.isMuted());
@@ -2256,6 +2269,65 @@ export function BrandGenesisFlow({
   useEffect(() => {
     onDraftChange?.(toGenesisData(data, mode));
   }, [data, mode, onDraftChange]);
+
+  const activeTool = (Object.keys(GENESIS_TOOL_FRAMES) as GenesisTool[]).find(t => GENESIS_TOOL_FRAMES[t] === frame) || "purpose";
+  const toolSummary = (tool: GenesisTool) => {
+    const summaries: Record<GenesisTool, string> = {
+      purpose: data.sparkUseCase ? useCaseDefinition(data.sparkUseCase).label : "Purpose to be decided",
+      identity: [data.brandName, data.niche, data.audience, data.goal].filter(Boolean).join(" · "),
+      connect: data.connectedPlatforms.length ? data.connectedPlatforms.map(p => data.connectedHandles[p] || p).join(" · ") : "No account connected yet",
+      format: [data.contentFormat, data.visualGenre, data.targetDurationSec ? data.targetDurationSec + " seconds" : "", data.aspectMode].filter(Boolean).join(" · "),
+      character: data.characterSheetUrl ? "Character reference saved · settings remain scene-specific" : "Character assets can be completed later",
+      voice: data.selectedVoice + " · " + (data.language || "Language not set"),
+      preferences: data.automationMode + " · " + data.productionMode,
+      review: "Setup summary",
+    }; return summaries[tool];
+  };
+  const openTool = (tool: GenesisTool, text?: string, summary?: string) => {
+    setChatHistory(history => [...history.map(m => m.tool && !m.complete ? { ...m, complete: true, summary: summary || toolSummary(m.tool) } : m),
+      { id: ++_msgId, role: "spark", text: text || (tool === "purpose" ? "What do you want this Spark to create and manage? Tell me in your own words, or choose a starting point." : DIRECTORS[GENESIS_TOOL_FRAMES[tool]]), tool }]);
+    setFrame(GENESIS_TOOL_FRAMES[tool]);
+  };
+  const chooseUseCase = (sparkUseCase: SparkUseCase) => {
+    const next = { ...data, sparkUseCase, contentFormat: data.contentFormat || useCaseDefinition(sparkUseCase).format };
+    update(next);
+    const accepted = [...new Set([...acceptedTools, "purpose" as const])];
+    setAcceptedTools(accepted);
+    openTool(nextGenesisTool(next, accepted), "Good. " + useCaseDefinition(sparkUseCase).label + ". Let's make this Spark yours.", useCaseDefinition(sparkUseCase).label);
+  };
+  const confirmTool = (skip = false) => {
+    if (!skip && !canContinue()) return;
+    if (activeTool === "identity" && !data.brandName.trim()) return;
+    const accepted = [...new Set([...acceptedTools, activeTool])];
+    setAcceptedTools(accepted);
+    go(GENESIS_TOOL_FRAMES[nextGenesisTool(data, accepted)]);
+  };
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(conversationKey) || "null");
+      if (saved?.version === 1 && saved.data && isSparkUseCase(saved.data.sparkUseCase)) {
+        setData(prev => ({ ...prev, ...saved.data }));
+        const messages: GenesisMessage[] = Array.isArray(saved.messages) ? saved.messages.filter((m: GenesisMessage) => m && Number.isFinite(m.id) && (m.role === "user" || m.role === "spark") && typeof m.text === "string" && (!m.tool || m.tool in GENESIS_TOOL_FRAMES)).slice(-100) : [];
+        setChatHistory(messages);
+        _msgId = Math.max(_msgId, ...messages.map(m => Number(m.id) || 0));
+        setAcceptedTools(Array.isArray(saved.accepted) ? saved.accepted.filter((t: GenesisTool) => t in GENESIS_TOOL_FRAMES) : []);
+        setFrame(Object.values(GENESIS_TOOL_FRAMES).includes(saved.frame) ? saved.frame : 8);
+      }
+    } catch { /* unavailable storage must never block setup */ }
+    setRestoredKey(conversationKey);
+  }, [conversationKey]);
+  useEffect(() => {
+    if (restoredKey !== conversationKey || frame === 0) return;
+    try {
+      const saved = JSON.stringify({ version: 1, data, messages: chatHistory.slice(-100), accepted: acceptedTools, frame });
+      sessionStorage.setItem(conversationKey, saved);
+      // Provisioning can give a new setup a real workspace ID after the first render.
+      // Mirror that same draft so a normal reload resumes it under the real scope.
+      if (draftScope === "new" && mode === "first_user" && auth.currentUser?.id && auth.brand?.id && auth.brand.owner_id === auth.currentUser.id) {
+        sessionStorage.setItem(`spark:genesis:v1:${auth.currentUser.id}:${mode}:${auth.brand.id}`, saved);
+      }
+    } catch { /* large media previews need not be cached */ }
+  }, [data, chatHistory, acceptedTools, frame, conversationKey, restoredKey, draftScope, mode, auth.brand?.id, auth.currentUser?.id]);
 
   const spokenLiveFrames = useRef<Set<number>>(new Set());
 
@@ -2382,7 +2454,7 @@ export function BrandGenesisFlow({
 
     if (typeof localStorage !== "undefined") {
       const savedState = localStorage.getItem("spark_onboarding_resume_state");
-      const storedTokens = socialConnectorFramework.getStoredTokens();
+      const storedTokens = getStoredAccountTokens(auth.brand?.id || getBrandWorkspaceId(), auth.currentUser?.id);
       const connectedAccountsMap: Record<string, string> = {};
       let autoBrandName = "";
       let autoCreatorName = "";
@@ -2420,7 +2492,10 @@ export function BrandGenesisFlow({
 
       if (savedState) {
         try {
-          const parsed = JSON.parse(savedState);
+          const envelope = JSON.parse(savedState);
+          if (envelope.userId !== auth.currentUser?.id || envelope.mode !== mode || envelope.brandId !== (auth.brand?.id || getBrandWorkspaceId())) return;
+          const parsed = envelope.data;
+          if (!parsed || typeof parsed.brandName !== "string") return;
           setData((prev) => ({
             ...prev,
             ...parsed,
@@ -2429,13 +2504,17 @@ export function BrandGenesisFlow({
             connectedPlatforms: Array.from(new Set([...(parsed.connectedPlatforms || []), ...Object.keys(connectedAccountsMap)])),
             connectedHandles: { ...(parsed.connectedHandles || {}), ...connectedAccountsMap },
           }));
-          setFrame(2); // advance to Frame 2 after OAuth
+          const messages = Array.isArray(envelope.messages) ? envelope.messages.filter((m: GenesisMessage) => m && Number.isFinite(m.id) && typeof m.text === "string" && (m.role === "spark" || m.role === "user") && (!m.tool || m.tool in GENESIS_TOOL_FRAMES)).slice(-100) : [];
+          _msgId = Math.max(_msgId, ...messages.map((m: GenesisMessage) => m.id));
+          setChatHistory([...messages.map((m: GenesisMessage) => m.tool && !m.complete ? { ...m, complete: true, summary: "Account authorization returned. Review connected accounts below." } : m), { id: ++_msgId, role: "spark", text: "Welcome back. Review the connected account, then we can continue here.", tool: "connect" }]);
+          setAcceptedTools(Array.isArray(envelope.accepted) ? envelope.accepted.filter((t: GenesisTool) => t in GENESIS_TOOL_FRAMES) : []);
+          setFrame(1); // return to the same chat with inline connection review
         } catch (e) {
           console.warn("[BrandGenesisFlow] Restore state notice:", e);
         } finally {
           localStorage.removeItem("spark_onboarding_resume_state");
         }
-      } else if (Object.keys(connectedAccountsMap).length > 0) {
+      } else if (mode !== "additional_workspace" && Object.keys(connectedAccountsMap).length > 0) {
         setData((prev) => ({
           ...prev,
           brandName: prev.brandName || autoBrandName,
@@ -2488,9 +2567,8 @@ export function BrandGenesisFlow({
       });
     }
 
-    setPrevFrame(frame);
-    setAnimKey((k) => k + 1);
-    setFrame(next);
+    const tool = (Object.keys(GENESIS_TOOL_FRAMES) as GenesisTool[]).find(t => GENESIS_TOOL_FRAMES[t] === next) || "purpose";
+    openTool(tool);
     setAskValue("");
     setJustEnteredFrame(true);
     setTimeout(() => setJustEnteredFrame(false), 100);
@@ -2567,7 +2645,7 @@ export function BrandGenesisFlow({
       }
 
       if (typeof localStorage !== "undefined") {
-        localStorage.setItem("spark_onboarding_resume_state", JSON.stringify(data));
+        localStorage.setItem("spark_onboarding_resume_state", JSON.stringify({ userId: currentUserId, brandId: currentBrandId, mode, data, messages: chatHistory.slice(-100), accepted: acceptedTools }));
       }
       const authUrl = getOAuthAuthorizationUrl(
         oauthKey as "YouTube Shorts" | "Twitter/X",
@@ -2666,40 +2744,14 @@ export function BrandGenesisFlow({
 
     try {
       const voiceObj = voicesList.find((v) => v.voiceId === voiceId);
-      const voiceName = voiceObj?.name || "Rachel";
-      const sampleText = `Welcome to SPARK. I'm ${voiceName}, your brand narrator for high-retention content.`;
-
-      let audioUrl = await previewElevenLabsVoice(voiceId, sampleText);
-      if (!audioUrl && voiceObj?.previewUrl) {
-        audioUrl = voiceObj.previewUrl;
-      }
-
+      const audioUrl = voiceObj?.previewUrl;
       if (audioUrl) {
         const audio = new Audio(audioUrl);
         setPreviewAudio(audio);
-
-        audio.onended = () => {
-          setPlayingVoiceId(null);
-          setPreviewAudio(null);
-        };
-        audio.onerror = async () => {
-          console.warn("[BrandGenesisFlow] Audio URL load error, attempting live TTS synthesis fallback");
-          const fallback = await generateElevenLabsVoice(sampleText, voiceId);
-          if (fallback) {
-            const fallbackAudio = new Audio(fallback);
-            setPreviewAudio(fallbackAudio);
-            fallbackAudio.onended = () => { setPlayingVoiceId(null); setPreviewAudio(null); };
-            fallbackAudio.onerror = () => {
-              setPreviewAudio(null);
-              setPlayingVoiceId(null);
-              setVoiceError("ElevenLabs API key not configured or preview unavailable.");
-            };
-            await fallbackAudio.play().catch(() => { setPlayingVoiceId(null); setPreviewAudio(null); });
-          } else {
-            setPreviewAudio(null);
-            setPlayingVoiceId(null);
-            setVoiceError("ElevenLabs API key not configured or preview unavailable.");
-          }
+        audio.onended = () => { setPlayingVoiceId(null); setPreviewAudio(null); };
+        audio.onerror = () => {
+          setPlayingVoiceId(null); setPreviewAudio(null);
+          setVoiceError("The saved voice preview is unavailable. No speech was generated.");
         };
 
         await audio.play().catch((playErr) => {
@@ -2728,7 +2780,7 @@ export function BrandGenesisFlow({
       await ResearchSourceService.registerAndExtract(url, auth.brand?.id, []);
       setSyncStatuses((s) => ({ ...s, [url]: "ready" }));
     } catch {
-      setSyncStatuses((s) => ({ ...s, [url]: "ready" }));
+      setSyncStatuses((s) => ({ ...s, [url]: "failed" }));
     }
   };
 
@@ -2739,74 +2791,35 @@ export function BrandGenesisFlow({
     setAskValue("");
     const userMsg: ChatMessage = { id: ++_msgId, role: "user", text: msg };
     setChatHistory((h) => [...h, userMsg]);
-    setChatExpanded(true);
     setChatThinking(true);
 
     const localCompile = compileGenesisDirectorReply(msg);
     const pastedUrl = spokenUrlFromText(msg);
     if (pastedUrl) localCompile.researchUrl = pastedUrl;
 
-    if (frame === 5 && (msg.toLowerCase().includes("voice") || msg.toLowerCase().includes("sound") || msg.toLowerCase().includes("narrator") || msg.toLowerCase().includes("tone") || msg.toLowerCase().includes("accent"))) {
-      try {
-        const preview = await designElevenLabsVoice({
-          description: msg,
-          sampleText: "Welcome to our channel. Here is how we build high performance media.",
-        });
-        if (preview && preview.previews && preview.previews.length > 0) {
-          const first = preview.previews[0];
-          const created = await createDesignedElevenLabsVoice({
-            voiceName: "Custom " + (data.brandName || "Voice"),
-            voiceDescription: msg,
-            generatedVoiceId: first.generated_voice_id,
-          });
-          const customVoiceId = created?.voice_id || first.generated_voice_id;
-          if (customVoiceId) {
-            const customVoiceObj = {
-              voiceId: customVoiceId,
-              name: "Custom " + (data.brandName || "Voice"),
-              category: "custom",
-              description: msg,
-              previewUrl: first.previewUrl,
-              accent: "Custom Designed",
-              gender: "custom",
-            };
-            setVoicesList((prev) => [customVoiceObj, ...prev.filter((v) => v.voiceId !== customVoiceId)]);
-            update({
-              selectedVoice: customVoiceObj.name,
-              selectedVoiceId: customVoiceId,
-            });
-            if (auth.brand?.id) {
-              void import("../../backend/workspaceSync").then(({ persistCharacterUpdate }) => {
-                void persistCharacterUpdate(auth.brand!.id, {
-                  name: data.creatorName || "Lead Host",
-                  role: "Lead Host",
-                  style: `${data.characterGenre || "Realistic"} — representing ${data.brandName || "SPARK"}`,
-                  avatarUrl: data.characterSheetUrl || null,
-                  imageUrl: data.characterSheetUrl || null,
-                  characterSheetUrl: data.characterSheetUrl || null,
-                  traits: ["Visionary", "Charismatic", "Authority"],
-                  voice: {
-                    name: customVoiceObj.name,
-                    language: "English",
-                    tone: "Custom",
-                    locked: true,
-                    voiceId: customVoiceId,
-                    description: msg,
-                  },
-                });
-              });
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[BrandGenesisFlow] Voice design notice:", e);
-      }
-    }
 
     const applyPatch = (patch: GenesisDirectorCompile) => {
       const internal = genesisPatchToState(patch);
+      const purpose = inferSparkUseCase(msg);
+      if (purpose) {
+        internal.sparkUseCase = purpose;
+        internal.contentFormat = internal.contentFormat || data.contentFormat || useCaseDefinition(purpose).format;
+        if (!data.goal) internal.goal = msg;
+      }
       if (Object.keys(internal).length > 0) update(internal);
       if (patch.researchUrl) void handleAddSource(patch.researchUrl);
+      return { ...data, ...internal };
+    };
+
+    const showReply = (text: string, nextData: GenesisInternalState) => {
+      const requested = requestedGenesisTool(msg);
+      const accepted = [...acceptedTools];
+      if (nextData.sparkUseCase && !accepted.includes("purpose")) accepted.push("purpose");
+      if (nextData.brandName.trim() && !accepted.includes("identity")) accepted.push("identity");
+      setAcceptedTools(accepted);
+      const next = requested || nextGenesisTool(nextData, accepted);
+      if (next !== activeTool || requested) openTool(next, text);
+      else setChatHistory(h => [...h, { id: ++_msgId, role: "spark", text }]);
     };
 
     try {
@@ -2833,54 +2846,40 @@ export function BrandGenesisFlow({
         aiSettings,
       });
       const merged = mergeGenesisPatches(turn.patch, localCompile);
-      applyPatch(merged);
+      const nextData = applyPatch(merged);
       const chipLine = describeGenesisChipPatch(merged);
       const say = [turn.say, chipLine].filter(Boolean).join(" ");
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: say };
-      setChatHistory((h) => [...h, reply]);
+      showReply(say, nextData);
       setChatThinking(false);
       void onboardDirectorVoiceService.speak(say);
     } catch (chatErr) {
       console.warn("[BrandGenesisFlow] Live Chat generation error:", chatErr);
-      applyPatch(localCompile);
-      const reply: ChatMessage = { id: ++_msgId, role: "spark", text: ONBOARD_PROVIDER_FAIL };
-      setChatHistory((h) => [...h, reply]);
+      const nextData = applyPatch(localCompile);
+      showReply(ONBOARD_PROVIDER_FAIL, nextData);
       setChatThinking(false);
       void onboardDirectorVoiceService.speak(ONBOARD_PROVIDER_FAIL);
     }
   };
-
   // Final Completion Handler
   const handleFinalCompletion = async () => {
+    if (saving) return;
+    setSaving(true); setSaveError(null);
     const genesisData = toGenesisData(data, mode);
-
+    genesisData.chatHistory = chatHistory.map(message => ({ id: message.id, sender: message.role === "user" ? "user" : "spark", text: [message.text, message.summary].filter(Boolean).join("\n") }));
     try {
-      await Promise.race([
-        (async () => {
-          await initializeBrandGenesis(genesisData);
-          genesisData.alreadyInitialized = true;
-          const brandId = auth.brand?.id || getBrandWorkspaceId();
-          if (brandId) {
-            const { persistFormatSettings } = await import("../../backend/workspaceSync");
-            await persistFormatSettings(brandId, {
-              aspectMode: genesisData.aspectMode || "portrait",
-              targetDurationSec: typeof genesisData.targetDurationSec === "number" ? genesisData.targetDurationSec : 60,
-              contentFormat: genesisData.contentFormat || "host",
-              visualGenre: genesisData.visualGenre || "auto",
-              cinematicCraft: genesisData.cinematicCraft !== false,
-              preferredVideoProvider: genesisData.preferredVideoProvider && genesisData.preferredVideoProvider !== "auto" ? genesisData.preferredVideoProvider : "auto",
-            });
-          }
-          if (mode !== "additional_workspace" && brandId) {
-            await auth.markOnboardingComplete(brandId);
-          }
-        })(),
-        new Promise((resolve) => setTimeout(resolve, 8000)),
-      ]);
-    } catch (persistErr) {
-      console.warn("[BrandGenesisFlow] Cloud completion persist notice:", persistErr);
-    }
-    onComplete(genesisData);
+      // The existing initializer owns provisioning, persistence and completion status.
+      await initializeBrandGenesis(genesisData);
+      genesisData.alreadyInitialized = true;
+      try {
+        sessionStorage.removeItem(conversationKey);
+        const brandId = auth.brand?.id || getBrandWorkspaceId();
+        if (brandId) sessionStorage.removeItem(`spark:genesis:v1:${auth.currentUser?.id || "guest"}:${mode}:${brandId}`);
+      } catch { /* storage may be unavailable */ }
+      onComplete(genesisData);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Setup could not be saved. Please retry.");
+      setLegalMode(false);
+    } finally { setSaving(false); }
   };
 
   const canContinue = () => {
@@ -2888,14 +2887,11 @@ export function BrandGenesisFlow({
     if (frame === 4) return data.contentFormat === "faceless" || Boolean(data.characterSheetUrl);
     return true;
   };
-  const canSkip = frame === 1 || frame === 5 || frame === 6 || (frame === 4 && data.contentFormat === "faceless");
-  const direction = frame > prevFrame ? "forward" : "back";
-  const slideStyle: React.CSSProperties = {
-    animation: `${direction === "forward" ? "genesis-in" : "genesis-back"} 220ms cubic-bezier(0.22,1,0.36,1) both`,
-  };
 
   const renderCanvas = () => {
     switch (frame) {
+      case 8:
+        return <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{SPARK_USE_CASES.map(item => <button key={item.id} type="button" onClick={() => chooseUseCase(item.id)} className="text-left rounded-2xl border border-white/10 p-4 bg-white/[0.025] hover:bg-purple-500/10 hover:border-purple-400/30"><p className="text-sm text-white/85 font-semibold">{item.label}</p><p className="text-xs text-white/40 leading-relaxed mt-1">{item.description}</p></button>)}</div>;
       case 1:
         return (
           <FrameConnect
@@ -2950,187 +2946,21 @@ export function BrandGenesisFlow({
     }
   };
 
+
   if (legalMode) return <LegalFlow onComplete={handleFinalCompletion} />;
 
   return (
     <>
       <style>{STYLES}</style>
-      <div
-        className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden select-none"
-        style={{
-          background: "#0B0F17",
-          paddingTop: "env(safe-area-inset-top,0px)",
-          paddingBottom: "env(safe-area-inset-bottom,0px)",
-        }}
-      >
+      <div className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden" style={{ background: "#0B0F17", paddingTop: "env(safe-area-inset-top,0px)", paddingBottom: "env(safe-area-inset-bottom,0px)" }}>
         <AmbientOrbs />
-
-        {/* Max-width container for desktop elegance and 100% mobile viewport */}
-        <div className="relative z-10 w-full max-w-lg h-full flex flex-col overflow-hidden">
-          {/* Frame 0 */}
-          {frame === 0 && (
-            <div key="f0" style={slideStyle} className="relative z-10 flex-1 flex flex-col overflow-hidden">
-              <FrameEntry
-                onBegin={() => go(1)}
-                isMuted={voiceMuted}
-                onToggleMute={() => onboardDirectorVoiceService.toggleMute()}
-                isSpeaking={voiceSpeaking}
-                mode={mode}
-                onCancel={onCancel}
-              />
-            </div>
-          )}
-
-          {/* Frames 1–7 */}
-          {frame >= 1 && (
-            <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden">
-              {/* Top bar */}
-              <div className="flex-shrink-0 flex items-center gap-3 px-5 pt-3 pb-2 justify-between">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <button
-                    onClick={() => go(frame - 1)}
-                    type="button"
-                    className="w-8 h-8 rounded-full bg-white/6 hover:bg-white/12 flex items-center justify-center flex-shrink-0"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-white/60" />
-                  </button>
-                  <StoryProgress total={7} current={frame} />
-                </div>
-                {onCancel && (
-                  <button
-                    type="button"
-                    onClick={onCancel}
-                    className="w-8 h-8 rounded-full bg-white/6 hover:bg-white/12 flex items-center justify-center flex-shrink-0 text-white/50 hover:text-white cursor-pointer"
-                    title="Exit and return to dashboard"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Director */}
-              <div key={`dir-${animKey}`} style={slideStyle} className="flex-shrink-0 px-6 pt-4 pb-2">
-                <DirectorLine text={DIRECTORS[frame]} thinking={chatThinking} />
-              </div>
-
-              {/* Canvas */}
-              <div
-                key={`canvas-${animKey}`}
-                style={{ ...slideStyle, WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-                className="flex-1 overflow-y-auto no-bar px-6 py-3 min-h-0"
-              >
-                {renderCanvas()}
-                {/* Frame 7 button */}
-                {frame === 7 && (
-                  <div className="flex justify-center mt-6 mb-2">
-                    <div className="neon-btn-wrap" style={{ borderRadius: 50, display: "inline-flex" }}>
-                      <button
-                        type="button"
-                        className="neon-btn-inner"
-                        onClick={() => setLegalMode(true)}
-                        style={{ borderRadius: 50, padding: "12px 28px", fontSize: 14, fontWeight: 700, gap: 8 }}
-                      >
-                        <MainLogo size={16} />
-                        View Spark
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="h-4" />
-              </div>
-
-              {/* Bottom zone */}
-              <div
-                className="flex-shrink-0 px-5 pt-3 pb-4 space-y-2.5"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.05)", background: "#0B0F17" }}
-              >
-                {frame < 7 ? (
-                  <>
-                    {/* Persistent chat history panel */}
-                    <ChatPanel
-                      history={chatHistory}
-                      thinking={chatThinking}
-                      expanded={chatExpanded}
-                      onToggle={() => setChatExpanded((e) => !e)}
-                    />
-
-                    <p className="text-[11px] text-white/22 text-center leading-snug">
-                      Don't know what to do? Feel free to ask me. I'm Super Spark.
-                    </p>
-
-                    <NeonAskField
-                      value={askValue}
-                      onChange={setAskValue}
-                      onSend={sendChat}
-                      disabled={chatThinking}
-                      isMuted={voiceMuted}
-                      onToggleMute={() => onboardDirectorVoiceService.toggleMute()}
-                      isSpeaking={voiceSpeaking}
-                    />
-
-                    <div className="space-y-1.5">
-                      <button
-                        onClick={() => {
-                          if (frame === 1) {
-                            const firstPlatform = data.connectedPlatforms[0];
-                            let nextBrand = data.brandName;
-                            let nextCreator = data.creatorName;
-                            if (firstPlatform && data.connectedHandles[firstPlatform]) {
-                              const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
-                              if (!nextCreator) nextCreator = handleClean;
-                              if (!nextBrand) nextBrand = handleClean;
-                            }
-                            if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
-                              update({ brandName: nextBrand, creatorName: nextCreator });
-                            }
-                          }
-                          go(frame + 1);
-                        }}
-                        type="button"
-                        disabled={!canContinue()}
-                        className="w-full py-4 rounded-2xl bg-purple-600 text-white text-sm font-bold tracking-wide hover:bg-purple-500 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_24px_rgba(168,85,247,0.3)]"
-                      >
-                        Continue
-                      </button>
-                      {canSkip && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (frame === 1) {
-                              const firstPlatform = data.connectedPlatforms[0];
-                              let nextBrand = data.brandName;
-                              let nextCreator = data.creatorName;
-                              if (firstPlatform && data.connectedHandles[firstPlatform]) {
-                                const handleClean = data.connectedHandles[firstPlatform].replace(/^@/, "");
-                                if (!nextCreator) nextCreator = handleClean;
-                                if (!nextBrand) nextBrand = handleClean;
-                              }
-                              if (nextBrand !== data.brandName || nextCreator !== data.creatorName) {
-                                update({ brandName: nextBrand, creatorName: nextCreator });
-                              }
-                            }
-                            go(frame + 1);
-                          }}
-                          className="w-full py-2.5 text-xs text-white/28 hover:text-white/50 transition-colors text-center"
-                        >
-                          {frame === 1 ? "Continue without connecting" : "Skip"}
-                        </button>
-                      )}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          )}
-        </div>
+        {saveError && <p role="alert" className="relative z-20 text-sm text-amber-200 px-5 py-3">{saveError} Your conversation is still here.</p>}
+        {frame === 0 ? <div className="relative z-10 w-full max-w-lg h-full"><FrameEntry onBegin={() => go(8)} isMuted={voiceMuted} onToggleMute={() => onboardDirectorVoiceService.toggleMute()} isSpeaking={voiceSpeaking} mode={mode} onCancel={onCancel} /></div> :
+          <GenesisConversation messages={chatHistory} thinking={chatThinking || isGeneratingSheet || Boolean(connectingPlatform) || saving} activeTool={activeTool} renderTool={renderCanvas} canConfirm={activeTool === "review" ? Boolean(data.brandName.trim() && data.sparkUseCase) : canContinue()} onConfirm={() => confirmTool()} onSkip={() => confirmTool(true)} onEdit={tool => openTool(tool, "Let's update " + TOOL_LABELS[tool].toLowerCase() + ".")} onFinish={() => setLegalMode(true)} onCancel={onCancel}
+            composer={<NeonAskField value={askValue} onChange={setAskValue} onSend={sendChat} disabled={chatThinking || isGeneratingSheet || Boolean(connectingPlatform) || saving} isMuted={voiceMuted} onToggleMute={() => onboardDirectorVoiceService.toggleMute()} isSpeaking={voiceSpeaking} />} />
+        }
       </div>
-      {viewerOpen && data.characterSheetUrl && (
-        <ImageViewer
-          src={data.characterSheetUrl}
-          alt={data.characterGenre}
-          onClose={() => setViewerOpen(false)}
-        />
-      )}
+      {viewerOpen && data.characterSheetUrl && <ImageViewer src={data.characterSheetUrl} alt={data.characterGenre} onClose={() => setViewerOpen(false)} />}
     </>
   );
 }

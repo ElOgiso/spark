@@ -14,7 +14,7 @@ import { MoreSubPages } from "../MoreSubPages";
 type NavTab = "spark" | "viral-sparks" | "review" | "analytics" | "more" | "my-spark";
 
 export function MobileApp() {
-  const [activeTab, setActiveTab] = useState<NavTab>("spark");
+  const [activeTab, setActiveTab] = useState<NavTab>(() => window.location.pathname === "/my-spark" ? "my-spark" : "spark");
   const [subPath, setSubPath] = useState<string | null>(null);
   const { productions } = useSpark();
   const pendingReviewsCount = productions.filter((p) => p.status === "Ready for Review").length;

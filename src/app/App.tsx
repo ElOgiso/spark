@@ -318,8 +318,9 @@ function AppContent() {
       }
     }
     if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", "/");
+      window.history.replaceState({}, "", "/my-spark");
     }
+    setCurrentPage("/my-spark");
     setViewState("dashboard");
   };
 

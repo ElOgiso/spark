@@ -630,6 +630,10 @@ export function publishJobRowToDomain(row: PublishJobRow): PublishJob {
       ? new Date(row.scheduled_for).toLocaleString()
       : String(meta.scheduledTime ?? "—"),
     status: statusMap[row.status || ""] || "Scheduled",
+    postUrl: typeof meta.postUrl === "string" ? meta.postUrl : undefined,
+    platformPostId: typeof meta.platformPostId === "string" ? meta.platformPostId : undefined,
+    accountId: typeof meta.accountId === "string" ? meta.accountId : undefined,
+    publishedAt: typeof meta.publishedAt === "string" ? meta.publishedAt : undefined,
   };
 }
 
@@ -654,6 +658,10 @@ export function domainPublishJobToInsert(
       title: job.title,
       platform: job.platform,
       scheduledTime: job.scheduledTime,
+      ...(job.postUrl ? { postUrl: job.postUrl } : {}),
+      ...(job.platformPostId ? { platformPostId: job.platformPostId } : {}),
+      ...(job.accountId ? { accountId: job.accountId } : {}),
+      ...(job.publishedAt ? { publishedAt: job.publishedAt } : {}),
     } as Json,
   };
 }

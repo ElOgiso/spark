@@ -1519,7 +1519,7 @@ export { formatCount };
  */
 export async function fetchLiveAccountProfiles(targetBrandId?: string): Promise<LiveAccountProfileCard[]> {
   const activeBrand = targetBrandId || getBrandWorkspaceId();
-  const tokens = Object.values(getStoredAccountTokens()).filter(
+  const tokens = Object.values(getStoredAccountTokens(activeBrand)).filter(
     (t) => {
       if (!t) return false;
       if (activeBrand && t.brand_id && t.brand_id !== activeBrand) return false;
@@ -1532,18 +1532,13 @@ export async function fetchLiveAccountProfiles(targetBrandId?: string): Promise<
   try {
     const { syncConnectedPlatformAnalytics } = await import("./analyticsPipeline");
     const result = await syncConnectedPlatformAnalytics();
-    if (result.profiles.length > 0) return result.profiles;
+    const scopedProfiles = result.profiles.filter(profile => tokens.some(token => token.channelId && token.channelId === profile.channelId && normalizePlatformKey(token.platform) === normalizePlatformKey(profile.platform)));
+    if (scopedProfiles.length > 0) return scopedProfiles;
   } catch (err) {
     console.warn("[fetchLiveAccountProfiles] pipeline sync failed, token fallback", err);
   }
 
   // Fallback: token cache only
-  let cacheMap: any = {};
-  try {
-    const raw = localStorage.getItem("spark_platform_analytics_v1");
-    if (raw) cacheMap = JSON.parse(raw);
-  } catch {}
-
   return tokens.map((token) => ({
     platform: token.platform,
     displayName: token.displayName || normalizeHandle(token.handle) || token.platform,
@@ -1562,6 +1557,7 @@ export async function fetchLiveAccountProfiles(targetBrandId?: string): Promise<
     website: token.website,
     source: "token" as const,
     lastSynced: token.lastSyncAt,
-    content: cacheMap[token.platform]?.content || [],
+    // Platform-only caches cannot establish account ownership.
+    content: [],
   }));
 }

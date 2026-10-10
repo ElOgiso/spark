@@ -56,7 +56,7 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<{ error: string | null }>;
   resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
-  markOnboardingComplete: (activeBrandId?: string) => Promise<void>;
+  markOnboardingComplete: (activeBrandId?: string, requirePersistedResult?: boolean) => Promise<void>;
   updateProfile: (displayName: string, email?: string) => void;
   refreshSession: () => Promise<void>;
   clearError: () => void;
@@ -732,7 +732,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id, session?.user?.id, isConfigured, userAccessStatus]);
 
-  const markOnboardingComplete = useCallback(async (activeBrandId?: string) => {
+  const markOnboardingComplete = useCallback(async (activeBrandId?: string, requirePersistedResult = false) => {
     const targetUserId = currentUser?.id || session?.user?.id;
     const targetBrandId = activeBrandId || brand?.id || getBrandWorkspaceId() || undefined;
     // Access gating is configurable: default to active self-serve signup so legitimate creators
@@ -746,6 +746,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const res = await markProfileOnboardingComplete(targetUserId, targetBrandId, targetAccessStatus);
         if (res.data) {
           setProfile(res.data);
+        } else if (requirePersistedResult) {
+          throw new Error("Your onboarding status could not be saved. Please retry.");
         }
         if (targetBrandId) {
           const { updateBrand } = await import("../backend/repositories/brandRepository");
@@ -755,6 +757,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.warn("[Spark Auth] markProfileOnboardingComplete notice:", err);
+        if (requirePersistedResult) throw err;
       }
     }
 

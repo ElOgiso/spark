@@ -59,6 +59,8 @@ interface AIChatModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate?: (path: string) => void;
+  /** Prefill only; never sends or triggers generation without the user. */
+  initialPrompt?: string;
 }
 
 export interface MessageMedia {
@@ -207,7 +209,7 @@ const FormattedText: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
+export function AIChatModal({ isOpen, onClose, onNavigate, initialPrompt }: AIChatModalProps) {
   const isSparkMediaTheme = getStoredTheme() === "spark_media";
   const auth = useAuth();
   const sparkState = useSpark() as any;
@@ -253,6 +255,7 @@ export function AIChatModal({ isOpen, onClose, onNavigate }: AIChatModalProps) {
 
   const messages: Message[] = chatMessages || [];
   const [inputText, setInputText] = useState("");
+  useEffect(() => { if (isOpen && initialPrompt) setInputText(initialPrompt); }, [isOpen, initialPrompt]);
   const [loadingCardId, setLoadingCardId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     cardId: string;

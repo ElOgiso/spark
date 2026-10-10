@@ -1,6 +1,7 @@
 import { getModelsForProviderAndCapability } from "../services/runtime/modelCatalog";
 import { USER_MODE_COPY, AUTOMATION_USER_LABELS } from "../services/production/ui/userProductionExperience";
 import { useState } from "react";
+import { SparkSocialProfile } from "./SparkSocialProfile";
 import { useSpark } from "../state/SparkContext";
 import { TopBar } from "./TopBar";
 import { CharacterStudioModal } from "./ui/CharacterStudioModal";
@@ -107,6 +108,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
   } = useSpark() as any;
 
   const [showCharacterStudio, setShowCharacterStudio] = useState(false);
+  const [showBrandControls, setShowBrandControls] = useState(false);
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
   const [showLocationPlateStudio, setShowLocationPlateStudio] = useState(false);
   const [showSupportCharacterModal, setShowSupportCharacterModal] = useState(false);
@@ -405,6 +407,17 @@ export function MySpark({ onNavigate }: MySparkProps) {
   return (
     <>
       <TopBar pageName="My Spark" onNavigate={onNavigate} />
+      <div className="max-w-6xl mx-auto px-6 pt-6">
+        <SparkSocialProfile onNavigate={onNavigate} onEditPurpose={() => { setShowBrandControls(true); openEditIdentity(); }} onOpenAsset={kind => {
+          setShowBrandControls(true);
+          if (kind === "character") setShowCharacterStudio(true);
+          if (kind === "voice") setShowVoiceStudio(true);
+          if (kind === "location") setShowLocationPlateStudio(true);
+          if (kind === "cast") setShowSupportCharacterModal(true);
+        }} />
+      </div>
+      <details className="spark-controls-disclosure max-w-6xl mx-auto px-6" open={showBrandControls} onToggle={event => setShowBrandControls(event.currentTarget.open)}>
+        <summary>Brand controls · identity, assets, preferences, sources & memory {showBrandControls ? "−" : "+"}</summary>
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-8 space-y-8">
 
@@ -2431,6 +2444,7 @@ export function MySpark({ onNavigate }: MySparkProps) {
           />
         </div>
       </main>
+      </details>
     </>
   );
 }
