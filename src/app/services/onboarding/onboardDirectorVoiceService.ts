@@ -278,12 +278,12 @@ class OnboardDirectorVoiceService {
     if (!supabase) return null;
     try {
       const storagePath = `director_audio/${this.defaultGuideVoiceId}_${scriptKey}.mp3`;
-      const { data } = supabase.storage.from("Spark").getPublicUrl(storagePath);
-      if (data?.publicUrl) {
+      const { data, error } = await supabase.storage.from("Spark").createSignedUrl(storagePath, 60 * 60);
+      if (!error && data?.signedUrl) {
         // Verify clip exists via HEAD check
-        const res = await fetch(data.publicUrl, { method: "HEAD" });
+        const res = await fetch(data.signedUrl, { method: "HEAD" });
         if (res.ok) {
-          return data.publicUrl;
+          return data.signedUrl;
         }
       }
     } catch (err) {

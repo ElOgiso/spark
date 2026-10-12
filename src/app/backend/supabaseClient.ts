@@ -9,6 +9,10 @@ const env: Record<string, any> = (typeof import.meta !== "undefined" && (import.
 const supabaseUrl = env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
 const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
+export function getSupabaseProjectUrl(): string {
+  return supabaseUrl;
+}
+
 let client: SupabaseClient<Database> | null = null;
 
 export function isSupabaseConfigured(): boolean {

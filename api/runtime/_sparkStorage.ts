@@ -1,6 +1,6 @@
 /**
  * Server-side persist of media bytes into the SPARK bucket.
- * Public URL is the stored identity. Signed URL is playback-only.
+ * storagePath is the durable identity. Private-bucket playback uses a signed URL.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -60,23 +60,19 @@ export async function persistBufferToSpark(params: {
     throw new Error(`Spark storage upload failed: ${uploadError.message}`);
   }
 
-  const { data: publicData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-  const publicUrl = publicData?.publicUrl || "";
-  let signedUrl: string | undefined;
-  const { data: signData } = await supabase.storage
+  const { data: signData, error: signError } = await supabase.storage
     .from(SPARK_STORAGE_BUCKET)
     .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-  if (signData?.signedUrl) signedUrl = signData.signedUrl;
-
-  const videoUrl = publicUrl || signedUrl || "";
-  if (!videoUrl) {
-    throw new Error("Spark persist succeeded but no public or signed URL was returned");
+  const signedUrl = signData?.signedUrl;
+  if (signError || !signedUrl) {
+    throw new Error(`Spark persist succeeded but signing playback failed: ${signError?.message || "missing signed URL"}`);
   }
 
   return {
     storagePath,
-    publicUrl: publicUrl || videoUrl,
-    videoUrl,
+    // Compatibility field consumed by existing video/ingest handlers; never a public endpoint.
+    publicUrl: signedUrl,
+    videoUrl: signedUrl,
     signedUrl,
   };
 }

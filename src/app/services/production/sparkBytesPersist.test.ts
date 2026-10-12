@@ -150,10 +150,11 @@ describe("server persist source contract", () => {
     assert.match(videoSrc, /shot-\$\{Math\.round\(shotIndex\)\}\.mp4/);
   });
 
-  it("Spark persist helper prefers getPublicUrl and never uses a second bucket", () => {
+  it("Spark persist helper signs private playback and never uses a second bucket", () => {
     const src = fs.readFileSync(path.join(__dirname, "../../../../api/runtime/_sparkStorage.ts"), "utf8");
     assert.match(src, /SPARK_STORAGE_BUCKET = "Spark"/);
-    assert.match(src, /getPublicUrl/);
+    assert.match(src, /createSignedUrl/);
+    assert.doesNotMatch(src, /getPublicUrl/);
     assert.doesNotMatch(src, /\.from\(["']media["']\)/);
     assert.match(src, /brands\/\$\{bId\}\/\$\{prodId\}\/\$\{cleanSub\}/);
   });

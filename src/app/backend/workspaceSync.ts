@@ -1450,8 +1450,9 @@ export async function uploadLocationPlateToStorage(brandId: string, imageUri: st
       return imageUri;
     }
 
-    const { data: publicUrlData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
-    return publicUrlData?.publicUrl || imageUri;
+    const { data, error } = await supabase.storage.from("Spark").createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+    if (error || !data?.signedUrl) throw new Error(error?.message || "Location plate signing failed");
+    return data.signedUrl;
   } catch (err) {
     console.warn("[workspaceSync] uploadLocationPlateToStorage failed:", err);
     return imageUri;
@@ -1519,11 +1520,6 @@ export async function uploadCharacterSheetToStorage(brandId: string, imageUri: s
       return signedData.signedUrl;
     }
 
-    const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
-    if (pubData?.publicUrl) {
-      return pubData.publicUrl;
-    }
-
     return imageUri;
   } catch (err) {
     console.warn("[workspaceSync] uploadCharacterSheetToStorage notice:", err);
@@ -1575,9 +1571,6 @@ export async function uploadVoicePreviewToStorage(brandId: string, audioUri: str
 
     if (signedData?.signedUrl) return signedData.signedUrl;
 
-    const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
-    if (pubData?.publicUrl) return pubData.publicUrl;
-
     return audioUri;
   } catch (err) {
     console.warn("[workspaceSync] uploadVoicePreviewToStorage notice:", err);
@@ -1619,9 +1612,6 @@ export async function fetchBrandStorageAssets(brandId: string): Promise<{ id: st
         const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(currentPath, 60 * 60 * 24 * 7);
         if (signedData?.signedUrl) {
           publicOrSignedUrl = signedData.signedUrl;
-        } else {
-          const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(currentPath);
-          publicOrSignedUrl = pubData?.publicUrl || "";
         }
 
         const sizeFormatted = f.metadata?.size
@@ -1678,10 +1668,8 @@ export async function uploadBrandAssetFile(brandId: string, file: File): Promise
     const { data: signedData } = await supabase.storage.from("Spark").createSignedUrl(storagePath, 60 * 60 * 24 * 365);
     if (signedData?.signedUrl) {
       url = signedData.signedUrl;
-    } else {
-      const { data: pubData } = supabase.storage.from("Spark").getPublicUrl(storagePath);
-      url = pubData?.publicUrl || "";
     }
+    if (!url) throw new Error("Uploaded asset could not be signed for playback");
 
     const sizeFormatted = file.size / 1024 < 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`;
 

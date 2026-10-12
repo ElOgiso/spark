@@ -62,7 +62,8 @@ import {
   deleteProductionCascade,
   wipeWorkspaceLearningData,
 } from "../backend/workspaceSync";
-import { isSupabaseConfigured } from "../backend/supabaseClient";
+import { isSupabaseConfigured, getSupabaseClient, getSupabaseProjectUrl } from "../backend/supabaseClient";
+import { refreshPrivateMedia } from "../backend/refreshPrivateMedia";
 import { isUuid, generateUuid } from "../backend/mappers/workspaceMappers";
 import { ProductionGenerationGuard } from "../services/production/ProductionGenerationGuard";
 import {
@@ -543,31 +544,33 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   }, [state]);
 
-  // Hydrate conversation sessions on mount
+  // Hydrate only after authentication and workspace resolution; discard stale requests.
   useEffect(() => {
-    const brandId = getBrandWorkspaceId() || "default-brand";
+    let cancelled = false;
+    setSessions([]);
+    setActiveSessionId(null);
+    if (!currentUserId || !activeBrandId) return;
+    const brandId = activeBrandId;
     conversationSessionRepository.listSessions(brandId).then(async (loadedSessions) => {
-      if (loadedSessions.length > 0) {
-        setSessions(loadedSessions);
-        const topSession = loadedSessions[0];
-        setActiveSessionId(topSession.id);
-        const msgs = conversationSessionRepository.getSessionMessages(topSession.id);
-        if (msgs && msgs.length > 0) {
-          setState((prev: any) => ({ ...prev, chatMessages: msgs }));
-        }
-      } else {
-        const fresh = await conversationSessionRepository.createSession({
+      if (cancelled) return;
+      const resolvedSessions = loadedSessions.length > 0 ? loadedSessions : [
+        await conversationSessionRepository.createSession({
           brandId,
-          userId: currentUserId || undefined,
+          userId: currentUserId,
           title: "New Executive Session",
-        });
-        setSessions([fresh]);
-        setActiveSessionId(fresh.id);
-      }
+        }),
+      ];
+      if (cancelled) return;
+      setSessions(resolvedSessions);
+      const topSession = resolvedSessions[0];
+      setActiveSessionId(topSession.id);
+      const msgs = conversationSessionRepository.getSessionMessages(topSession.id);
+      setState((prev: any) => ({ ...prev, chatMessages: msgs || [] }));
     }).catch((err) => {
-      console.error("[SparkContext] conversation_sessions remote failure (not treated as an empty session):", err);
+      if (!cancelled) console.error("[SparkContext] conversation_sessions remote failure (not treated as an empty session):", err);
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [currentUserId, activeBrandId]);
 
   // Save chat messages per session whenever state.chatMessages changes
   useEffect(() => {
@@ -671,7 +674,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       Promise.all([
         hydrateWorkspace(activeBrandId),
         import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(activeBrandId)).catch(() => null),
-      ]).then(([snap, execContext]) => {
+      ]).then(async ([rawSnapshot, execContext]) => {
+        const client = getSupabaseClient();
+        const snap = client ? await refreshPrivateMedia(rawSnapshot, getSupabaseProjectUrl(), async (path) => {
+          const { data, error } = await client.storage.from("Spark").createSignedUrl(path, 60 * 60 * 24 * 7);
+          return error ? null : data?.signedUrl || null;
+        }) : rawSnapshot;
         if (isCancelled) return;
 
         // Cloud brand.settings is source of truth for Production Generation; localStorage is cache.

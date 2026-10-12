@@ -735,7 +735,7 @@ export class ProductionAssetService {
             for (const mp4 of mp4Files) {
               const filePath = `${folderPath}/${mp4.name}`;
               const { data: signedData } = await supabase.storage.from(SPARK_STORAGE_BUCKET).createSignedUrl(filePath, 60 * 60 * 24 * 7);
-              const clipUrl = signedData?.signedUrl || supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(filePath).data?.publicUrl;
+              const clipUrl = signedData?.signedUrl;
               if (clipUrl && isPlayableVideoUrl(clipUrl)) {
                 sceneClips.push(clipUrl);
               }
@@ -874,20 +874,14 @@ export class ProductionAssetService {
           uploadSuccess = true;
           console.log(`[ProductionAssetService] Uploaded binary to bucket "${SPARK_STORAGE_BUCKET}": ${storagePath} (${uploadBlob.size} bytes)`);
 
-          // Bucket "Spark" is PUBLIC — prefer a permanent public URL so generated media never
-          // expires. (Previously this stored 7-day signed URLs, so media vanished after a week
-          // and had to be re-signed on login.) Signed URL remains a fallback.
-          const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-          if (pubData?.publicUrl) {
-            finalPublicUrl = pubData.publicUrl;
-          } else {
-            const { data: signedData, error: signedError } = await supabase.storage
-              .from(SPARK_STORAGE_BUCKET)
-              .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-            if (!signedError && signedData?.signedUrl) {
-              finalPublicUrl = signedData.signedUrl;
-            }
+          // Spark is private. The path is durable; playback URLs must be signed.
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from(SPARK_STORAGE_BUCKET)
+            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+          if (signedError || !signedData?.signedUrl) {
+            throw new Error(signedError?.message || "Media signing failed");
           }
+          finalPublicUrl = signedData.signedUrl;
         } else if (error) {
           uploadSuccess = false;
           console.error(`[ProductionAssetService] Supabase Storage upload to bucket "${SPARK_STORAGE_BUCKET}" failed:`, error);
@@ -971,10 +965,6 @@ export class ProductionAssetService {
       const { getSupabaseClient } = await import("../../backend/supabaseClient");
       const supabase = getSupabaseClient();
       if (!supabase) return null;
-      const { data: pubData } = supabase.storage.from(SPARK_STORAGE_BUCKET).getPublicUrl(storagePath);
-      if (pubData?.publicUrl) {
-        return pubData.publicUrl;
-      }
       const { data, error } = await supabase.storage
         .from(SPARK_STORAGE_BUCKET)
         .createSignedUrl(storagePath, expiresIn);
