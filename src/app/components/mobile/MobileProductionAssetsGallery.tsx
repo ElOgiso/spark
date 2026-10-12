@@ -11,7 +11,7 @@ import {
   Loader2,
   Film,
 } from "lucide-react";
-import { VideoFullscreenModal } from "./DonorSparkMediaHome";
+import { VideoFullscreenModal } from "../VideoFullscreenModal";
 import { useSpark } from "../../state/SparkContext";
 import { resolveProductionMediaView } from "../../services/production/productionMediaLineage";
 import { resolveReviewAspectMode, reviewMediaFrameClass, reviewMediaImgClass } from "../../services/production/reviewHonesty";

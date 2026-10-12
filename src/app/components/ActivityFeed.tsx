@@ -11,7 +11,7 @@ import {
   Sparkles,
   ArrowRight,
 } from "lucide-react";
-import { VideoFullscreenModal } from "./mobile/DonorSparkMediaHome";
+import { VideoFullscreenModal } from "./VideoFullscreenModal";
 import { openProductionReviewDetail } from "../services/production/homeReviewCardMedia";
 
 export interface Activity {

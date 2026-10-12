@@ -16,7 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { VideoFullscreenModal } from "./mobile/DonorSparkMediaHome";
+import { VideoFullscreenModal } from "./VideoFullscreenModal";
 import { useSpark } from "../state/SparkContext";
 
 export interface DesktopSceneItem {

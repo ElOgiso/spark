@@ -58,7 +58,10 @@ describe("Phase 11 Retention Policy — Sample Size Gate", () => {
     assert.equal(result.memoryItem, undefined);
   });
 
-  it("adapts interval when valid sample size >= 3", () => {
+  it("adapts interval when valid sample size >= 3", (t) => {
+    // Uniform-age weights should be exactly 1; wall-clock millisecond drift made
+    // the 22.5s rounding boundary nondeterministic. Production logic is unchanged.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-12T00:00:00Z") });
     const now = new Date().toISOString();
     const observations: RetentionObservation[] = [
       {

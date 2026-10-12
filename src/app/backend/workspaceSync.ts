@@ -281,6 +281,11 @@ export async function hydrateWorkspace(brandId: string): Promise<WorkspaceSnapsh
     listMediaAssetsByBrandId(brandId).then((data) => ({ data })).catch(() => ({ data: [] })),
   ]);
 
+  // A failed core read is not an empty workspace. Preserve cached state for retry.
+  const failedCoreRead = [brandRes, characters, accounts, memory, sparks, productions, reviews, jobs, analytics]
+    .some(result => Boolean(result?.error));
+  if (failedCoreRead) throw new Error("Workspace core data unavailable");
+
   const brand = brandRes?.data ? brandRowToDomain(brandRes.data) : undefined;
   const rawCharacters = (characters.data ?? []).map(characterRowToDomain);
 

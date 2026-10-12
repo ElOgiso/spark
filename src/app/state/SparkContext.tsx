@@ -120,6 +120,8 @@ export interface ChatMessage {
 }
 
 interface SparkContextType {
+  workspaceLoad: { brandId: string | null; status: "loading" | "ready" | "error" | "local"; error?: string };
+  refreshWorkspace: () => void;
   brand: Brand;
   character: Character;
   characters: Character[];
@@ -290,6 +292,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const auth = useAuth();
   const currentUserId = auth.currentUser?.id || auth.session?.user?.id || null;
   const activeBrandId = auth.brand?.id || getBrandWorkspaceId();
+  const [workspaceLoad, setWorkspaceLoad] = useState<SparkContextType["workspaceLoad"]>({ brandId: null, status: "loading" });
+  const [workspaceRefreshVersion, setWorkspaceRefreshVersion] = useState(0);
+  const refreshWorkspace = useCallback(() => setWorkspaceRefreshVersion(v => v + 1), []);
 
   const [thinkingState, setThinkingState] = useState<ThinkingState | null>(null);
 
@@ -667,10 +672,14 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Reactively hydrate live workspace from Supabase on mount / login / brandId changes
   useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      setWorkspaceLoad({ brandId: null, status: "local" });
+      return;
+    }
 
     if (isSupabaseConfigured() && activeBrandId && isUuid(activeBrandId)) {
       let isCancelled = false;
+      setWorkspaceLoad({ brandId: activeBrandId, status: "loading" });
       Promise.all([
         hydrateWorkspace(activeBrandId),
         import("../backend/workspaceSync").then((m) => m.hydrateExecutiveContext(activeBrandId)).catch(() => null),
@@ -957,7 +966,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }));
           }
         }
+        setWorkspaceLoad({ brandId: activeBrandId, status: "ready" });
       }).catch((err) => {
+        if (!isCancelled) setWorkspaceLoad({ brandId: activeBrandId, status: "error", error: "Workspace data could not be refreshed. Your saved work has not been replaced." });
         console.warn("[SparkContext] Workspace hydration notice:", err);
       });
 
@@ -965,7 +976,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isCancelled = true;
       };
     }
-  }, [currentUserId, activeBrandId]);
+    setWorkspaceLoad({ brandId: activeBrandId || null, status: "local" });
+  }, [currentUserId, activeBrandId, workspaceRefreshVersion]);
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -4902,6 +4914,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...state,
         state,
         thinkingState,
+        workspaceLoad,
+        refreshWorkspace,
         activeSessionId,
         sessions,
         executiveVoiceProfile: SPARK_EXECUTIVE_VOICE_PROFILE,
